@@ -7,14 +7,14 @@ let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environm
 
 let is_some_type = tysc_of_ty @@ TyFun (TyDyn, TyBool)
 
-module CC = struct 
-  open Syntax.CC
+(* module LS = struct 
+  open Syntax.LS
 
-  let is_some u = FunV (fun _ -> function
+  (* (*let is_some u = FunV (fun _ -> function
     | Tagged (t, _) when u = tag_to_ty t -> BoolV true
     | Tagged _ -> BoolV false
     | _ -> raise @@ Stdlib_bug "untagged value"
-  )
+  )*)
 
   let lib_exit = FunV (fun _ -> function
     | IntV i -> raise @@ Stdlib_exit i
@@ -34,17 +34,17 @@ module CC = struct
   let lib_print_newline = FunV (fun _ -> function
     | UnitV -> print_newline (); UnitV
     | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
-  )
+  ) *)
 end
 
 module KNorm = struct 
   open Syntax.KNorm
 
-  let is_some u = FunV (fun _ -> function
+  (*let is_some u = FunV (fun _ -> function
     | Tagged (t, _) when u = tag_to_ty t -> IntV 1
     | Tagged _ -> IntV 0
     | _ -> raise @@ Stdlib_bug "untagged value"
-  )
+  )*)
 
   let lib_exit = FunV (fun _ -> function
     | IntV i -> raise @@ Stdlib_exit i
@@ -69,16 +69,16 @@ module KNorm = struct
 end
 
 let implementations = [
-  "exit", [], CC.lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit;
-  "is_bool", [], CC.is_some TyBool, is_some_type, KNorm.is_some TyBool;
+  "exit", [], LS.lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit;
+  (*"is_bool", [], CC.is_some TyBool, is_some_type, KNorm.is_some TyBool;
   "is_int", [], CC.is_some TyInt, is_some_type, KNorm.is_some TyInt;
   "is_unit", [], CC.is_some TyUnit, is_some_type, KNorm.is_some TyUnit;
-  "is_fun", [], CC.is_some (TyFun (TyDyn, TyDyn)), is_some_type, KNorm.is_some (TyFun (TyDyn, TyDyn));
+  "is_fun", [], CC.is_some (TyFun (TyDyn, TyDyn)), is_some_type, KNorm.is_some (TyFun (TyDyn, TyDyn));*)
   "max_int", [], IntV max_int, tysc_of_ty TyInt, IntV max_int;
   "min_int", [], IntV min_int, tysc_of_ty TyInt, IntV min_int;
-  "print_bool", [], CC.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool;
-  "print_int", [], CC.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int;
-  "print_newline", [], CC.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline;
+  "print_bool", [], LS.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool;
+  "print_int", [], LS.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int;
+  "print_newline", [], LS.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline;
 ]
 
 let env, tyenv, kfunenvs, kenv =
@@ -105,12 +105,12 @@ let env, tyenv, kfunenvs, kenv =
       let e, u = Typing.ITGL.type_of_program tyenv e in
       let tyenv, e, _ = Typing.ITGL.normalize tyenv e u in
       let new_tyenv, f, _ = Typing.ITGL.translate tyenv e in
-      let _ = Typing.CC.type_of_program tyenv f in
-      let env, _, _ = Eval.CC.eval_program env f in
-      let kf, _, kfunenvs = KNormal.kNorm_funs kfunenvs f in
-      let kenv, _, _ = Eval.KNorm.eval_program kenv kf in
+      let _ = Typing.LS.type_of_program tyenv f in
+      let env, _, _ = Eval.LS.eval_program env f in
+      (*let kf, _, kfunenvs = KNormal.kNorm_funs kfunenvs f in
+      let kenv, _, _ = Eval.KNorm.eval_program kenv kf in*)
       env, new_tyenv, kfunenvs, kenv)
     (env, tyenv, kfunenvs, kenv)
-    implementations
+    implementations *)
 
 let pervasives = env, tyenv, kfunenvs, kenv

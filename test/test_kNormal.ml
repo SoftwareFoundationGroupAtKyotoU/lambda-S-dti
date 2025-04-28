@@ -1,4 +1,4 @@
-open Format
+(* open Format
 
 open OUnit2
 
@@ -16,7 +16,7 @@ let run tyenv kfunenvs kenv program =
   let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
   let new_tyenv, f, u' = Typing.ITGL.translate tyenv e in
   assert (Typing.is_equal u u');
-  let u'' = Typing.CC.type_of_program tyenv f in
+  let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
   let kf, ku, kfunenvs = KNormal.kNorm_funs kfunenvs f in
   assert (Typing.is_equal u ku);
@@ -44,4 +44,6 @@ let test_examples =
 
 let suite = [
   "test_examples">::: test_examples;
-]
+] *)
+let suite = assert false
+

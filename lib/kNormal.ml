@@ -1,4 +1,4 @@
-open Syntax
+(* open Syntax
 open Format
 
 exception KNormal_error of string
@@ -245,4 +245,4 @@ let kNorm_funs ?(debug=false) (ktyenv, alphaenv, betaenv) f =
       (if debug then fprintf err_formatter "beta: %a\n" Pp.KNorm.pp_program fbeta;
       if debug then fprintf err_formatter "assoc: %a\n" Pp.KNorm.pp_program fassoc;
       iter betaenv fassoc)
-  in iter betaenv f
+  in iter betaenv f *)

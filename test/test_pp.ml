@@ -63,9 +63,9 @@ module ITGL = struct
   ]
 end
 
-module CC = struct
-  open Pp.CC
-  open Syntax.CC
+module LS = struct
+  open Pp.LS
+  open Syntax.LS
 
   let r = Utils.Error.dummy_range
 
@@ -74,20 +74,20 @@ module CC = struct
       expected >:: fun ctxt ->
         assert_equal ~ctxt:ctxt ~printer:id expected @@ asprintf "%a" pp_exp f
     in
-    let x, y, z = Var (r, "x", []), Var (r, "y", []), Var (r, "z", []) in
+    let x, y, z = Var ("x", []), Var ("y", []), Var ("z", []) in
     List.map test [
-      "x y z", AppExp (r, AppExp (r, x, y), z);
-      "x (y z)", AppExp (r, x, AppExp (r, y, z));
-      "x * y + z * x", BinOp (r, Plus, BinOp (r, Mult, x, y), BinOp (r, Mult, z, x));
-      "(x + y) * (z + x)", BinOp (r, Mult, BinOp (r, Plus, x, y), BinOp (r, Plus, z, x));
+      "x y z", AppExp (AppExp (x, y), z);
+      "x (y z)", AppExp (x, AppExp (y, z));
+      "x * y + z * x", BinOp (Plus, BinOp (Mult, x, y), BinOp (Mult, z, x));
+      "(x + y) * (z + x)", BinOp (Mult, BinOp (Plus, x, y), BinOp (Plus, z, x));
       "(fun (x: ?) -> x): ? -> ? => ?",
-      CastExp (r, FunExp (r, "x", TyDyn, x), TyFun (TyDyn, TyDyn), TyDyn, Pos);
-      "x: int => ?", CastExp (r, x, TyInt, TyDyn, Pos);
-      "x: int => ? => bool", CastExp (r, CastExp (r, x, TyInt, TyDyn, Pos), TyDyn, TyBool, Pos);
+      CAppExp (FunExp ("x", TyDyn, x), CInj (TyFun (TyDyn, TyDyn)));
+      "x: int => ?", CAppExp (x, CInj TyInt);
+      "x: int => ? => bool", CAppExp (CAppExp (x, CInj TyInt), CProj (TyBool, (r, Pos)));
       "(fun (x: ?) -> x) (fun (y: ?) -> y)",
-      AppExp (r, FunExp (r, "x", TyDyn, x), FunExp (r, "y", TyDyn, y));
-      "x y: int => ?", CastExp (r, AppExp (r, x, y), TyInt, TyDyn, Pos);
-      "x (y: int => ?)", AppExp (r, x, CastExp (r, y, TyInt, TyDyn, Pos));
+      AppExp (FunExp ("x", TyDyn, x), FunExp ("y", TyDyn, y));
+      "x y: int => ?", CAppExp (AppExp (x, y), CInj TyInt);
+      "x (y: int => ?)", AppExp (x, CAppExp (y, CInj TyInt));
     ]
 
   let suite = [
@@ -99,5 +99,5 @@ let suite = [
   "test_pp_ty">::: test_pp_ty;
   "test_pp_ty2">::: test_pp_ty2;
   "test_ITGL">::: ITGL.suite;
-  "test_CC">::: CC.suite;
+  "test_LS">::: LS.suite;
 ]

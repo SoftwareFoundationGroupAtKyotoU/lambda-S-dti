@@ -27,16 +27,18 @@ val tyarg_to_ty : Syntax.tyarg -> ty
 module ITGL : sig
   open Syntax.ITGL
 
+  val is_value : tysc Environment.t -> exp -> bool
   val type_of_program : tysc Environment.t -> program -> (program * ty)
+
+  val closure_tyvars1 : ty -> tysc Environment.t -> exp -> tyvar list
 
   val normalize : tysc Environment.t -> program -> ty -> (tysc Environment.t * program * ty)
   val normalize_type : ty -> ty
-
-  val translate : tysc Environment.t -> program -> (tysc Environment.t * CC.program * ty)
+  val normalize_coercion : coercion -> coercion
 end
 
-module CC : sig
-  open Syntax.CC
+module LS : sig
+  open Syntax.LS
 
   val type_of_program : tysc Environment.t -> program -> ty
 end

@@ -63,11 +63,6 @@ let rec is_bv_type = function
   | TyVar (_, { contents = Some u }) -> is_bv_type u
   | _ -> false
 
-let rec is_base_type = function
-  | TyBool | TyInt | TyUnit -> true
-  | TyVar (_, { contents = Some u }) -> is_base_type u
-  | _ -> false
-
 let rec is_tyvar = function
   | TyVar (_, { contents = None }) -> true
   | TyVar (_, { contents = Some u }) -> is_tyvar u
@@ -83,21 +78,6 @@ let rec is_equal u1 u2 = match u1, u2 with
   | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_equal u11 u21) && (is_equal u12 u22)
-  | _ -> false
-
-let rec is_consistent u1 u2 = match u1, u2 with
-  | TyVar (_, { contents = Some u1 }), u2
-  | u1, TyVar (_, { contents = Some u2 }) ->
-    is_consistent u1 u2
-  | TyDyn, TyDyn
-  | TyBool, TyBool
-  | TyInt, TyInt
-  | TyUnit, TyUnit
-  | _, TyDyn
-  | TyDyn, _ -> true
-  | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
-  | TyFun (u11, u12), TyFun (u21, u22) ->
-    (is_consistent u11 u21) && (is_consistent u12 u22)
   | _ -> false
 
 (* Substitutions for type variables *)
@@ -239,13 +219,6 @@ module ITGL = struct
 
   let closure_tyvars1 u1 env v1 =
     TV.elements @@ TV.diff (ftv_ty u1) @@ TV.union (ftv_tyenv env) (ftv_exp v1)
-
-  let closure_tyvars_let_decl e u1 env =
-    TV.elements @@ TV.diff (TV.union (tv_exp e) (ftv_ty u1)) (ftv_tyenv env)
-
-  let closure_tyvars2 w1 env u1 v1 =
-    let ftvs = TV.big_union [ftv_tyenv env; ftv_ty u1; ftv_exp v1] in
-    TV.elements @@ TV.diff (Syntax.CC.ftv_exp w1) ftvs
 
   let rec is_base_value env u =
     assert (u = TyInt || u = TyBool || u = TyUnit);
@@ -399,6 +372,14 @@ module ITGL = struct
     | TyFun (u1, u2) -> TyFun (normalize_type u1, normalize_type u2)
     | _ as u -> u
 
+  let rec normalize_coercion = function
+    | CInj g -> CInj (normalize_type g)
+    | CProj (g, p) -> CProj (normalize_type g, p)
+    | CFun (c1, c2) -> CFun (normalize_coercion c1, normalize_coercion c2)
+    | CId u -> CId (normalize_type u)
+    | CSeq (c1, c2) -> CSeq (normalize_coercion c1, normalize_coercion c2)
+    | CFail (u1, p, u2) -> CFail (normalize_type u1, p, normalize_type u2)
+
   let normalize_tyenv =
     Environment.map @@ fun (TyScheme (xs, u)) -> TyScheme (xs, normalize_type u)
 
@@ -434,96 +415,28 @@ module ITGL = struct
     normalize_tyenv env,
     normalize_program p,
     normalize_type u
-
-  (* Cast insertion translation *)
-
-  let cast f u1 u2 =
-    if u1 = u2 then f  (* Omit identity cast for better performance *)
-    else CC.CastExp (CC.range_of_exp f, f, u1, u2, Pos)
-
-  let rec translate_exp env = function
-    | Var (r, x, ys) -> begin
-        try
-          let TyScheme (xs, u) = Environment.find x env in
-          let ftvs = ftv_ty u in
-          let s = Utils.List.zip xs !ys in
-          let ys = List.map (fun (x, u) -> if TV.mem x ftvs then Ty u else TyNu) s
-          in
-          let ys = ys @ Utils.List.repeat TyNu (List.length xs - List.length ys) in
-          let u = subst_type (List.filter (fun (x, _) -> TV.mem x ftvs) s) u in
-          CC.Var (r, x, ys), u
-        with Not_found ->
-          raise @@ Type_bug "variable not found during cast-inserting translation"
-      end
-    | IConst (r, i) -> CC.IConst (r, i), TyInt
-    | BConst (r, b) -> CC.BConst (r, b), TyBool
-    | UConst r -> CC.UConst r, TyUnit
-    | BinOp (r, op, e1, e2) ->
-      let ui1, ui2, ui = type_of_binop op in
-      let f1, u1 = translate_exp env e1 in
-      let f2, u2 = translate_exp env e2 in
-      CC.BinOp (r, op, cast f1 u1 ui1, cast f2 u2 ui2), ui
-    | AscExp (_, e, u1) ->
-      let f, u = translate_exp env e in
-      if is_consistent u u1 then
-        cast f u u1, u1
-      else
-        raise @@ Type_bug "type ascription"
-    | IfExp (r, e1, e2, e3) ->
-      let f1, u1 = translate_exp env e1 in
-      let f2, u2 = translate_exp env e2 in
-      let f3, u3 = translate_exp env e3 in
-      let u = meet u2 u3 in
-      CC.IfExp (r, cast f1 u1 TyBool, cast f2 u2 u, cast f3 u3 u), u
-    | FunEExp (r, x, u1, e)
-    | FunIExp (r, x, u1, e) ->
-      let f, u2 = translate_exp (Environment.add x (tysc_of_ty u1) env) e in
-      CC.FunExp (r, x, u1, f), TyFun (u1, u2)
-    | FixEExp (r, x, y, u1, u2, e)
-    | FixIExp (r, x, y, u1, u2, e) ->
-      (* NOTE: Disallow to use x polymorphically in e *)
-      let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
-      let env = Environment.add y (tysc_of_ty u1) env in
-      let f, u2' = translate_exp env e in
-      CC.FixExp (r, x, y, u1, u2, cast f u2' u2), TyFun (u1, u2)
-    | AppExp (r, e1, e2) ->
-      let f1, u1 = translate_exp env e1 in
-      let f2, u2 = translate_exp env e2 in
-      CC.AppExp (r, cast f1 u1 (TyFun (dom u1, cod u1)), cast f2 u2 (dom u1)), cod u1
-    | LetExp (r, x, e1, e2) when is_value env e1 ->
-      let f1, u1 = translate_exp env e1 in
-      let xs = closure_tyvars1 u1 env e1 in
-      let ys = closure_tyvars2 f1 env u1 e1 in
-      let xys = xs @ ys in
-      let us1 = TyScheme (xys, u1) in
-      let f2, u2 = translate_exp (Environment.add x us1 env) e2 in
-      CC.LetExp (r, x, xys, f1, f2), u2
-    | LetExp (r, x, e1, e2) ->
-      let _, u1 = translate_exp env e1 in
-      let e = AppExp (r, FunIExp (r, x, u1, e2), e1) in
-      translate_exp env e
-
-  let translate env = function
-    | Exp e ->
-      let f, u = translate_exp env e in
-      env, CC.Exp f, u
-    | LetDecl (x, e) when is_value env e ->
-      let f, u = translate_exp env e in
-      let xs = closure_tyvars_let_decl e u env in
-      let ys = closure_tyvars2 f env u e in
-      let env = Environment.add x (TyScheme (xs @ ys, u)) env in
-      env, CC.LetDecl (x, xs @ ys, f), u
-    | LetDecl (x, e) ->
-      let f, u = translate_exp env e in
-      let env = Environment.add x (tysc_of_ty u) env in
-      env, CC.LetDecl (x, [], f), u
 end
 
-module CC = struct
-  open Syntax.CC
+module LS = struct
+  open Syntax.LS
+
+  let rec type_of_coercion = function
+    | CInj g -> (g, TyDyn)
+    | CProj (g, _) -> (TyDyn, g)
+    | CFun (c1, c2) -> 
+      let u11, u12 = type_of_coercion c1 in
+      let u21, u22 = type_of_coercion c2 in
+      (TyFun (u12, u21), TyFun (u11, u22))
+    | CId u -> (u, u)
+    | CSeq (c1, c2) ->
+      let u11, u12 = type_of_coercion c1 in
+      let u21, u22 = type_of_coercion c2 in
+      if u12 = u21 then (u11, u22)
+      else raise @@ Type_bug "type-unmatch in Coercion sequence"
+    | CFail _ -> assert false (* TODO *)
 
   let rec type_of_exp env = function
-    | Var (_, x, ys) -> begin
+    | Var (x, ys) -> begin
         try
           let TyScheme (xs, u) = Environment.find x env in
           if List.length xs = List.length ys then
@@ -539,8 +452,8 @@ module CC = struct
       end
     | IConst _ -> TyInt
     | BConst _ -> TyBool
-    | UConst _ -> TyUnit
-    | BinOp (_, op, f1, f2) ->
+    | UConst -> TyUnit
+    | BinOp (op, f1, f2) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       let ui1, ui2, ui = type_of_binop op in
@@ -548,7 +461,7 @@ module CC = struct
         ui
       else
         raise @@ Type_bug "binop"
-    | IfExp (_, f1, f2, f3) ->
+    | IfExp (f1, f2, f3) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       let u3 = type_of_exp env f3 in
@@ -556,13 +469,13 @@ module CC = struct
         u2
       else
         raise @@ Type_bug "if"
-    | FunExp (_, x, u1, f) ->
+    | FunExp (x, u1, f) ->
       let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) f in
       TyFun (u1, u2)
-    | FixExp (_, x, y, u1, u, f) ->
+    | FixExp (x, y, u1, u, f) ->
       let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env)) f in
       TyFun (u1, u2)
-    | AppExp (_, f1, f2) ->
+    | AppExp (f1, f2) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       begin match u1, u2 with
@@ -570,7 +483,17 @@ module CC = struct
           u12
         | _ -> raise @@ Type_bug "app"
       end
-    | CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
+    | CAppExp (f, c) ->
+      let u = type_of_exp env f in 
+      let u1, u2 = type_of_coercion c in 
+      if u = u1 then
+        if is_consistent u1 u2 then
+          u2
+        else
+          raise @@ Type_bug "not consistent"
+      else
+        raise @@ Type_bug "invalid source type"
+    (*| CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
     | CastExp (r, f, u1, TyVar (_, { contents = Some u2 }), p) ->
       type_of_exp env @@ CastExp (r, f, u1, u2, p)
     | CastExp (_, f, u1, u2, _) ->
@@ -581,8 +504,8 @@ module CC = struct
         else
           raise @@ Type_bug "not consistent"
       else
-        raise @@ Type_bug "invalid source type"
-    | LetExp (_, x, xs, f1, f2) when is_value f1 ->
+        raise @@ Type_bug "invalid source type"*)
+    | LetExp (x, xs, f1, f2) when is_value f1 ->
       let u1 = type_of_exp env f1 in
       let us1 = TyScheme (xs, u1) in
       let u2 = type_of_exp (Environment.add x us1 env) f2 in

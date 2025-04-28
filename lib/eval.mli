@@ -6,11 +6,13 @@ exception KBlame of range * polarity
 
 exception Eval_bug of string
 
-module CC : sig
-  open Syntax.CC
+module LS1 : sig
+  open Syntax.LS1
   
   val eval_program : ?debug:bool -> (tyvar list * value) Environment.t -> program -> (tyvar list * value) Environment.t * id * value
-end
+
+  val compose : ?debug:bool -> coercion -> coercion -> coercion
+end 
 
 module KNorm : sig
   open Syntax.KNorm

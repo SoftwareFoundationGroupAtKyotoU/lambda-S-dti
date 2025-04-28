@@ -14,13 +14,14 @@ let run env tyenv program =
   let e = parse @@ program ^ ";;" in
   let e, u = Typing.ITGL.type_of_program tyenv e in
   let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-  let new_tyenv, f, u' = Typing.ITGL.translate tyenv e in
+  let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in
   assert (Typing.is_equal u u');
-  let u'' = Typing.CC.type_of_program tyenv f in
+  let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
+  let f = Translate.LS.translate tyenv f in
   try
-    let env, _, v = Eval.CC.eval_program env f in
-    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.CC.pp_value v
+    let env, _, v = Eval.LS1.eval_program env f in
+    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value v
   with
   | Eval.Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
   | Eval.Blame (_, Neg) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame-"
@@ -43,3 +44,9 @@ let test_examples =
 let suite = [
   "test_examples">::: test_examples;
 ]
+
+(* 
+(fun x -> (x:?) 2) ((fun y -> y) :?);;
+
+(fun ((x: 'x1), k3) -> (let k4 = id{'x1};'x1!;;(? -> ?)?p;id{? -> ?} in x<k4>) (2<id{int};int!>, k3)) 
+(let k1 = ('x2?p;id{'x2})->(id{'x2};'x2!);(? -> ?)!;;'x1?p;id{'x1} in (fun ((y: 'x2), k2) -> y<k2>)<k1>, id{?}) *)

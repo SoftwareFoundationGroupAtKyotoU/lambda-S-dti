@@ -36,6 +36,26 @@ let is_ground = function
   | TyFun (u1, u2) when u1 = TyDyn && u2 = TyDyn -> true
   | _ -> false
 
+let rec is_base_type = function
+  | TyBool | TyInt | TyUnit -> true
+  | TyVar (_, { contents = Some u }) -> is_base_type u
+  | _ -> false
+
+  let rec is_consistent u1 u2 = match u1, u2 with
+  | TyVar (_, { contents = Some u1 }), u2
+  | u1, TyVar (_, { contents = Some u2 }) ->
+    is_consistent u1 u2
+  | TyDyn, TyDyn
+  | TyBool, TyBool
+  | TyInt, TyInt
+  | TyUnit, TyUnit
+  | _, TyDyn
+  | TyDyn, _ -> true
+  | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
+  | TyFun (u11, u12), TyFun (u21, u22) ->
+    (is_consistent u11 u21) && (is_consistent u12 u22)
+  | _ -> false
+
 (* Set of type variables used for let polymorphism *)
 
 (** Module for a set of type variables. *)
@@ -68,6 +88,38 @@ type polarity = Pos | Neg
 
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
+
+type tag = I | B | U | Ar | V of tyvar
+
+(* type coercion =
+  | CInj of tag
+  | CProj of tag * (range * polarity)
+  | CFun of coercion * coercion
+  | CId of ty
+  | CSeq of coercion * coercion
+  | CFail of tag * (range * polarity) * tag *)
+
+type coercion =
+  | CInj of ty
+  | CProj of ty * (range * polarity)
+  | CFun of coercion * coercion
+  | CId of ty
+  | CSeq of coercion * coercion
+  | CFail of ty * (range * polarity) * ty
+
+let is_d = function
+  | CSeq (CId u, CInj _) when u <> TyDyn -> true
+  | CSeq (CFun _, CInj _)
+  | CFun _ -> true
+  | _ -> false
+
+let rec ftv_coercion = function
+  | CInj u -> ftv_ty u
+  | CProj (u, _) -> ftv_ty u
+  | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CId u -> ftv_ty u
+  | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CFail (u1, _, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
 
 (** Syntax of the surface language, the ITGL with extensions. *)
 module ITGL = struct
@@ -141,42 +193,89 @@ module ITGL = struct
 end
 
 (** Syntax of the blame calculus with dynamic type inference. *)
-module CC = struct
+module LS = struct
   type exp =
-    | Var of range * id * tyarg list
-    | IConst of range * int
-    | BConst of range * bool
-    | UConst of range
-    | BinOp of range * binop * exp * exp
-    | IfExp of range * exp * exp * exp
-    | FunExp of range * id * ty * exp
-    | FixExp of range * id * id * ty * ty * exp
-    | AppExp of range * exp * exp
-    | CastExp of range * exp * ty * ty * polarity
-    | LetExp of range * id * tyvar list * exp * exp
+    | Var of id * tyarg list
+    | IConst of int
+    | BConst of bool
+    | UConst
+    | BinOp of binop * exp * exp
+    | IfExp of exp * exp * exp
+    | FunExp of id * ty * exp
+    | FixExp of id * id * ty * ty * exp
+    | AppExp of exp * exp
+    | CAppExp of exp * coercion
+    | LetExp of id * tyvar list * exp * exp
 
-  let range_of_exp = function
-    | Var (r, _, _)
-    | IConst (r, _)
-    | BConst (r, _)
-    | UConst r
-    | BinOp (r, _, _, _)
-    | IfExp (r, _, _, _)
-    | FunExp (r, _, _, _)
-    | FixExp (r, _, _, _, _, _)
-    | AppExp (r, _, _)
-    | CastExp (r, _, _, _, _)
-    | LetExp (r, _, _, _, _) -> r
-
-  let rec is_value = function
+  let (*rec*) is_value = function
     | Var _
     | IConst _
     | BConst _
-    | UConst _
+    | UConst
     | FunExp _
-    | FixExp _-> true
-    | CastExp (_, v, TyFun _, TyFun _, _) when is_value v -> true
-    | CastExp (_, v, g, TyDyn, _) when is_value v && is_ground g -> true
+    | FixExp _ -> true
+    (*| CoercionExp (_, v, TyFun _, TyFun _, _) when is_value v -> true
+    | CoercionExp (_, v, g, TyDyn, _) when is_value v && is_ground g -> true*)
+    | _ -> false 
+
+  let ftv_tyarg = function
+    | Ty ty -> ftv_ty ty
+    | TyNu -> TV.empty
+
+  let rec ftv_exp: exp -> TV.t = function
+    | Var (_, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
+    | IConst _
+    | BConst _
+    | UConst -> TV.empty
+    | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | IfExp (f1, f2, f3) ->
+      List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
+    | FunExp (_, u, e) -> TV.union (ftv_ty u) (ftv_exp e)
+    | FixExp (_, _, u1, _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
+    | AppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | CAppExp (f, c) ->
+      TV.union (ftv_exp f) (ftv_coercion c)
+    | LetExp (_, xs, f1, f2) ->
+      TV.union (TV.diff (ftv_exp f1) (TV.of_list xs)) (ftv_exp f2)
+
+  type program =
+    | Exp of exp
+    | LetDecl of id * tyvar list * exp
+  
+  type value =
+    | IntV of int
+    | BoolV of bool
+    | UnitV
+    | FunV of ((tyvar list * ty list) -> value -> value)
+    | CoerceV of value * coercion
+end
+
+module LS1 = struct
+  type exp =
+    | Var of id * tyarg list
+    | IConst of int
+    | BConst of bool
+    | UConst
+    | BinOp of binop * exp * exp
+    | IfExp of exp * exp * exp
+    | FunExp of (id * ty) * id * exp
+    | FixExp of (id * id * ty * ty) * id * exp
+    | AppExp of exp * exp * exp
+    | CAppExp of exp * exp
+    | CSeqExp of exp * exp
+    | LetExp of id * tyvar list * exp * exp
+    | CoercionExp of coercion
+
+  let (*rec*) is_value = function
+    | Var _
+    | IConst _
+    | BConst _
+    | UConst
+    | FunExp _
+    | FixExp _
+    | CoercionExp _ -> true
+    (*| CoercionExp (_, v, TyFun _, TyFun _, _) when is_value v -> true
+    | CoercionExp (_, v, g, TyDyn, _) when is_value v && is_ground g -> true*)
     | _ -> false
 
   let ftv_tyarg = function
@@ -184,39 +283,39 @@ module CC = struct
     | TyNu -> TV.empty
 
   let rec ftv_exp: exp -> TV.t = function
-    | Var (_, _, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
+    | Var (_, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
     | IConst _
     | BConst _
-    | UConst _ -> TV.empty
-    | BinOp (_, _, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | IfExp (_, f1, f2, f3) ->
+    | UConst -> TV.empty
+    | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | IfExp (f1, f2, f3) ->
       List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
-    | FunExp (_, _, u, e) -> TV.union (ftv_ty u) (ftv_exp e)
-    | FixExp (_, _, _, u1, _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
-    | AppExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | CastExp (_, f, u1, u2, _) ->
-      TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
-    | LetExp (_, _, xs, f1, f2) ->
+    | FunExp ((_, u), _, e) -> TV.union (ftv_ty u) (ftv_exp e)
+    | FixExp ((_, _, u1, _), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
+    | AppExp (f1, f2, f3) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
+    | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | LetExp (_, xs, f1, f2) ->
       TV.union (TV.diff (ftv_exp f1) (TV.of_list xs)) (ftv_exp f2)
+    | CoercionExp c -> ftv_coercion c
 
   type program =
     | Exp of exp
     | LetDecl of id * tyvar list * exp
 
-  type tag = I | B | U | Ar
-
-  let tag_to_ty = function
+  (*let tag_to_ty = function
     | I -> TyInt
     | B -> TyBool
     | U -> TyUnit
-    | Ar -> TyFun (TyDyn, TyDyn)
+    | Ar -> TyFun (TyDyn, TyDyn)*)
 
   type value =
     | IntV of int
     | BoolV of bool
     | UnitV
-    | FunV of ((tyvar list * ty list) -> value -> value)
-    | Tagged of tag * value
+    | FunV of ((tyvar list * ty list) -> (value * value) -> value)
+    | CoerceV of value * coercion
+    | CoercionV of coercion
 end
 
 module KNorm = struct

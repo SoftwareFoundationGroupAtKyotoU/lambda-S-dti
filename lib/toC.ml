@@ -1,12 +1,12 @@
-open Syntax
+(* open Syntax
 open Syntax.Cls
 open Format
-open Utils.Error
+open Utils.Error*)
 
 exception ToC_bug of string
 exception ToC_error of string
 
-(*Utilities*)
+(*(*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
 let c_of_ty = function
@@ -656,4 +656,4 @@ let toC_program ppf (Prog (tvset, toplevel, f)) =
     toC_fundefs toplevel
     "int main() {\nstdlib();\nset_tys();\n"
     toC_exp f
-    "}"
+    "}" *)

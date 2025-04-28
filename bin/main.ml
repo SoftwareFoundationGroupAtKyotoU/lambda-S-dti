@@ -5,11 +5,11 @@ exception Compile_bad of string
 
 let debug = ref false
 
-let programs = ref [] (*Stdlibのために、要変更*)
+(*let programs = ref [] (*Stdlibのために、要変更*)*)
 
 let opt_file = ref None
 
-let compile_process progs (_, tyenv, kfunenvs, _) = 
+(*let compile_process progs (_, tyenv, kfunenvs, _) = 
   (* Used in all modes *)
   (*let print f = fprintf std_formatter f in*)
   (* Used in debug mode *)
@@ -28,17 +28,17 @@ let compile_process progs (_, tyenv, kfunenvs, _) =
     print_debug "e: %a\n" Pp.ITGL.pp_program e;
     print_debug "U: %a\n" Pp.pp_ty u;
 
-    (* NOTE: Typing.ITGL.translate and Typing.CC.type_of_program expect
+    (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
      * normalized input *)
     let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
 
     (* Translation *)
     print_debug "***** Cast-insertion *****\n";
     let _, f, u' = Typing.ITGL.translate tyenv e in
-    print_debug "f: %a\n" Pp.CC.pp_program f;
+    print_debug "f: %a\n" Pp.LS.pp_program f;
     print_debug "U: %a\n" Pp.pp_ty u';
     assert (Typing.is_equal u u');
-    let u'' = Typing.CC.type_of_program tyenv f in
+    let u'' = Typing.LS.type_of_program tyenv f in
     assert (Typing.is_equal u u'');
 
     (* k-Normalization *)
@@ -60,9 +60,9 @@ let compile_process progs (_, tyenv, kfunenvs, _) =
   with
   | Failure message -> raise @@ Failure message
   | Typing.Type_error message -> raise @@ Typing.Type_error message
-  end
+  end*)
 
-let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
+let rec read_eval_print lexbuf env tyenv (*kfunenvs kenv*) =
   (* Used in all modes *)
   let print f = fprintf std_formatter f in
   (* Used in debug mode *)
@@ -75,43 +75,51 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       print_debug "***** Parser *****\n";
       let e = Parser.toplevel Lexer.main lexbuf in
       print_debug "e: %a\n" Pp.ITGL.pp_program e;
-      programs := e :: !programs;
+      (*programs := e :: !programs;*)
 
       (* Type inference *)
-      (*print_debug "***** Typing *****\n";
+      print_debug "***** Typing *****\n";
       let e, u = Typing.ITGL.type_of_program tyenv e in
       print_debug "e: %a\n" Pp.ITGL.pp_program e;
       print_debug "U: %a\n" Pp.pp_ty u;
 
-      (* NOTE: Typing.ITGL.translate and Typing.CC.type_of_program expect
+      (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
        * normalized input *)
       let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
 
       (* Translation *)
       print_debug "***** Cast-insertion *****\n";
-      let new_tyenv, f, u' = Typing.ITGL.translate tyenv e in
-      print_debug "f: %a\n" Pp.CC.pp_program f;
+      let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in
+      print_debug "f: %a\n" Pp.LS.pp_program f;
       print_debug "U: %a\n" Pp.pp_ty u';
       assert (Typing.is_equal u u');
-      let u'' = Typing.CC.type_of_program tyenv f in
+      let u'' = Typing.LS.type_of_program tyenv f in
       assert (Typing.is_equal u u'');
+      let f = Translate.LS.to_se f in
+      print_debug "f: %a\n" Pp.LS.pp_program f;
+      let u''' = Typing.LS.type_of_program tyenv f in
+      assert (Typing.is_equal u u''');
+      let f = Translate.LS.translate tyenv f in
+      print_debug "f: %a\n" Pp.LS1.pp_program f;
 
       (* k-Normalization *)
-      print_debug "***** kNormal *****\n";
+      (*print_debug "***** kNormal *****\n";
       let kf, ku, kfunenvs = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
       print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
-      assert (Typing.is_equal u ku);
+      assert (Typing.is_equal u ku);*)
 
       (* Evaluation *)
-      (*print_debug "***** Eval *****\n";
-      let env, x, v = Eval.CC.eval_program env f ~debug:!debug in
-      print_debug "original :: %a : %a = %a\n"
+      print_debug "***** Eval *****\n";
+      let env, x, v = Eval.LS1.eval_program env f ~debug:!debug in
+      print "%a : %a = %a\n"
         pp_print_string x
         Pp.pp_ty2 u
-        Pp.CC.pp_value v;*)
+        Pp.LS1.pp_value v;
+
+      read_eval_print lexbuf env new_tyenv (*kfunenvs kenv*)
 
       (* Evaluation on kNormalized term *)
-      print_debug "***** Eval *****\n";
+      (*print_debug "***** Eval *****\n";
       let kenv, kx, kv = Eval.KNorm.eval_program kenv kf ~debug:!debug in
       print_debug "k-Normal :: ";
       print_debug "%a : %a = %a\n"
@@ -119,7 +127,7 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
         Pp.pp_ty2 ku
         Pp.KNorm.pp_value kv;*)
 
-      match e, !opt_file with
+      (*match e, !opt_file with
         | Syntax.ITGL.Exp _, None -> 
             let c_code = compile_process !programs Stdlib.pervasives in
             programs := [];
@@ -140,7 +148,7 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
             let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
             let _ = Sys.command ("../result/"^f^".out") in
             print "\n"
-        | _, _ -> read_eval_print lexbuf env (*new_*)tyenv kfunenvs kenv
+        | _, _ -> read_eval_print lexbuf env (*new_*)tyenv kfunenvs kenv*)
         (*| _, Some f ->
             if lexbuf.lex_eof_reached then
               let c_code = compile_process !programs Stdlib.pervasives in
@@ -159,21 +167,21 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       Utils.Lexing.flush_input lexbuf
     | Typing.Type_error message ->
       print "Type_error: %s\n" message
-    (*| Eval.Blame (r, p) -> begin
-        match p with
-        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
-        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
-      end*)
-    | Eval.KBlame (r, p) -> begin
+    | Eval.Blame (r, p) -> begin
         match p with
         | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
         | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
       end
+    (*| Eval.KBlame (r, p) -> begin
+        match p with
+        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
+        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
+      end*)
     | ToC.ToC_error message ->
       print "%s\n" message
   end;
   (match !opt_file with
-    | None -> programs := []; read_eval_print lexbuf env tyenv kfunenvs kenv
+    | None -> (*programs := [];*) read_eval_print lexbuf env tyenv (*kfunenvs kenv*)
     | Some _ ->())
 
 let start file =
@@ -191,9 +199,9 @@ let start file =
         lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = f};
         channel, lexbuf
   in
-  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives in
+  let env, tyenv, _, _(*kfunenvs, kenv*) = Stdlib.pervasives in
   try
-    read_eval_print lexbuf env tyenv kfunenvs kenv
+    read_eval_print lexbuf env tyenv (*kfunenvs kenv*)
   with
     | Lexer.Eof ->
       (* Exiting normally *)
