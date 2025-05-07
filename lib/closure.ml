@@ -1,4 +1,4 @@
-open Syntax
+(* open Syntax
 
 exception Closure_bug of string
 exception Closure_error of string
@@ -179,4 +179,4 @@ e'=Let(_,_var15,[],Int(_,123),AppDir(_,quad,_var15))
       
 
 
-  
+   *)

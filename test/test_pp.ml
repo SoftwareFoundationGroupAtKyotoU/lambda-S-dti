@@ -80,14 +80,14 @@ module LS = struct
       "x (y z)", AppExp (x, AppExp (y, z));
       "x * y + z * x", BinOp (Plus, BinOp (Mult, x, y), BinOp (Mult, z, x));
       "(x + y) * (z + x)", BinOp (Mult, BinOp (Plus, x, y), BinOp (Plus, z, x));
-      "(fun (x: ?) -> x): ? -> ? => ?",
+      "(fun (x: ?) -> x)<(? -> ?)!>",
       CAppExp (FunExp ("x", TyDyn, x), CInj (TyFun (TyDyn, TyDyn)));
-      "x: int => ?", CAppExp (x, CInj TyInt);
-      "x: int => ? => bool", CAppExp (CAppExp (x, CInj TyInt), CProj (TyBool, (r, Pos)));
+      "x<int!>", CAppExp (x, CInj TyInt);
+      "x<int!><bool?p>", CAppExp (CAppExp (x, CInj TyInt), CProj (TyBool, (r, Pos)));
       "(fun (x: ?) -> x) (fun (y: ?) -> y)",
       AppExp (FunExp ("x", TyDyn, x), FunExp ("y", TyDyn, y));
-      "x y: int => ?", CAppExp (AppExp (x, y), CInj TyInt);
-      "x (y: int => ?)", AppExp (x, CAppExp (y, CInj TyInt));
+      "x y<int!>", CAppExp (AppExp (x, y), CInj TyInt);
+      "x (y<int!>)", AppExp (x, CAppExp (y, CInj TyInt));
     ]
 
   let suite = [

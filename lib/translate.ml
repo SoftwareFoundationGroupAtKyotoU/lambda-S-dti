@@ -16,6 +16,7 @@ module ITGL = struct
   (* Cast insertion translation *)
   let rec make_coercion (r, p) u1 u2 = match u1, u2 with
     | i1, i2 when is_base_type i1 && is_base_type i2 && i1 = i2 -> CId i1
+    | TyVar (i1, {contents = None}) as t, TyVar (i2, {contents = None}) when i1 = i2 -> CId t
     | TyFun (u11, u12), TyFun (u21, u22) -> CFun (make_coercion (r, neg p) u21 u11, make_coercion (r, p) u12 u22) 
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CInj g
@@ -121,7 +122,7 @@ module LS = struct
     | CFun (c1, c2) -> CFun (to_se_coercion c1, to_se_coercion c2)
     | CInj g -> CSeq (CId g, CInj g)
     | CProj (g, p) -> CSeq (CProj (g, p), CId g) 
-    | CSeq (c1, c2) -> Eval.LS1.compose (to_se_coercion c1) (to_se_coercion c2)
+    | CSeq (c1, c2) -> Eval.compose (to_se_coercion c1) (to_se_coercion c2)
     | CFail _ as c -> c 
 
   let rec to_se_exp = function

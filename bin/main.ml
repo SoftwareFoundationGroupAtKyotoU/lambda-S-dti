@@ -4,6 +4,7 @@ open Lambda_dti
 exception Compile_bad of string
 
 let debug = ref false
+let ls1 = ref false
 
 (*let programs = ref [] (*Stdlibのために、要変更*)*)
 
@@ -62,7 +63,7 @@ let opt_file = ref None
   | Typing.Type_error message -> raise @@ Typing.Type_error message
   end*)
 
-let rec read_eval_print lexbuf env tyenv (*kfunenvs kenv*) =
+let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
   (* Used in all modes *)
   let print f = fprintf std_formatter f in
   (* Used in debug mode *)
@@ -102,12 +103,8 @@ let rec read_eval_print lexbuf env tyenv (*kfunenvs kenv*) =
       let f = Translate.LS.translate tyenv f in
       print_debug "f: %a\n" Pp.LS1.pp_program f;
 
-      (* k-Normalization *)
-      (*print_debug "***** kNormal *****\n";
-      let kf, ku, kfunenvs = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
-      print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
-      assert (Typing.is_equal u ku);*)
-
+      let (env, kfunenvs, kenv) = 
+      if !ls1 then begin
       (* Evaluation *)
       print_debug "***** Eval *****\n";
       let env, x, v = Eval.LS1.eval_program env f ~debug:!debug in
@@ -115,17 +112,26 @@ let rec read_eval_print lexbuf env tyenv (*kfunenvs kenv*) =
         pp_print_string x
         Pp.pp_ty2 u
         Pp.LS1.pp_value v;
-
-      read_eval_print lexbuf env new_tyenv (*kfunenvs kenv*)
-
+      (env, kfunenvs, kenv)
+      end
+      else begin
+      (* k-Normalization *)
+      print_debug "***** kNormal *****\n";
+      let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
+      print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
       (* Evaluation on kNormalized term *)
-      (*print_debug "***** Eval *****\n";
+      print_debug "***** Eval *****\n";
       let kenv, kx, kv = Eval.KNorm.eval_program kenv kf ~debug:!debug in
       print_debug "k-Normal :: ";
       print_debug "%a : %a = %a\n"
         pp_print_string kx
-        Pp.pp_ty2 ku
-        Pp.KNorm.pp_value kv;*)
+        Pp.pp_ty2 u
+        Pp.KNorm.pp_value kv;
+      (env, kfunenvs, kenv)
+      end in
+      read_eval_print lexbuf env new_tyenv kfunenvs kenv
+
+
 
       (*match e, !opt_file with
         | Syntax.ITGL.Exp _, None -> 
@@ -167,21 +173,21 @@ let rec read_eval_print lexbuf env tyenv (*kfunenvs kenv*) =
       Utils.Lexing.flush_input lexbuf
     | Typing.Type_error message ->
       print "Type_error: %s\n" message
-    | Eval.Blame (r, p) -> begin
+    (* | Eval.Blame (r, p) -> begin
+        match p with
+        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
+        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
+      end *)
+    | Eval.KBlame (r, p) -> begin
         match p with
         | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
         | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
       end
-    (*| Eval.KBlame (r, p) -> begin
-        match p with
-        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
-        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
-      end*)
     | ToC.ToC_error message ->
       print "%s\n" message
   end;
   (match !opt_file with
-    | None -> (*programs := [];*) read_eval_print lexbuf env tyenv (*kfunenvs kenv*)
+    | None -> (*programs := [];*) read_eval_print lexbuf env tyenv kfunenvs kenv
     | Some _ ->())
 
 let start file =
@@ -199,9 +205,9 @@ let start file =
         lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = f};
         channel, lexbuf
   in
-  let env, tyenv, _, _(*kfunenvs, kenv*) = Stdlib.pervasives in
+  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives in
   try
-    read_eval_print lexbuf env tyenv (*kfunenvs kenv*)
+    read_eval_print lexbuf env tyenv kfunenvs kenv
   with
     | Lexer.Eof ->
       (* Exiting normally *)
@@ -225,6 +231,7 @@ let () =
   let file = ref None in
   let options = Arg.align [
       ("-d", Arg.Set debug, " Enable debug mode");
+      ("-LS1", Arg.Set ls1, " evaluate on LS1");
     ]
   in
   let parse_argv arg = match !file with

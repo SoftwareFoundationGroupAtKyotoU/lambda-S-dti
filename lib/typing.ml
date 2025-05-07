@@ -49,6 +49,26 @@ let type_of_binop = function
   | Plus | Minus | Mult | Div | Mod -> TyInt, TyInt, TyInt
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
 
+let rec type_of_coercion = function
+  | CInj g -> TyCoercion (g, TyDyn)
+  | CProj (g, _) -> TyCoercion (TyDyn, g)
+  | CFun (c1, c2) -> 
+    let u1 = type_of_coercion c1 in
+    let u2 = type_of_coercion c2 in
+    begin match u1, u2 with
+    | TyCoercion (u11, u12), TyCoercion (u21, u22) -> TyCoercion (TyFun (u12, u21), TyFun (u11, u22))
+    | _ -> raise @@ Type_bug "type-unmatch in Coercion function"
+    end 
+  | CId u -> TyCoercion (u, u)
+  | CSeq (c1, c2) ->
+    let u1 = type_of_coercion c1 in
+    let u2 = type_of_coercion c2 in
+    begin match u1, u2 with
+    | TyCoercion (u1, u2), TyCoercion (u2', u3) when u2 = u2' -> TyCoercion (u1, u3)
+    | _ -> raise @@ Type_bug "type-unmatch in Coercion sequence"
+    end 
+  | CFail _ -> assert false (* TODO *)
+
 let rec is_static_type = function
   | TyVar (_, { contents = Some u }) -> is_static_type u
   | TyFun (u1, u2) -> (is_static_type u1) && (is_static_type u2)
@@ -420,21 +440,6 @@ end
 module LS = struct
   open Syntax.LS
 
-  let rec type_of_coercion = function
-    | CInj g -> (g, TyDyn)
-    | CProj (g, _) -> (TyDyn, g)
-    | CFun (c1, c2) -> 
-      let u11, u12 = type_of_coercion c1 in
-      let u21, u22 = type_of_coercion c2 in
-      (TyFun (u12, u21), TyFun (u11, u22))
-    | CId u -> (u, u)
-    | CSeq (c1, c2) ->
-      let u11, u12 = type_of_coercion c1 in
-      let u21, u22 = type_of_coercion c2 in
-      if u12 = u21 then (u11, u22)
-      else raise @@ Type_bug "type-unmatch in Coercion sequence"
-    | CFail _ -> assert false (* TODO *)
-
   let rec type_of_exp env = function
     | Var (x, ys) -> begin
         try
@@ -485,14 +490,15 @@ module LS = struct
       end
     | CAppExp (f, c) ->
       let u = type_of_exp env f in 
-      let u1, u2 = type_of_coercion c in 
-      if u = u1 then
+      let u' = type_of_coercion c in 
+      begin match u' with
+      | TyCoercion (u1, u2) when u = u1 -> 
         if is_consistent u1 u2 then
           u2
         else
           raise @@ Type_bug "not consistent"
-      else
-        raise @@ Type_bug "invalid source type"
+      | _ -> raise @@ Type_bug "invalid source type"
+      end
     (*| CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
     | CastExp (r, f, u1, TyVar (_, { contents = Some u2 }), p) ->
       type_of_exp env @@ CastExp (r, f, u1, u2, p)

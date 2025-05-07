@@ -25,6 +25,7 @@ let rec pp_ty ppf = function
     fprintf ppf "%a -> %a"
       (with_paren (gt_ty u u1) pp_ty) u1
       pp_ty u2
+  | TyCoercion _ -> assert false (* TODO *)
 
 (** Pretty-printer for types. Type variables are renamed (e.g., 'a->'b). *)
 let pp_ty2 ppf u =
@@ -54,6 +55,7 @@ let pp_ty2 ppf u =
       fprintf ppf "%a -> %a"
         (with_paren (gt_ty u u1) pp_ty) u1
         pp_ty u2
+    | TyCoercion _ -> assert false (* TODO *)
   in pp_ty ppf u
 
 let gt_binop op1 op2 = match op1, op2 with
@@ -467,59 +469,52 @@ module KNorm = struct
         y
         pp_exp e1
         pp_exp e2
-    | AppExp (x, y) -> 
-      fprintf ppf "%s %s" x y
+    | AppExp (x, (y, z)) -> 
+      fprintf ppf "%s (%s, %s)" x y z
     | AppTy (x, _, tas) ->
       fprintf ppf "%s[%a]"
         x
         pp_print_tas tas
-    | CastExp (_, x, u1, u2, _) ->
-        fprintf ppf "%s: %a => %a"
+    | CAppExp (x, y) ->
+      fprintf ppf "%s<%s>" x y
+    | CSeqExp (x, y) -> 
+      fprintf ppf "%s;;%s" x y
+    | LetExp (x, e1, e2) as e ->
+        fprintf ppf "let %s = %a in %a"
           x
-          pp_ty u1
-          pp_ty u2
-    | LetExp (x, u, e1, e2) as e ->
-        fprintf ppf "let (%s:%a) = %a in %a"
-          x
-          pp_ty u
           (with_paren (gt_exp e e1) pp_exp) e1
           (with_paren (gte_exp e e2) pp_exp) e2
-    | LetRecExp (x, u, tvs, (y, u'), e1, e2) as e ->
-        fprintf ppf "let (%s:%a) = %afun (%s:%a) -> %a in %a"
+    | LetRecExp (x, tvs, (y, k), e1, e2) as e ->
+        fprintf ppf "let %s = %afun (%s, %s) -> %a in %a"
           x
-          pp_ty u
           pp_let_tyabses tvs
           y
-          pp_ty u'
+          k
           (with_paren (gt_exp e e1) pp_exp) e1
           (with_paren (gte_exp e e2) pp_exp) e2
+    | CoercionExp c ->
+      pp_coercion ppf c
 
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
-    | LetDecl (x, u, e) ->
-      fprintf ppf "let (%s:%a) = %a"
+    | LetDecl (x, e) ->
+      fprintf ppf "let %s = %a"
         x
-        pp_ty u
         pp_exp e
-    | LetRecDecl (x, u, tvs, (y, u'), e) ->
-        fprintf ppf "let (%s:%a) = %afun (%s:%a) -> %a"
+    | LetRecDecl (x, tvs, (y, k), e) ->
+        fprintf ppf "let %s = %afun (%s, %s) -> %a"
           x
-          pp_ty u
           pp_let_tyabses tvs
           y
-          pp_ty u'
+          k
           pp_exp e
-
-  let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t
 
   let rec pp_value ppf = function
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
     | FunV _ -> pp_print_string ppf "<fun>"
-    | Tagged (t, v) ->
-      fprintf ppf "%a: %a => ?"
-        pp_value v
-        pp_tag t
+    | CoerceV (v, c) -> fprintf ppf "%a<<%a>>"pp_value v pp_coercion c
+    | CoercionV c -> pp_coercion ppf c
 end
 
 module Cls = struct

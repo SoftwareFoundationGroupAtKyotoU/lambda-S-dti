@@ -20,6 +20,7 @@ type ty =
   | TyBool
   | TyUnit
   | TyFun of ty * ty
+  | TyCoercion of ty * ty
 and
 (* int value is used to identify type variables.
  * ty option ref value is used to implement instantiation.
@@ -303,12 +304,6 @@ module LS1 = struct
     | Exp of exp
     | LetDecl of id * tyvar list * exp
 
-  (*let tag_to_ty = function
-    | I -> TyInt
-    | B -> TyBool
-    | U -> TyUnit
-    | Ar -> TyFun (TyDyn, TyDyn)*)
-
   type value =
     | IntV of int
     | BoolV of bool
@@ -330,30 +325,25 @@ module KNorm = struct
     | Mod of id * id
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
-    | AppExp of id * id
+    | AppExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
-    | CastExp of range * id * ty * ty * polarity
-    | LetExp of id * ty * exp * exp
-    | LetRecExp of id * ty * tyvar list * (id * ty) * exp * exp
+    | CAppExp of id * id
+    | CSeqExp of id * id
+    | LetExp of id * exp * exp
+    | LetRecExp of id * tyvar list * (id * id) * exp * exp
+    | CoercionExp of coercion
 
   type program =
     | Exp of exp
-    | LetDecl of id * ty * exp
-    | LetRecDecl of id * ty * tyvar list * (id * ty) * exp
-
-  type tag = I | B | U | Ar
-
-  let tag_to_ty = function
-    | I -> TyInt
-    | B -> TyBool
-    | U -> TyUnit
-    | Ar -> TyFun (TyDyn, TyDyn)
+    | LetDecl of id * exp
+    | LetRecDecl of id * tyvar list * (id * id) * exp
 
   type value =
     | IntV of int
     | UnitV
-    | FunV of ((tyvar list * ty list) -> value -> value)
-    | Tagged of tag * value
+    | FunV of ((tyvar list * ty list) -> (value * value) -> value)
+    | CoerceV of value * coercion
+    | CoercionV of coercion
 end
 
 module Cls = struct

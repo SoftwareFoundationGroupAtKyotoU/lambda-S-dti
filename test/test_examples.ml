@@ -18,6 +18,7 @@ let run env tyenv program =
   assert (Typing.is_equal u u');
   let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
+  let f = Translate.LS.to_se f in
   let f = Translate.LS.translate tyenv f in
   try
     let env, _, v = Eval.LS1.eval_program env f in
@@ -44,9 +45,3 @@ let test_examples =
 let suite = [
   "test_examples">::: test_examples;
 ]
-
-(* 
-(fun x -> (x:?) 2) ((fun y -> y) :?);;
-
-(fun ((x: 'x1), k3) -> (let k4 = id{'x1};'x1!;;(? -> ?)?p;id{? -> ?} in x<k4>) (2<id{int};int!>, k3)) 
-(let k1 = ('x2?p;id{'x2})->(id{'x2};'x2!);(? -> ?)!;;'x1?p;id{'x1} in (fun ((y: 'x2), k2) -> y<k2>)<k1>, id{?}) *)
