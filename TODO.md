@@ -1,0 +1,56 @@
+- check all files
+  - [ ] Syntax.ml
+    - [x] types
+    - [ ] functions
+      - [ ] `is_d` is not defined completely (, but does it need?)
+    - [x] Environment
+    - [x] TV
+    - [x] ITGL
+      - [x] types
+      - [x] functions
+        - [x] Why does `tv_exp` need?
+    - [ ] LS
+      - [ ] functions
+        - [ ] `is_value` need?
+    - [ ] LS1
+    - [ ] KNorm
+    - [ ] Cls
+  - [ ] Utils.ml
+    - [x] Error
+    - [x] Format
+    - [ ] Lexing
+	    - [ ] Why is the `flush_input` function changed?
+    - [x] List
+  - [ ] Lexer.mll
+    - [ ] raise an error if a comment is not closed? (todo remaining from ldti implimentation)
+    - [x] others
+  - [x] Parser.mly
+  - [ ] Pp.ml
+    - [ ] functions
+    - [x] ITGL
+    - [ ] LS
+    - [ ] LS1
+    - [ ] KNorm
+    - [ ] Cls
+  - [ ] Typing.ml
+    - [ ] functions
+      - [ ] Why dose `tag_of_ty` need?
+      - [ ] `CFail` in `type_of_coercion`
+    - [x] ITGL
+    - [ ] LS
+    - [ ] make LS1?
+  - [ ] Translate.ml
+    - [ ] functions
+      - [ ] `tag_of_ty` need?
+    - [ ] ITGL
+      - have not understand how to translate `Var`
+    - [ ] LS
+  
+- define the composition function in eval
+- change the tyvar structure (tyvar + blame label) 
+  - this change may be applied after LS1
+- add `X!`, `X?p`, and `?pX!` 
+- compiler
+  - ldti-compiler does not support some polymorphic function declarations.
+    - If you declare `let f x :'a = x` and want to calculate `f (); f 3`, then the compile process fails because of `Type_error: cannot solve a constraint: unit ~.~ int`.
+    - This is why `closure_tyvars_let_decl` needs (but ldti implementation has bug with this)

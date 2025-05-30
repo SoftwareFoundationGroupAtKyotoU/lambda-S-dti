@@ -10,28 +10,75 @@ exception Eval_bug of string
 
 let subst_type = Typing.subst_type
 
+(* let type_of_tag = Typing.type_of_tag *)
+
+let tag_of_ty = Typing.tag_of_ty
+
 let nu_to_fresh = function
 | Ty u -> u
 | TyNu -> Typing.fresh_tyvar ()
 
 let rec subst_coercion s = function
-| CInj u -> CInj (subst_type s u)
-| CProj (u, rp) -> CProj (subst_type s u, rp)
+| CInj _ | CProj _ as c -> c
+(* | CTvInj _ | CTvProj _ | CTvProhInj _ -> raise @@ Eval_bug "coercion tyvar yet" *)
 | CFun (c1, c2) -> CFun (subst_coercion s c1, subst_coercion s c2)
 | CId u -> CId (subst_type s u)
 | CSeq (c1, c2) -> CSeq (subst_coercion s c1, subst_coercion s c2)
-| CFail (u1, rp, u2) -> CFail (subst_type s u1, rp, subst_type s u2)
+| CFail _ as c -> c
 
 let rec compose ?(debug=false) c1 c2 = 
   if debug then fprintf err_formatter "compose <-- %a；%a\n" Pp.pp_coercion c1 Pp.pp_coercion c2;
   let compose = compose ~debug:debug in
   match c1, c2 with
   | CId TyDyn, c2 -> c2
-  | CSeq (CProj (g, p), c1), c2 -> CSeq (CProj (g, p), compose c1 c2)
+  | CSeq (CProj (t, p), c1), c2 -> CSeq (CProj (t, p), compose c1 c2)
   | CSeq (_, CInj _) as c1, CId TyDyn -> c1
   | CFail _ as c1, _ -> c1
-  | CSeq (c1, CInj g), CSeq (CProj (g', p), c2) ->
-    begin match g, g' with
+  | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
+    begin match t, t' with
+    | I, I | B, B | U, U | Ar, Ar -> compose c1 c2
+    (* | V (a1, ({contents = None} as x1)), V (a2, {contents = None} as tv2) ->
+      if a1 = a2 then compose c1 c2
+      else begin 
+        if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
+          Pp.pp_tag t
+          Pp.pp_tag t';
+        x1 := Some (TyVar tv2); compose c1 c2
+      end
+    | (I | B | U) as g, (V (_, ({contents = None} as x)) as v) | (V (_, ({contents = None} as x)) as v), (I | B | U as g) -> 
+      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
+        Pp.pp_tag v
+        Pp.pp_tag g;
+      let u = type_of_tag g in
+      x := Some u;
+      compose c1 c2
+    | Ar, (V (_, ({contents = None} as x)) as v) | (V (_, ({contents = None} as x)) as v), Ar ->
+      let u1 = Typing.fresh_tyvar () in
+      let u2 = Typing.fresh_tyvar () in
+      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
+          Pp.pp_tag v
+          Pp.pp_ty (TyFun (u1, u2));
+      x := Some (TyFun (u1, u2));
+      compose (compose c1 (CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2)))) c2
+    | V (_, {contents = Some u}), _ -> 
+      begin match u with
+      | TyInt | TyBool | TyUnit | TyVar _ as u -> compose (CSeq (c1, CInj (tag_of_ty u))) (CSeq (CProj (t', p), c2))
+      | TyFun (u1, u2) ->
+        let c = CSeq (CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2)), CInj Ar) in
+        compose (CSeq (c1, c)) (CSeq (CProj (t', p), c2))
+      | _ -> raise @@ Eval_bug "cannot compose"
+      end
+    | _, V (_, {contents = Some u}) -> 
+      begin match u with
+      | TyInt | TyBool | TyUnit | TyVar _ as u -> compose (CSeq (c1, CInj t)) (CSeq (CProj (tag_of_ty u, p), c2))
+      | TyFun (u1, u2) ->
+        let c = CSeq (CProj (Ar, p), CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2))) in
+        compose (CSeq (c1, CInj t)) (CSeq (c, c2))
+      | _ -> raise @@ Eval_bug "cannot compose"
+      end *)
+    | _ -> CFail (t, p, t')
+    end
+    (* begin match g, g' with
     | g, g' when g = g' -> compose c1 c2
     | TyFun (TyDyn, TyDyn), (TyVar (_, ({contents = None} as x)) as u') ->
       let u1 = Typing.fresh_tyvar () in
@@ -66,9 +113,9 @@ let rec compose ?(debug=false) c1 c2 =
     | g, TyVar (_, {contents = Some u}) ->
       compose (CSeq (c1, CInj g)) (CSeq (CProj (u, p), c2))
     | _ ->  CFail (g, p, g')
-    end
+    end *)
   | _, (CFail _ as c2) (*when is_g c1*) -> c2
-  | c1, CSeq (c2, CInj g) (*when is_g c1*) -> CSeq (compose c1 c2, CInj g)
+  | c1, CSeq (c2, CInj t) (*when is_g c1*) -> CSeq (compose c1 c2, CInj t)
   | CId _, c2 -> c2
   | c1, CId _ -> c1
   | CFun (s, t), CFun (s', t') ->
@@ -205,7 +252,7 @@ module LS1 = struct
     | v -> match c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
-      | c when is_d c -> CoerceV (v, Typing.ITGL.normalize_coercion c)
+      | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.LS1.pp_value v)
 
   let eval_program ?(debug=false) env p =
@@ -362,7 +409,7 @@ module KNorm = struct
     | v -> match c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
-      | c when is_d c -> CoerceV (v, Typing.ITGL.normalize_coercion c)
+      | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm.pp_value v)
 
   let eval_program ?(debug=false) kenv = function
@@ -448,3 +495,41 @@ eval <-- z + 1<k1>
 eval <-- z + 1
 eval <-- z
 eval <-- 1 *)
+
+(* (fun (f:?) -> f 2) ((fun x -> x) ((fun (y:?) -> y) (fun z -> z + 1)))
+
+eval <-- (fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)) ((fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!), id{?})
+eval <-- fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
+eval <-- (fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!)
+eval <-- fun ((x: 'x1), k3) -> x<k3>
+eval <-- (fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1})
+eval <-- fun ((y: ?), k2) -> y<k2>
+eval <-- (fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>
+eval <-- fun ((z: int), k1) -> z + 1<k1>
+eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!
+coerce <-- <fun><(int?p;id{int})->(id{int};int!);(? -> ?)!>
+eval <-- 'x1?p;id{'x1}
+eval <-- y<k2>
+eval <-- y
+eval <-- k2
+coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(? -> ?)!>><'x1?p;id{'x1}>
+compose <-- (int?p;id{int})->(id{int};int!);(? -> ?)!；'x1?p;id{'x1}
+('x1 := 'x3 -> 'x4, 'x1! := id{'x3};'x3!->'x4?p;id{'x4};(?->?)!, 'x1?p := id{'x3};'x3!->'x4?p;id{'x4};(?->?)!)
+compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4}
+coerce <-- <fun><(int?p;id{int})->(id{int};int!)>
+eval <-- id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!
+eval <-- x<k3>
+eval <-- x
+eval <-- k3
+coerce <-- <fun><<(int?p;id{int})->(id{int};int!)>><id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>
+compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!
+compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4}
+coerce <-- <fun><(int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>
+eval <-- id{?}
+eval <-- (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
+eval <-- f<(? -> ?)?p;id{? -> ?}>
+eval <-- f
+eval <-- (? -> ?)?p;id{? -> ?}
+coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>><(? -> ?)?p;id{? -> ?}>
+compose <-- (int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!；(? -> ?)?p;id{? -> ?}
+compose <-- (int?p;id{int})->(id{int};int!);(id{'x3};'x3!)->('x4?p;id{'x4});(? -> ?)!；(? -> ?)?p;id{? -> ?} *)

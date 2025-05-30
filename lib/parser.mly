@@ -5,10 +5,12 @@ open Utils.Error
 
 let tyvenv = ref Environment.empty
 
+(* for function definition *)
 let param_to_fun r (x, u) e = match u with
 | None -> FunIExp (r, x.value, Typing.fresh_tyvar (), e)
 | Some u -> FunEExp (r, x.value, u, e)
 
+(* for recursive function definition *)
 let param_to_fun_ty r (x, u1) (e, u) = match u1 with
 | None ->
     let u1 = Typing.fresh_tyvar () in

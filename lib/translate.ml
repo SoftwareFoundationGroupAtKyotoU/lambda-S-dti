@@ -1,49 +1,87 @@
+open Pp
 open Syntax
 open Format
 
 exception Translation_bug of string
 
+(* let type_of_tag = Typing.type_of_tag *)
+
+let tag_of_ty = Typing.tag_of_ty
+
+(* These functions (dom, cod, meet) only can be used for normalized types *)
+let dom = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "dom: instantiated tyvar is given"
+  | TyFun (u1, _) -> u1
+  | TyDyn -> TyDyn
+  | _ as u ->
+    raise @@ Translation_bug (asprintf "failed to match: dom(%a)" pp_ty u)
+
+let cod = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "cod: instantiated tyvar is given"
+  | TyFun (_, u2) -> u2
+  | TyDyn -> TyDyn
+  | _ as u ->
+    raise @@ Translation_bug (asprintf "failed to match: cod(%a)" pp_ty u)
+
+let rec meet u1 u2 = match u1, u2 with
+  | TyVar (_, { contents = Some _ }), _
+  | _, TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "meet: instantiated tyvar is given"
+  | TyBool, TyBool -> TyBool
+  | TyInt, TyInt -> TyInt
+  | TyUnit, TyUnit -> TyUnit
+  | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
+  | TyDyn, u | u, TyDyn -> u
+  | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
+  | _ ->
+    raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
+
 module ITGL = struct
   open Syntax.ITGL
 
-  let closure_tyvars_let_decl e u1 env =
+  let closure_tyvars_let_decl1 e u1 env =
     TV.elements @@ TV.diff (TV.union (tv_exp e) (ftv_ty u1)) (ftv_tyenv env)
 
   let closure_tyvars2 w1 env u1 v1 =
     let ftvs = TV.big_union [ftv_tyenv env; ftv_ty u1; ftv_exp v1] in
     TV.elements @@ TV.diff (Syntax.LS.ftv_exp w1) ftvs
+  
+  let closure_tyvars_let_decl2 w1 env u1 v1 =
+    let ftvs = TV.big_union [ftv_tyenv env; ftv_ty u1; tv_exp v1] in
+    TV.elements @@ TV.diff (Syntax.LS.ftv_exp w1) ftvs
 
   (* Cast insertion translation *)
-  let rec make_coercion (r, p) u1 u2 = match u1, u2 with
+  let rec make_s_coercion (r, p) u1 u2 = match u1, u2 with
     | i1, i2 when is_base_type i1 && is_base_type i2 && i1 = i2 -> CId i1
     | TyVar (i1, {contents = None}) as t, TyVar (i2, {contents = None}) when i1 = i2 -> CId t
-    | TyFun (u11, u12), TyFun (u21, u22) -> CFun (make_coercion (r, neg p) u21 u11, make_coercion (r, p) u12 u22) 
+    | TyFun (u11, u12), TyFun (u21, u22) -> CFun (make_s_coercion (r, neg p) u21 u11, make_s_coercion (r, p) u12 u22) 
     | TyDyn, TyDyn -> CId TyDyn
-    | g, TyDyn when is_ground g -> CInj g
-    | TyFun _ as u, TyDyn -> CSeq (make_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj (TyFun (TyDyn, TyDyn)))
-    | TyVar _ as u, TyDyn -> CInj u
-    | TyDyn, g when is_ground g -> CProj (g, (r, p))
-    | TyDyn, (TyFun _ as u) -> CSeq (CProj (TyFun (TyDyn, TyDyn), (r, p)), make_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
-    | TyDyn, (TyVar _ as u) -> CProj (u, (r, p))
+    | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
+    | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
+    (* | TyVar tv, TyDyn -> CTvInj tv *)
+    | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
+    | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
+    (* | TyDyn, TyVar tv -> CTvProj (tv, (r, p)) *)
     | _ -> Pp.pp_ty err_formatter u1; Pp.pp_ty err_formatter u1; raise @@ Translation_bug "cannot exist such coercion"
 
   let coerce f r u1 u2 = 
     if u1 = u2 then f (* Omit identity cast for better performance *)
-    else LS.CAppExp (f, make_coercion (r, Pos) u1 u2)
+    else LS.CAppExp (f, make_s_coercion (r, Pos) u1 u2)
 
   let rec translate_exp env = function
-    | Var (_, x, ys) -> begin
-        try
-          let TyScheme (xs, u) = Environment.find x env in
-          let ftvs = ftv_ty u in
-          let s = Utils.List.zip xs !ys in
-          let ys = List.map (fun (x, u) -> if TV.mem x ftvs then Ty u else TyNu) s
-          in
-          let ys = ys @ Utils.List.repeat TyNu (List.length xs - List.length ys) in
-          let u = Typing.subst_type (List.filter (fun (x, _) -> TV.mem x ftvs) s) u in
-          LS.Var (x, ys), u
-        with Not_found ->
-          raise @@ Translation_bug "variable not found during cast-inserting translation"
+    | Var (_, x, ys) ->
+      begin try
+        let TyScheme (xs, u) = Environment.find x env in
+        let ftvs = ftv_ty u in
+        let s = Utils.List.zip xs !ys in
+        let ys = List.map (fun (x, u) -> if TV.mem x ftvs then Ty u else TyNu) s in
+        let ys = ys @ Utils.List.repeat TyNu (List.length xs - List.length ys) in
+        let u = Typing.subst_type (List.filter (fun (x, _) -> TV.mem x ftvs) s) u in
+        LS.Var (x, ys), u
+      with Not_found ->
+        raise @@ Translation_bug "variable not found during cast-inserting translation"
       end
     | IConst (_, i) -> LS.IConst i, TyInt
     | BConst (_, b) -> LS.BConst b, TyBool
@@ -66,7 +104,7 @@ module ITGL = struct
       let f2, u2 = translate_exp env e2 in
       let f3, u3 = translate_exp env e3 in
       let r1, r2, r3 = range_of_exp e1, range_of_exp e2, range_of_exp e3 in
-      let u = Typing.meet u2 u3 in
+      let u = meet u2 u3 in
       LS.IfExp (coerce f1 r1 u1 TyBool, coerce f2 r2 u2 u, coerce f3 r3 u3 u), u
     | FunEExp (_, x, u1, e)
     | FunIExp (_, x, u1, e) ->
@@ -84,7 +122,7 @@ module ITGL = struct
       let f1, u1 = translate_exp env e1 in
       let f2, u2 = translate_exp env e2 in
       let r1, r2 = range_of_exp e1, range_of_exp e2 in
-      LS.AppExp (coerce f1 r1 u1 (TyFun (Typing.dom u1, Typing.cod u1)), coerce f2 r2 u2 (Typing.dom u1)), Typing.cod u1
+      LS.AppExp (coerce f1 r1 u1 (TyFun (dom u1, cod u1)), coerce f2 r2 u2 (dom u1)), cod u1
     | LetExp (_, x, e1, e2) when Typing.ITGL.is_value env e1 ->
       let f1, u1 = translate_exp env e1 in
       let xs = Typing.ITGL.closure_tyvars1 u1 env e1 in
@@ -102,28 +140,32 @@ module ITGL = struct
     | Exp e ->
       let f, u = translate_exp env e in
       env, LS.Exp f, u
-    | LetDecl (x, e) when Typing.ITGL.is_value env e ->
-      let f, u = translate_exp env e in
-      let xs = closure_tyvars_let_decl e u env in
-      let ys = closure_tyvars2 f env u e in
-      let env = Environment.add x (TyScheme (xs @ ys, u)) env in
-      env, LS.LetDecl (x, xs @ ys, f), u
     | LetDecl (x, e) ->
       let f, u = translate_exp env e in
-      let env = Environment.add x (tysc_of_ty u) env in
-      env, LS.LetDecl (x, [], f), u
+      let tvs = 
+        if Typing.ITGL.is_value env e then
+          let xs = closure_tyvars_let_decl1 e u env in
+          let ys = closure_tyvars_let_decl2 f env u e in
+          xs @ ys
+        else 
+          []
+      in let env = Environment.add x (TyScheme (tvs, u)) env in
+      env, LS.LetDecl (x, tvs, f), u
 end
 
 module LS = struct
   open Syntax.LS
 
-  let rec to_se_coercion = function
+  (* let rec to_se_coercion = function
     | CId u -> CId u (* TODO : uが関数型のときを考える，下のCIdにもto_se_coercionがつくかも，これで大丈夫なはず...？ *)
     | CFun (c1, c2) -> CFun (to_se_coercion c1, to_se_coercion c2)
-    | CInj g -> CSeq (CId g, CInj g)
-    | CProj (g, p) -> CSeq (CProj (g, p), CId g) 
+    (* | CInj (V (_, {contents = None})) as c -> c *)
+    | CInj t -> CSeq (CId (type_of_tag t), CInj t)
+    (* | CProj (V (_, {contents = None}), _) as c -> c *)
+    | CProj (t, p) -> CSeq (CProj (t, p), CId (type_of_tag t)) 
     | CSeq (c1, c2) -> Eval.compose (to_se_coercion c1) (to_se_coercion c2)
-    | CFail _ as c -> c 
+    | CFail _ as c -> c
+    (* | _ -> raise @@ Translation_bug "to_se_coercion bug" *)
 
   let rec to_se_exp = function
     | CAppExp (f, c) -> CAppExp (to_se_exp f, to_se_coercion c)
@@ -137,7 +179,7 @@ module LS = struct
 
   let to_se = function
     | Exp e -> Exp (to_se_exp e)
-    | LetDecl (x, ys, e) -> LetDecl (x, ys, to_se_exp e)
+    | LetDecl (x, ys, e) -> LetDecl (x, ys, to_se_exp e) *)
 
   let fresh_CVar =
     let counter = ref 0 in
@@ -150,10 +192,10 @@ module LS = struct
 
   let rec translate_exp env = function
     | Var (x, ys) -> LS1.Var (x, ys)
-    | IConst i -> LS1.IConst i
-    | BConst b -> LS1.BConst b
+    | IConst i -> LS1.IConst i(*, TyInt*)
+    | BConst b -> LS1.BConst b(*, TyBool*)
     | UConst -> LS1.UConst
-    | FunExp (x, u, f) -> 
+    | FunExp (x, u, f) ->
       let env = Environment.add x (tysc_of_ty u) env in
       let id, k = fresh_CVar () in 
       LS1.FunExp ((x, u), id, translate_exp_k env k f)

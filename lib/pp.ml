@@ -113,19 +113,41 @@ let pp_print_tas ppf tas =
   fprintf ppf "%a"
     pp_list tas
 
-let rec pp_coercion ppf c = match c with
-  | CInj (TyFun (TyDyn, TyDyn) as u) -> (* TODO : もう少し簡略化 *)
-    fprintf ppf "(%a)!"
-      pp_ty u
-  | CInj u -> 
+let pp_tag ppf = function
+  | I -> pp_print_string ppf "int"
+  | B -> pp_print_string ppf "bool"
+  | U -> pp_print_string ppf "unit"
+  | Ar -> pp_print_string ppf "(? -> ?)"
+
+let rec pp_coercion ppf c = match c with (* TODO : もう少し簡略化 *)
+  (* | CInj (V (_, {contents = Some (TyFun (u1, u2))})) ->
+    fprintf ppf "(id{%a};%a!->%a?p;id{%a});(?->?)!"
+      pp_ty u1
+      pp_ty u1
+      pp_ty u2
+      pp_ty u2 *)
+  | CInj t -> 
     fprintf ppf "%a!"
-      pp_ty u
-  | CProj ((TyFun (TyDyn, TyDyn) as u), _) ->
-    fprintf ppf "(%a)?p"
-      pp_ty u
-  | CProj (u, _) ->
+      pp_tag t
+  (* | CProj (V (_, {contents = Some (TyFun (u1, u2))}), _) ->
+    fprintf ppf "(?->?)?p;(id{%a};%a!->%a?p;id{%a})"
+      pp_ty u1
+      pp_ty u1
+      pp_ty u2
+      pp_ty u2 *)
+  | CProj (t, _) ->
     fprintf ppf "%a?p"
-      pp_ty u
+      pp_tag t
+  (* | CTvInj (_, {contents = None} as tv) ->
+    fprintf ppf "%a!"
+      pp_ty (TyVar tv)
+  | CTvProj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "%a?p"
+      pp_ty (TyVar tv)
+  | CTvProjInj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "?p%a!"
+      pp_ty (TyVar tv)
+  | CTvInj _ | CTvProj _ | CTvProjInj _ -> (* TODO *) raise @@ Syntax_error  *)
   | CFun (CSeq _ as c1, (CSeq _ as c2)) ->
     fprintf ppf "(%a)->(%a)"
       pp_coercion c1
@@ -149,10 +171,10 @@ let rec pp_coercion ppf c = match c with
     fprintf ppf "%a;%a"
       pp_coercion c1
       pp_coercion c2
-  | CFail (u1, _, u2) ->
+  | CFail (t1, _, t2) ->
     fprintf ppf "⊥{%a,p,%a}"
-      pp_ty u1
-      pp_ty u2
+      pp_tag t1
+      pp_tag t2
 
 module ITGL = struct
   open Syntax.ITGL

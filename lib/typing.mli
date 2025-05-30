@@ -6,12 +6,6 @@ exception Type_error of string
 (** Returns a fresh type variable. *)
 val fresh_tyvar : unit -> ty
 
-val dom : ty -> ty
-
-val cod : ty -> ty
-
-val meet : ty -> ty -> ty
-
 val type_of_binop : binop -> ty * ty * ty
 
 val is_equal : ty -> ty -> bool
@@ -24,6 +18,10 @@ val subst_type : substitutions -> ty -> ty
 
 val tyarg_to_ty : Syntax.tyarg -> ty
 
+val type_of_tag : tag -> ty
+
+val tag_of_ty : ty -> tag
+
 module ITGL : sig
   open Syntax.ITGL
 
@@ -34,7 +32,7 @@ module ITGL : sig
 
   val normalize : tysc Environment.t -> program -> ty -> (tysc Environment.t * program * ty)
   val normalize_type : ty -> ty
-  val normalize_coercion : coercion -> coercion
+  (* val normalize_coercion : coercion -> coercion *)
 end
 
 module LS : sig

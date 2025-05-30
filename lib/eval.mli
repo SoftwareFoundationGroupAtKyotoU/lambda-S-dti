@@ -8,6 +8,8 @@ exception Eval_bug of string
 
 val compose : ?debug:bool -> coercion -> coercion -> coercion
 
+val tag_of_ty : ty -> tag
+
 module LS1 : sig
   open Syntax.LS1
   

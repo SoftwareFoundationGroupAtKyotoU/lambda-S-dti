@@ -1,5 +1,5 @@
 open Format
-open Lambda_dti
+open Lambda_S1_dti
 
 exception Compile_bad of string
 
@@ -87,6 +87,7 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
        * normalized input *)
       let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
+      
 
       (* Translation *)
       print_debug "***** Cast-insertion *****\n";
@@ -96,11 +97,11 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       assert (Typing.is_equal u u');
       let u'' = Typing.LS.type_of_program tyenv f in
       assert (Typing.is_equal u u'');
-      let f = Translate.LS.to_se f in
+      (* let f = Translate.LS.to_se f in *)
       print_debug "f: %a\n" Pp.LS.pp_program f;
       let u''' = Typing.LS.type_of_program tyenv f in
       assert (Typing.is_equal u u''');
-      let f = Translate.LS.translate tyenv f in
+      (*let f = Translate.LS.translate tyenv f in
       print_debug "f: %a\n" Pp.LS1.pp_program f;
 
       let (env, kfunenvs, kenv) = 
@@ -128,10 +129,8 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
         Pp.pp_ty2 u
         Pp.KNorm.pp_value kv;
       (env, kfunenvs, kenv)
-      end in
-      read_eval_print lexbuf env new_tyenv kfunenvs kenv
-
-
+      end in *)
+      read_eval_print lexbuf env new_tyenv kfunenvs kenv (* TODO: new_tyenv need? *)
 
       (*match e, !opt_file with
         | Syntax.ITGL.Exp _, None -> 

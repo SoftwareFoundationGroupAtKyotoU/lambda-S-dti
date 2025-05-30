@@ -2,7 +2,7 @@ open Format
 
 open OUnit2
 
-open Lambda_dti
+open Lambda_S1_dti
 open Syntax
 open Pp
 
@@ -81,13 +81,13 @@ module LS = struct
       "x * y + z * x", BinOp (Plus, BinOp (Mult, x, y), BinOp (Mult, z, x));
       "(x + y) * (z + x)", BinOp (Mult, BinOp (Plus, x, y), BinOp (Plus, z, x));
       "(fun (x: ?) -> x)<(? -> ?)!>",
-      CAppExp (FunExp ("x", TyDyn, x), CInj (TyFun (TyDyn, TyDyn)));
-      "x<int!>", CAppExp (x, CInj TyInt);
-      "x<int!><bool?p>", CAppExp (CAppExp (x, CInj TyInt), CProj (TyBool, (r, Pos)));
+      CAppExp (FunExp ("x", TyDyn, x), CInj Ar);
+      "x<int!>", CAppExp (x, CInj I);
+      "x<int!><bool?p>", CAppExp (CAppExp (x, CInj I), CProj (B, (r, Pos)));
       "(fun (x: ?) -> x) (fun (y: ?) -> y)",
       AppExp (FunExp ("x", TyDyn, x), FunExp ("y", TyDyn, y));
-      "x y<int!>", CAppExp (AppExp (x, y), CInj TyInt);
-      "x (y<int!>)", AppExp (x, CAppExp (y, CInj TyInt));
+      "x y<int!>", CAppExp (AppExp (x, y), CInj I);
+      "x (y<int!>)", AppExp (x, CAppExp (y, CInj I));
     ]
 
   let suite = [

@@ -21,20 +21,21 @@ type ty =
   | TyUnit
   | TyFun of ty * ty
   | TyCoercion of ty * ty
-and
+and tyvar = int * ty option ref
 (* int value is used to identify type variables.
  * ty option ref value is used to implement instantiation.
  * Some u means this variable is instantiated with u. *)
-  tyvar = int * ty option ref
-
+  
 type tysc = TyScheme of tyvar list * ty
 
-let tysc_of_ty u = TyScheme ([], u)
+(* creates monomorphic typescheme *)
+let tysc_of_ty u = TyScheme ([], u) 
 
 (** Returns true if the given argument is a ground type. Othewise returns false. *)
-let is_ground = function
-  | TyInt | TyBool | TyUnit -> true
-  | TyFun (u1, u2) when u1 = TyDyn && u2 = TyDyn -> true
+let rec is_ground = function
+  | TyInt | TyBool | TyUnit -> true (* base type *)
+  | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
+  | TyVar (_, { contents = Some u }) -> is_ground u
   | _ -> false
 
 let rec is_base_type = function
@@ -42,24 +43,19 @@ let rec is_base_type = function
   | TyVar (_, { contents = Some u }) -> is_base_type u
   | _ -> false
 
-  let rec is_consistent u1 u2 = match u1, u2 with
+let rec is_consistent u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->
     is_consistent u1 u2
-  | TyDyn, TyDyn
-  | TyBool, TyBool
-  | TyInt, TyInt
-  | TyUnit, TyUnit
-  | _, TyDyn
-  | TyDyn, _ -> true
+  | TyBool, TyBool | TyInt, TyInt | TyUnit, TyUnit -> true
   | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
+  | TyDyn, _ | _, TyDyn -> true
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_consistent u11 u21) && (is_consistent u12 u22)
   | _ -> false
 
 (* Set of type variables used for let polymorphism *)
-
-(** Module for a set of type variables. *)
+(* Module for a set of type variables. *)
 module TV = struct
   include Set.Make (
     struct
@@ -72,7 +68,7 @@ end
 
 (** Returns a set of free type variables in a given type. *)
 let rec ftv_ty: ty -> TV.t = function
-  | TyVar (_, { contents = None } as x) -> TV.singleton x
+  | TyVar (_, { contents = None } as tv) -> TV.singleton tv
   | TyVar (_, { contents = Some u }) -> ftv_ty u
   | TyFun (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
   | _ -> TV.empty
@@ -90,40 +86,37 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Ar | V of tyvar
-
-(* type coercion =
-  | CInj of tag
-  | CProj of tag * (range * polarity)
-  | CFun of coercion * coercion
-  | CId of ty
-  | CSeq of coercion * coercion
-  | CFail of tag * (range * polarity) * tag *)
+type tag = I | B | U | Ar
 
 type coercion =
-  | CInj of ty
-  | CProj of ty * (range * polarity)
+  | CInj of tag
+  | CProj of tag * (range * polarity)
+  (* | CTvInj of tyvar
+  | CTvProj of tyvar * (range * polarity)
+  | CTvProjInj of tyvar * (range * polarity) *)
   | CFun of coercion * coercion
   | CId of ty
   | CSeq of coercion * coercion
-  | CFail of ty * (range * polarity) * ty
+  | CFail of tag * (range * polarity) * tag
 
 let is_d = function
   | CSeq (CId u, CInj _) when u <> TyDyn -> true
   | CSeq (CFun _, CInj _)
-  | CFun _ -> true
+  (* | CTvInj (_, {contents = None})  *)
+  | CFun _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
   | _ -> false
 
 let rec ftv_coercion = function
-  | CInj u -> ftv_ty u
-  | CProj (u, _) -> ftv_ty u
+  | CInj _ | CProj _ -> TV.empty
+  (* | CTvInj tv | CTvProj tv | CTvProjInj tv -> TV.singleton tv *)
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CFail (u1, _, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
+  | CFail _ -> TV.empty
 
 (** Syntax of the surface language, the ITGL with extensions. *)
 module ITGL = struct
+  (* for typing *)
   type constr =
     | CEqual of ty * ty
     | CConsistent of ty * ty
@@ -158,6 +151,7 @@ module ITGL = struct
     | AppExp (r, _, _)
     | LetExp (r, _, _, _) -> r
 
+  (* for polymorphic let declaration *)
   let rec tv_exp: exp -> TV.t = function
     | Var _
     | IConst _

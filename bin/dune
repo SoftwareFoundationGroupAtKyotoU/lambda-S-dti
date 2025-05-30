@@ -1,7 +1,7 @@
 (executable
   (name main)
-  (libraries lambda_dti))
+  (libraries lambda_S1_dti))
 
 (install
   (section bin)
-  (files (main.exe as ldti)))
+  (files (main.exe as lS1dti)))

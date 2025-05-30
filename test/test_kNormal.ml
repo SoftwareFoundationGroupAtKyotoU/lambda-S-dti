@@ -2,7 +2,7 @@ open Format
 
 open OUnit2
 
-open Lambda_dti
+open Lambda_S1_dti
 open Syntax
 
 let test_cases = List.map (fun l -> List.map (fun (a, _, _, d) -> (a, d)) l) Test_cases.tests
@@ -18,7 +18,7 @@ let run tyenv kfunenvs kenv program =
   assert (Typing.is_equal u u');
   let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
-  let f = Translate.LS.to_se f in
+  (* let f = Translate.LS.to_se f in *)
   let f = Translate.LS.translate tyenv f in
   let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
   try
