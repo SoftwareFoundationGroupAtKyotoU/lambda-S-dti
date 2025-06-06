@@ -90,18 +90,16 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       
 
       (* Translation *)
-      print_debug "***** Cast-insertion *****\n";
+      print_debug "***** Coercion-insertion *****\n";
       let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in
       print_debug "f: %a\n" Pp.LS.pp_program f;
       print_debug "U: %a\n" Pp.pp_ty u';
       assert (Typing.is_equal u u');
       let u'' = Typing.LS.type_of_program tyenv f in
       assert (Typing.is_equal u u'');
-      (* let f = Translate.LS.to_se f in *)
       print_debug "f: %a\n" Pp.LS.pp_program f;
-      let u''' = Typing.LS.type_of_program tyenv f in
-      assert (Typing.is_equal u u''');
-      (*let f = Translate.LS.translate tyenv f in
+      let f(*, u'''*) = Translate.LS.translate tyenv f in
+      (* assert (Typing.is_equal u u'''); *)
       print_debug "f: %a\n" Pp.LS1.pp_program f;
 
       let (env, kfunenvs, kenv) = 
@@ -129,7 +127,7 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
         Pp.pp_ty2 u
         Pp.KNorm.pp_value kv;
       (env, kfunenvs, kenv)
-      end in *)
+      end in
       read_eval_print lexbuf env new_tyenv kfunenvs kenv (* TODO: new_tyenv need? *)
 
       (*match e, !opt_file with
@@ -172,11 +170,11 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       Utils.Lexing.flush_input lexbuf
     | Typing.Type_error message ->
       print "Type_error: %s\n" message
-    (* | Eval.Blame (r, p) -> begin
+    | Eval.Blame (r, p) -> begin
         match p with
         | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
         | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
-      end *)
+      end
     | Eval.KBlame (r, p) -> begin
         match p with
         | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
@@ -239,3 +237,35 @@ let () =
   in
   Arg.parse options parse_argv usage;
   start !file
+
+(* let f (x:?->?) = x 4 in 
+(
+  (
+    (
+      (
+        ( 
+          (
+            (
+              (
+                (
+                  (f:'a):?
+                ):'b
+              ):?
+            ):'c
+          )
+          (
+            (
+              (
+                (
+                  ( 
+                    ((fun x -> x):?):'d
+                  ):?
+                ):'e
+              ):?
+            ):'f
+          ) 
+        ):?
+      ):'g
+    ):?
+  )(*:'h*)
+);; *)

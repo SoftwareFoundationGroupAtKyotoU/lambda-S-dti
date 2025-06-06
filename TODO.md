@@ -3,6 +3,9 @@
     - [x] types
     - [ ] functions
       - [ ] `is_d` is not defined completely (, but does it need?)
+      - [ ] `type_of_tag` here?
+      - [ ] `tag_of_ty` here?
+      - [ ] `normalize_coercion` here?
     - [x] Environment
     - [x] TV
     - [x] ITGL
@@ -27,6 +30,7 @@
   - [x] Parser.mly
   - [ ] Pp.ml
     - [ ] functions
+      - [ ] `pp_coercion`
     - [x] ITGL
     - [ ] LS
     - [ ] LS1
@@ -45,11 +49,10 @@
     - [ ] ITGL
       - have not understand how to translate `Var`
     - [ ] LS
-  
-- define the composition function in eval
+- [x] add `X!`, `X?p`, and `?pX!` 
+  - [x] define the composition function in eval
 - change the tyvar structure (tyvar + blame label) 
   - this change may be applied after LS1
-- add `X!`, `X?p`, and `?pX!` 
 - compiler
   - ldti-compiler does not support some polymorphic function declarations.
     - If you declare `let f x :'a = x` and want to calculate `f (); f 3`, then the compile process fails because of `Type_error: cannot solve a constraint: unit ~.~ int`.

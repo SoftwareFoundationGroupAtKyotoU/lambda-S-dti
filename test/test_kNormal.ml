@@ -18,8 +18,8 @@ let run tyenv kfunenvs kenv program =
   assert (Typing.is_equal u u');
   let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
-  (* let f = Translate.LS.to_se f in *)
-  let f = Translate.LS.translate tyenv f in
+  let f(*, u'''*) = Translate.LS.translate tyenv f in
+  (* assert (Typing.is_equal u u''');*)
   let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
   try
     let kenv, _, kv = Eval.KNorm.eval_program kenv kf in

@@ -10,112 +10,128 @@ exception Eval_bug of string
 
 let subst_type = Typing.subst_type
 
-(* let type_of_tag = Typing.type_of_tag *)
+let fresh_tyvar = Typing.fresh_tyvar
+
+let type_of_tag = Typing.type_of_tag
 
 let tag_of_ty = Typing.tag_of_ty
 
 let nu_to_fresh = function
 | Ty u -> u
 | TyNu -> Typing.fresh_tyvar ()
-
+  
 let rec subst_coercion s = function
 | CInj _ | CProj _ as c -> c
-(* | CTvInj _ | CTvProj _ | CTvProhInj _ -> raise @@ Eval_bug "coercion tyvar yet" *)
+| CTvInj (a, _ as tv) -> 
+  let u = subst_type s (TyVar tv) in
+  normalize_coercion (CTvInj (a, {contents = Some u}))
+| CTvProj ((a, _ as tv), p) ->
+  let u = subst_type s (TyVar tv) in
+  normalize_coercion (CTvProj ((a, {contents = Some u}), p))
+| CTvProjInj ((a, _ as tv), p) -> 
+  let u = subst_type s (TyVar tv) in
+  normalize_coercion (CTvProjInj ((a, {contents = Some u}), p))
 | CFun (c1, c2) -> CFun (subst_coercion s c1, subst_coercion s c2)
 | CId u -> CId (subst_type s u)
 | CSeq (c1, c2) -> CSeq (subst_coercion s c1, subst_coercion s c2)
 | CFail _ as c -> c
 
-let rec compose ?(debug=false) c1 c2 = 
+let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
   if debug then fprintf err_formatter "compose <-- %a；%a\n" Pp.pp_coercion c1 Pp.pp_coercion c2;
   let compose = compose ~debug:debug in
-  match c1, c2 with
+  match normalize_coercion c1, normalize_coercion c2 with
+  (* id{star} ;;; t *)
   | CId TyDyn, c2 -> c2
+  (* G?p;i ;;; t *)
   | CSeq (CProj (t, p), c1), c2 -> CSeq (CProj (t, p), compose c1 c2)
-  | CSeq (_, CInj _) as c1, CId TyDyn -> c1
-  | CFail _ as c1, _ -> c1
-  | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
-    begin match t, t' with
-    | I, I | B, B | U, U | Ar, Ar -> compose c1 c2
-    (* | V (a1, ({contents = None} as x1)), V (a2, {contents = None} as tv2) ->
-      if a1 = a2 then compose c1 c2
-      else begin 
-        if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-          Pp.pp_tag t
-          Pp.pp_tag t';
-        x1 := Some (TyVar tv2); compose c1 c2
-      end
-    | (I | B | U) as g, (V (_, ({contents = None} as x)) as v) | (V (_, ({contents = None} as x)) as v), (I | B | U as g) -> 
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-        Pp.pp_tag v
-        Pp.pp_tag g;
-      let u = type_of_tag g in
-      x := Some u;
-      compose c1 c2
-    | Ar, (V (_, ({contents = None} as x)) as v) | (V (_, ({contents = None} as x)) as v), Ar ->
-      let u1 = Typing.fresh_tyvar () in
-      let u2 = Typing.fresh_tyvar () in
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-          Pp.pp_tag v
-          Pp.pp_ty (TyFun (u1, u2));
-      x := Some (TyFun (u1, u2));
-      compose (compose c1 (CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2)))) c2
-    | V (_, {contents = Some u}), _ -> 
-      begin match u with
-      | TyInt | TyBool | TyUnit | TyVar _ as u -> compose (CSeq (c1, CInj (tag_of_ty u))) (CSeq (CProj (t', p), c2))
-      | TyFun (u1, u2) ->
-        let c = CSeq (CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2)), CInj Ar) in
-        compose (CSeq (c1, c)) (CSeq (CProj (t', p), c2))
-      | _ -> raise @@ Eval_bug "cannot compose"
-      end
-    | _, V (_, {contents = Some u}) -> 
-      begin match u with
-      | TyInt | TyBool | TyUnit | TyVar _ as u -> compose (CSeq (c1, CInj t)) (CSeq (CProj (tag_of_ty u, p), c2))
-      | TyFun (u1, u2) ->
-        let c = CSeq (CProj (Ar, p), CFun (CSeq (CId u1, CInj (tag_of_ty u1)), CSeq (CProj (tag_of_ty u2, p), CId u2))) in
-        compose (CSeq (c1, CInj t)) (CSeq (c, c2))
-      | _ -> raise @@ Eval_bug "cannot compose"
-      end *)
-    | _ -> CFail (t, p, t')
+  (* X?p ;;; t *)
+  | CTvProj ((a1, _ as tv), p), CId (TyVar (a2, _)) when a1 = a2 -> CTvProj (tv, p)
+  | CTvProj ((a1, _ as tv), p), CTvInj (a2, _) when a1 = a2 -> CTvProjInj (tv, p)
+  (* X! ;;; t *)
+  | CTvInj tv, CId TyDyn -> CTvInj tv
+  | CTvInj (_, uref as tv), CSeq (CProj (Ar, (r, p)), c2) ->
+    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
+    uref := Some (TyFun (x1, x2));
+    begin match x1, x2 with
+      | TyVar tv1, TyVar tv2 ->
+        compose (CFun (CTvProj (tv1, (r, neg p)), (CTvInj tv2))) c2
+      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
-    (* begin match g, g' with
-    | g, g' when g = g' -> compose c1 c2
-    | TyFun (TyDyn, TyDyn), (TyVar (_, ({contents = None} as x)) as u') ->
-      let u1 = Typing.fresh_tyvar () in
-      let u2 = Typing.fresh_tyvar () in
-      let u = TyFun (u1, u2) in
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-        Pp.pp_ty u'
-        Pp.pp_ty u;
-      x := Some g;
-      (* compose ( *) 
-      compose c1 (CFun (CSeq (CId u1, CInj u1), CSeq (CProj (u2, p), CId u2)))
-      (* ) c2*)
-    | TyVar (_, ({contents = None} as x)) as u', TyFun (TyDyn, TyDyn) ->
-      let u1 = Typing.fresh_tyvar () in
-      let u2 = Typing.fresh_tyvar () in
-      let u = TyFun (u1, u2) in
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-        Pp.pp_ty u'
-        Pp.pp_ty u;
-      x := Some g';
-      (* compose c1 ( *) 
-      compose (CFun (CSeq (CId u1, CInj u1), CSeq (CProj (u2, p), CId u2))) c2
-      (* )*)
-    | TyVar (_, ({contents = None} as x)) as u', g | g, (TyVar (_, ({contents = None} as x)) as u') ->
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n"
-        Pp.pp_ty u'
-        Pp.pp_ty g;
-      x := Some g;
-      compose c1 c2
-    | TyVar (_, {contents = Some u}), g' ->
-      compose (CSeq (c1, CInj u)) (CSeq (CProj (g', p), c2))
-    | g, TyVar (_, {contents = Some u}) ->
-      compose (CSeq (c1, CInj g)) (CSeq (CProj (u, p), c2))
-    | _ ->  CFail (g, p, g')
-    end *)
+  | CTvInj (_, uref as tv), CSeq (CProj (t, _), c2) -> 
+    let u = type_of_tag t in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
+    uref := Some u;
+    compose (CId u) c2
+  | CTvInj (a1, uref as tv1), CTvProj ((a2, _ as tv2), _) -> 
+    if a1 = a2 then CId (TyVar tv1)
+    else begin 
+      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv1) Pp.pp_ty (TyVar tv2);
+      uref := Some (TyVar tv2); 
+      CId (TyVar tv2)
+    end
+  | CTvInj tv1, CTvProjInj (tv2, p) ->
+    compose (compose (CTvInj tv1) (CTvProj (tv2, p))) (CTvInj tv2)
+    (* if a1 = a2 then CTvInj tv1
+    else (uref := Some (TyVar tv2); CTvInj tv2) *)
+  (* ?pX! ;;; t *)
+  | CTvProjInj (tv, p), c2 ->
+    compose (CTvProj (tv, p)) (compose (CTvInj tv) c2)
+  (* | CTvProjInj (tv, p), CId TyDyn -> CTvProjInj (tv, p)
+  | CTvProjInj ((_, uref), p), CSeq (CProj (Ar, (r', q)), c2) ->
+    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
+    uref := Some (TyFun (x1, x2));
+    begin match x1, x2 with
+    | TyVar tv1, TyVar tv2 ->
+      compose (CSeq (CProj (Ar, p), CFun (CTvProjInj (tv1, (r', neg q)), CTvProjInj (tv2, p)))) c2
+    | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    end
+  | CTvProjInj ((_, uref), p), CSeq (CProj (t, _), c2) -> 
+    uref := Some (type_of_tag t);
+    compose (CSeq (CProj (t, p), CId (type_of_tag t))) c2
+  | CTvProjInj ((a1, uref as tv1), p), CTvProj ((a2, _ as tv2), _) -> 
+    if a1 = a2 then CTvProj (tv1, p)
+    else (uref := Some (TyVar tv2); CTvProj (tv2, p))
+  | CTvProjInj ((a1, uref as tv1), p), CTvProjInj ((a2, _ as tv2), _) ->
+    if a1 = a2 then CTvProjInj (tv1, p)
+    else (uref := Some (TyVar tv2); CTvProjInj (tv2, p)) *)
+  (* i ;;; t *)
+  | CSeq (_, CInj _) as c1, CId TyDyn -> c1
+  | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
+    if t = t' then compose c1 c2 
+    else CFail (t, p, t')
+  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), p) ->
+    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
+    uref := Some (TyFun (x1, x2));
+    begin match x1, x2 with
+      | TyVar tv1, TyVar tv2 ->
+        compose c1 (CFun (CTvInj tv1, CTvProj (tv2, p)))
+      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    end
+  | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
+    let u = type_of_tag t in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
+    uref := Some u;
+    compose c1 (CId u)
+  | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p) ->
+    compose (compose c1 (CTvProj (tv, p))) (CTvInj tv)
+  (* | CSeq (c1, CInj Ar), CTvProjInj ((_, uref), (r, p)) ->
+    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
+    uref := Some (TyFun (x1, x2));
+    begin match x1, x2 with
+      | TyVar tv1, TyVar tv2 ->
+        compose c1 (CSeq (CFun (CTvProjInj (tv1, (r, neg p)), CTvProjInj (tv2, (r, p))), CInj Ar))
+      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    end
+  | CSeq (c1, CInj t), CTvProjInj ((_, uref), _) ->
+    uref := Some (type_of_tag t);
+    compose c1 (CSeq (CId (type_of_tag t), CInj t)) *)
+  | CFail _ as c1, _ -> c1
+  (* g ;;; i *)
   | _, (CFail _ as c2) (*when is_g c1*) -> c2
   | c1, CSeq (c2, CInj t) (*when is_g c1*) -> CSeq (compose c1 c2, CInj t)
+  (* g ;;; g *)
   | CId _, c2 -> c2
   | c1, CId _ -> c1
   | CFun (s, t), CFun (s', t') ->
@@ -249,11 +265,11 @@ module LS1 = struct
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
-    | v -> match c with
+    | v -> match normalize_coercion c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
-      | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
-      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.LS1.pp_value v)
+      | c when is_d c -> CoerceV (v, c)
+      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
 
   let eval_program ?(debug=false) env p =
     match p with
@@ -380,9 +396,6 @@ module KNorm = struct
         | FunV proc -> FunV (fun _ -> proc (tvs, us))
         | _ -> raise @@ Eval_bug "AppTy: not fun value"
       end
-    (* | CastExp (r, x, u1, u2, p) ->
-      let v = Environment.find x kenv in
-      cast ~debug:debug v u1 u2 r p *)
     | LetExp (x, f1, f2) -> 
       let v1 = eval_exp kenv f1 in
       eval_exp (Environment.add x v1 kenv) f2
@@ -406,7 +419,7 @@ module KNorm = struct
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
-    | v -> match c with
+    | v -> match normalize_coercion c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
       | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
@@ -433,103 +446,3 @@ module KNorm = struct
       in let kenv = Environment.add x v kenv in
       kenv, x, v
 end
-
-(* (fun ((f: ?), k6) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k6)) 
-((fun ((x: 'x2), k5) -> x<k5>) 
-  ((fun ((y: ?), k4) -> y<k4>) 
-    ((fun ((z: int), k3) -> z + 1<k3>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>
-    , 'x2?p;id{'x2})
-  , id{'x2};'x2!)
-, id{?})
-
-eval <-- (fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)) ((fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!), id{?})
-eval <-- fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
-eval <-- (fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!)
-eval <-- fun ((x: 'x1), k3) -> x<k3>
-eval <-- (fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1})
-eval <-- fun ((y: ?), k2) -> y<k2>
-
-eval <-- (fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>
-eval <-- fun ((z: int), k1) -> z + 1<k1>
-eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!
-coerce <-- <fun><(int?p;id{int})->(id{int};int!);(? -> ?)!>
-
-eval <-- 'x1?p;id{'x1}
-
-eval <-- y<k2>
-eval <-- y
-eval <-- k2
-coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(? -> ?)!>><'x1?p;id{'x1}>
-compose <-- (int?p;id{int})->(id{int};int!);(? -> ?)!；'x1?p;id{'x1}
-DTI: 'x1 is instantiated to 'x3 -> 'x4
-compose <-- (int?p;id{int})->(id{int};int!)；(id{'x3};'x3!)->('x4?p;id{'x4})
-compose <-- id{'x3};'x3!；int?p;id{int}
-DTI: 'x3 is instantiated to int
-compose <-- id{int}；id{int}
-compose <-- id{int};int!；'x4?p;id{'x4}
-DTI: 'x4 is instantiated to int
-compose <-- id{int}；id{int}
-coerce <-- <fun><id{int -> int}>
-
-eval <-- id{? -> ?};? -> ?!
-
-eval <-- x<k3>
-eval <-- x
-eval <-- k3
-coerce <-- <fun><id{? -> ?};? -> ?!>
-eval <-- id{?}
-eval <-- (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
-eval <-- f<(? -> ?)?p;id{? -> ?}>
-eval <-- f
-eval <-- (? -> ?)?p;id{? -> ?}
-coerce <-- <fun><<id{? -> ?};(? -> ?)!>><(? -> ?)?p;id{? -> ?}>
-compose <-- id{? -> ?};(? -> ?)!；(? -> ?)?p;id{? -> ?}
-compose <-- id{? -> ?}；id{? -> ?}
-coerce <-- <fun><id{? -> ?}>
-eval <-- 2<id{int};int!>
-eval <-- 2
-eval <-- id{int};int!
-coerce <-- 2<id{int};int!>
-eval <-- k4
-eval <-- z + 1<k1>
-eval <-- z + 1
-eval <-- z
-eval <-- 1 *)
-
-(* (fun (f:?) -> f 2) ((fun x -> x) ((fun (y:?) -> y) (fun z -> z + 1)))
-
-eval <-- (fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)) ((fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!), id{?})
-eval <-- fun ((f: ?), k4) -> (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
-eval <-- (fun ((x: 'x1), k3) -> x<k3>) ((fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1}), id{'x1};'x1!)
-eval <-- fun ((x: 'x1), k3) -> x<k3>
-eval <-- (fun ((y: ?), k2) -> y<k2>) ((fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>, 'x1?p;id{'x1})
-eval <-- fun ((y: ?), k2) -> y<k2>
-eval <-- (fun ((z: int), k1) -> z + 1<k1>)<(int?p;id{int})->(id{int};int!);(? -> ?)!>
-eval <-- fun ((z: int), k1) -> z + 1<k1>
-eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!
-coerce <-- <fun><(int?p;id{int})->(id{int};int!);(? -> ?)!>
-eval <-- 'x1?p;id{'x1}
-eval <-- y<k2>
-eval <-- y
-eval <-- k2
-coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(? -> ?)!>><'x1?p;id{'x1}>
-compose <-- (int?p;id{int})->(id{int};int!);(? -> ?)!；'x1?p;id{'x1}
-('x1 := 'x3 -> 'x4, 'x1! := id{'x3};'x3!->'x4?p;id{'x4};(?->?)!, 'x1?p := id{'x3};'x3!->'x4?p;id{'x4};(?->?)!)
-compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4}
-coerce <-- <fun><(int?p;id{int})->(id{int};int!)>
-eval <-- id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!
-eval <-- x<k3>
-eval <-- x
-eval <-- k3
-coerce <-- <fun><<(int?p;id{int})->(id{int};int!)>><id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>
-compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4};(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!
-compose <-- (int?p;id{int})->(id{int};int!)；id{'x3 -> 'x4}
-coerce <-- <fun><(int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>
-eval <-- id{?}
-eval <-- (f<(? -> ?)?p;id{? -> ?}>) (2<id{int};int!>, k4)
-eval <-- f<(? -> ?)?p;id{? -> ?}>
-eval <-- f
-eval <-- (? -> ?)?p;id{? -> ?}
-coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!>><(? -> ?)?p;id{? -> ?}>
-compose <-- (int?p;id{int})->(id{int};int!);(id{'x3};'x3!->'x4?p;id{'x4});(?->?)!；(? -> ?)?p;id{? -> ?}
-compose <-- (int?p;id{int})->(id{int};int!);(id{'x3};'x3!)->('x4?p;id{'x4});(? -> ?)!；(? -> ?)?p;id{? -> ?} *)

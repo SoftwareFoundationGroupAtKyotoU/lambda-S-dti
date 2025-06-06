@@ -54,7 +54,7 @@ let tests = [
   ["(fun (f:?) -> let d = f 2 in f true) (fun (x:?) -> x)", "?", "true<<id{bool};bool!>>", "1<<id{bool};bool!>>"];
   (* ["(fun (f:?) -> let d = f 2 in f true) (fun x -> x)", "?", "blame-", "blame-"]; *)
   (* let-poly *)
-  (* ["let s = fun x y z -> x z (y z) in s", "('a -> 'b -> 'c) -> ('a -> 'b) -> 'a -> 'c", "<fun>", "<fun>"];
+  ["let s = fun x y z -> x z (y z) in s", "('a -> 'b -> 'c) -> ('a -> 'b) -> 'a -> 'c", "<fun>", "<fun>"];
   ["let k = fun x y -> x in k", "'a -> 'b -> 'a", "<fun>", "<fun>"];
   ["let s = fun x y z -> x z (y z) in let k = fun x y -> x in s k k", "'a -> 'a", "<fun>", "<fun>"];
   ["let s = fun x y z -> x z (y z) in let k = fun x y -> x in s k k 1", "int", "1", "1"];
@@ -169,7 +169,7 @@ let tests = [
   (* alpha, beta *)
   ["let x = 2 in let x = 4 in x + x", "int", "8", "8"];
   ["let x = 2 in let y = x in (fun y -> y) y", "int", "2", "2"];
-  ["let x = 2 in let a = x in let b = a in let c = x in let d = a in let e = x in e", "int", "2", "2"]; *)
+  ["let x = 2 in let a = x in let b = a in let c = x in let d = a in let e = x in e", "int", "2", "2"];
 ]
 
 (* let g = fun x -> ((fun y -> y):? -> ?) x in if g true then g 2 else g 3  *)

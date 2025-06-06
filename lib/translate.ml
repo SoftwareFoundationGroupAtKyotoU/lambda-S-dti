@@ -60,10 +60,10 @@ module ITGL = struct
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
-    (* | TyVar tv, TyDyn -> CTvInj tv *)
+    | TyVar tv, TyDyn -> CTvInj tv
     | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
     | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
-    (* | TyDyn, TyVar tv -> CTvProj (tv, (r, p)) *)
+    | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
     | _ -> Pp.pp_ty err_formatter u1; Pp.pp_ty err_formatter u1; raise @@ Translation_bug "cannot exist such coercion"
 
   let coerce f r u1 u2 = 
@@ -155,31 +155,6 @@ end
 
 module LS = struct
   open Syntax.LS
-
-  (* let rec to_se_coercion = function
-    | CId u -> CId u (* TODO : uが関数型のときを考える，下のCIdにもto_se_coercionがつくかも，これで大丈夫なはず...？ *)
-    | CFun (c1, c2) -> CFun (to_se_coercion c1, to_se_coercion c2)
-    (* | CInj (V (_, {contents = None})) as c -> c *)
-    | CInj t -> CSeq (CId (type_of_tag t), CInj t)
-    (* | CProj (V (_, {contents = None}), _) as c -> c *)
-    | CProj (t, p) -> CSeq (CProj (t, p), CId (type_of_tag t)) 
-    | CSeq (c1, c2) -> Eval.compose (to_se_coercion c1) (to_se_coercion c2)
-    | CFail _ as c -> c
-    (* | _ -> raise @@ Translation_bug "to_se_coercion bug" *)
-
-  let rec to_se_exp = function
-    | CAppExp (f, c) -> CAppExp (to_se_exp f, to_se_coercion c)
-    | BinOp (op, f1, f2) -> BinOp (op, to_se_exp f1, to_se_exp f2)
-    | IfExp (f1, f2, f3) -> IfExp (to_se_exp f1, to_se_exp f2, to_se_exp f3)
-    | FunExp (x, u, f) -> FunExp (x, u, to_se_exp f)
-    | FixExp (x, y, u1, u, f) -> FixExp (x, y, u1, u, to_se_exp f)
-    | AppExp (f1, f2) -> AppExp (to_se_exp f1, to_se_exp f2)
-    | LetExp (x, ys, f1, f2) -> LetExp (x, ys, to_se_exp f1, to_se_exp f2)
-    | f -> f    
-
-  let to_se = function
-    | Exp e -> Exp (to_se_exp e)
-    | LetDecl (x, ys, e) -> LetDecl (x, ys, to_se_exp e) *)
 
   let fresh_CVar =
     let counter = ref 0 in

@@ -91,9 +91,9 @@ type tag = I | B | U | Ar
 type coercion =
   | CInj of tag
   | CProj of tag * (range * polarity)
-  (* | CTvInj of tyvar
+  | CTvInj of tyvar
   | CTvProj of tyvar * (range * polarity)
-  | CTvProjInj of tyvar * (range * polarity) *)
+  | CTvProjInj of tyvar * (range * polarity)
   | CFun of coercion * coercion
   | CId of ty
   | CSeq of coercion * coercion
@@ -102,17 +102,68 @@ type coercion =
 let is_d = function
   | CSeq (CId u, CInj _) when u <> TyDyn -> true
   | CSeq (CFun _, CInj _)
-  (* | CTvInj (_, {contents = None})  *)
+  | CTvInj (_, {contents = None})
   | CFun _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
   | _ -> false
 
 let rec ftv_coercion = function
   | CInj _ | CProj _ -> TV.empty
-  (* | CTvInj tv | CTvProj tv | CTvProjInj tv -> TV.singleton tv *)
+  | CTvInj tv | CTvProj (tv, _) | CTvProjInj (tv, _) -> TV.singleton tv
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
+
+let type_of_tag = function
+  | I -> TyInt
+  | B -> TyBool
+  | U -> TyUnit
+  | Ar -> TyFun (TyDyn, TyDyn)
+
+let tag_of_ty = function
+  | TyInt -> I
+  | TyBool -> B
+  | TyUnit -> U
+  | TyFun (TyDyn, TyDyn) -> Ar
+  | _ -> assert false
+  (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
+
+let rec normalize_coercion c = match c with
+  | CId TyDyn -> c
+  | CSeq (CProj _ as c1, c2) -> CSeq (c1, normalize_coercion c2)
+  | CTvProj ((_, {contents = Some u}), p) when is_base_type u ->
+    normalize_coercion (CSeq (CProj (tag_of_ty u, p), CId u))
+  | CTvProj ((_, {contents = Some (TyVar tv)}), p) ->
+    normalize_coercion (CTvProj (tv, p))
+  | CTvProj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), p) ->
+    normalize_coercion (CSeq (CProj (Ar, p), CFun (CTvInj tv1, CTvProj (tv2, p))))
+  | CTvProj ((_, {contents = None}), _) -> c
+  | CTvInj (_, {contents = Some u }) when is_base_type u ->
+    normalize_coercion (CSeq (CId u, CInj (tag_of_ty u)))
+  | CTvInj (_, {contents = Some (TyVar tv)}) ->
+    normalize_coercion (CTvInj tv)
+  | CTvInj (_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}) ->
+    normalize_coercion (CSeq (CFun (CTvProj (tv1, (Utils.Error.dummy_range, Pos)), CTvInj tv2), CInj Ar))
+  | CTvInj (_, {contents = None}) -> c
+  | CTvProjInj ((_, {contents = Some u}), p) when is_base_type u ->
+    normalize_coercion (CSeq (CProj (tag_of_ty u, p), CSeq (CId u, CInj (tag_of_ty u))))
+  | CTvProjInj ((_, {contents = Some (TyVar tv)}), p) ->
+    normalize_coercion (CTvProjInj (tv, p))
+  | CTvProjInj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), (r, p)) ->
+    normalize_coercion (CSeq (CProj (Ar, (r, p)), CSeq (CFun (CTvProjInj (tv1, (r, neg p)), CTvProjInj (tv2, (r, p))), CInj Ar)))
+  | CTvProjInj ((_, {contents = None}), _) -> c
+  | CSeq (c1, (CInj _ as c2)) -> CSeq (normalize_coercion c1, c2)
+  | CFail _ as c -> c
+  | CId (TyVar (_, {contents = Some u})) -> normalize_coercion (CId u)
+  | CId _ as c -> c
+  | CFun (s, t) -> 
+    let s' = normalize_coercion s in
+    let t' = normalize_coercion t in
+    begin match s', t' with
+      | CId u1, CId u2 -> CId (TyFun (u1, u2))
+      | _ -> CFun (s', t')
+    end
+  | _ -> assert false
 
 (** Syntax of the surface language, the ITGL with extensions. *)
 module ITGL = struct

@@ -18,8 +18,8 @@ let run env tyenv program =
   assert (Typing.is_equal u u');
   let u'' = Typing.LS.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
-  (* let f = Translate.LS.to_se f in *)
-  let f = Translate.LS.translate tyenv f in
+  let f(*, u'''*) = Translate.LS.translate tyenv f in
+  (* assert (Typing.is_equal u u'''); *)
   try
     let env, _, v = Eval.LS1.eval_program env f in
     env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value v

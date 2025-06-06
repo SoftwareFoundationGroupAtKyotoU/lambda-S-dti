@@ -33,41 +33,9 @@ let type_of_binop = function
   | Plus | Minus | Mult | Div | Mod -> TyInt, TyInt, TyInt
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
 
-let type_of_tag = function
-  | I -> TyInt
-  | B -> TyBool
-  | U -> TyUnit
-  | Ar -> TyFun (TyDyn, TyDyn)
+let type_of_tag = type_of_tag
 
-let tag_of_ty = function
-  | TyInt -> I
-  | TyBool -> B
-  | TyUnit -> U
-  | TyFun (TyDyn, TyDyn) -> Ar
-  | _ -> raise @@ Type_bug "tag_of_ty: invalid type"
-
-let rec type_of_coercion = function
-  | CInj t -> TyCoercion (type_of_tag t, TyDyn)
-  | CProj (t, _) -> TyCoercion (TyDyn, type_of_tag t)
-  (* | CTvInj tv -> TyCoercion (TyVar tv, TyDyn)
-  | CTvProj (tv, _) -> TyCoercion (TyDyn, TyVar tv)
-  | CTvProjInj _ -> TyCoercion (TyDyn, TyDyn) *)
-  | CFun (c1, c2) -> 
-    let u1 = type_of_coercion c1 in
-    let u2 = type_of_coercion c2 in
-    begin match u1, u2 with
-    | TyCoercion (u11, u12), TyCoercion (u21, u22) -> TyCoercion (TyFun (u12, u21), TyFun (u11, u22))
-    | _ -> raise @@ Type_bug "type-unmatch in Coercion function"
-    end 
-  | CId u -> TyCoercion (u, u)
-  | CSeq (c1, c2) ->
-    let u1 = type_of_coercion c1 in
-    let u2 = type_of_coercion c2 in
-    begin match u1, u2 with
-    | TyCoercion (u1, u2), TyCoercion (u2', u3) when u2 = u2' -> TyCoercion (u1, u3)
-    | _ -> raise @@ Type_bug "type-unmatch in Coercion sequence"
-    end 
-  | CFail _ -> assert false (* TODO *)
+let tag_of_ty = tag_of_ty
 
 let rec is_static_type = function
   | TyVar (_, { contents = Some u }) -> is_static_type u
@@ -96,13 +64,6 @@ let subst_type (s: substitutions) (u: ty) =
 let tyarg_to_ty = function
   | Ty u -> u
   | TyNu -> raise @@ Type_bug "failed to cast tyarg to ty"
-
-  (* let rec normalize_coercion = function
-    | CInj _ | CProj _ as c -> c
-    | CFun (c1, c2) -> CFun (normalize_coercion c1, normalize_coercion c2)
-    | CId u -> CId (normalize_type u)
-    | CSeq (c1, c2) -> CSeq (normalize_coercion c1, normalize_coercion c2)
-    | CFail (t1, p, t2) -> CFail (normalize_tag t1, p, normalize_tag t2) *)
 
 module ITGL = struct
   open Pp.ITGL
@@ -378,6 +339,24 @@ module ITGL = struct
     normalize_type u
 end
 
+let rec type_of_coercion = function
+  | CInj t -> (type_of_tag t, TyDyn)
+  | CProj (t, _) -> (TyDyn, type_of_tag t)
+  | CTvInj tv -> (TyVar tv, TyDyn)
+  | CTvProj (tv, _) -> (TyDyn, TyVar tv)
+  | CTvProjInj _ -> (TyDyn, TyDyn)
+  | CFun (c1, c2) -> 
+    let (u11, u12) = type_of_coercion c1 in
+    let (u21, u22) = type_of_coercion c2 in
+    (TyFun (u12, u21), TyFun (u11, u22))
+  | CId u -> (u, u)
+  | CSeq (c1, c2) ->
+    let (u11, u12) = type_of_coercion c1 in
+    let (u21, u22) = type_of_coercion c2 in
+    if u12 = u21 then (u11, u22)
+    else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
+  | CFail _ -> assert false (* TODO *)
+
 module LS = struct
   open Syntax.LS
 
@@ -431,15 +410,14 @@ module LS = struct
       end
     | CAppExp (f, c) ->
       let u = type_of_exp env f in 
-      let u' = type_of_coercion c in 
-      begin match u' with
-      | TyCoercion (u1, u2) when u = u1 -> 
+      let (u1, u2) = type_of_coercion c in 
+      if u = u1 then
         if is_consistent u1 u2 then
           u2
         else
           raise @@ Type_bug "not consistent"
-      | _ -> raise @@ Type_bug "invalid source type"
-      end
+      else
+        raise @@ Type_bug "invalid source type"
     (*| CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
     | CastExp (r, f, u1, TyVar (_, { contents = Some u2 }), p) ->
       type_of_exp env @@ CastExp (r, f, u1, u2, p)

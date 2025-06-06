@@ -35,6 +35,8 @@ module ITGL : sig
   (* val normalize_coercion : coercion -> coercion *)
 end
 
+val type_of_coercion : coercion -> ty * ty
+
 module LS : sig
   open Syntax.LS
 
