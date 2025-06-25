@@ -438,7 +438,7 @@ module LS1 = struct
     | AppExp_alt (f1, f2) as f ->
       fprintf ppf "%a %a"
         (with_paren (gt_exp f f1) pp_exp) f1
-        pp_exp f2
+        (with_paren (gte_exp f f1) pp_exp) f2
 
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
@@ -469,13 +469,13 @@ module KNorm = struct
 
   let gt_exp e e1 = match e, e1 with
     | (Var _ | IConst _ | UConst), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)
-    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | AppExp _ | AppTy _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
+    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | AppExp _ | AppTy _ | AppExp_alt _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
     | (IfEqExp _ | IfLteExp _), (LetExp _ | LetRecExp _) -> true
     | _ -> false
   
   let gte_exp e e1 = match e, e1 with
     | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ -> true
-    | AppTy _, AppTy _ | AppExp _, AppExp _ | (LetExp _ | LetRecExp _) , (LetExp _ | LetRecExp _) -> true
+    | AppTy _, AppTy _ | AppExp _, AppExp _ | AppExp_alt _, AppExp_alt _ | (LetExp _ | LetRecExp _ | LetRecExp_alt _) , (LetExp _ | LetRecExp _ | LetRecExp_alt _) -> true
     | (IfEqExp _ | IfLteExp _), (IfEqExp _ | IfLteExp _) -> true
     | _ -> gt_exp e e1
 
@@ -511,21 +511,32 @@ module KNorm = struct
     | CSeqExp (x, y) -> 
       fprintf ppf "%s;;%s" x y
     | LetExp (x, e1, e2) as e ->
-        fprintf ppf "let %s = %a in %a"
-          x
-          (with_paren (gt_exp e e1) pp_exp) e1
-          (with_paren (gte_exp e e2) pp_exp) e2
+      fprintf ppf "let %s = %a in %a"
+        x
+        (with_paren (gt_exp e e1) pp_exp) e1
+        (with_paren (gte_exp e e2) pp_exp) e2
     | LetRecExp (x, tvs, (y, k), e1, e2) as e ->
-        fprintf ppf "let %s = %afun (%s, %s) -> %a in %a"
-          x
-          pp_let_tyabses tvs
-          y
-          k
-          (with_paren (gt_exp e e1) pp_exp) e1
-          (with_paren (gte_exp e e2) pp_exp) e2
+      fprintf ppf "let %s = %afun (%s, %s) -> %a in %a"
+        x
+        pp_let_tyabses tvs
+        y
+        k
+        (with_paren (gt_exp e e1) pp_exp) e1
+        (with_paren (gte_exp e e2) pp_exp) e2
     | CoercionExp c ->
       pp_coercion ppf c
-
+    | AppExp_alt (x, y) ->
+      fprintf ppf "%s %s" x y
+    | LetRecExp_alt (x, tvs, (y, k), (e1, e2), e3) as e ->
+      fprintf ppf "let %s = %afun (%s, %s) -> (%a | %a) in %a"
+        x
+        pp_let_tyabses tvs
+        y
+        k
+        (with_paren (gt_exp e e1) pp_exp) e1
+        (with_paren (gt_exp e e2) pp_exp) e2
+        (with_paren (gte_exp e e3) pp_exp) e3
+    
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
     | LetDecl (x, e) ->
@@ -539,11 +550,19 @@ module KNorm = struct
           y
           k
           pp_exp e
+    | LetRecDecl_alt (x, tvs, (y, k), (e1, e2)) ->
+        fprintf ppf "let %s = %afun (%s, %s) -> (%a | %a)"
+          x
+          pp_let_tyabses tvs
+          y
+          k
+          pp_exp e1
+          pp_exp e2
 
   let rec pp_value ppf = function
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
-    | FunV _ -> pp_print_string ppf "<fun>"
+    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
     | CoerceV (v, c) -> fprintf ppf "%a<<%a>>"pp_value v pp_coercion c
     | CoercionV c -> pp_coercion ppf c
 end

@@ -109,9 +109,7 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       if !ls1 then begin
       (* Evaluation *)
       print_debug "***** Eval *****\n";
-      let env, x, v = 
-        if !alt then Eval.LS1.eval_program_alt env f ~debug:!debug
-        else Eval.LS1.eval_program env f ~debug:!debug 
+      let env, x, v = Eval.LS1.eval_program env f ~debug:!debug
       in print "%a : %a = %a\n"
         pp_print_string x
         Pp.pp_ty2 u

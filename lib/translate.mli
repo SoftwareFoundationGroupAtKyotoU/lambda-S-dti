@@ -10,6 +10,4 @@ module LS : sig
 
 	val translate : tysc Environment.t -> program -> LS1.program
 	val translate_alt : tysc Environment.t -> program -> LS1.program
-
-	(* val to_se : program -> program *)
 end

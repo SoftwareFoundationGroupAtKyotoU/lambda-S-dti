@@ -21,7 +21,7 @@ let run env tyenv program =
   let f(*, u'''*) = Translate.LS.translate_alt tyenv f in
   (* assert (Typing.is_equal u u'''); *)
   try
-    let env, _, v = Eval.LS1.eval_program_alt env f in
+    let env, _, v = Eval.LS1.eval_program env f in
     env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value v
   with
   | Eval.Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"

@@ -14,7 +14,6 @@ module LS1 : sig
   open Syntax.LS1
   
   val eval_program : ?debug:bool -> (tyvar list * value) Environment.t -> program -> (tyvar list * value) Environment.t * id * value
-  val eval_program_alt : ?debug:bool -> (tyvar list * value) Environment.t -> program -> (tyvar list * value) Environment.t * id * value
 end 
 
 module KNorm : sig

@@ -363,9 +363,9 @@ module LS1 = struct
     | BoolV of bool
     | UnitV
     | FunV of ((tyvar list * ty list) -> (value * value) -> value)
-    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
     | CoerceV of value * coercion
     | CoercionV of coercion
+    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
 end
 
 module KNorm = struct
@@ -387,11 +387,14 @@ module KNorm = struct
     | LetExp of id * exp * exp
     | LetRecExp of id * tyvar list * (id * id) * exp * exp
     | CoercionExp of coercion
+    | AppExp_alt of id * id
+    | LetRecExp_alt of id * tyvar list * (id * id) * (exp * exp) * exp
 
   type program =
     | Exp of exp
     | LetDecl of id * exp
     | LetRecDecl of id * tyvar list * (id * id) * exp
+    | LetRecDecl_alt of id * tyvar list * (id * id) * (exp * exp)
 
   type value =
     | IntV of int
@@ -399,6 +402,7 @@ module KNorm = struct
     | FunV of ((tyvar list * ty list) -> (value * value) -> value)
     | CoerceV of value * coercion
     | CoercionV of coercion
+    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
 end
 
 module Cls = struct

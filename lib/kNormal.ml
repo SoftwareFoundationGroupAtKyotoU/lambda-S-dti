@@ -38,11 +38,25 @@ module LS1 = struct
       let newy = genvar y in
       let newk = genvar k in
       LetExp (newx, tvs, FixExp ((newx, newy, u1, u2), newk, alpha_exp (Environment.add y newy (Environment.add k newk idenv)) f1), alpha_exp idenv f2)
+    | LetExp (x, tvs, FixExp_alt ((x', y, u1, u2), k, (f1, f2)), f3) -> 
+      assert (x = x');
+      let newx = genvar x in
+      let idenv = Environment.add x newx idenv in
+      let newy = genvar y in
+      let newk = genvar k in
+      let idenv' = Environment.add y newy (Environment.add k newk idenv) in
+      LetExp (newx, tvs, FixExp_alt ((newx, newy, u1, u2), newk, (alpha_exp idenv' f1, alpha_exp idenv' f2)), alpha_exp idenv f3)
     | LetExp (x, tvs, f1, f2) -> 
       let newx = genvar x in
       LetExp (newx, tvs, alpha_exp idenv f1, alpha_exp (Environment.add x newx idenv) f2)
     | CoercionExp c -> CoercionExp c
-    | AppExp_alt _ | FunExp_alt _ | FixExp_alt _ -> raise @@ KNormal_bug "alternative translation yet"
+    | AppExp_alt (f1, f2) -> AppExp_alt (alpha_exp idenv f1, alpha_exp idenv f2)
+    | FunExp_alt ((x, u), k, (f1, f2)) -> 
+      let newx = genvar x in
+      let newk = genvar k in
+      let idenv = Environment.add x newx (Environment.add k newk idenv) in
+      FunExp_alt ((newx, u), newk, (alpha_exp idenv f1, alpha_exp idenv f2))
+    | FixExp_alt _ -> raise @@ KNormal_bug "FixExp_alt should not be alpha_exp's argument"
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -52,7 +66,15 @@ module LS1 = struct
       let idenv = Environment.add x newx idenv in
       let newy = genvar y in
       let newk = genvar k in
-      LetDecl (newx, tvs, FixExp ((newx, newy, u1, u2), newk, alpha_exp (Environment.add y newy idenv) f)), idenv
+      LetDecl (newx, tvs, FixExp ((newx, newy, u1, u2), newk, alpha_exp (Environment.add y newy (Environment.add k newk idenv)) f)), idenv
+    | LetDecl (x, tvs, FixExp_alt ((x', y, u1, u2), k, (f1, f2))) ->
+      assert (x = x');
+      let newx = genvar x in
+      let idenv = Environment.add x newx idenv in
+      let newy = genvar y in
+      let newk = genvar k in
+      let idenv' = Environment.add y newy (Environment.add k newk idenv) in
+      LetDecl (newx, tvs, FixExp_alt ((newx, newy, u1, u2), newk, (alpha_exp idenv' f1, alpha_exp idenv' f2))), idenv
     | LetDecl (x, tvs, f) -> 
       let newx = genvar x in
       LetDecl (newx, tvs, alpha_exp idenv f), Environment.add x newx idenv
@@ -138,22 +160,42 @@ module LS1 = struct
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CSeqExp (x, y)
     | LetExp (x, tvs, f1, f2) -> 
       begin match f1 with
-        | FunExp ((x', _), k, f1) ->
-          let f1 = k_normalize_exp (Environment.add x' [] @@ Environment.add k [] tvsenv) f1 in
+        | FunExp ((y, _), k, f1) ->
+          let f1 = k_normalize_exp (Environment.add y [] @@ Environment.add k [] tvsenv) f1 in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
-          KNorm.LetRecExp (x, tvs, (x', k), f1, f2)
+          KNorm.LetRecExp (x, tvs, (y, k), f1, f2)
         | FixExp ((x', y, _, _), k, f1) ->
           assert (x' = x);
           let f1 = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] @@ Environment.add k [] tvsenv) f1 in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
           KNorm.LetRecExp (x, tvs, (y, k), f1, f2)
+        | FunExp_alt ((y, _), k, (f1, f1')) ->
+          let f1 = k_normalize_exp (Environment.add y [] tvsenv) f1 in
+          let f1' = k_normalize_exp (Environment.add y [] @@ Environment.add k [] tvsenv) f1' in
+          let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
+          KNorm.LetRecExp_alt (x, tvs, (y, k), (f1, f1'), f2)
+        | FixExp_alt ((x', y, _, _), k, (f1, f1')) ->
+          assert (x' = x);
+          let f1 = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] tvsenv) f1 in
+          let f1' = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] @@ Environment.add k [] tvsenv) f1' in
+          let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
+          KNorm.LetRecExp_alt (x, tvs, (y, k), (f1, f1'), f2)
         | f ->
           let f1 = k_normalize_exp tvsenv f in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
           KNorm.LetExp (x, f1, f2)
       end
     | CoercionExp c -> KNorm.CoercionExp c
-    | AppExp_alt _ | FunExp_alt _ | FixExp_alt _ -> raise @@ KNormal_bug "alternative translation yet"
+    | AppExp_alt (f1, f2) ->
+      let f1 = k_normalize_exp tvsenv f1 in 
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.AppExp_alt (x, y)
+    | FunExp_alt ((x, _), k, (f1, f2)) ->
+      let tent_var = genvar "_var" in
+      let f1 = k_normalize_exp (Environment.add x [] tvsenv) f1 in
+      let f2 = k_normalize_exp (Environment.add x [] @@ Environment.add k [] tvsenv) f2 in
+      KNorm.LetRecExp_alt (tent_var, [], (x, k), (f1, f2), KNorm.Var tent_var)
+    | FixExp_alt _ -> raise @@ KNormal_bug "FixExp_alt should appear in let"
 
   let k_normalize_program tvsenv = function
     | Exp f -> let f = k_normalize_exp tvsenv f in KNorm.Exp f, tvsenv
@@ -166,6 +208,15 @@ module LS1 = struct
           assert (x' = x);
           let f = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] @@ Environment.add k [] tvsenv) f in
           KNorm.LetRecDecl (x, tvs, (y, k), f), Environment.add x tvs tvsenv
+        | FunExp_alt ((x', _), k, (f1, f2)) ->
+          let f1 = k_normalize_exp (Environment.add x' [] tvsenv) f1 in
+          let f2 = k_normalize_exp (Environment.add x' [] @@ Environment.add k [] tvsenv) f2 in
+          KNorm.LetRecDecl_alt (x, tvs, (x', k), (f1, f2)), Environment.add x tvs tvsenv
+        | FixExp_alt ((x', y, _, _), k, (f1, f2)) ->
+          assert (x' = x);
+          let f1 = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] tvsenv) f1 in
+          let f2 = k_normalize_exp (Environment.add y [] @@ Environment.add x' [] @@ Environment.add k [] tvsenv) f2 in
+          KNorm.LetRecDecl_alt (x, tvs, (y, k), (f1, f2)), Environment.add x tvs tvsenv
         | _ as f ->
           let f = k_normalize_exp tvsenv f in 
           KNorm.LetDecl (x, f), Environment.add x tvs tvsenv
@@ -204,6 +255,9 @@ module KNorm = struct
     | LetRecExp (x, tvs, arg, f1, f2) ->
       LetRecExp (x, tvs, arg, beta_exp idenv f1, beta_exp idenv f2)
     | CoercionExp _ as f -> f
+    | AppExp_alt (x, y) -> AppExp_alt (find x idenv, find y idenv)
+    | LetRecExp_alt (x, tvs, arg, (f1, f1'), f2) ->
+      LetRecExp_alt (x, tvs, arg, (beta_exp idenv f1, beta_exp idenv f1'), beta_exp idenv f2)
 
   let beta_program idenv = function
     | Exp f -> Exp (beta_exp idenv f), idenv
@@ -215,6 +269,8 @@ module KNorm = struct
       end
     | LetRecDecl (x, tvs, arg, f) ->
       LetRecDecl (x, tvs, arg, beta_exp idenv f), idenv
+    | LetRecDecl_alt (x, tvs, arg, (f1, f2)) ->
+      LetRecDecl_alt (x, tvs, arg, (beta_exp idenv f1, beta_exp idenv f2)), idenv
 
   (* assoc : let x = (let y = ... in ... ) in ...というようなネストされたletをlet y = ... in let x = ... in ...という形に平たくする *)
   let rec assoc_exp = function
@@ -225,16 +281,20 @@ module KNorm = struct
       let rec insert = function
         | LetExp (x', f3, f4) -> LetExp (x', f3, insert f4)
         | LetRecExp (x', tvs, arg, f3, f4) -> LetRecExp (x', tvs, arg, f3, insert f4)
+        | LetRecExp_alt (x', tvs, arg, (f3, f3'), f4) -> LetRecExp_alt (x', tvs, arg, (f3, f3'), insert f4)
         | f1 -> LetExp (x, f1, assoc_exp f2)
       in insert (assoc_exp f1)
     | LetRecExp (x, tvs, arg, f1, f2) ->
       LetRecExp (x, tvs, arg, assoc_exp f1, assoc_exp f2)
+    | LetRecExp_alt (x, tvs, arg, (f1, f1'), f2) ->
+      LetRecExp_alt (x, tvs, arg, (assoc_exp f1, assoc_exp f1'), assoc_exp f2)
     | f -> f
   
   let assoc_program = function
     | Exp f -> Exp (assoc_exp f)
     | LetDecl (x, f) -> LetDecl (x, assoc_exp f)
     | LetRecDecl (x, tvs, arg, f) -> LetRecDecl (x, tvs, arg, assoc_exp f)
+    | LetRecDecl_alt (x, tvs, arg, (f1, f2)) -> LetRecDecl_alt (x, tvs, arg, (assoc_exp f1, assoc_exp f2))
 end
 
 let kNorm_funs ?(debug=false) (tvsenv, alphaenv, betaenv) f = 
