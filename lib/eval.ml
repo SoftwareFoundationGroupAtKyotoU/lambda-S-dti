@@ -169,6 +169,10 @@ module LS1 = struct
       let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
       LetExp (y, ys, subst_exp s f1, subst_exp s f2)
     | CoercionExp c -> CoercionExp (subst_coercion s c)
+    | FunExp_alt ((x1, u1), k, (f1, f2)) -> FunExp_alt ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
+    | FixExp_alt ((x, y, u1, u2), k, (f1, f2)) ->
+      FixExp_alt ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
+    | AppExp_alt (f1, f2) -> AppExp_alt (subst_exp s f1, subst_exp s f2)
 
   let eval_binop op v1 v2 =
     begin match op, v1, v2 with
@@ -259,6 +263,7 @@ module LS1 = struct
         | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
       end
     | CoercionExp c -> CoercionV c
+    | AppExp_alt _ | FunExp_alt _ | FixExp_alt _ -> raise @@ Eval_bug "should not appear alternative translation expression"
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
     print_debug "coerce <-- %a<%a>\n" Pp.LS1.pp_value v Pp.pp_coercion c;
@@ -278,6 +283,117 @@ module LS1 = struct
       env, "-", v
     | LetDecl (x, xs, f) ->
       let v = eval env f ~debug:debug in
+      let env = Environment.add x (xs, v) env in
+      env, x, v
+
+  let rec eval_alt ?(debug=false) (env: (tyvar list * value) Environment.t) f =
+    if debug then fprintf err_formatter "eval <-- %a\n" Pp.LS1.pp_exp f;
+    let eval = eval_alt ~debug:debug in
+    match f with
+    | Var (x, us) ->
+      let xs, v = Environment.find x env in
+      let us = List.map nu_to_fresh us in
+      begin match v with
+        | FunV proc -> FunV (fun _ -> proc (xs, us))
+        | FunV_alt proc -> FunV_alt (fun _ -> proc (xs, us))
+        | _ -> v
+      end
+    | IConst i -> IntV i
+    | BConst b -> BoolV b
+    | UConst -> UnitV
+    | BinOp (op, f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      eval_binop op v1 v2
+    | FunExp_alt ((x, _), k, (f', f'')) ->
+      FunV_alt (
+        fun (xs, ys) -> 
+          (fun v -> eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'),
+          (fun (v, w) -> eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'')
+      )
+    | FixExp_alt ((x, y, _, _), k, (f', f'')) ->
+      let f (xs, ys) =
+        let f' = subst_exp (Utils.List.zip xs ys) f' in
+        let f'' = subst_exp (Utils.List.zip xs ys) f'' in
+        let rec f1' v =
+          let env = Environment.add x (xs, FunV_alt (fun _ -> (f1', f2'))) env in
+          let env = Environment.add y ([], v) env in
+          eval env f'
+        and f2' (v, w) =
+          let env = Environment.add x (xs, FunV_alt (fun _ -> (f1', f2'))) env in
+          let env = Environment.add y ([], v) env in
+          let env = Environment.add k ([], w) env in
+          eval env f''
+        in (f1', f2')
+      in FunV_alt f
+    | AppExp (f1, f2, f3) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      let v3 = eval env f3 in
+      eval_app_val env v1 v2 v3 ~debug:debug
+    | AppExp_alt (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      eval_app_val_alt env v1 v2 ~debug:debug
+    | IfExp (f1, f2, f3) ->
+      let v1 = eval env f1 in
+      begin match v1 with
+        | BoolV true -> eval env f2
+        | BoolV false -> eval env f3
+        | _ -> raise @@ Eval_bug "if: non boolean value"
+      end
+    | LetExp (x, xs, f1, f2) ->
+      let v1 = eval env f1 in
+      eval (Environment.add x (xs, v1) env) f2
+    | CAppExp (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      begin match v2 with
+        | CoercionV c -> coerce ~debug:debug v1 c
+        | _ -> raise @@ Eval_bug "capp: application of non coercion value"
+      end
+    | CSeqExp (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      begin match v1, v2 with
+        | CoercionV c1, CoercionV c2 -> CoercionV (compose c1 c2 ~debug:debug)
+        | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
+      end
+    | CoercionExp c -> CoercionV c
+    | FunExp _ | FixExp _ -> raise @@ Eval_bug "should appear alternative translation expression"
+  and coerce ?(debug=false) v c =
+    let print_debug f = Utils.Format.make_print_debug debug f in
+    print_debug "coerce <-- %a<%a>\n" Pp.LS1.pp_value v Pp.pp_coercion c;
+    let coerce = coerce ~debug:debug in
+    match v with
+    | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
+    | v -> match normalize_coercion c with
+      | CId _ -> v
+      | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
+      | c when is_d c -> CoerceV (v, c)
+      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
+  and eval_app_val ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+    | FunV_alt proc -> snd (proc ([], [])) (v2, v3)
+    | CoerceV (v1, CFun (s, t)) -> 
+      begin match v3 with
+        | CoercionV c -> 
+          let k = CoercionV (compose t c ~debug:debug) in
+          eval_app_val env v1 (coerce v2 s ~debug:debug) k ~debug:debug
+        | _ -> raise @@ Eval_bug "app: application of non coercion value"
+      end
+    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+  and eval_app_val_alt ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+    | FunV_alt proc -> fst (proc ([], [])) v2
+    | CoerceV (v1, CFun (s, t)) -> eval_app_val env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
+    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+
+  let eval_program_alt ?(debug=false) env p =
+    match p with
+    | Exp f ->
+      let v = eval_alt env f ~debug:debug in
+      env, "-", v
+    | LetDecl (x, xs, f) ->
+      let v = eval_alt env f ~debug:debug in
       let env = Environment.add x (xs, v) env in
       env, x, v
 end

@@ -120,11 +120,12 @@ let type_of_tag = function
   | U -> TyUnit
   | Ar -> TyFun (TyDyn, TyDyn)
 
-let tag_of_ty = function
+let rec tag_of_ty = function
   | TyInt -> I
   | TyBool -> B
   | TyUnit -> U
   | TyFun (TyDyn, TyDyn) -> Ar
+  | TyVar (_, {contents = Some u}) -> tag_of_ty u
   | _ -> assert false
   (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
 
@@ -311,6 +312,9 @@ module LS1 = struct
     | CSeqExp of exp * exp
     | LetExp of id * tyvar list * exp * exp
     | CoercionExp of coercion
+    | FunExp_alt of (id * ty) * id * (exp * exp)
+    | FixExp_alt of (id * id * ty * ty) * id * (exp * exp)
+    | AppExp_alt of exp * exp
 
   let (*rec*) is_value = function
     | Var _
@@ -319,7 +323,9 @@ module LS1 = struct
     | UConst
     | FunExp _
     | FixExp _
-    | CoercionExp _ -> true
+    | CoercionExp _ 
+    | FunExp_alt _
+    | FixExp_alt _ -> true
     (*| CoercionExp (_, v, TyFun _, TyFun _, _) when is_value v -> true
     | CoercionExp (_, v, g, TyDyn, _) when is_value v && is_ground g -> true*)
     | _ -> false
@@ -336,7 +342,7 @@ module LS1 = struct
     | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | IfExp (f1, f2, f3) ->
       List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
-    | FunExp ((_, u), _, e) -> TV.union (ftv_ty u) (ftv_exp e)
+    | FunExp ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)
     | FixExp ((_, _, u1, _), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
     | AppExp (f1, f2, f3) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
@@ -344,6 +350,9 @@ module LS1 = struct
     | LetExp (_, xs, f1, f2) ->
       TV.union (TV.diff (ftv_exp f1) (TV.of_list xs)) (ftv_exp f2)
     | CoercionExp c -> ftv_coercion c
+    | FunExp_alt ((_, u), _, (f1, f2)) -> TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+    | FixExp_alt ((_, _, u1, _), _, (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+    | AppExp_alt (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
 
   type program =
     | Exp of exp
@@ -354,6 +363,7 @@ module LS1 = struct
     | BoolV of bool
     | UnitV
     | FunV of ((tyvar list * ty list) -> (value * value) -> value)
+    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
     | CoerceV of value * coercion
     | CoercionV of coercion
 end

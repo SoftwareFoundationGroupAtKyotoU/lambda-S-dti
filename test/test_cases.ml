@@ -173,3 +173,5 @@ let tests = [
 ]
 
 (* let g = fun x -> ((fun y -> y):? -> ?) x in if g true then g 2 else g 3  *)
+
+(* let minus_one x = x - 1 in let rec repeat n f x = if n = 0 then x else repeat (n-1) f (f x) in repeat 100000 minus_one 1000000;; *)

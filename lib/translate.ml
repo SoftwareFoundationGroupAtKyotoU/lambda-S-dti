@@ -211,4 +211,50 @@ module LS = struct
   let translate env = function
     | Exp f -> LS1.Exp (translate_exp env f)
     | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp env f)
+
+  let rec translate_exp_alt env = function
+    | Var (x, ys) -> LS1.Var (x, ys)
+    | IConst i -> LS1.IConst i(*, TyInt*)
+    | BConst b -> LS1.BConst b(*, TyBool*)
+    | UConst -> LS1.UConst
+    | FunExp (x, u, f) ->
+      let env = Environment.add x (tysc_of_ty u) env in
+      let id, k = fresh_CVar () in 
+      LS1.FunExp_alt ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | FixExp (x, y, u1, u, f) -> 
+      let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
+      let id, k = fresh_CVar () in 
+      LS1.FixExp_alt ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | CAppExp (f, c) -> translate_exp_k_alt env (LS1.CoercionExp c) f
+    | AppExp (f1, f2) -> (*new*)
+      LS1.AppExp_alt (translate_exp_alt env f1, translate_exp_alt env f2)
+    | BinOp (op, f1, f2) -> LS1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2) (*new*)
+    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp_alt env f1, translate_exp_alt env f2, translate_exp_alt env f3) (*new*)
+    | LetExp (x, ys, f1, f2) -> (*new*)
+      let u = Typing.LS.type_of_program env (Exp f1) in
+      LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
+  and translate_exp_k_alt env k = function
+    | Var (x, ys) -> LS1.CAppExp (LS1.Var (x, ys), k)
+    | IConst i -> LS1.CAppExp (LS1.IConst i, k)
+    | BConst b -> LS1.CAppExp (LS1.BConst b, k)
+    | UConst -> LS1.CAppExp (LS1.UConst, k)
+    | FunExp (x, u, f) -> 
+      let env = Environment.add x (tysc_of_ty u) env in
+      let id, k' = fresh_CVar () in 
+      LS1.CAppExp (LS1.FunExp_alt ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | FixExp (x, y, u1, u, f) -> 
+      let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
+      let id, k' = fresh_CVar () in 
+      LS1.CAppExp (LS1.FixExp_alt ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | BinOp (op, f1, f2) -> LS1.CAppExp (LS1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2), k)
+    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp_alt env f1, translate_exp_k_alt env k f2, translate_exp_k_alt env k f3)
+    | AppExp (f1, f2) -> LS1.AppExp (translate_exp_alt env f1, translate_exp_alt env f2, k)
+    | CAppExp (f, c) -> let id, k' = fresh_CVar () in LS1.LetExp (id, [], LS1.CSeqExp (LS1.CoercionExp c, k), translate_exp_k_alt env k' f)
+    | LetExp (x, ys, f1, f2) -> 
+      let u = Typing.LS.type_of_program env (Exp f1) in
+      LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_k_alt (Environment.add x (TyScheme (ys, u)) env) k f2)
+
+  let translate_alt env = function
+    | Exp f -> LS1.Exp (translate_exp_alt env f)
+    | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp_alt env f)
 end

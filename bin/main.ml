@@ -5,6 +5,7 @@ exception Compile_bad of string
 
 let debug = ref false
 let ls1 = ref false
+let alt = ref false
 
 (*let programs = ref [] (*Stdlibのために、要変更*)*)
 
@@ -88,17 +89,19 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
        * normalized input *)
       let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
       
-
       (* Translation *)
       print_debug "***** Coercion-insertion *****\n";
-      let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in
+      let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in 
       print_debug "f: %a\n" Pp.LS.pp_program f;
       print_debug "U: %a\n" Pp.pp_ty u';
       assert (Typing.is_equal u u');
       let u'' = Typing.LS.type_of_program tyenv f in
       assert (Typing.is_equal u u'');
       print_debug "f: %a\n" Pp.LS.pp_program f;
-      let f(*, u'''*) = Translate.LS.translate tyenv f in
+      let f(*, u'''*) = 
+        if !alt then Translate.LS.translate_alt tyenv f
+        else Translate.LS.translate tyenv f 
+      in
       (* assert (Typing.is_equal u u'''); *)
       print_debug "f: %a\n" Pp.LS1.pp_program f;
 
@@ -106,8 +109,10 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       if !ls1 then begin
       (* Evaluation *)
       print_debug "***** Eval *****\n";
-      let env, x, v = Eval.LS1.eval_program env f ~debug:!debug in
-      print "%a : %a = %a\n"
+      let env, x, v = 
+        if !alt then Eval.LS1.eval_program_alt env f ~debug:!debug
+        else Eval.LS1.eval_program env f ~debug:!debug 
+      in print "%a : %a = %a\n"
         pp_print_string x
         Pp.pp_ty2 u
         Pp.LS1.pp_value v;
@@ -229,6 +234,7 @@ let () =
   let options = Arg.align [
       ("-d", Arg.Set debug, " Enable debug mode");
       ("-LS1", Arg.Set ls1, " evaluate on LS1");
+      ("-alt", Arg.Set alt, " use alternative translation");
     ]
   in
   let parse_argv arg = match !file with

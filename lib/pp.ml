@@ -341,19 +341,19 @@ module LS1 = struct
   open Syntax.LS1
 
   let gt_exp f1 f2 = match f1, f2 with
-    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | BinOp _ | IfExp _ | CAppExp _), (LetExp _ | FunExp _ | FixExp _) -> true
-    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | BinOp _ | IfExp _), CAppExp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | BinOp _), IfExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | BinOp _ | IfExp _ | CAppExp _), (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | BinOp _ | IfExp _), CAppExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | BinOp _), IfExp _ -> true
     | BinOp (op1, _, _), BinOp (op2, _, _) -> gt_binop op1 op2
-    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _), BinOp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _), AppExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _), BinOp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | CSeqExp _ | CoercionExp _), (AppExp _ | AppExp_alt _) -> true
     | _ -> false
 
   let gte_exp f1 f2 = match f1, f2 with
-    | (LetExp _ | FunExp _ | FixExp _), (LetExp _ | FunExp _ | FixExp _) -> true
+    | (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _), (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _) -> true
     | IfExp _, IfExp _ -> true
     | BinOp (op1, _, _), BinOp (op2, _, _) when op1 = op2 -> true
-    | AppExp _, AppExp _ -> true
+    | (AppExp _ | AppExp_alt _), (AppExp _ | AppExp_alt _) -> true
     | CAppExp _, CAppExp _ -> true
     | CSeqExp _, CSeqExp _ -> true
     | _ -> gt_exp f1 f2
@@ -419,6 +419,26 @@ module LS1 = struct
     | CoercionExp c ->
       fprintf ppf "%a"
         pp_coercion c
+    | FunExp_alt ((x1, u1), c, (f1, f2)) ->
+      fprintf ppf "fun ((%s: %a), %s) -> (%a | %a)"
+        x1
+        pp_ty u1
+        c
+        pp_exp f1
+        pp_exp f2
+    | FixExp_alt ((x, y, u1, u2), c, (f1, f2)) ->
+      fprintf ppf "fix %s ((%s: %a), %s): %a = (%a | %a)"
+        x
+        y
+        pp_ty u1
+        c
+        pp_ty u2
+        pp_exp f1
+        pp_exp f2
+    | AppExp_alt (f1, f2) as f ->
+      fprintf ppf "%a %a"
+        (with_paren (gt_exp f f1) pp_exp) f1
+        pp_exp f2
 
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
@@ -434,7 +454,7 @@ module LS1 = struct
     | BoolV b -> pp_print_bool ppf b
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
-    | FunV _ -> pp_print_string ppf "<fun>"
+    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
     | CoerceV (v, c) ->
       fprintf ppf "%a<<%a>>"
         pp_value v

@@ -42,6 +42,7 @@ module LS1 = struct
       let newx = genvar x in
       LetExp (newx, tvs, alpha_exp idenv f1, alpha_exp (Environment.add x newx idenv) f2)
     | CoercionExp c -> CoercionExp c
+    | AppExp_alt _ | FunExp_alt _ | FixExp_alt _ -> raise @@ KNormal_bug "alternative translation yet"
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -112,10 +113,10 @@ module LS1 = struct
             | Gte -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, IfEqExp (x, y, f2', f3'), f2')
             | _ -> raise @@ KNormal_bug "if-cond type should bool"
           end
-        | Var _ | BConst _ | IfExp _ | AppExp _ | LetExp _ | CAppExp _ as f ->
+        | Var _ | BConst _ | IfExp _ | AppExp _ | AppExp_alt _ | LetExp _ | CAppExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunExp _ | FixExp _ | CSeqExp _ | CoercionExp _ -> raise @@ KNormal_bug "if-cond type should bool"
+        | IConst _ | UConst | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _ | CSeqExp _ | CoercionExp _ -> raise @@ KNormal_bug "if-cond type should bool"
       end
     | FunExp ((x, _), k, f) -> 
       let tent_var = genvar "_var" in
@@ -152,6 +153,7 @@ module LS1 = struct
           KNorm.LetExp (x, f1, f2)
       end
     | CoercionExp c -> KNorm.CoercionExp c
+    | AppExp_alt _ | FunExp_alt _ | FixExp_alt _ -> raise @@ KNormal_bug "alternative translation yet"
 
   let k_normalize_program tvsenv = function
     | Exp f -> let f = k_normalize_exp tvsenv f in KNorm.Exp f, tvsenv
