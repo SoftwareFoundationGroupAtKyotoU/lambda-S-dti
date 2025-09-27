@@ -1,12 +1,12 @@
-(* open Syntax
+open Syntax
 open Syntax.Cls
 open Format
-open Utils.Error*)
+open Utils.Error
 
 exception ToC_bug of string
 exception ToC_error of string
 
-(*(*Utilities*)
+(*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
 let c_of_ty = function
@@ -18,6 +18,7 @@ let c_of_ty = function
   | TyFun (_, _) -> raise @@ ToC_bug "tyfun should be eliminated by closure"
   | TyVar (i, { contents = None }) -> "_ty" ^ string_of_int i
   | TyVar (i, { contents = Some _ }) -> "_tyfun" ^ string_of_int i
+  | TyCoercion _ -> raise @@ ToC_bug "tycoercion yet?"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function
@@ -91,13 +92,82 @@ let toC_ftas ppf (n, x, ftas) =
   fprintf ppf "%a\n"
     toC_list ftas
 
+let toC_tag ppf = function
+  | I -> pp_print_string ppf "INT"
+  | B -> pp_print_string ppf "BOOL"
+  | U -> pp_print_string ppf "UNIT"
+  | Ar -> pp_print_string ppf "AR"
+
+let rec toC_crc ppf (c, x) = match c with
+  | CId _ -> fprintf ppf "%s.s = &crc_id;" x
+  | CSeq (CId _, CInj t) -> 
+    fprintf ppf "%s.s = &crc_inj_%a;"
+      x
+      toC_tag t
+  | CSeq (CFun _ as c1, CInj Ar) -> 
+    fprintf ppf "value %s_cfun;\n%a\n%s.s = make_crc_inj_ar(%s_cfun.s);"
+      x
+      toC_crc (c1, x ^ "_cfun")
+      x
+      x
+  | CSeq (CProj (t, (r, p)), CId _) ->
+    fprintf ppf "%a%s.s = make_crc_proj(G_%a, %s_r_p, &crc_id);"
+      toC_ran_pol (x, r, p)
+      x
+      toC_tag t
+      x
+  | CSeq (CProj (Ar, (r, p)), (CFun _ as c2)) ->
+    fprintf ppf "value %s_cfun;\n%a\n%a%s.s = make_crc_proj(G_AR, %s_r_p, %s_cfun.s);"
+      x
+      toC_crc (c2, x ^ "_cfun")
+      toC_ran_pol (x, r, p)
+      x
+      x
+      x
+  | CTvInj (i, _) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = INJ_TV;\n%s.s->crcdat.tv = _ty%d;"
+      x
+      x
+      x
+      i
+  | CTvProj ((i, _), (r, p)) -> 
+    fprintf ppf "%a%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = PROJ_TV;\n%s.s->crcdat.tv = _ty%d;\n%s.s->r_p = %s_r_p;"
+      toC_ran_pol (x, r, p)
+      x
+      x
+      x
+      i
+      x
+      x
+  | CFun (c1, c2) -> 
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = make_crc_fun(%s_c1.s, %s_c2.s);"
+      x
+      toC_crc (c1, x ^ "_c1")
+      x
+      toC_crc (c2, x ^ "_c2")
+      x
+      x
+      x
+  | CFail _ -> raise @@ ToC_bug "CFail should not appear in translated term"
+  | CTvProjInj _ -> raise @@ ToC_bug "CTvProjInj should not appear in translated term" 
+    (* fprintf ppf "%a%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = PROJ_INJ_TV;\n%s.s->crcdat.tv = _ty%d;\n%s.s->r_p = %s_r_p;"
+      toC_ran_pol (x, r, p)
+      x
+      x
+      x
+      i
+      x
+      x *)
+  | CSeq _ -> raise @@ ToC_bug "Invalid CSeq"
+  | CInj _ | CProj _ -> raise @@ ToC_bug "CInj or CProj should not appear directly"
+
 (* ======================================== *)
 
 (*main関数かどうかを判定*)
 let is_main = ref false
 
 let rec toC_exp ppf f = match f with
-  | Let (x, u, f1, f2) -> begin match f1 with (* let x = f1 in f2 のとき　f1によって出力するCプログラムを場合分け *) (* 2項目は型なので，現状無くてもよい（MinCamlにはついている）*)
+  | Let (x, f1, f2) -> begin match f1 with (* let x = f1 in f2 のとき　f1によって出力するCプログラムを場合分け *) (* 2項目は型なので，現状無くてもよい（MinCamlにはついている）→なくしてみた*)
     | Var y -> 
       fprintf ppf "value %s = %s;\n%a" (* let x = y in ... ~> value x = y; ... *) (*これはbeta変換でほとんどなくなるはず...？*)
         x
@@ -147,19 +217,21 @@ let rec toC_exp ppf f = match f with
         x
         toC_exp (Insert (x, f1))
         toC_exp f2
-    | AppDir (y, z) ->
-      fprintf ppf "value %s = fun_%s(%s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
+    | AppDir (y, (z1, z2)) ->
+      fprintf ppf "value %s = fun_%s(%s, %s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
         x
         y
-        z
+        z1
+        z2
         toC_exp f2
-    | AppCls (y, z) ->
-      fprintf ppf "value %s = app(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
+    | AppCls (y, (z1, z2)) ->
+      fprintf ppf "value %s = app(%s, %s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
         y
-        z
+        z1
+        z2
         toC_exp f2
-    | Cast (y, u1, u2, r, p) -> 
+    (* | Cast (y, u1, u2, r, p) -> 
       (*
       let x = y:u1=>^(r, p)u2 in ... 
       ~>
@@ -178,7 +250,7 @@ let rec toC_exp ppf f = match f with
         c1
         c2
         y
-        toC_exp f2
+        toC_exp f2 *)
     | AppTy (y, n, tas) -> 
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a\n%a" (* TODO *)
         x
@@ -187,7 +259,24 @@ let rec toC_exp ppf f = match f with
         y
         toC_tas (y, n, x, tas)
         toC_exp f2
-    | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Let (x, u, f, f2))) (* 型定義を先にやる．Letのuはここで受け継ぐためだけにある*)
+    | CApp (y, z) ->
+      fprintf ppf "value %s = coerce(%s, %s.s);\n%a"
+        x
+        y
+        z
+        toC_exp f2
+    | Coercion c ->
+      fprintf ppf "value %s;\n%a\n%a"
+        x
+        toC_crc (c, x)
+        toC_exp f2
+    | CSeq (y, z) -> 
+      fprintf ppf "value %s = { .s = compose(%s.s, %s.s) };\n%a"
+        x
+        y
+        z
+        toC_exp f2
+    | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Let (x, f, f2))) (* 型定義を先にやる．Letのuはここで受け継ぐためだけにある*)
     | MakeLabel _ | MakeCls _ | MakePolyLabel _ | MakePolyCls _ | Let _ -> raise @@ ToC_bug "Let or LetRec appears in f1 on let in toC_exp; maybe closure dose not success"
     | Insert _ -> raise @@ ToC_bug "Insert appear in f1 on let in toC_exp"
     (*let x = let rec ~~ in ~ in f2やlet x = Insert(y, f) in f2などの形にはなり得ない
@@ -231,23 +320,25 @@ let rec toC_exp ppf f = match f with
         x
         y
         z
-    | AppDir (y, z) ->
-      fprintf ppf "%s = fun_%s(%s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
+    | AppDir (y, (z1, z2)) ->
+      fprintf ppf "%s = fun_%s(%s, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
         y
-        z
-    | AppCls (y, z) ->
-      fprintf ppf "%s = app(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+        z1
+        z2
+    | AppCls (y, (z1, z2)) ->
+      fprintf ppf "%s = app(%s, %s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
-        z
+        z1
+        z2
     | AppTy (y, n, tas) ->
       fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a" (* TODO *)
         x
         x
         y        
         toC_tas (y, n, x, tas)
-    | Cast (y, u1, u2, r, p) -> (* Letのときと同じ要領でcastを処理する．最後はx = cast(~,~,~,~); *)
+    (* | Cast (y, u1, u2, r, p) -> (* Letのときと同じ要領でcastを処理する．最後はx = cast(~,~,~,~); *)
       let c1, c2 = c_of_ty u1, c_of_ty u2 in
       fprintf ppf "%a%s = cast(%s, %s, %s, %s_r_p);\n"
         toC_ran_pol (y, r, p)
@@ -255,16 +346,29 @@ let rec toC_exp ppf f = match f with
         y
         c1
         c2
+        y *)
+    | CApp (y, z) ->
+      fprintf ppf "%s = coerce(%s, %s.s);\n"
+        x
         y
+        z
+    | Coercion c ->
+      fprintf ppf "%a\n"
+        toC_crc (c, x)
+    | CSeq (y, z) -> 
+      fprintf ppf "%s.s = compose(%s.s, %s.s);\n"
+        x
+        y
+        z
     (*以下は内部にexpがあるので，後者のexpまでinsertを送る
       letはf2のみに，ifはf1,f2の両方にinsertを送る*)
-    | Let (y, u, f1, f2) -> toC_exp ppf (Let (y, u, f1, Insert (x, f2)))
+    | Let (y, f1, f2) -> toC_exp ppf (Let (y, f1, Insert (x, f2)))
     | IfEq (y, z, f1, f2) -> toC_exp ppf (IfEq (y, z, Insert (x, f1), Insert (x, f2)))
     | IfLte (y, z, f1, f2) -> toC_exp ppf (IfLte (y, z, Insert (x, f1), Insert (x, f2)))
-    | MakeLabel (y, u, l, f) -> toC_exp ppf (MakeLabel (y, u, l, Insert (x, f)))
-    | MakeCls (y, u, c, f) -> toC_exp ppf (MakeCls (y, u, c, Insert (x, f)))
-    | MakePolyLabel (y, u, l, tvs, f) -> toC_exp ppf (MakePolyLabel (y, u, l, tvs, Insert (x, f)))
-    | MakePolyCls (y, u, c, tvs, f) -> toC_exp ppf (MakePolyCls (y, u, c, tvs, Insert (x, f)))
+    | MakeLabel (y, l, f) -> toC_exp ppf (MakeLabel (y, l, Insert (x, f)))
+    | MakeCls (y, c, f) -> toC_exp ppf (MakeCls (y, c, Insert (x, f)))
+    | MakePolyLabel (y, l, tvs, f) -> toC_exp ppf (MakePolyLabel (y, l, tvs, Insert (x, f)))
+    | MakePolyCls (y, c, tvs, f) -> toC_exp ppf (MakePolyCls (y, c, tvs, Insert (x, f)))
     | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Insert (x, f)))
     (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
     | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
@@ -291,7 +395,7 @@ let rec toC_exp ppf f = match f with
       y
       toC_exp f1
       toC_exp f2
-  | MakeLabel (_, _, l, f) -> (* TODO *)
+  | MakeLabel (_, l, f) -> (* TODO *)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n%a"
       l
       l
@@ -299,7 +403,7 @@ let rec toC_exp ppf f = match f with
       l
       l
       toC_exp f
-  | MakePolyLabel (_, _, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
+  | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
       l
       l
@@ -310,7 +414,7 @@ let rec toC_exp ppf f = match f with
       (List.length ftv + n)
       toC_ftas (n, l, ftv)
       toC_exp f
-  | MakeCls (x, _, { entry = _; actual_fv = vs }, f) -> (*TODO*)
+  | MakeCls (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
       x
       x
@@ -321,7 +425,7 @@ let rec toC_exp ppf f = match f with
       (List.length vs)
       toC_vs (x, vs)
       toC_exp f
-  | MakePolyCls (x, _, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
+  | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
       x
       x
@@ -335,14 +439,16 @@ let rec toC_exp ppf f = match f with
       (List.length ftv + n)
       toC_ftas (n, x, ftv)
       toC_exp f
-  | SetTy ((i, { contents = opu }), f) -> begin match opu with (*ここはtoC_tycontentを参照*)
+  | SetTy ((_, { contents = _ }), f) -> toC_exp ppf f
+    (* raise @@ raise @@ ToC_bug "SetTy need?" *)
+    (* begin match opu with (*ここはtoC_tycontentを参照*)
     | None ->
         fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
           i
           i
           toC_exp f
     | Some TyFun (u1, u2) -> 
-      fprintf ppf "ty *_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tyfun.left = %s;\n_tyfun%d->tyfun.right = %s;\n%a"
+      fprintf ppf "ty *_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.left = %s;\n_tyfun%d->tydat.tyfun.right = %s;\n%a"
         i
         i
         i
@@ -353,7 +459,7 @@ let rec toC_exp ppf f = match f with
         (c_of_ty u2)
         toC_exp f
     | Some _ -> raise @@ ToC_bug "not tyfun is in tyvar option"
-    end
+    end *)
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その式自体をreturnする．
     例はmain関数でないとき*)
@@ -397,25 +503,29 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "value retint = { .i_b_u = %s.i_b_u %% %s.i_b_u };\nreturn 0;\n" x y
     else 
       fprintf ppf "value retint = { .i_b_u = %s.i_b_u %% %s.i_b_u };\nreturn retint;\n" x y
-  | AppDir (x, y) -> (* x y ~> return fun_x(y); *) (*xが直接適用できる関数の場合*)
+  | AppDir (x, (y1, y2)) -> (* x y ~> return fun_x(y); *) (*xが直接適用できる関数の場合*)
     if !is_main then 
-      fprintf ppf "fun_%s(%s);\nreturn 0;\n"
+      fprintf ppf "fun_%s(%s, %s);\nreturn 0;\n"
         x
-        y
+        y1
+        y2
     else
-      fprintf ppf "return fun_%s(%s);\n"
+      fprintf ppf "return fun_%s(%s, %s);\n"
         x
-        y
-  | AppCls (x, y) -> (* x y ~> return app(x, y); *) (*xがクロージャを利用して適用する関数の場合*)
+        y1
+        y2
+  | AppCls (x, (y1, y2)) -> (* x y ~> return app(x, y); *) (*xがクロージャを利用して適用する関数の場合*)
     if !is_main then 
-      fprintf ppf "app(%s, %s);\nreturn 0;\n"
+      fprintf ppf "app(%s, %s, %s);\nreturn 0;\n"
         x
-        y
+        y1
+        y2
     else
-      fprintf ppf "return app(%s, %s);\n"
+      fprintf ppf "return app(%s, %s, %s);\n"
         x
-        y
-  | Cast (x, u1, u2, r, p) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
+        y1
+        y2
+  (* | Cast (x, u1, u2, r, p) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
     let c1, c2 = c_of_ty u1, c_of_ty u2 in
     if !is_main then 
       fprintf ppf "%acast(%s, %s, %s, %s_r_p);\nreturn 0;\n"
@@ -430,7 +540,7 @@ let rec toC_exp ppf f = match f with
         x
         c1
         c2
-        x
+        x *)
   | AppTy (x, n, tas) -> 
     if !is_main then
       fprintf ppf "value retval;\nretval.f = (fun*)GC_MALLOC(sizeof(fun));\n*retval.f = *%s.f;\n%a\nreturn 0;" (* TODO *)
@@ -440,6 +550,31 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "value retval;\nretval.f = (fun*)GC_MALLOC(sizeof(fun));\n*retval.f = *%s.f;\n%a\nreturn retval;\n"
         x
         toC_tas (x, n, "retval", tas)
+  | CApp (y, z) ->
+    if !is_main then
+      fprintf ppf "value retval = coerce(%s, %s.s);\nreturn 0;\n"
+        y
+        z
+    else
+      fprintf ppf "value retval = coerce(%s, %s.s);\nreturn retval;\n"
+        y
+        z
+  | Coercion c ->
+    if !is_main then
+      fprintf ppf "value retval;\n%a\nreturn 0;\n"
+        toC_crc (c, "retval")
+    else
+      fprintf ppf "value retval;\n%a\nreturn retval;\n"
+        toC_crc (c, "retval")
+  | CSeq (x, y) -> 
+    if !is_main then
+      fprintf ppf "value retval = { .s = compose(%s.s, %s.s) };\nreturn 0;\n"
+        x
+        y
+    else 
+      fprintf ppf "value retval = { .s = compose(%s.s, %s.s) };\nreturn retval;\n"
+        x
+        y
 
 (* =================================== *)
 
@@ -471,7 +606,7 @@ let toC_tycontent ppf (i, { contents = opu }) =
   | Some TyFun (u1, u2) -> 
     (*TyFunはMALLOCしたのち，tykindをTYFUNとする
       さらに，leftとrightをそれぞれMALLOCして，TyFunの二つの型をそれぞれ代入する*)
-    fprintf ppf "_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tyfun.left = %s;\n_tyfun%d->tyfun.right = %s;"
+    fprintf ppf "_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.left = %s;\n_tyfun%d->tydat.tyfun.right = %s;"
       i
       i
       i
@@ -504,7 +639,7 @@ let toC_tys ppf l =
 let cnt_fv = ref 0
 
 (*引数zsから要素を取り出し，変数名xの値に代入*)
-let toC_fv ppf (x, _) =
+let toC_fv ppf x =
   fprintf ppf "value %s = zs[%d];"
     x
     !cnt_fv;
@@ -545,20 +680,20 @@ let toC_tvs ppf (tvl, n) =
   再帰関数などに対応するために，関数本体の前に，名前を前方定義する
   ここで定義する内容はfun型の関数自体の定義 (*いらない：と，関数が格納されたvalue型の値の二つ*)
   fundef内のfvl(自由変数のリスト)とtvs(型変数のリスト)に要素が入っているかどうかで関数の型が異なるので，四通りの場合分けが発生する*)
-let toC_label ppf { name = (l, _); tvs = (tvs, _); arg = (_, _); formal_fv = fvl; body = _ } = 
+let toC_label ppf { name = l; tvs = (tvs, _); arg = (_, _); formal_fv = fvl; body = _ } = 
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun_%s(value);"
+    fprintf ppf "value fun_%s(value, value);"
       l
   else if num = 0 then
-    fprintf ppf "value fun_%s(value, ty**);"
+    fprintf ppf "value fun_%s(value, value, ty**);"
       l
   else if num'= 0 then
-    fprintf ppf "value fun_%s(value, value*);"
+    fprintf ppf "value fun_%s(value, value, value*);"
       l
   else
-    fprintf ppf "value fun_%s(value, value*, ty**);"
+    fprintf ppf "value fun_%s(value, value, value*, ty**);"
       l
 
 (*関数本体の定義
@@ -597,35 +732,39 @@ let toC_funv ppf (l, num, num') =
       l
       l
 
-let toC_fundef ppf { name = (l, _); tvs = (tvs, n); arg = (x, _); formal_fv = fvl; body = f } = 
+let toC_fundef ppf { name = l; tvs = (tvs, n); arg = (x, y); formal_fv = fvl; body = f } = 
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun_%s(value %s) {\n%a%a}"
+    fprintf ppf "value fun_%s(value %s, value %s) {\n%a%a}"
       l
       x
+      y
       toC_funv (l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
       l
       x
+      y
       num'
       toC_funv (l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
       l
       x
+      y
       num
       toC_funv (l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
       l
       x
+      y
       num
       num'
       toC_funv (l, num, num')
@@ -656,4 +795,4 @@ let toC_program ppf (Prog (tvset, toplevel, f)) =
     toC_fundefs toplevel
     "int main() {\nstdlib();\nset_tys();\n"
     toC_exp f
-    "}" *)
+    "}"

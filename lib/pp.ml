@@ -608,8 +608,8 @@ module Cls = struct
         y
         pp_exp e1
         pp_exp e2
-    | AppCls (x, y) -> fprintf ppf "%s:cls %s" x y
-    | AppDir (l, x) -> fprintf ppf "%s:label %s" l x
+    | AppCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
+    | AppDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
     | AppTy (x, _, tas) ->
       fprintf ppf "%s[%a]"
         x
@@ -625,47 +625,48 @@ module Cls = struct
         pp_ty u2
         pp_exp f
     | SetTy _ -> raise @@ Syntax_error
-    | Cast (x, u1, u2, _, _) ->
+    (* | Cast (x, u1, u2, _, _) ->
         fprintf ppf "%s: %a => %a"
           x
           pp_ty u1
-          pp_ty u2
-    | MakeLabel (x, u, l, f) ->
-      fprintf ppf "lbl (%s:%a) = %s in %a"
+          pp_ty u2 *)
+    | CApp (x, y) ->
+      fprintf ppf "%s<%s>" x y
+    | CSeq (x, y) ->
+      fprintf ppf "%s;;%s" x y
+    | Coercion c ->
+      fprintf ppf "%a"
+        pp_coercion c
+    | MakeLabel (x, l, f) ->
+      fprintf ppf "lbl %s = %s in %a"
         x
-        pp_ty u
         l
         pp_exp f
-    | MakePolyLabel (x, u, l, _, f) ->
-      fprintf ppf "plbl (%s:%a) = %s in %a"
+    | MakePolyLabel (x, l, _, f) ->
+      fprintf ppf "plbl %s = %s in %a"
         x
-        pp_ty u
         l
         pp_exp f
-    | MakeCls (x, u, cls, f) ->
-      fprintf ppf "cls (%s:%a) = %a in %a"
+    | MakeCls (x, cls, f) ->
+      fprintf ppf "cls %s = %a in %a"
         x
-        pp_ty u
         pp_print_cls cls
         pp_exp f
-    | MakePolyCls (x, u, cls, _, f) ->
-      fprintf ppf "pcls (%s:%a) = %a in %a"
+    | MakePolyCls (x, cls, _, f) ->
+      fprintf ppf "pcls %s = %a in %a"
         x
-        pp_ty u
         pp_print_cls cls
         pp_exp f
-    | Let (x, u, f1, f2) ->
-        fprintf ppf "let (%s:%a) = %a in %a"
+    | Let (x, f1, f2) ->
+        fprintf ppf "let %s = %a in %a"
           x
-          pp_ty u
           pp_exp f1
           pp_exp f2
     | Insert _ -> raise @@ Syntax_error (*"insert or setty was applied to Cls.pp_exp"*)
 
-  let pp_fv ppf (x, u) =
-    fprintf ppf "%s:%a"
+  let pp_fv ppf x =
+    fprintf ppf "%s"
       x
-      pp_ty u
 
   let pp_print_fv ppf fvl =
     let pp_sep ppf () = fprintf ppf "," in
@@ -673,22 +674,20 @@ module Cls = struct
     fprintf ppf "%a"
       pp_list fvl
 
-  let pp_fundef ppf { name = (l, ul); tvs = (tvs, _); arg = (x, ux); formal_fv = fvl; body = f} = 
+  let pp_fundef ppf { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} = 
     if List.length fvl = 0 then
-      fprintf ppf "let rec (%s:%a) %a(%s:%a) = %a"
+      fprintf ppf "let rec %s %a(%s, %s) = %a"
         l
-        pp_ty ul
         pp_let_tyabses tvs
-        x
-        pp_ty ux
+        y
+        z
         pp_exp f
     else
-      fprintf ppf "let rec (%s:%a) %a(%s:%a) = %a (fv:%a)"
+      fprintf ppf "let rec %s %a(%s, %s) = %a (fv:%a)"
         l
-        pp_ty ul
         pp_let_tyabses tvs
-        x
-        pp_ty ux
+        y
+        z
         pp_exp f
         pp_print_fv fvl
 

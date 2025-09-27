@@ -228,7 +228,7 @@ module LS1 = struct
       let v1 = eval env f1 in
       let v2 = eval env f2 in
       let v3 = eval env f3 in
-      eval_app_val env v1 v2 v3
+      eval_app_val env v1 v2 v3 ~debug:debug
     | IfExp (f1, f2, f3) ->
       let v1 = eval env f1 in
       begin match v1 with
@@ -288,6 +288,7 @@ module LS1 = struct
     | v -> match normalize_coercion c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
+      (* | CTvInj (_, {contents=None}) -> raise @@ Eval_bug "coerce: coercion with uninstantiated type variable" *)
       | c when is_d c -> CoerceV (v, c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
   and eval_app_val ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)

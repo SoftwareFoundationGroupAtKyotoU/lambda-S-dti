@@ -1,27 +1,29 @@
-ldti ack.ml
-ldti adder.ml
-ldti adder2.ml
-ldti cast-abort.ml
-ldti cls-bug.ml
-ldti cls-rec.ml
-ldti even-odd.ml
-ldti example1_fail.ml
-ldti example1_success.ml
-ldti example2.ml
-ldti example3.ml
-ldti fib.ml
-ldti funcomp.ml
-ldti gcd.ml
-ldti join-reg.ml
-ldti join-reg2.ml
-ldti join-stack.ml
-ldti join-stack2.ml
-ldti join-stack3.ml
-ldti non-tail-if.ml
-ldti print.ml
-ldti repeat_f_dyn.ml
-ldti repeat_x_dyn.ml
-ldti repeat.ml
-ldti shuffle.ml
-ldti sum-tail.ml
-ldti sum.ml
+lS1dti ack.ml -c
+lS1dti adder.ml -c
+lS1dti adder2.ml -c
+lS1dti cast_coercion_difference.ml -c
+lS1dti cast-abort.ml -c
+lS1dti cls-bug.ml -c
+lS1dti cls-rec.ml -c
+lS1dti even-odd.ml -c
+lS1dti example1_fail.ml -c
+lS1dti example1_success.ml -c
+lS1dti example2.ml -c
+lS1dti example3.ml -c
+lS1dti fib.ml -c
+lS1dti funcomp.ml -c
+lS1dti gcd.ml -c
+lS1dti join-reg.ml -c
+lS1dti join-reg2.ml -c
+lS1dti join-stack.ml -c
+lS1dti join-stack2.ml -c
+lS1dti join-stack3.ml -c
+lS1dti many_coerce.ml -c
+lS1dti non-tail-if.ml -c
+lS1dti print.ml -c
+lS1dti repeat_f_dyn.ml -c
+lS1dti repeat_x_dyn.ml -c
+lS1dti repeat.ml -c
+lS1dti shuffle.ml -c
+lS1dti sum-tail.ml -c
+lS1dti sum.ml -c

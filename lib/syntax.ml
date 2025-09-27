@@ -428,18 +428,21 @@ module Cls = struct
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | AppTy of id * int * tyarg list
-    | MakeCls of id * ty * closure * exp
-    | AppCls of id * id
-    | AppDir of label * id
-    | Cast of id * ty * ty * range * polarity
-    | Let of id * ty * exp * exp
-    | MakeLabel of id * ty * label * exp
-    | MakePolyLabel of id * ty * label * ftv * exp
-    | MakePolyCls of id * ty * closure * ftv * exp
+    | MakeCls of id * closure * exp
+    | AppCls of id * (id * id)
+    | AppDir of label * (id * id)
+    (* | Cast of id * ty * ty * range * polarity *)
+    | CApp of id * id
+    | CSeq of id * id
+    | Coercion of coercion
+    | Let of id * exp * exp
+    | MakeLabel of id * label * exp
+    | MakePolyLabel of id * label * ftv * exp
+    | MakePolyCls of id * closure * ftv * exp
     | SetTy of tyvar * exp
     | Insert of id * exp
 
-  type fundef = { name : label * ty; tvs : tyvar list * int; arg : id * ty; formal_fv : (id * ty) list; body : exp }
+  type fundef = { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
 
   module V = struct
     include Set.Make (
@@ -458,14 +461,17 @@ module Cls = struct
     | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv f1; fv f2]
     | AppTy (x, _, _) -> V.singleton x
     | SetTy (_, f) -> fv f
-    | AppDir (_, y) -> V.singleton y
-    | AppCls (x, y) -> V.of_list [x; y]
-    | Cast (x, _, _, _, _) -> V.singleton x
-    | MakeLabel (x, _, _, f) -> V.remove x (fv f)
-    | MakePolyLabel (x, _, _, _, f) -> V.remove x (fv f)
-    | MakeCls (x, _, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | MakePolyCls (x, _, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | Let (x, _, c, f) -> V.union (fv c) (V.remove x (fv f))
+    | AppDir (_, (y, z)) -> V.of_list [y; z]
+    | AppCls (x, (y, z)) -> V.of_list [x; y; z]
+    (* | Cast (x, _, _, _, _) -> V.singleton x *)
+    | CApp (x, y) -> V.of_list [x; y]
+    | CSeq (x, y) -> V.of_list [x; y]
+    | Coercion _ -> V.empty
+    | MakeLabel (x, _, f) -> V.remove x (fv f)
+    | MakePolyLabel (x, _, _, f) -> V.remove x (fv f)
+    | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
+    | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
+    | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
     | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
 
   type program = Prog of TV.t * fundef list * exp
