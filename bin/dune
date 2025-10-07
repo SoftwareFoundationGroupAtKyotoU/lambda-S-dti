@@ -2,6 +2,11 @@
   (name main)
   (libraries lambda_S1_dti))
 
+(executable
+ (name bench)
+ (modules bench)
+ (libraries lambda_S1_dti yojson core_bench core_unix.command_unix))
+
 (install
   (section bin)
   (files (main.exe as lS1dti)))

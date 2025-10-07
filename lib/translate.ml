@@ -66,7 +66,7 @@ module ITGL = struct
     | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
     | _ -> Pp.pp_ty err_formatter u1; Pp.pp_ty err_formatter u1; raise @@ Translation_bug "cannot exist such coercion"
 
-  let coerce f r u1 u2 = 
+  let coerce f r u1 u2 = (* this is not same as ldti about blame label r *)
     if u1 = u2 then f (* Omit identity cast for better performance *)
     else LS.CAppExp (f, make_s_coercion (r, Pos) u1 u2)
 

@@ -56,7 +56,7 @@ rule main = parse
 | ">=" { Parser.GTE (range_of lexbuf) }
 | "&&" { Parser.LAND (range_of lexbuf) }
 | "||" { Parser.LOR (range_of lexbuf) }
-| ['a'-'z'] ['a'-'z' '0'-'9' '_' '\'']*
+| ['a'-'z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
   {
     let id = Lexing.lexeme lexbuf in
     let range = range_of lexbuf in

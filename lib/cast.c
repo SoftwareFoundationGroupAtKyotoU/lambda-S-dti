@@ -328,9 +328,11 @@ crc* compose(crc *c1, crc *c2) {
 			// printf("    c1.c2.g:%d, c2.c1.g:%d\n", c1->crcdat.two_crc.c2->crcdat.g, c2->crcdat.two_crc.c1->crcdat.g);
 			if (c1->crcdat.two_crc.c2->crcdat.g == c2->crcdat.two_crc.c1->crcdat.g) {   //g;G!;;G?pi -> g;;i
 				return compose(c1->crcdat.two_crc.c1, c2->crcdat.two_crc.c2);
-			} else {                                                                    //g;G!;;H?p;i -> blame (if G neq H)
-				blame(c2->crcdat.two_crc.c1->r_p);
-				exit(1);
+			} else {                                                                 //g;G!;;H?p;i -> bot^p (if G neq H)
+				crc *retc = (crc*)GC_MALLOC(sizeof(crc));
+				retc->crckind = BOT;
+				retc->r_p = c2->crcdat.two_crc.c1->r_p;
+				return retc;
 			}
 		} else if (c2->crckind == PROJ_TV) {										   	//g;G!;;X?p
 			c2 = normalize_crc(c2);
@@ -402,6 +404,10 @@ crc* compose(crc *c1, crc *c2) {
 				return c1;
 			}
 		}
+	} else if (c1->crckind == BOT) {
+		return c1;
+	} else if (c2->crckind == BOT) {
+		return c2;
 	} else if (c2->crckind == SEQ && c2->crcdat.two_crc.c2->crckind == INJ) {          //g;;h;G! -> (g;;h);G!
 		// printf("  c2.c1:%d, c2.c2:%d\n", c2->crcdat.two_crc.c1->crckind, c2->crcdat.two_crc.c2->crckind);
 		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -430,6 +436,9 @@ value coerce(value v, crc *s) {
 
 	if (s->crckind == ID) { // v<id> -> v
 		retv = v;
+	} else if (s->crckind = BOT) { // v<bot^p> -> blame p
+		blame(s->r_p);
+		exit(1);
 	} else if (s->crckind == FUN) { // v<s'=>t'>
 		if (v.f->funkind == WRAPPED) { // u<<s=>t>><s'=>t'>
 			crc *c1 = compose(s->crcdat.two_crc.c1, v.f->fundat.wrap.c_arg);

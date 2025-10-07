@@ -36,6 +36,7 @@ typedef struct ty {
 			ty *right;
 		} tyfun;
 	} tydat;
+	
 } ty;
 
 typedef struct crc crc;
@@ -49,7 +50,8 @@ typedef struct crc {
 		PROJ_INJ_TV,
 		FUN,
 		ID,
-		SEQ
+		SEQ,
+		BOT
 	} crckind;
 	union crcdat {
 		ground_ty g;

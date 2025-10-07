@@ -1,6 +1,6 @@
 ((((fun (x:bool) :int -> 3) (1:?)):?):bool);;
 
-DTI : tyvar was inferred
+(* DTI : tyvar was inferred
 0x7eff30f5cec0 <- 0x7eff30f5cf40
 DTI : arrow was inferred
 0x7eff30f5cfe0 <- (0x7eff30f5cea0=>0x7eff30f5ce80)
@@ -58,4 +58,4 @@ tyfind: 0x7eff30f5ce20
 tyfind: 0x7eff30f5cde0
 tyfind: 0x7eff30f5cfc0
 tyfind: 0x7eff30f5cf00
-4
+4 *)
