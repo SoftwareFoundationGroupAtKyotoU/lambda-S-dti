@@ -214,8 +214,16 @@ let rec pp_coercion ppf c = match c with (* TODO : もう少し簡略化 *)
   | CTvProjInj ((_, {contents = None} as tv), _) ->
     fprintf ppf "?p%a!"
       pp_ty (TyVar tv)
-  | CTvInj _ | CTvProj _ | CTvProjInj _ as c -> 
-    pp_coercion ppf (normalize_coercion c)
+  | CTvInj tv ->
+    fprintf ppf "|%a|!"
+      pp_ty (TyVar tv)
+  | CTvProj (tv, _) ->
+    fprintf ppf "|%a|?"
+      pp_ty (TyVar tv)
+  | CTvProjInj (tv, _) ->
+    fprintf ppf "?|%a|!"
+      pp_ty (TyVar tv)
+    (* pp_coercion ppf (normalize_coercion c) *)
   | CFun (CSeq _ as c1, (CSeq _ as c2)) ->
     fprintf ppf "(%a)->(%a)"
       pp_coercion c1

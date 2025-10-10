@@ -7,6 +7,10 @@
  (modules bench)
  (libraries lambda_S1_dti yojson core_bench core_unix.command_unix))
 
+(env
+ (dev
+  (flags (:standard -w -3-6))))
+
 (install
   (section bin)
   (files (main.exe as lS1dti)))

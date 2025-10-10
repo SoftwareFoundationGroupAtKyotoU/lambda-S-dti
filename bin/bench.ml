@@ -1,11 +1,11 @@
 open Unix
-open LambdaCSPolyMP.Utils
-open LambdaCSPolyMP
+(* open Lambda_S1_dti.Utils *)
+open Lambda_S1_dti
 
-open Support.Error
-open Format
-open Translation
-open Pp
+(* open Utils.Error *)
+(* open Format *)
+(* open Translate *)
+(* open Pp *)
 
 type mode = C | S
 let string_of_mode = function
@@ -19,16 +19,16 @@ let files = [
   (* "church_small"; *)
   (* "church"; *)
   (* "church_big";
-  "tak";
-  "fib";
-  "evenodd";
+  "tak";*)
+  (* "fib"; *)
+  (* "evenodd"; *)
   "loop";
-  "loop_poly";
+  (*"loop_poly";
   "mklist";
   "map";
   "fold";
   "zipwith"; *)
-  "polypoly";
+  (* "polypoly"; *)
 ]
 let modes = [C; S]   (* C と S を両方実行 *)
 let log_base_dir = "logs"
@@ -44,7 +44,7 @@ let show_progress = true                (* 進捗バーを標準出力に出す�
 
 (* 出力フォーマット：Text（従来）, Json（1ファイルに配列）, JsonLines（NDJSON） *)
 type out_mode = Text | Json | JsonLines
-let out_mode : out_mode = JsonLines  (* 推奨: NDJSON。1行=1ミュータント *)
+let out_mode : out_mode = Text (*JsonLines*)  (* 推奨: NDJSON。1行=1ミュータント *)
 
 (* 追加: Text ログを作るか？ *)
 let text_log_enabled =
@@ -62,7 +62,7 @@ let log_section (fmt:Format.formatter) (title:string) =
   Format.fprintf fmt "@.@[<v>--- %s ---@]@." title
 
 module J = struct
-  open Yojson.Safe
+  (* open Yojson.Safe *)
 
   let strf fmt = Format.asprintf fmt
 
@@ -121,10 +121,10 @@ module Fast_alloc = struct
     (* Blame 等は事前検出してスキップ *)
     let ok =
       try thunk (); true with
-      | LambdaCSPolyMP.EvalC.Blame _ ->
+      | Eval.Blame _ ->
           log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (C)@."; false
-      | LambdaCSPolyMP.EvalS.Blame _ ->
-          log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (S)@."; false
+      (* | LambdaCSPolyMP.EvalS.Blame _ ->
+          log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (S)@."; false *)
       | exn ->
           log_section fmt "mem(fast) skipped";
           Format.fprintf fmt "reason: exception = %s@." (Core.Exn.to_string exn);
@@ -189,10 +189,10 @@ module CB = struct
     (* プレフライトで例外検出してスキップ *)
     let ok =
       try thunk (); true with
-      | LambdaCSPolyMP.EvalC.Blame _ ->
+      | Eval.Blame _ ->
           log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (C)@."; false
-      | LambdaCSPolyMP.EvalS.Blame _ ->
-          log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (S)@."; false
+      (* | LambdaCSPolyMP.EvalS.Blame _ ->
+          log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (S)@."; false *)
       | exn ->
           log_section fmt "core_bench (skipped)";
           Format.fprintf fmt "reason: exception = %s@." (Core.Exn.to_string exn);
@@ -311,8 +311,8 @@ let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
       (* Fast_alloc を呼びなおして値を作る（ログは emit_text_log のときだけ） *)
       let ok =
         try thunk (); true with
-        | LambdaCSPolyMP.EvalC.Blame _ -> false
-        | LambdaCSPolyMP.EvalS.Blame _ -> false
+        | Eval.Blame _ -> false
+        (* | LambdaCSPolyMP.EvalS.Blame _ -> false *)
         | _ -> false
       in
       if not ok then None else begin
@@ -408,12 +408,119 @@ let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
               obj [("minor", float_opt gc_minor); ("major", float_opt gc_major); ("compactions", float_opt gc_comp)]);
           ])
 
+          (* --tvをrenewする-- *)
+
+let pick_tv u = let open Syntax in match u with
+  | TyVar tv -> tv
+  | _ -> raise @@ Failure "not_tv"
+
+let rec tv_renew_ty u env = let open Syntax in match u with
+  | TyVar (i, _) -> 
+    begin 
+    try TyVar (Environment.find (string_of_int i) env), env with
+    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    let env = Environment.add (string_of_int i) tv env in
+    TyVar tv, env
+    end
+  | TyDyn | TyInt | TyBool | TyUnit -> u, env
+  | TyFun (u1, u2) -> 
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    TyFun (u1, u2), env
+  | TyCoercion (u1, u2) -> 
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    TyCoercion (u1, u2), env
+
+let rec tv_renew_coercion c env = let open Syntax in match c with
+  | CInj _ | CProj _ | CFail _ -> c, env
+  | CTvInj (i, _) -> 
+    begin
+    try CTvInj (Environment.find (string_of_int i) env), env with
+    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ())in
+    let env = Environment.add (string_of_int i) tv env in
+    CTvInj tv, env
+    end
+  | CTvProj ((i, _), p) -> 
+    begin
+    try CTvProj ((Environment.find (string_of_int i) env), p), env with
+    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    let env = Environment.add (string_of_int i) tv env in
+    CTvProj (tv, p), env
+    end
+  | CTvProjInj ((i, _), p) -> 
+    begin
+    try CTvProjInj ((Environment.find (string_of_int i) env), p), env with
+    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    let env = Environment.add (string_of_int i) tv env in
+    CTvProjInj (tv, p), env
+    end
+  | CId u ->
+    let u, env = tv_renew_ty u env in
+    CId u, env
+  | CFun (c1, c2) ->
+    let c1, env = tv_renew_coercion c1 env in
+    let c2, env = tv_renew_coercion c2 env in
+    CFun (c1, c2), env 
+  | CSeq (c1, c2) ->
+    let c1, env = tv_renew_coercion c1 env in
+    let c2, env = tv_renew_coercion c2 env in
+    CSeq (c1, c2), env 
+
+let rec tv_renew_exp e env = let open Syntax.LS in match e with
+  | Var (x, us) ->
+    let env = List.fold_left us ~f:(fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) ~init:env in
+    let us = List.map us (fun u -> match u with Ty u -> Syntax.Ty (fst @@ (tv_renew_ty u env)) | TyNu -> TyNu) in
+    Var (x, us), env
+  | IConst _ | BConst _ | UConst -> e, env
+  | BinOp (op, e1, e2) -> 
+    let e1, env = tv_renew_exp e1 env in
+    let e2, env = tv_renew_exp e2 env in
+    BinOp (op, e1, e2), env
+  | IfExp (e1, e2, e3) ->
+    let e1, env = tv_renew_exp e1 env in
+    let e2, env = tv_renew_exp e2 env in
+    let e3, env = tv_renew_exp e3 env in
+    IfExp (e1, e2, e3), env
+  | FunExp (x, u, e) ->
+    let u, env = tv_renew_ty u env in
+    let e, env = tv_renew_exp e env in
+    FunExp (x, u, e), env
+  | FixExp (x, y, u1, u2, e) ->
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    let e, env = tv_renew_exp e env in
+    FixExp (x, y, u1, u2, e), env
+  | AppExp (e1, e2) ->
+    let e1, env = tv_renew_exp e1 env in
+    let e2, env = tv_renew_exp e2 env in
+    AppExp (e1, e2), env
+  | CAppExp (e, c) ->
+    let e, env = tv_renew_exp e env in
+    let c, env = tv_renew_coercion c env in
+    CAppExp (e, c), env
+  | LetExp (x, tvs, e1, e2) ->
+    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:Syntax.Environment.empty in
+    let e1, env = tv_renew_exp e1 env in
+    let e2, env = tv_renew_exp e2 env in
+    LetExp (x, tvs, e1, e2), env
+
+let tv_renew p = let open Syntax.LS in match p with
+  | Exp e -> 
+    let e, _ = tv_renew_exp e Syntax.Environment.empty in 
+    Exp e
+  | LetDecl (id, tvs, e) -> 
+    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:Syntax.Environment.empty in
+    let e, _ = tv_renew_exp e env in
+    LetDecl (id, tvs, e)
 
 let bench mode fmt itr decl =
-  let tyenv  = []
-  and env = [] in
+  let tyenv = Syntax.Environment.empty
+  and env = Syntax.Environment.empty in
+  let u = Typing.LS.type_of_program tyenv decl in
+  Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u;
   match mode with
-  | C ->
+  (* | C ->
     let open EvalC in
     let _id, _vs, lst_elapsed_time =
       match decl with
@@ -428,45 +535,48 @@ let bench mode fmt itr decl =
             |> split_pairs
           in (id, vs, ts)
     in
-    lst_elapsed_time
+    lst_elapsed_time *)
 
-  | S ->
-    let open EvalS in
-    let translated =
-      match decl with
-      | Syntax.LambdaCPolyMp.Prog e ->
-          Syntax.LambdaSPolyMp.Prog (Translation.transT tyenv e)
-      | Syntax.LambdaCPolyMp.Decl (id, e) ->
-          Syntax.LambdaSPolyMp.Decl (id, Translation.transT tyenv e)
+  | C | S ->
+    (* let open Eval in *)
+    (* let tyenv, translated, _ = Translate.ITGL.translate tyenv decl in *)
+    let translated = Translate.LS.translate tyenv (tv_renew decl)
+      (* match decl with
+      | Syntax.ITGL.Exp e ->
+          Syntax.LS1.Exp (Translate.LS.translate_exp tyenv (Translate.ITGL.translate_exp tyenv e))
+      | Syntax.ITGL.LetDecl (id, e) ->
+          Syntax.LS1.LetDecl (id, Translate.LS.translate_exp tyenv (Translate.ITGL.translate_exp tyenv e)) *)
     in
+    Printf.printf "translation OK\n";
     log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LambdaSPolyMp.print_rawdecl translated;
+    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
     let _id, _vs, lst_elapsed_time =
       match decl with
-      | Syntax.LambdaCPolyMp.Prog _ ->
+      | Syntax.LS.Exp _ ->
           let vs, ts =
-            measure_execution_time (fun () -> evalP translated env) itr
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
             |> split_pairs
           in ("-", vs, ts)
-      | Syntax.LambdaCPolyMp.Decl (id, _) ->
+      | Syntax.LS.LetDecl (id, _, _) ->
           let vs, ts =
-            measure_execution_time (fun () -> evalP translated env) itr
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
             |> split_pairs
           in (id, vs, ts)
     in
+    Printf.printf "lst_slapsed_time is measured\n";
     lst_elapsed_time
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
-  let target_path = Printf.sprintf "samples/%s.gtplc" file in
+  let target_path = Printf.sprintf "samples/%s.ml" file in
   let src = In_channel.read_all target_path in
   let lexeme = Lexing.from_string src in
-  let tyenv = [] in
+  (* let tyenv = Syntax.Environment.empty in *)
   let decl  = Parser.toplevel Lexer.main lexeme in
-  let lst_mutated = Mutate.mutate_all (decl tyenv) in
+  let lst_mutated = Mutate.mutate_all (decl (*tyenv*)) in
   (* src は今は未使用だが、必要なら返す *)
-  (lst_mutated : Syntax.LambdaCPolyMp.program list)
+  (lst_mutated : Syntax.ITGL.program list)
 
 (* -------- 1ファイル × 1モード（ターゲット）を実行 ------------------ *)
 let bench_file_mode
@@ -475,9 +585,10 @@ let bench_file_mode
     ~(total_targets:int)
     ~(file:string)
     ~(mode:mode)
-    ~(mutants:Syntax.LambdaCPolyMp.program list)
+    ~(mutants:Syntax.ITGL.program list)
   =
-  let tyenv = [] in
+  let tyenv = Syntax.Environment.empty in
+  Printf.fprintf stdout "debug: text_log_enebled? %b\n" text_log_enabled;
   let oc_opt, fmt =
     if text_log_enabled then
       let file_path =
@@ -513,6 +624,7 @@ let bench_file_mode
         Out_channel.output_string oc "\", \"fast_runs\": "; Out_channel.output_string oc (string_of_int fast_runs);
         Out_channel.output_string oc "}, \"mutants\": [\n";
         (Some oc, ref true)
+    | Some _, Text -> raise @@ Failure "yet"
   in
 
   (* ターゲット用 Progress を開始 *)
@@ -533,7 +645,7 @@ let bench_file_mode
 
       (* 1) 変異直後（λC∀mp：mutate 後） *)
       log_section fmt "after Mutate (λC∀mp)";
-      Format.fprintf fmt "%a@." Pp.LambdaCPolyMp.print_rawdecl p;
+      Format.fprintf fmt "%a@." Pp.ITGL.pp_program p;
       Format.pp_print_flush fmt ();
 
       Option.iter oc_opt (fun oc ->
@@ -542,17 +654,21 @@ let bench_file_mode
       );
 
       (* Coercion insertion *)
-      let decl, _ = Insertion.LambdaCPolyMp.insertTypeOfDecl tyenv p in
+      let _, decl, _ = Translate.ITGL.translate tyenv p in
       log_section fmt "after Insertion (λC∀mp)";
-      Format.fprintf fmt "%a@." Pp.LambdaCPolyMp.print_rawdecl decl;
+      Format.fprintf fmt "%a@." Pp.LS.pp_program decl;
       Format.pp_print_flush fmt ();
 
       (* Benchmarking *)
       let lst_elapsed_time =
         try bench mode fmt itr decl
         with
-        | LambdaCSPolyMP.EvalC.Blame _
-        | LambdaCSPolyMP.EvalS.Blame _ -> []
+        (* | LambdaCSPolyMP.EvalC.Blame _ *)
+        | Eval.Blame _ -> Format.fprintf fmt "blame"; []
+        | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
+        | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
+        | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
+        | _ -> Format.fprintf fmt "some error happened in bench\n"; []
       in
 
       (* File output of benchmarking score *)
@@ -563,21 +679,21 @@ let bench_file_mode
       );
 
       (* JSON 出力用に各種文字列へ（※テキストログを出さないモードでも生成できる） *)
-      let after_mutate_str    = Format.asprintf "%a" Pp.LambdaCPolyMp.print_rawdecl p in
-      let after_insertion_str = Format.asprintf "%a" Pp.LambdaCPolyMp.print_rawdecl decl in
+      let after_mutate_str    = Format.asprintf "%a" Pp.ITGL.pp_program p in
+      let after_insertion_str = Format.asprintf "%a" Pp.LS.pp_program decl in
       let after_translation_str =
         match mode with
-        | C -> None
-        | S ->
-            let tyenv = [] in
-            let translated =
-              match decl with
-              | Syntax.LambdaCPolyMp.Prog e ->
-                  Syntax.LambdaSPolyMp.Prog (Translation.transT tyenv e)
-              | Syntax.LambdaCPolyMp.Decl (id, e) ->
-                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT tyenv e)
+        (* | C -> None *)
+        | C | S ->
+            (* let tyenv = [] in *)
+            let translated = Translate.LS.translate tyenv decl
+              (* match decl with
+              | Syntax.LS.Prog e ->
+                  Syntax.LS.Prog (Translation.transT tyenv e)
+              | Syntax.LS.Decl (id, e) ->
+                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT tyenv e) *)
             in
-            Some (Format.asprintf "%a" Pp.LambdaSPolyMp.print_rawdecl translated)
+            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
       in
 
       (* 実行時間（従来の itr 回計測）を JSON に *)
@@ -589,19 +705,21 @@ let bench_file_mode
       let mem_json =
         let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
         match mode with
-        | C ->
+        (* | C ->
             let run () = let open EvalC in ignore (evalP decl []) in
-            measure_mem_to_json ~label run
-        | S ->
+            measure_mem_to_json ~label run *)
+        | C | S ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated =
-              match decl with
+            let translated = Translate.LS.translate tyenv (tv_renew decl)
+              (* match decl with
               | Syntax.LambdaCPolyMp.Prog e ->
                   Syntax.LambdaSPolyMp.Prog (Translation.transT [] e)
               | Syntax.LambdaCPolyMp.Decl (id, e) ->
-                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT [] e)
+                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT [] e) *)
             in
-            let run () = let open EvalS in ignore (evalP translated []) in
+            let run () = 
+              (* let open Eval in  *)
+              ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
             measure_mem_to_json ~label run
       in
 
@@ -626,6 +744,7 @@ let bench_file_mode
           if not !json_first then Out_channel.output_string oc ",\n";
           Yojson.Safe.to_channel oc mutant_json;
           json_first := false
+      | Some _, Text -> raise @@ Failure "yet"
       end;
 
 
@@ -633,14 +752,19 @@ let bench_file_mode
       Target_progress.tick prog;  (* ← 変異1件完了ごとに更新 *)
     )
     with
-    | Insertion.TypeError (p, s, tyenv_e, ty) ->
+    (* | Insertion.TypeError (p, s, tyenv_e, ty) ->
         pr std_formatter ("\n[Type error]\n%a@." ^^ s) print_pos p (Pp.print_type tyenv_e) ty;
     | Insertion.TypeError2 (p, s, _, ty1, ty2) ->
         pr std_formatter ("\n[Type error]\n%a@." ^^ s) print_pos p (Pp.print_rawtype) ty1 (Pp.print_rawtype) ty2;
     | Insertion.CoercionTypeError (p, s, tyenv_e, cty1, cty2) ->
         pr std_formatter ("\n[Type error]\n%a@." ^^ s)
           print_pos p (Pp.print_coercion_type tyenv_e) cty1
-          (Pp.print_coercion_type tyenv_e) cty2;
+          (Pp.print_coercion_type tyenv_e) cty2; *)
+    | Failure message -> Format.fprintf fmt "Failure: %s\n" message
+    | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
+    | Eval.Blame _ -> Format.fprintf fmt "evaluation blame \n"
+    | Eval.Eval_bug _ -> Format.fprintf fmt "evaluation bug!! \n"
+    | _ -> Format.fprintf fmt "some error was happened\n"
   );
 
   Option.iter oc_opt Out_channel.close;
@@ -649,23 +773,31 @@ let bench_file_mode
     | None, _ -> ()
     | Some oc, JsonLines -> Out_channel.close oc
     | Some oc, Json ->
-       Out_channel.output_string oc "\n]}\n"; Out_channel.close oc);
+       Out_channel.output_string oc "\n]}\n"; Out_channel.close oc
+    | Some _, Text -> raise @@ Failure "yet");
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Target_progress.print ~final:false prog
 
 let () =
   (* 1. 前処理: 全ファイルを parse→mutate *)
-  let prepared : (string * Syntax.LambdaCPolyMp.program list) list =
+  Printf.fprintf stdout "debug: parse->mutate\n";
+  let prepared : (string * Syntax.ITGL.program list) list =
     List.map files (fun file -> (file, parse_and_mutate file))
   in
+    Printf.fprintf stdout "debug: parse->mutate done\n";
+
 
   (* モード展開してターゲット配列を作る *)
-  let targets : (string * mode * Syntax.LambdaCPolyMp.program list) list =
+  Printf.fprintf stdout "debug: making targets lists\n";
+  let targets : (string * mode * Syntax.ITGL.program list) list =
     List.concat_map prepared ~f:(fun (file, muts) ->
       List.map modes ~f:(fun m -> (file, m, muts))
     )
   in
+  Printf.fprintf stdout "debug: making targets lists done\n";
+  Printf.fprintf stdout "debug: targets lists number is %d\n" (List.length targets);
+  Printf.fprintf stdout "debug: first target's mutants number is %d\n" (match targets with (_, _, h) :: _ -> List.length h | _ -> 0);
   let total_targets = List.length targets in
 
 
@@ -679,6 +811,7 @@ let () =
   if not (Sys_unix.file_exists_exn log_base_dir) then Core_unix.mkdir log_base_dir;
   if not (Sys_unix.file_exists_exn log_dir) then Core_unix.mkdir log_dir;
 
+  Printf.fprintf stdout "debug: main iteration\n";
   (* 3. 実行: 各ターゲットを順番に *)
   List.iteri targets ~f:(fun i (file, m, mutants) ->
     bench_file_mode
@@ -690,3 +823,4 @@ let () =
       ~mutants
   );
   Printf.printf "\n";
+  Printf.printf "debug: everything was done\n"

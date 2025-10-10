@@ -2,6 +2,7 @@ open Syntax
 
 (** Type error in the given program. *)
 exception Type_error of string
+exception Type_bug of string
 
 (** Returns a fresh type variable. *)
 val fresh_tyvar : unit -> ty

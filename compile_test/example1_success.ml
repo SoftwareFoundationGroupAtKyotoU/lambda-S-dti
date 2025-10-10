@@ -1,5 +1,5 @@
 print_int ((fun (x:?) -> x + 2) 3);;
-
+(* 
 DTI : tyvar was inferred
 0x7fdb473a0ec0 <- 0x7fdb473a0f40
 DTI : arrow was inferred
@@ -51,4 +51,4 @@ tyfind: 0x7fdb473a0fc0
 tyfind: 0x7fdb473a0e00
 DTI : int was inferred
 0x7fdb473a0e00 <- int
-4
+4 *)

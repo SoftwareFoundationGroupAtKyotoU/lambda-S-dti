@@ -406,7 +406,7 @@ module LS = struct
       begin match u1, u2 with
         | TyFun (u11, u12), u2 when u11 = u2 ->
           u12
-        | _ -> raise @@ Type_bug "app"
+        | _ -> raise @@ Type_bug (Format.asprintf "app::: u1:%a, u2:%a" Pp.pp_ty u1 Pp.pp_ty u2)
       end
     | CAppExp (f, c) ->
       let u = type_of_exp env f in 

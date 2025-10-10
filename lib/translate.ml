@@ -64,7 +64,7 @@ module ITGL = struct
     | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
     | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
     | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
-    | _ -> Pp.pp_ty err_formatter u1; Pp.pp_ty err_formatter u1; raise @@ Translation_bug "cannot exist such coercion"
+    | _ -> raise @@ Translation_bug (Format.asprintf "cannot exist such coercion: %a and %a in %a" Pp.pp_ty u1 Pp.pp_ty u2 Utils.Error.pp_range r)
 
   let coerce f r u1 u2 = (* this is not same as ldti about blame label r *)
     if u1 = u2 then f (* Omit identity cast for better performance *)
@@ -122,6 +122,7 @@ module ITGL = struct
       let f1, u1 = translate_exp env e1 in
       let f2, u2 = translate_exp env e2 in
       let r1, r2 = range_of_exp e1, range_of_exp e2 in
+      (* Format.fprintf std_formatter "u1: %a, u2: %a\n" Pp.pp_ty u1 Pp.pp_ty u2; *)
       LS.AppExp (coerce f1 r1 u1 (TyFun (dom u1, cod u1)), coerce f2 r2 u2 (dom u1)), cod u1
     | LetExp (_, x, e1, e2) when Typing.ITGL.is_value env e1 ->
       let f1, u1 = translate_exp env e1 in

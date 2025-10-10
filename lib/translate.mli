@@ -1,5 +1,7 @@
 open Syntax
 
+exception Translation_bug of string
+
 module ITGL : sig
 	open Syntax.ITGL
 	val translate : tysc Environment.t -> program -> (tysc Environment.t * LS.program * ty)
