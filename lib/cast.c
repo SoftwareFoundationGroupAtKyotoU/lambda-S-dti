@@ -62,7 +62,7 @@ int blame(ran_pol r_p){
 }
 
 ty *ty_find(ty *t) {
-	printf("tyfind: %p\n", t);
+	// printf("tyfind: %p\n", t);
 	if (t->tykind == SUBSTITUTED) {
 		ty *t_ = ty_find(t->tydat.tv);
 		// if (t_->tykind != TYVAR) {
@@ -197,11 +197,11 @@ crc* compose(crc *c1, crc *c2) {
 		} else if (c2->crckind == SEQ && c2->crcdat.two_crc.c1->crckind == PROJ) {      //X!;;G?p;i
 			// printf("  c2.c1:%d, c2.c2:%d\n", c2->crcdat.two_crc.c1->crckind, c2->crcdat.two_crc.c2->crckind);
 			if (c2->crcdat.two_crc.c1->crcdat.g == G_AR) {                                //X!;;(★→★)?p;i -> X1?p=>X2!;;i [X:=X1=>X2]
-				printf("DTI : arrow was inferred\n");
+				// printf("DTI : arrow was inferred\n");
 				c1->crcdat.tv->tykind = TYFUN;
 				c1->crcdat.tv->tydat.tyfun.left = newty();
 				c1->crcdat.tv->tydat.tyfun.right = newty();
-				printf("%p <- (%p=>%p)\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tyfun.left, c1->crcdat.tv->tydat.tyfun.right);
+				// printf("%p <- (%p=>%p)\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tyfun.left, c1->crcdat.tv->tydat.tyfun.right);
 				crc *cfun1 = (crc*)GC_MALLOC(sizeof(crc));
 				cfun1->crckind = PROJ_TV;
 				cfun1->crcdat.tv = c1->crcdat.tv->tydat.tyfun.left;
@@ -211,18 +211,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				return compose(cfun, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_INT) {                     //X!;;int?p;i -> i [X:=int]
-				printf("DTI : int was inferred\n");
-				printf("%p <- int\n", c1->crcdat.tv);
+				// printf("DTI : int was inferred\n");
+				// printf("%p <- int\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tyint;
 				return c2->crcdat.two_crc.c2;
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_BOOL) {
-				printf("DTI : bool was inferred\n");
-				printf("%p <- bool\n", c1->crcdat.tv);
+				// printf("DTI : bool was inferred\n");
+				// printf("%p <- bool\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tybool;
 				return c2->crcdat.two_crc.c2;
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_UNIT) {
-				printf("DTI : unit was inferred\n");
-				printf("%p <- unit\n", c1->crcdat.tv);
+				// printf("DTI : unit was inferred\n");
+				// printf("%p <- unit\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tyunit;
 				return c2->crcdat.two_crc.c2;
 			}		
@@ -233,8 +233,8 @@ crc* compose(crc *c1, crc *c2) {
 			} else if (c1->crcdat.tv == c2->crcdat.tv) {								//X!;;X?p -> id
 				return &crc_id;
 			} else {                                                                    //X!;;Y?p -> id [X:=Y]
-				printf("DTI : tyvar was inferred\n");
-				printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
+				// printf("DTI : tyvar was inferred\n");
+				// printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
 				c1->crcdat.tv->tykind = SUBSTITUTED;
 				c1->crcdat.tv->tydat.tv = c2->crcdat.tv;
 				return &crc_id;
@@ -246,8 +246,8 @@ crc* compose(crc *c1, crc *c2) {
 			} else if (c1->crcdat.tv == c2->crcdat.tv) {                                //X!;;?pX! -> X!
 				return c1;												// this is not real, but correct
 			} else {																	//X!;;?pY! -> Y! [X:=Y]
-				printf("DTI : tyvar was inferred\n");
-				printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
+				// printf("DTI : tyvar was inferred\n");
+				// printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
 				c1->crcdat.tv->tykind = SUBSTITUTED;
 				c1->crcdat.tv->tydat.tv = c2->crcdat.tv;
 				return c1;
@@ -260,11 +260,11 @@ crc* compose(crc *c1, crc *c2) {
 		} else if (c2->crckind == SEQ && c2->crcdat.two_crc.c1->crckind == PROJ) {      //?pX!;;G?q;i
 			// printf("  c2.c1:%d, c2.c2:%d\n", c2->crcdat.two_crc.c1->crckind, c2->crcdat.two_crc.c2->crckind);
 			if (c2->crcdat.two_crc.c1->crcdat.g == G_AR) {                                //?pX!;;(★→★)?q;i -> (★→★)?p;?qX1!=>?pX2!;;i [X:=X1=>X2]
-				printf("DTI : arrow was inferred\n");
+				// printf("DTI : arrow was inferred\n");
 				c1->crcdat.tv->tykind = TYFUN;
 				c1->crcdat.tv->tydat.tyfun.left = newty();
 				c1->crcdat.tv->tydat.tyfun.right = newty();
-				printf("%p <- (%p=>%p)\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tyfun.left, c1->crcdat.tv->tydat.tyfun.right);
+				// printf("%p <- (%p=>%p)\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tyfun.left, c1->crcdat.tv->tydat.tyfun.right);
 				crc *cfun1 = (crc*)GC_MALLOC(sizeof(crc));
 				cfun1->crckind = PROJ_INJ_TV;
 				cfun1->crcdat.tv = c1->crcdat.tv->tydat.tyfun.left;
@@ -277,18 +277,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cprojfun = make_crc_proj(G_AR, c1->r_p, cfun);
 				return compose(cprojfun, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_INT) {                     //?pX!;;int?q;i -> int?p;i [X:=int]
-				printf("DTI : int was inferred\n");
-				printf("%p <- int\n", c1->crcdat.tv);
+				// printf("DTI : int was inferred\n");
+				// printf("%p <- int\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tyint;
 				return make_crc_proj(G_INT, c1->r_p, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_BOOL) {
-				printf("DTI : bool was inferred\n");
-				printf("%p <- bool\n", c1->crcdat.tv);
+				// printf("DTI : bool was inferred\n");
+				// printf("%p <- bool\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tybool;
 				return make_crc_proj(G_BOOL, c1->r_p, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_UNIT) {
-				printf("DTI : unit was inferred\n");
-				printf("%p <- unit\n", c1->crcdat.tv);
+				// printf("DTI : unit was inferred\n");
+				// printf("%p <- unit\n", c1->crcdat.tv);
 				*c1->crcdat.tv = tyunit;
 				return make_crc_proj(G_UNIT, c1->r_p, c2->crcdat.two_crc.c2);
 			}		
@@ -300,8 +300,8 @@ crc* compose(crc *c1, crc *c2) {
 				c2->r_p = c1->r_p;
 				return c2;
 			} else {                                                                    //?pX!;;Y?q -> Y?p [X:=Y]
-				printf("DTI : tyvar was inferred\n");
-				printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
+				// printf("DTI : tyvar was inferred\n");
+				// printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
 				c1->crcdat.tv->tykind = SUBSTITUTED;
 				c1->crcdat.tv->tydat.tv = c2->crcdat.tv;
 				c2->r_p = c1->r_p;
@@ -314,8 +314,8 @@ crc* compose(crc *c1, crc *c2) {
 			} else if (c1->crcdat.tv == c2->crcdat.tv) {                                //?pX!;;?qX! -> ?pX!
 				return c1;												// this is not real, but correct
 			} else {																    //?pX!;;?pY! -> ?pY! [X:=Y]
-				printf("DTI : tyvar was inferred\n");
-				printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
+				// printf("DTI : tyvar was inferred\n");
+				// printf("%p <- %p\n", c1->crcdat.tv, c2->crcdat.tv);
 				c1->crcdat.tv->tykind = SUBSTITUTED;
 				c1->crcdat.tv->tydat.tv = c2->crcdat.tv;
 				return c1;
@@ -326,7 +326,7 @@ crc* compose(crc *c1, crc *c2) {
 		if (c2->crckind == SEQ && c2->crcdat.two_crc.c1->crckind == PROJ) {              //g;G!;;H?p;i
 			// printf("  c2.c1:%d, c2.c2:%d\n", c2->crcdat.two_crc.c1->crckind, c2->crcdat.two_crc.c2->crckind);
 			// printf("    c1.c2.g:%d, c2.c1.g:%d\n", c1->crcdat.two_crc.c2->crcdat.g, c2->crcdat.two_crc.c1->crcdat.g);
-			if (c1->crcdat.two_crc.c2->crcdat.g == c2->crcdat.two_crc.c1->crcdat.g) {   //g;G!;;G?pi -> g;;i
+			if (c1->crcdat.two_crc.c2->crcdat.g == c2->crcdat.two_crc.c1->crcdat.g) {   //g;G!;;G?p;i -> g;;i
 				return compose(c1->crcdat.two_crc.c1, c2->crcdat.two_crc.c2);
 			} else {                                                                 //g;G!;;H?p;i -> bot^p (if G neq H)
 				crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -339,11 +339,11 @@ crc* compose(crc *c1, crc *c2) {
 			if (c2->crckind != PROJ_TV) {
 				return compose(c1, c2);
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_AR) {						//g;(★→★)!;;X?p -> g;;X1!=>X2?p [X:=X1=>X2]
-				printf("DTI : arrow was inferred\n");
+				// printf("DTI : arrow was inferred\n");
 				c2->crcdat.tv->tykind = TYFUN;
 				c2->crcdat.tv->tydat.tyfun.left = newty();
 				c2->crcdat.tv->tydat.tyfun.right = newty();
-				printf("%p <- (%p=>%p)\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tyfun.left, c2->crcdat.tv->tydat.tyfun.right);
+				// printf("%p <- (%p=>%p)\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tyfun.left, c2->crcdat.tv->tydat.tyfun.right);
 				crc *cfun1 = (crc*)GC_MALLOC(sizeof(crc));
 				cfun1->crckind = INJ_TV;
 				cfun1->crcdat.tv = c2->crcdat.tv->tydat.tyfun.left;
@@ -353,18 +353,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				return compose(c1->crcdat.two_crc.c1, cfun);
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_INT) {                      //g;int!;;X?p -> g [X:=int]
-				printf("DTI : int was inferred\n");
-				printf("%p <- int\n", c2->crcdat.tv);
+				// printf("DTI : int was inferred\n");
+				// printf("%p <- int\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tyint;
 				return c1->crcdat.two_crc.c1;
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_BOOL) {
-				printf("DTI : bool was inferred\n");
-				printf("%p <- bool\n", c2->crcdat.tv);
+				// printf("DTI : bool was inferred\n");
+				// printf("%p <- bool\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tybool;
 				return c1->crcdat.two_crc.c1;
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_UNIT) {
-				printf("DTI : unit was inferred\n");
-				printf("%p <- unit\n", c2->crcdat.tv);
+				// printf("DTI : unit was inferred\n");
+				// printf("%p <- unit\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tyunit;
 				return c1->crcdat.two_crc.c1;
 			}
@@ -373,11 +373,11 @@ crc* compose(crc *c1, crc *c2) {
 			if (c2->crckind != PROJ_INJ_TV) {
 				return compose(c1, c2);
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_AR) {						//g;(★→★)!;;X?p -> g;;X1!=>X2?p [X:=X1=>X2]
-				printf("DTI : arrow was inferred\n");
+				// printf("DTI : arrow was inferred\n");
 				c2->crcdat.tv->tykind = TYFUN;
 				c2->crcdat.tv->tydat.tyfun.left = newty();
 				c2->crcdat.tv->tydat.tyfun.right = newty();
-				printf("%p <- (%p=>%p)\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tyfun.left, c2->crcdat.tv->tydat.tyfun.right);
+				// printf("%p <- (%p=>%p)\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tyfun.left, c2->crcdat.tv->tydat.tyfun.right);
 				crc *cfun1 = (crc*)GC_MALLOC(sizeof(crc));
 				cfun1->crckind = PROJ_INJ_TV;
 				cfun1->crcdat.tv = c2->crcdat.tv->tydat.tyfun.left;
@@ -388,18 +388,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cfuninj = make_crc_inj_ar(cfun);
 				return compose(c1->crcdat.two_crc.c1, cfuninj);
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_INT) {                      //g;int!;;X?p -> g [X:=int]
-				printf("DTI : int was inferred\n");
-				printf("%p <- int\n", c2->crcdat.tv);
+				// printf("DTI : int was inferred\n");
+				// printf("%p <- int\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tyint;
 				return c1;
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_BOOL) {
-				printf("DTI : bool was inferred\n");
-				printf("%p <- bool\n", c2->crcdat.tv);
+				// printf("DTI : bool was inferred\n");
+				// printf("%p <- bool\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tybool;
 				return c1;
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_UNIT) {
-				printf("DTI : unit was inferred\n");
-				printf("%p <- unit\n", c2->crcdat.tv);
+				// printf("DTI : unit was inferred\n");
+				// printf("%p <- unit\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tyunit;
 				return c1;
 			}
@@ -426,7 +426,7 @@ crc* compose(crc *c1, crc *c2) {
 			return retc;
 		}
 	}
-	printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
+	// printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
 	exit(1);
 }
 
@@ -436,7 +436,7 @@ value coerce(value v, crc *s) {
 
 	if (s->crckind == ID) { // v<id> -> v
 		retv = v;
-	} else if (s->crckind = BOT) { // v<bot^p> -> blame p
+	} else if (s->crckind == BOT) { // v<bot^p> -> blame p
 		blame(s->r_p);
 		exit(1);
 	} else if (s->crckind == FUN) { // v<s'=>t'>
@@ -503,6 +503,9 @@ value coerce(value v, crc *s) {
 			retv.f->fundat.wrap.w = v.d->v->f;
 			retv.f->fundat.wrap.c_arg = c1->crcdat.two_crc.c1;
 			retv.f->fundat.wrap.c_res = c1->crcdat.two_crc.c2;
+		} else if (c1->crckind == BOT) {
+			blame(c1->r_p);
+			exit(1);
 		} else {                                // u<<d>><s> -> u<d> -> u<<d>>
 			retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
 			retv.d->v = v.d->v;
@@ -520,7 +523,6 @@ value app(value f, value v, value w) {									// reduction of f(v)
 
 	value arg;
 	value s;
-	// s.s = (crc*)GC_MALLOC(sizeof(crc));
 
 	value (*l)(value, value);
 	value (*c)(value, value, value*);
@@ -563,6 +565,86 @@ value app(value f, value v, value w) {									// reduction of f(v)
 		retx = pc(arg, s, g->fundat.poly_closure.fvs, g->tas);
 		//printf("Heap size = %d\n", (int)GC_get_heap_size());
 		break;
+
+		case(LABEL_alt):												// if f is "label" function
+		l = g->fundat.label_alt.l;							// R_BETA : return f(v)
+		retx = l(arg, s);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
+
+		case(POLY_LABEL_alt):
+		pl = g->fundat.poly_label_alt.pl;
+		retx = pl(arg, s, g->tas);
+		break;
+
+		case(CLOSURE_alt):												// if f is closure
+		c = g->fundat.closure_alt.cls_alt.c;				// R_BETA : return f(v, fvs)
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		retx = c(arg, s, g->fundat.closure.fvs);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
+
+		case(POLY_CLOSURE_alt):												// if f is closure
+		pc = g->fundat.poly_closure_alt.pcls_alt.pc;				// R_BETA : return f(v, fvs)
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		retx = pc(arg, s, g->fundat.poly_closure.fvs, g->tas);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
+	}
+	return retx;
+}
+
+value app_alt(value f, value v) {									// reduction of f(v)
+	value retx;
+
+	fun *g;
+
+	value arg;
+
+	value (*l_a)(value);
+	value (*c_a)(value, value*);
+	value (*pl_a)(value, ty**);
+	value (*pc_a)(value, value*, ty**);
+// 	ran_pol neg_r_p;
+
+	arg = v;
+	g = f.f;
+
+	switch(g->funkind) {
+		case(WRAPPED): {
+		value s;
+		value f_;
+		s.s = f.f->fundat.wrap.c_res;
+		arg = coerce(v, f.f->fundat.wrap.c_arg);
+		f_.f = f.f->fundat.wrap.w;
+		retx = app(f_, arg, s);
+		break;
+		}
+
+		case(LABEL_alt):												// if f is "label" function
+		l_a = g->fundat.label_alt.l_a;							// R_BETA : return f(v)
+		retx = l_a(arg);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
+
+		case(POLY_LABEL_alt):
+		pl_a = g->fundat.poly_label_alt.pl_a;
+		retx = pl_a(arg, g->tas);
+		break;
+
+		case(CLOSURE_alt):												// if f is closure
+		c_a = g->fundat.closure_alt.cls_alt.c_a;				// R_BETA : return f(v, fvs)
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		retx = c_a(arg, g->fundat.closure_alt.fvs);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
+
+		case(POLY_CLOSURE_alt):												// if f is closure
+		pc_a = g->fundat.poly_closure_alt.pcls_alt.pc_a;				// R_BETA : return f(v, fvs)
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		retx = pc_a(arg, g->fundat.poly_closure_alt.fvs, g->tas);
+		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		break;
 	}
 	return retx;
 }
@@ -572,6 +654,13 @@ value fun_print_int(value v, value w) {
 	printf("%d", v.i_b_u);
 	retv.i_b_u = 0;
 	return coerce(retv, w.s);
+}
+
+value fun_alt_print_int(value v) {
+	value retv;
+	printf("%d", v.i_b_u);
+	retv.i_b_u = 0;
+	return retv;
 }
 
 value fun_print_bool(value v, value w) {
@@ -589,6 +678,21 @@ value fun_print_bool(value v, value w) {
 	return coerce(retv, w.s);
 }
 
+value fun_alt_print_bool(value v) {
+	value retv;
+	int i = v.i_b_u;
+	if (i == 1) {
+		printf("true");
+	} else if (i == 0) {
+		printf("false");
+	} else {
+		printf("error:not boolean value is applied to print_bool");
+		exit(1);
+	}
+	retv.i_b_u = 0;
+	return retv;
+}
+
 value fun_print_newline(value v, value w) {
 	value retv;
 	int i = v.i_b_u;
@@ -602,21 +706,37 @@ value fun_print_newline(value v, value w) {
 	return coerce(retv, w.s);
 }
 
+value fun_alt_print_newline(value v) {
+	value retv;
+	int i = v.i_b_u;
+	if (i == 0) {
+		printf("\n");
+	} else {
+		printf("error:not unit value is applied to print_newline");
+		exit(1);
+	}
+	retv.i_b_u = 0;
+	return retv;
+}
+
 value print_int;
 value print_bool;
 value print_newline;
 
-int stdlib() {
-	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_int.f->fundat.label = fun_print_int;
-	print_int.f->funkind = LABEL;
-	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_bool.f->fundat.label = fun_print_bool;
-	print_bool.f->funkind = LABEL;
-	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_newline.f->fundat.label = fun_print_newline;
-	print_newline.f->funkind = LABEL;
-	return 0;
-}
+// int stdlib() {
+// 	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
+// 	print_int.f->fundat.label_alt.l = fun_print_int;
+// 	print_int.f->fundat.label_alt.l_a = fun_alt_print_int;
+// 	print_int.f->funkind = LABEL_alt;
+// 	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
+// 	print_bool.f->fundat.label_alt.l = fun_print_bool;
+// 	print_bool.f->fundat.label_alt.l_a = fun_alt_print_bool;
+// 	print_bool.f->funkind = LABEL_alt;
+// 	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
+// 	print_newline.f->fundat.label_alt.l = fun_print_newline;
+// 	print_newline.f->fundat.label_alt.l_a = fun_alt_print_newline;
+// 	print_newline.f->funkind = LABEL_alt;
+// 	return 0;
+// }
 
 //value print_newline_ = { .f = { .fundat = { .label = fun_print_newline }, .funkind = LABEL } };

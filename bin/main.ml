@@ -158,7 +158,8 @@ let compile_process progs _ tyenv kfunenvs _ =
     print_debug "%a\n" Pp.Cls.pp_program p;
 
     print_debug "***** toC *****\n";
-    let c_code = asprintf "%a" ToC.toC_program p in
+    let toC_program = ToC.toC_program !alt in
+    let c_code = asprintf "%a" toC_program p in
     print_debug "%s\n" c_code;
     c_code
     

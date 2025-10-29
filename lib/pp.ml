@@ -618,6 +618,8 @@ module Cls = struct
         pp_exp e2
     | AppCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
     | AppDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
+    | AppCls_alt (x, y) -> fprintf ppf "%s:cls_alt %s" x y
+    | AppDir_alt (l, y) -> fprintf ppf "%s:label_alt %s" l y
     | AppTy (x, _, tas) ->
       fprintf ppf "%s[%a]"
         x
@@ -665,6 +667,26 @@ module Cls = struct
         x
         pp_print_cls cls
         pp_exp f
+    | MakeLabel_alt (x, l, f) ->
+      fprintf ppf "lbl_a %s = %s in %a"
+        x
+        l
+        pp_exp f
+    | MakePolyLabel_alt (x, l, _, f) ->
+      fprintf ppf "plbl_a %s = %s in %a"
+        x
+        l
+        pp_exp f
+    | MakeCls_alt (x, cls, f) ->
+      fprintf ppf "cls_a %s = %a in %a"
+        x
+        pp_print_cls cls
+        pp_exp f
+    | MakePolyCls_alt (x, cls, _, f) ->
+      fprintf ppf "pcls_a %s = %a in %a"
+        x
+        pp_print_cls cls
+        pp_exp f
     | Let (x, f1, f2) ->
         fprintf ppf "let %s = %a in %a"
           x
@@ -682,7 +704,8 @@ module Cls = struct
     fprintf ppf "%a"
       pp_list fvl
 
-  let pp_fundef ppf { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} = 
+  let pp_fundef ppf fundef = match fundef with
+  | Fundef { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} ->
     if List.length fvl = 0 then
       fprintf ppf "let rec %s %a(%s, %s) = %a"
         l
@@ -696,6 +719,20 @@ module Cls = struct
         pp_let_tyabses tvs
         y
         z
+        pp_exp f
+        pp_print_fv fvl
+  | Fundef_alt { name = l; tvs = (tvs, _); arg = y; formal_fv = fvl; body = f} -> 
+    if List.length fvl = 0 then
+      fprintf ppf "let rec %s %a%s = %a"
+        l
+        pp_let_tyabses tvs
+        y
+        pp_exp f
+    else
+      fprintf ppf "let rec %s %a%s = %a (fv:%a)"
+        l
+        pp_let_tyabses tvs
+        y
         pp_exp f
         pp_print_fv fvl
 

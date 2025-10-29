@@ -7,22 +7,24 @@ open Lambda_S1_dti
 (* open Translate *)
 (* open Pp *)
 
-type mode = C | S
+type mode = I | C | I_alt (* | C_alt *)
 let string_of_mode = function
+  | I -> "I"
   | C -> "C"
-  | S -> "S"
+  | I_alt -> "I_alt"
 
 (* ------------------ *)
 (* Benchmark settings *)
 let itr = 100
 let files = [
-  (* "church_small"; *)
+  "church_small";
   (* "church"; *)
-  (* "church_big";
-  "tak";*)
+  (* "church_big"; *)
+  (* "tak"; *)
+  (* "easy"; *)
   (* "fib"; *)
   (* "evenodd"; *)
-  "loop";
+  (* "loop"; *)
   (*"loop_poly";
   "mklist";
   "map";
@@ -30,12 +32,17 @@ let files = [
   "zipwith"; *)
   (* "polypoly"; *)
 ]
-let modes = [C; S]   (* C と S を両方実行 *)
+let modes = [
+  I;
+  C; 
+  I_alt
+  ]   
+  (* [I; C] : I と C を実行 *)
 let log_base_dir = "logs"
 
 (* Measurement options (source-controlled) *)
 type mem_mode = Off | Fast | Corebench
-let mem_mode : mem_mode = Fast          (* Off | Fast | Corebench *)
+let mem_mode : mem_mode = Off          (* Off | Fast | Corebench *)
 let fast_runs = 10                      (* Fast モードの1ミュータントあたりの実行回数 *)
 let cb_quota_sec = 0.15                 (* Corebench モード: 1 テストあたりの時間上限(秒) *)
 let cb_stabilize_gc_between_runs = false
@@ -44,7 +51,7 @@ let show_progress = true                (* 進捗バーを標準出力に出す�
 
 (* 出力フォーマット：Text（従来）, Json（1ファイルに配列）, JsonLines（NDJSON） *)
 type out_mode = Text | Json | JsonLines
-let out_mode : out_mode = Text (*JsonLines*)  (* 推奨: NDJSON。1行=1ミュータント *)
+let out_mode : out_mode = JsonLines  (* 推奨: NDJSON。1行=1ミュータント *)
 
 (* 追加: Text ログを作るか？ *)
 let text_log_enabled =
@@ -292,16 +299,26 @@ module Target_progress = struct
 end
 
 (* -------- Measurement -------------------------------------------------- *)
-let measure_execution_time f itr =
+let measure_execution_time f itr mode =
   let result = ref [] in
   List.iter
     (List.range 0 itr)
     (fun _ ->
-      let start_time = gettimeofday () in
-      let v = f () in
-      let end_time = gettimeofday () in
-      let elapsed_time = end_time -. start_time in
-      result := (v, elapsed_time) :: !result);
+      match mode with
+      | I | I_alt -> 
+        let start_time = gettimeofday () in
+        let v = f () in
+        let end_time = gettimeofday () in
+        let elapsed_time = end_time -. start_time in
+        result := (v, elapsed_time) :: !result
+      | C -> 
+        let v = f () in
+        let filename = "logs/bench_time.json" in
+        let json_data = Yojson.Basic.from_file filename in
+        let elapsed_time_ns_str = Yojson.Basic.Util.to_string (Yojson.Basic.Util.member "counter-value" json_data) in
+        let elapsed_time = float_of_string (elapsed_time_ns_str) *. 0.001 *. 0.001 *. 0.001 in
+        result := (v, elapsed_time) :: !result
+      );
   !result
 
 let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
@@ -520,34 +537,8 @@ let bench mode fmt itr decl =
   let u = Typing.LS.type_of_program tyenv decl in
   Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u;
   match mode with
-  (* | C ->
-    let open EvalC in
-    let _id, _vs, lst_elapsed_time =
-      match decl with
-      | Syntax.LambdaCPolyMp.Prog _ ->
-          let vs, ts =
-            measure_execution_time (fun () -> evalP decl env) itr
-            |> split_pairs
-          in ("-", vs, ts)
-      | Syntax.LambdaCPolyMp.Decl (id, _) ->
-          let vs, ts =
-            measure_execution_time (fun () -> evalP decl env) itr
-            |> split_pairs
-          in (id, vs, ts)
-    in
-    lst_elapsed_time *)
-
-  | C | S ->
-    (* let open Eval in *)
-    (* let tyenv, translated, _ = Translate.ITGL.translate tyenv decl in *)
-    let translated = Translate.LS.translate tyenv (tv_renew decl)
-      (* match decl with
-      | Syntax.ITGL.Exp e ->
-          Syntax.LS1.Exp (Translate.LS.translate_exp tyenv (Translate.ITGL.translate_exp tyenv e))
-      | Syntax.ITGL.LetDecl (id, e) ->
-          Syntax.LS1.LetDecl (id, Translate.LS.translate_exp tyenv (Translate.ITGL.translate_exp tyenv e)) *)
-    in
-    Printf.printf "translation OK\n";
+  | I ->
+    let translated = Translate.LS.translate tyenv (tv_renew decl) in
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
@@ -555,16 +546,55 @@ let bench mode fmt itr decl =
       match decl with
       | Syntax.LS.Exp _ ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
             |> split_pairs
           in ("-", vs, ts)
       | Syntax.LS.LetDecl (id, _, _) ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
             |> split_pairs
           in (id, vs, ts)
     in
-    Printf.printf "lst_slapsed_time is measured\n";
+    lst_elapsed_time
+  | I_alt ->
+    let translated = Translate.LS.translate_alt tyenv (tv_renew decl) in
+    log_section fmt "after Translation (λS∀mp)";
+    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.pp_print_flush fmt ();
+    let _id, _vs, lst_elapsed_time =
+      match decl with
+      | Syntax.LS.Exp _ ->
+          let vs, ts =
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
+            |> split_pairs
+          in ("-", vs, ts)
+      | Syntax.LS.LetDecl (id, _, _) ->
+          let vs, ts =
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
+            |> split_pairs
+          in (id, vs, ts)
+    in
+    lst_elapsed_time
+  | C -> 
+    let translated = Translate.LS.translate tyenv (tv_renew decl) in
+    log_section fmt "after Translation (λS∀mp)";
+    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.pp_print_flush fmt ();
+    let _, _, kfunenvs, _ = Stdlib.pervasives in
+    let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
+    let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
+    let p = Closure.KNorm.toCls_program p in
+    let c_code = Format.asprintf "%a" (ToC.toC_program false) p in
+    let oc = Out_channel.create "logs/bench.c" in
+    Printf.fprintf oc "%s" c_code;
+    close_out oc;
+    let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in
+    let _id, _vs, lst_elapsed_time =
+      let vs, ts =
+        measure_execution_time (fun () -> Core_unix.system "{ perf stat -r 100 -e duration_time:u -j ./logs/bench.out; } > logs/bench_time.json 2>&1") 1(*itr*) C
+        |> split_pairs
+      in ("-", vs, ts)
+    in
     lst_elapsed_time
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
@@ -668,6 +698,10 @@ let bench_file_mode
         | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
         | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
         | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
+        | KNormal.KNormal_error str -> Format.fprintf fmt "knorm_error %s in bench\n" str; []
+        | KNormal.KNormal_bug str -> Format.fprintf fmt "knorm_bug %s in bench\n" str; []
+        | ToC.ToC_error str -> Format.fprintf fmt "knorm_error %s in bench\n" str; []
+        | ToC.ToC_bug str -> Format.fprintf fmt "knorm_bug %s in bench\n" str; []
         | _ -> Format.fprintf fmt "some error happened in bench\n"; []
       in
 
@@ -683,15 +717,16 @@ let bench_file_mode
       let after_insertion_str = Format.asprintf "%a" Pp.LS.pp_program decl in
       let after_translation_str =
         match mode with
-        (* | C -> None *)
-        | C | S ->
-            (* let tyenv = [] in *)
+        | I ->
             let translated = Translate.LS.translate tyenv decl
-              (* match decl with
-              | Syntax.LS.Prog e ->
-                  Syntax.LS.Prog (Translation.transT tyenv e)
-              | Syntax.LS.Decl (id, e) ->
-                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT tyenv e) *)
+            in
+            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | I_alt ->
+            let translated = Translate.LS.translate_alt tyenv decl
+            in
+            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | C -> 
+          let translated = Translate.LS.translate tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
       in
@@ -705,21 +740,36 @@ let bench_file_mode
       let mem_json =
         let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
         match mode with
-        (* | C ->
-            let run () = let open EvalC in ignore (evalP decl []) in
-            measure_mem_to_json ~label run *)
-        | C | S ->
+        | I ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
             let translated = Translate.LS.translate tyenv (tv_renew decl)
-              (* match decl with
-              | Syntax.LambdaCPolyMp.Prog e ->
-                  Syntax.LambdaSPolyMp.Prog (Translation.transT [] e)
-              | Syntax.LambdaCPolyMp.Decl (id, e) ->
-                  Syntax.LambdaSPolyMp.Decl (id, Translation.transT [] e) *)
             in
             let run () = 
               (* let open Eval in  *)
               ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+            measure_mem_to_json ~label run
+        | I_alt ->
+            (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
+            let translated = Translate.LS.translate_alt tyenv (tv_renew decl)
+            in
+            let run () = 
+              (* let open Eval in  *)
+              ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+            measure_mem_to_json ~label run
+        | C -> 
+          (* let translated = Translate.LS.translate tyenv (tv_renew decl) in
+          let _, _, kfunenvs, _ = Stdlib.pervasives in
+          let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
+          let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
+          let p = Closure.KNorm.toCls_program p in
+          let c_code = Format.asprintf "%a" ToC.toC_program p in
+          let oc = Out_channel.create "logs/bench.c" in
+          Printf.fprintf oc "%s" c_code;
+          close_out oc;
+          let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in *)
+          let run () = 
+              (* let open Eval in  *)
+              ignore (Core_unix.system "logs/bench.out") in
             measure_mem_to_json ~label run
       in
 

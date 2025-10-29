@@ -74,6 +74,10 @@ typedef struct fun {
 		POLY_LABEL,
 		CLOSURE,
 		POLY_CLOSURE,
+		LABEL_alt,
+		POLY_LABEL_alt,
+		CLOSURE_alt,
+		POLY_CLOSURE_alt,
 		WRAPPED,
 		// LABEL_WRAP,
 		// POLY_LABEL_WRAP,
@@ -91,6 +95,28 @@ typedef struct fun {
 			value (*pcls)(value, value, value*, ty**);
 			value *fvs;
 		} poly_closure;
+		struct label_alt {
+			value (*l)(value, value);
+			value (*l_a)(value);
+		} label_alt;
+		struct poly_label_alt {
+			value (*pl)(value, value, ty**);
+			value (*pl_a)(value, ty**);
+		} poly_label_alt;
+		struct closure_alt {
+			struct cls_alt {
+				value (*c)(value, value, value*);
+				value (*c_a)(value, value*);
+			} cls_alt;
+			value *fvs;
+		} closure_alt;
+		struct poly_closure_alt {
+			struct pcls_alt {
+				value (*pc)(value, value, value*, ty**);
+				value (*pc_a)(value, value*, ty**);
+			} pcls_alt;
+			value *fvs;
+		} poly_closure_alt;
 		struct wrap {
 			fun *w;
 			crc *c_arg;
@@ -138,6 +164,8 @@ crc *compose(crc*, crc*);
 
 value app(value, value, value);
 
+value app_alt(value, value);
+
 extern ty tydyn;
 extern ty tyint;
 extern ty tybool;
@@ -159,9 +187,13 @@ extern value (fun_print_int)(value, value);
 extern value (fun_print_bool)(value, value);
 extern value (fun_print_newline)(value, value);
 
+extern value (fun_alt_print_int)(value);
+extern value (fun_alt_print_bool)(value);
+extern value (fun_alt_print_newline)(value);
+
 extern value print_int;
 extern value print_bool;
 extern value print_newline;
-extern int (stdlib)();
+// extern int(stdlib)();
 
 #endif

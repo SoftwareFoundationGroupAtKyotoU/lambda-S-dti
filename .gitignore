@@ -40,3 +40,4 @@ parser.ml
 parser.mli
 
 .vscode/
+logs/

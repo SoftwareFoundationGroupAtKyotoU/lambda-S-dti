@@ -60,6 +60,8 @@ module KNorm = struct
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
     | AppExp (x, y) when Cls.V.mem x known -> Cls.AppDir (Cls.to_label x, y)
     | AppExp (x, y) -> Cls.AppCls (x, y)
+    | AppExp_alt (x, y) when Cls.V.mem x known -> Cls.AppDir_alt (Cls.to_label x, y)
+    | AppExp_alt (x, y) -> Cls.AppCls_alt (x, y)
     | AppTy (x, _, tas) -> 
       let uandf = List.map (ta_tv tvs) tas in
       let rec destruct_uandf l ru rf = match l with
@@ -94,7 +96,7 @@ module KNorm = struct
         known, f1')
       in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f1') (Cls.V.of_list [x; y; z])) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
-      toplevel := { Cls.name = Cls.to_label x; Cls.tvs = (new_tvs, List.length tvs'); Cls.arg = (y, z); Cls.formal_fv = zs; Cls.body = f1' } :: !toplevel;
+      toplevel := (Cls.Fundef { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f1' }) :: !toplevel;
       let f2' = toCls_exp known' tvs f2 in
       if Cls.V.mem x (Cls.fv f2') then
         if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel (x, Cls.to_label x, f2')
@@ -102,7 +104,30 @@ module KNorm = struct
         else if List.length zs = 0 then Cls.MakePolyLabel (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
         else Cls.MakePolyCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'
-    | AppExp_alt _ | LetRecExp_alt _ -> raise @@ Closure_bug "AppExp_alt and LetRecExp_alt yet"
+    | LetRecExp_alt (x, tvs', (y, z), (f11, f12), f2) ->
+      let toplevel_backup = !toplevel in
+      let tvset_backup = !tvset in
+      let new_tvs = tvs' @ tvs in
+      let known' = Cls.V.add x known in
+      let f11' = toCls_exp known' new_tvs f11 in
+      let zs = Cls.V.diff (Cls.fv f11') (Cls.V.of_list [y; z]) in
+      let known', f11', f12' =
+        if Cls.V.is_empty zs && List.length new_tvs = 0 then known', f11', toCls_exp known' new_tvs f12
+        else (toplevel := toplevel_backup; tvset := tvset_backup;
+        let f11' = toCls_exp known new_tvs f11 in
+        let f12' = toCls_exp known new_tvs f12 in
+        known, f11', f12')
+      in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f11') (Cls.V.of_list [x; y; z])) in
+      (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
+      toplevel := (Cls.Fundef { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f12' }) :: !toplevel;
+      toplevel := (Cls.Fundef_alt { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f11' }) :: !toplevel;
+      let f2' = toCls_exp known' tvs f2 in
+      if Cls.V.mem x (Cls.fv f2') then
+        if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel_alt (x, Cls.to_label x, f2')
+        else if List.length new_tvs = 0 then Cls.MakeCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, f2')
+        else if List.length zs = 0 then Cls.MakePolyLabel_alt (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
+        else Cls.MakePolyCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
+      else f2'
 
   let ini x vs = Cls.V.add x vs
 

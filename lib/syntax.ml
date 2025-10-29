@@ -391,22 +391,30 @@ module Cls = struct
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | AppTy of id * int * tyarg list
-    | MakeCls of id * closure * exp
     | AppCls of id * (id * id)
     | AppDir of label * (id * id)
+    | AppCls_alt of id * id
+    | AppDir_alt of label * id
     (* | Cast of id * ty * ty * range * polarity *)
     | CApp of id * id
     | CSeq of id * id
     | Coercion of coercion
     | Let of id * exp * exp
+    | MakeCls of id * closure * exp
     | MakeLabel of id * label * exp
     | MakePolyLabel of id * label * ftv * exp
     | MakePolyCls of id * closure * ftv * exp
+    | MakeCls_alt of id * closure * exp
+    | MakeLabel_alt of id * label * exp
+    | MakePolyLabel_alt of id * label * ftv * exp
+    | MakePolyCls_alt of id * closure * ftv * exp
     | SetTy of tyvar * exp
     | Insert of id * exp
 
-  type fundef = { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
-
+  type fundef = 
+    | Fundef of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
+    | Fundef_alt of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
+    
   module V = struct
     include Set.Make (
       struct
@@ -426,6 +434,8 @@ module Cls = struct
     | SetTy (_, f) -> fv f
     | AppDir (_, (y, z)) -> V.of_list [y; z]
     | AppCls (x, (y, z)) -> V.of_list [x; y; z]
+    | AppDir_alt (_, y) -> V.singleton y
+    | AppCls_alt (x, y) -> V.of_list [x; y]
     (* | Cast (x, _, _, _, _) -> V.singleton x *)
     | CApp (x, y) -> V.of_list [x; y]
     | CSeq (x, y) -> V.of_list [x; y]
@@ -434,6 +444,10 @@ module Cls = struct
     | MakePolyLabel (x, _, _, f) -> V.remove x (fv f)
     | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
     | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
+    | MakeLabel_alt (x, _, f) -> V.remove x (fv f)
+    | MakePolyLabel_alt (x, _, _, f) -> V.remove x (fv f)
+    | MakeCls_alt (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
+    | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
     | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
     | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
 
