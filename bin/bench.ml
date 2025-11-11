@@ -576,14 +576,17 @@ let bench mode fmt itr decl =
     in
     lst_elapsed_time
   | C -> 
-    let translated = Translate.LS.translate tyenv (tv_renew decl) in
+    let _, _, alphaenv, kfunenvs, _ = Stdlib.pervasives in
+    let decl, _ = KNormal.LS.alpha_program alphaenv decl in
+    (* let translated = Translate.LS.translate tyenv (tv_renew decl) in *)
     log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
-    Format.pp_print_flush fmt ();
-    let _, _, kfunenvs, _ = Stdlib.pervasives in
-    let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
-    let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
-    let p = Closure.KNorm.toCls_program p in
+    (* Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.pp_print_flush fmt (); *)
+    let kf, _ = KNormal.kNorm_funs kfunenvs decl ~debug:false in
+    let kf = Translate.KNorm.translate kf in
+    let kf, _ = KNormal.kNorm1_funs_simpl kfunenvs kf ~debug:false in
+    let p = match kf with Syntax.KNorm1.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
+    let p = Closure.KNorm1.toCls_program p in
     let c_code = Format.asprintf "%a" (ToC.toC_program false) p in
     let oc = Out_channel.create "logs/bench.c" in
     Printf.fprintf oc "%s" c_code;

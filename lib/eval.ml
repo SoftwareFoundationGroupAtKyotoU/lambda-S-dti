@@ -361,8 +361,8 @@ module LS1 = struct
       env, x, v
 end
 
-module KNorm = struct
-  open Syntax.KNorm
+module KNorm1 = struct
+  open Syntax.KNorm1
 
   let rec subst_exp s = 
     let subst_type_k s = function
@@ -386,7 +386,7 @@ module KNorm = struct
       LetRecExp_alt (x, tvs, arg, (subst_exp s f1, subst_exp s f1'), subst_exp s f2)
 
   let rec eval_exp ?(debug=false) kenv f = 
-    if debug then fprintf err_formatter "keval <-- %a\n" Pp.KNorm.pp_exp f;
+    if debug then fprintf err_formatter "keval <-- %a\n" Pp.KNorm1.pp_exp f;
     let eval_exp = eval_exp ~debug:debug in
     match f with
     | Var x -> 
@@ -510,7 +510,7 @@ module KNorm = struct
       in eval_exp (Environment.add x v1 kenv) f2
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "coerce <-- %a<%a>\n" Pp.KNorm.pp_value v Pp.pp_coercion c;
+    print_debug "coerce <-- %a<%a>\n" Pp.KNorm1.pp_value v Pp.pp_coercion c;
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
@@ -518,7 +518,7 @@ module KNorm = struct
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
       | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
-      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm.pp_value v)
+      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm1.pp_value v)
   and eval_app_val ?(debug=false) kenv v1 v2 v3 = match v1 with
     | FunV proc -> proc ([], []) (v2, v3)
     | FunV_alt proc -> snd (proc ([], [])) (v2, v3)

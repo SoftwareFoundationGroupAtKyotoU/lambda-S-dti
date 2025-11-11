@@ -259,3 +259,178 @@ module LS = struct
     | Exp f -> LS1.Exp (translate_exp_alt env f)
     | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp_alt env f)
 end
+
+module KNorm = struct
+  open Syntax.KNorm
+
+  let fresh_CVar =
+    let counter = ref 0 in
+    let body () =
+      let v = !counter in
+      counter := v + 1;
+      let id = "k"^string_of_int !counter in
+      id, KNorm1.Var id
+    in body
+
+  let make_let f c = 
+    let id, _ = fresh_CVar () in
+    let x = KNormal.genvar "var_" in
+    KNorm1.LetExp (x, f, KNorm1.LetExp (id, c, KNorm1.CAppExp (x, id)))
+
+  let rec translate_exp = function
+    | Var x -> KNorm1.Var x
+    | IConst i -> KNorm1.IConst i
+    | UConst -> KNorm1.UConst
+    | Add (x, y) -> KNorm1.Add (x, y)
+    | Sub (x, y) -> KNorm1.Sub (x, y)
+    | Mul (x, y) -> KNorm1.Mul (x, y)
+    | Div (x, y) -> KNorm1.Div (x, y)
+    | Mod (x, y) -> KNorm1.Mod (x, y)
+    | IfEqExp (x, y, f1, f2) -> KNorm1.IfEqExp (x, y, translate_exp f1, translate_exp f2) (*new*)
+    | IfLteExp (x, y, f1, f2) -> KNorm1.IfLteExp (x, y, translate_exp f1, translate_exp f2) (*new*)
+    | AppExp (x, y) -> (*new*)
+      let id, _ = fresh_CVar () in
+      KNorm1.LetExp (id, KNorm1.CoercionExp (CId TyInt), KNorm1.AppExp (x, (y, id))) (* KNormalized term is not typable, so we put tentative tyInt *)
+    | AppTy (x, tvs, tas) -> KNorm1.AppTy (x, tvs, tas)
+    | CAppExp (f, c) -> translate_exp_k (KNorm1.CoercionExp c) f
+    | LetExp (x, f1, f2) -> (*new*)
+      KNorm1.LetExp (x, translate_exp f1, translate_exp f2)
+    | LetRecExp (x, tvs, y, f1, f2) ->
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecExp (x, tvs, (y, id), translate_exp_k k f1, translate_exp f2)
+  and translate_exp_k (c:KNorm1.exp) = function
+    | Var x -> 
+      let id, _ = fresh_CVar () in
+      KNorm1.LetExp (id, c, KNorm1.CAppExp (x, id))
+    | IConst i -> make_let (KNorm1.IConst i) c
+    | UConst -> make_let KNorm1.UConst c
+    | Add (x, y) -> make_let (KNorm1.Add (x, y)) c
+    | Sub (x, y) -> make_let (KNorm1.Sub (x, y)) c
+    | Mul (x, y) -> make_let (KNorm1.Mul (x, y)) c
+    | Div (x, y) -> make_let (KNorm1.Div (x, y)) c
+    | Mod (x, y) -> make_let (KNorm1.Mod (x, y)) c
+    | IfEqExp (x, y, f1, f2) -> KNorm1.IfEqExp (x, y, translate_exp_k c f1, translate_exp_k c f2)
+    | IfLteExp (x, y, f1, f2) -> KNorm1.IfLteExp (x, y, translate_exp_k c f1, translate_exp_k c f2)
+    | AppExp (x, y) -> 
+      let id, _ = fresh_CVar () in
+      KNorm1.LetExp (id, c, KNorm1.AppExp (x, (y, id)))
+    | AppTy (x, tvs, tas) -> make_let (KNorm1.AppTy (x, tvs, tas)) c
+    | CAppExp (f, c') -> 
+      let id1, _ = fresh_CVar () in
+      let id2, _ = fresh_CVar () in
+      let id3, k3 = fresh_CVar () in
+      KNorm1.LetExp (id1, KNorm1.CoercionExp c', KNorm1.LetExp (id2, c, (KNorm1.LetExp (id3, CSeqExp (id1, id2), translate_exp_k k3 f))))
+    | LetExp (x, f1, f2) -> 
+      KNorm1.LetExp (x, translate_exp f1, translate_exp_k c f2)
+    | LetRecExp (x, tvs, y, f1, f2) -> 
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecExp (x, tvs, (y, id), translate_exp_k k f1, translate_exp_k c f2)
+
+  let translate = function
+    | Exp f -> KNorm1.Exp (translate_exp f)
+    | LetDecl (x, f) -> KNorm1.LetDecl (x, translate_exp f)
+    | LetRecDecl (x, tvs, y, f) -> 
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecDecl (x, tvs, (y, id), translate_exp_k k f)
+
+  let rec translate_exp_alt = function
+    | Var x -> KNorm1.Var x
+    | IConst i -> KNorm1.IConst i
+    | UConst -> KNorm1.UConst
+    | Add (x, y) -> KNorm1.Add (x, y)
+    | Sub (x, y) -> KNorm1.Sub (x, y)
+    | Mul (x, y) -> KNorm1.Mul (x, y)
+    | Div (x, y) -> KNorm1.Div (x, y)
+    | Mod (x, y) -> KNorm1.Mod (x, y)
+    | IfEqExp (x, y, f1, f2) -> KNorm1.IfEqExp (x, y, translate_exp_alt f1, translate_exp_alt f2) (*new*)
+    | IfLteExp (x, y, f1, f2) -> KNorm1.IfLteExp (x, y, translate_exp_alt f1, translate_exp_alt f2) (*new*)
+    | AppExp (x, y) -> (*new*)
+      KNorm1.AppExp_alt (x, y)
+    | AppTy (x, tvs, tas) -> KNorm1.AppTy (x, tvs, tas)
+    | CAppExp (f, c) -> translate_exp_k_alt (KNorm1.CoercionExp c) f
+    | LetExp (x, f1, f2) -> (*new*)
+      KNorm1.LetExp (x, translate_exp_alt f1, translate_exp_alt f2)
+    | LetRecExp (x, tvs, y, f1, f2) ->
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecExp_alt (x, tvs, (y, id), (translate_exp_alt f1, translate_exp_k_alt k f1), translate_exp_alt f2)
+  and translate_exp_k_alt (c:KNorm1.exp) = function
+    | Var x -> 
+      let id, _ = fresh_CVar () in
+      KNorm1.LetExp (id, c, KNorm1.CAppExp (x, id))
+    | IConst i -> make_let (KNorm1.IConst i) c
+    | UConst -> make_let KNorm1.UConst c
+    | Add (x, y) -> make_let (KNorm1.Add (x, y)) c
+    | Sub (x, y) -> make_let (KNorm1.Sub (x, y)) c
+    | Mul (x, y) -> make_let (KNorm1.Mul (x, y)) c
+    | Div (x, y) -> make_let (KNorm1.Div (x, y)) c
+    | Mod (x, y) -> make_let (KNorm1.Mod (x, y)) c
+    | IfEqExp (x, y, f1, f2) -> KNorm1.IfEqExp (x, y, translate_exp_k_alt c f1, translate_exp_k_alt c f2)
+    | IfLteExp (x, y, f1, f2) -> KNorm1.IfLteExp (x, y, translate_exp_k_alt c f1, translate_exp_k_alt c f2)
+    | AppExp (x, y) -> 
+      let id, _ = fresh_CVar () in
+      KNorm1.LetExp (id, c, KNorm1.AppExp (x, (y, id)))
+    | AppTy (x, tvs, tas) -> make_let (KNorm1.AppTy (x, tvs, tas)) c
+    | CAppExp (f, c') -> 
+      let id1, _ = fresh_CVar () in
+      let id2, _ = fresh_CVar () in
+      let id3, k3 = fresh_CVar () in
+      KNorm1.LetExp (id1, KNorm1.CoercionExp c', KNorm1.LetExp (id2, c, (KNorm1.LetExp (id3, CSeqExp (id1, id2), translate_exp_k_alt k3 f))))
+    | LetExp (x, f1, f2) -> 
+      KNorm1.LetExp (x, translate_exp_alt f1, translate_exp_k_alt c f2)
+    | LetRecExp (x, tvs, y, f1, f2) -> 
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecExp_alt (x, tvs, (y, id), (translate_exp_alt f1, translate_exp_k_alt k f1), translate_exp_k_alt c f2)
+
+  let translate_alt = function
+    | Exp f -> KNorm1.Exp (translate_exp_alt f)
+    | LetDecl (x, f) -> KNorm1.LetDecl (x, translate_exp_alt f)
+    | LetRecDecl (x, tvs, y, f) -> 
+      let id, k = fresh_CVar () in
+      KNorm1.LetRecDecl (x, tvs, (y, id), translate_exp_k_alt k f)
+
+  (* let rec translate_exp_alt env = function
+    | Var (x, ys) -> KNorm1.Var (x, ys)
+    | IConst i -> KNorm1.IConst i(*, TyInt*)
+    | BConst b -> KNorm1.BConst b(*, TyBool*)
+    | UConst -> KNorm1.UConst
+    | FunExp (x, u, f) ->
+      let env = Environment.add x (tysc_of_ty u) env in
+      let id, k = fresh_CVar () in 
+      KNorm1.FunExp_alt ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | FixExp (x, y, u1, u, f) -> 
+      let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
+      let id, k = fresh_CVar () in 
+      KNorm1.FixExp_alt ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | CAppExp (f, c) -> translate_exp_k_alt env (KNorm1.CoercionExp c) f
+    | AppExp (f1, f2) -> (*new*)
+      KNorm1.AppExp_alt (translate_exp_alt env f1, translate_exp_alt env f2)
+    | BinOp (op, f1, f2) -> KNorm1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2) (*new*)
+    | IfExp (f1, f2, f3) -> KNorm1.IfExp (translate_exp_alt env f1, translate_exp_alt env f2, translate_exp_alt env f3) (*new*)
+    | LetExp (x, ys, f1, f2) -> (*new*)
+      let u = Typing.LS.type_of_program env (Exp f1) in
+      KNorm1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
+  and translate_exp_k_alt env k = function
+    | Var (x, ys) -> KNorm1.CAppExp (KNorm1.Var (x, ys), k)
+    | IConst i -> KNorm1.CAppExp (KNorm1.IConst i, k)
+    | BConst b -> KNorm1.CAppExp (KNorm1.BConst b, k)
+    | UConst -> KNorm1.CAppExp (KNorm1.UConst, k)
+    | FunExp (x, u, f) -> 
+      let env = Environment.add x (tysc_of_ty u) env in
+      let id, k' = fresh_CVar () in 
+      KNorm1.CAppExp (KNorm1.FunExp_alt ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | FixExp (x, y, u1, u, f) -> 
+      let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
+      let id, k' = fresh_CVar () in 
+      KNorm1.CAppExp (KNorm1.FixExp_alt ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | BinOp (op, f1, f2) -> KNorm1.CAppExp (KNorm1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2), k)
+    | IfExp (f1, f2, f3) -> KNorm1.IfExp (translate_exp_alt env f1, translate_exp_k_alt env k f2, translate_exp_k_alt env k f3)
+    | AppExp (f1, f2) -> KNorm1.AppExp (translate_exp_alt env f1, translate_exp_alt env f2, k)
+    | CAppExp (f, c) -> let id, k' = fresh_CVar () in KNorm1.LetExp (id, [], KNorm1.CSeqExp (KNorm1.CoercionExp c, k), translate_exp_k_alt env k' f)
+    | LetExp (x, ys, f1, f2) -> 
+      let u = Typing.LS.type_of_program env (Exp f1) in
+      KNorm1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_k_alt (Environment.add x (TyScheme (ys, u)) env) k f2)
+
+  let translate_alt env = function
+    | Exp f -> KNorm1.Exp (translate_exp_alt env f)
+    | LetDecl (x, ys, f) -> KNorm1.LetDecl (x, ys, translate_exp_alt env f) *)
+end

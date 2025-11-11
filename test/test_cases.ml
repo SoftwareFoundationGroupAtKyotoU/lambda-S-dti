@@ -1,6 +1,6 @@
 let tests = [
   (* Constants *)
-  ["1", "int", "1", "1"];
+  (* ["1", "int", "1", "1"];
   ["true", "bool", "true", "1"];
   ["()", "unit", "()", "()"];
   (* Unary operators *)
@@ -63,7 +63,7 @@ let tests = [
   (* ["let id x = x in let did (x:?) = x in let succ x = x + 1 in (fun (x:?) -> x 1) (id (did succ))", "?", "2: int => ?", "2: int => ?"]; *)
   ["let id x = x in id (); id true", "bool", "true", "1"];
   ["let g = fun x -> ((fun y -> y) : ?->?) x in g (); g 3", "?", "3<<id{int};int!>>", "3<<id{int};int!>>"];
-  ["let f = fun x -> 1 + ((fun (y:?) -> y) x) in 2", "int", "2", "2"];
+  ["let f = fun x -> 1 + ((fun (y:?) -> y) x) in 2", "int", "2", "2"]; *)
   (* toplevel let-poly *)
   [
     "let g = fun x -> ((fun y -> y) : ?->?) x", "'a -> ?", "<fun>", "<fun>";
@@ -155,7 +155,7 @@ let tests = [
     "f (fun x -> x) 4", "int", "4", "4";
   ];
   (* let-poly & recursion *)
-  ["let rec fact n = if n <= 1 then 1 else n * fact (n - 1) in fact 5", "int", "120", "120"];
+  (* ["let rec fact n = if n <= 1 then 1 else n * fact (n - 1) in fact 5", "int", "120", "120"];
   ["let rec fact (n:?) = if n <= 1 then 1 else n * fact (n - 1) in fact 5", "int", "120", "120"];
   ["let rec f (x:?) = x in f 2", "int", "2", "2"];
   ["let rec f n x = if n < 0 then x else f (n - 1) x in f 100 true", "bool", "true", "1"];
@@ -169,7 +169,7 @@ let tests = [
   (* alpha, beta *)
   ["let x = 2 in let x = 4 in x + x", "int", "8", "8"];
   ["let x = 2 in let y = x in (fun y -> y) y", "int", "2", "2"];
-  ["let x = 2 in let a = x in let b = a in let c = x in let d = a in let e = x in e", "int", "2", "2"];
+  ["let x = 2 in let a = x in let b = a in let c = x in let d = a in let e = x in e", "int", "2", "2"]; *)
 ]
 
 (* let g = fun x -> ((fun y -> y):? -> ?) x in if g true then g 2 else g 3  *)

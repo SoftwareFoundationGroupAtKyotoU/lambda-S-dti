@@ -73,18 +73,18 @@ let toC_tas ppf (y, n, x, tas) =
   cnt_ta := 0;
   let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:toC_sep in
-  fprintf ppf "%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a"
-    x
-    n
-    toC_list tas;
-  while (!cnt_ta < n) do
-    fprintf ppf "\n%s.f->tas[%d] = %s.f->tas[%d];"
+    fprintf ppf "%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a"
       x
-      !cnt_ta
-      y
-      !cnt_ta;
-    cnt_ta := !cnt_ta + 1
-  done
+      n
+      toC_list tas;
+    while (!cnt_ta < n) do
+      fprintf ppf "\n%s.f->tas[%d] = %s.f->tas[%d];"
+        x
+        !cnt_ta
+        y
+        !cnt_ta;
+      cnt_ta := !cnt_ta + 1
+    done
 
 (*束縛されていない型引数を代入するプログラムを記述する関数*)
 let toC_ftas ppf (n, x, ftas) =

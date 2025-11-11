@@ -3,7 +3,7 @@ open Syntax
 exception Stdlib_bug of string
 exception Stdlib_exit of int
 
-let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty), Environment.empty
+let env, tyenv, alphaenv, kfunenvs, kenv = Environment.empty, Environment.empty, Environment.empty, (Environment.empty, Environment.empty), Environment.empty
 
 let is_some_type = tysc_of_ty @@ TyFun (TyDyn, TyBool)
 
@@ -52,8 +52,8 @@ module LS1 = struct
   )
 end
 
-module KNorm = struct 
-  open Syntax.KNorm
+module KNorm1 = struct 
+  open Syntax.KNorm1
 
   (*let is_some u = FunV (fun _ -> function
     | Tagged (t, _) when u = tag_to_ty t -> IntV 1
@@ -103,23 +103,23 @@ module KNorm = struct
 end
 
 let implementations = [
-  "exit", [], LS1.lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit;
-  (*"is_bool", [], CC.is_some TyBool, is_some_type, KNorm.is_some TyBool;
-  "is_int", [], CC.is_some TyInt, is_some_type, KNorm.is_some TyInt;
-  "is_unit", [], CC.is_some TyUnit, is_some_type, KNorm.is_some TyUnit;
-  "is_fun", [], CC.is_some (TyFun (TyDyn, TyDyn)), is_some_type, KNorm.is_some (TyFun (TyDyn, TyDyn));*)
+  "exit", [], LS1.lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm1.lib_exit;
+  (*"is_bool", [], CC.is_some TyBool, is_some_type, KNorm1.is_some TyBool;
+  "is_int", [], CC.is_some TyInt, is_some_type, KNorm1.is_some TyInt;
+  "is_unit", [], CC.is_some TyUnit, is_some_type, KNorm1.is_some TyUnit;
+  "is_fun", [], CC.is_some (TyFun (TyDyn, TyDyn)), is_some_type, KNorm1.is_some (TyFun (TyDyn, TyDyn));*)
   "max_int", [], IntV max_int, tysc_of_ty TyInt, IntV max_int;
   "min_int", [], IntV min_int, tysc_of_ty TyInt, IntV min_int;
-  "print_bool", [], LS1.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool;
-  "print_int", [], LS1.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int;
-  "print_newline", [], LS1.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline;
+  "print_bool", [], LS1.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm1.lib_print_bool;
+  "print_int", [], LS1.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm1.lib_print_int;
+  "print_newline", [], LS1.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm1.lib_print_newline;
 ]
 
-let env, tyenv, kfunenvs, kenv =
+let env, tyenv, alphaenv, kfunenvs, kenv =
   List.fold_left
-    (fun (env, tyenv, (tvsenv, alphaenv, betaenv), kenv) (x, xs, v, u, kv) ->
-       Environment.add x (xs, v) env, Environment.add x u tyenv, (Environment.add x [] tvsenv, Environment.add x x alphaenv, Environment.add x x betaenv), Environment.add x kv kenv)
-    (env, tyenv, kfunenvs, kenv)
+    (fun (env, tyenv, alphaenv, (tvsenv, betaenv), kenv) (x, xs, v, u, kv) ->
+       Environment.add x (xs, v) env, Environment.add x u tyenv, Environment.add x x alphaenv, (Environment.add x [] tvsenv, Environment.add x x betaenv), Environment.add x kv kenv)
+    (env, tyenv, alphaenv, kfunenvs, kenv)
     implementations
 
 let implementations = [
@@ -132,20 +132,22 @@ let implementations = [
   "let ignore x = ();;";
 ]
 
-let env, tyenv, kfunenvs, kenv =
+let env, tyenv, alphaenv, kfunenvs, kenv =
  List.fold_left
-    (fun (env, tyenv, kfunenvs, kenv) str ->
+    (fun (env, tyenv, alphaenv, kfunenvs, kenv) str ->
       let e = Parser.toplevel Lexer.main @@ Lexing.from_string str in
       let e, u = Typing.ITGL.type_of_program tyenv e in
       let tyenv, e, _ = Typing.ITGL.normalize tyenv e u in
       let new_tyenv, f, _ = Translate.ITGL.translate tyenv e in
       let _ = Typing.LS.type_of_program tyenv f in
-      let f = Translate.LS.translate tyenv f in
+      let f, alphaenv = KNormal.LS.alpha_program alphaenv f in
+      (* let f = Translate.LS.translate tyenv f in *)
       (* let env, _, _ = Eval.LS.eval_program env f in *)
       let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
-      let kenv, _, _ = Eval.KNorm.eval_program kenv kf in
-      env, new_tyenv, kfunenvs, kenv)
-    (env, tyenv, kfunenvs, kenv)
+      let kf = Translate.KNorm.translate kf in
+      let kenv, _, _ = Eval.KNorm1.eval_program kenv kf in
+      env, new_tyenv, alphaenv, kfunenvs, kenv)
+    (env, tyenv, alphaenv, kfunenvs, kenv)
     implementations
 
-let pervasives = env, tyenv, kfunenvs, kenv
+let pervasives = env, tyenv, alphaenv, kfunenvs, kenv

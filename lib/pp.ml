@@ -472,8 +472,8 @@ module LS1 = struct
         pp_coercion c
 end
 
-module KNorm = struct 
-  open Syntax.KNorm
+module KNorm1 = struct 
+  open Syntax.KNorm1
 
   let gt_exp e e1 = match e, e1 with
     | (Var _ | IConst _ | UConst), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)

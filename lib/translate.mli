@@ -13,3 +13,10 @@ module LS : sig
 	val translate : tysc Environment.t -> program -> LS1.program
 	val translate_alt : tysc Environment.t -> program -> LS1.program
 end
+
+module KNorm : sig
+	open Syntax.KNorm
+
+	val translate : program -> KNorm1.program
+	val translate_alt : program -> KNorm1.program
+end

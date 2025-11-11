@@ -21,7 +21,7 @@ let run env tyenv program =
   let f(*, u'''*) = Translate.LS.translate tyenv f in
   (* assert (Typing.is_equal u u'''); *)
   try
-    let env, _, v = Eval.LS1.eval_program env f ~debug:true in
+    let env, _, v = Eval.LS1.eval_program env f ~debug:false in
     env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value v
   with
   | Eval.Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
@@ -37,7 +37,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
            env, tyenv
         )
-        (let env, tyenv, _, _ = Stdlib.pervasives in env, tyenv)
+        (let env, tyenv, _, _, _ = Stdlib.pervasives in env, tyenv)
         cases
   in
   List.mapi test test_cases

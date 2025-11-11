@@ -343,6 +343,36 @@ module KNorm = struct
     | Mod of id * id
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
+    | AppExp of id * id
+    | AppTy of id * tyvar list * tyarg list
+    | CAppExp of exp * coercion
+    | LetExp of id * exp * exp
+    | LetRecExp of id * tyvar list * id * exp * exp
+
+  type program =
+    | Exp of exp
+    | LetDecl of id * exp
+    | LetRecDecl of id * tyvar list * id * exp
+
+  type value =
+    | IntV of int
+    | UnitV
+    | FunV of ((tyvar list * ty list) -> value -> value)
+    | CoerceV of value * coercion
+    end
+
+module KNorm1 = struct
+  type exp =
+    | Var of id
+    | IConst of int
+    | UConst
+    | Add of id * id
+    | Sub of id * id
+    | Mul of id * id
+    | Div of id * id
+    | Mod of id * id
+    | IfEqExp of id * id * exp * exp
+    | IfLteExp of id * id * exp * exp
     | AppExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
     | CAppExp of id * id

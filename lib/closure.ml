@@ -3,8 +3,8 @@ open Syntax
 exception Closure_bug of string
 exception Closure_error of string
 
-module KNorm = struct
-  open Syntax.KNorm
+module KNorm1 = struct
+  open Syntax.KNorm1
 
   let toplevel = ref []
 
@@ -119,8 +119,15 @@ module KNorm = struct
         known, f11', f12')
       in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f11') (Cls.V.of_list [x; y; z])) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
-      toplevel := (Cls.Fundef { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f12' }) :: !toplevel;
-      toplevel := (Cls.Fundef_alt { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f11' }) :: !toplevel;
+      let rec iter l = match l with
+        | (Cls.Fundef { name = id; tvs = _; arg = _; formal_fv = _; body = _}) :: _ when id = x -> true
+        | _ :: t -> iter t
+        | [] -> false
+      in let is_already_declared = iter !toplevel in
+      if is_already_declared then ()
+      else 
+        (toplevel := (Cls.Fundef { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f12' }) :: !toplevel;
+        toplevel := (Cls.Fundef_alt { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f11' }) :: !toplevel);
       let f2' = toCls_exp known' tvs f2 in
       if Cls.V.mem x (Cls.fv f2') then
         if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel_alt (x, Cls.to_label x, f2')
