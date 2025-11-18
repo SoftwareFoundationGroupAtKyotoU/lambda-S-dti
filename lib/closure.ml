@@ -3,12 +3,12 @@ open Syntax
 exception Closure_bug of string
 exception Closure_error of string
 
+let toplevel = ref []
+
+let tvset = ref TV.empty
+
 module KNorm = struct
   open Syntax.KNorm
-
-  let toplevel = ref []
-
-  let tvset = ref TV.empty
 
   let rec exist_tv l1 l2 = match l2 with
     | h :: t -> if List.mem h l1 then true else exist_tv l1 t
@@ -60,8 +60,8 @@ module KNorm = struct
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
     | AppExp (x, y) when Cls.V.mem x known -> Cls.AppDir (Cls.to_label x, y)
     | AppExp (x, y) -> Cls.AppCls (x, y)
-    | AppExp_alt (x, y) when Cls.V.mem x known -> Cls.AppDir_alt (Cls.to_label x, y)
-    | AppExp_alt (x, y) -> Cls.AppCls_alt (x, y)
+    (* | AppExp_alt (x, y) when Cls.V.mem x known -> Cls.AppDir_alt (Cls.to_label x, y)
+    | AppExp_alt (x, y) -> Cls.AppCls_alt (x, y) *)
     | AppTy (x, _, tas) -> 
       let uandf = List.map (ta_tv tvs) tas in
       let rec destruct_uandf l ru rf = match l with
@@ -104,7 +104,7 @@ module KNorm = struct
         else if List.length zs = 0 then Cls.MakePolyLabel (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
         else Cls.MakePolyCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'
-    | LetRecExp_alt (x, tvs', (y, z), (f11, f12), f2) ->
+    (* | LetRecExp_alt (x, tvs', (y, z), (f11, f12), f2) ->
       let toplevel_backup = !toplevel in
       let tvset_backup = !tvset in
       let new_tvs = tvs' @ tvs in
@@ -127,7 +127,8 @@ module KNorm = struct
         else if List.length new_tvs = 0 then Cls.MakeCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, f2')
         else if List.length zs = 0 then Cls.MakePolyLabel_alt (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
         else Cls.MakePolyCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
-      else f2'
+      else f2' *)
+    | LetRecExp_alt _ | AppExp_alt _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
 
   let ini x vs = Cls.V.add x vs
 
@@ -136,12 +137,84 @@ module KNorm = struct
     @@ ini "print_bool"
     @@ ini "print_int"
     @@ Cls.V.empty
-
-  let toCls_program p =
-    toplevel := []; tvset := TV.empty;
-    let f = toCls_exp venv [] p in
-    Cls.Prog (!tvset, List.rev !toplevel, f)
 end
+
+module Cls = struct
+  open Syntax.Cls
+
+  let rec replace_var vx vy f = 
+    let replace x = if x = vx then vy else x in
+    match f with
+    | Var x -> Var (replace x)
+    | Int i -> Int i
+    | Unit -> Unit
+    | Add (x, y) -> Add (replace x, replace y)
+    | Sub (x, y) -> Sub (replace x, replace y)
+    | Mul (x, y) -> Mul (replace x, replace y)
+    | Div (x, y) -> Div (replace x, replace y)
+    | Mod (x, y) -> Mod (replace x, replace y)
+    | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | AppTy (x, n, tas) -> AppTy (replace x, n, tas)
+    | AppCls (x, (y, k)) -> AppCls (replace x, (replace y, replace k))
+    | AppDir (l, (y, k)) -> AppDir (to_label (replace (to_id l)), (replace y, replace k))
+    | CApp (x, k) -> CApp (replace x, replace k)
+    | CSeq (k1, k2) -> CSeq (replace k1, replace k2)
+    | Coercion c -> Coercion c
+    | Let (x, f1, f2) -> Let (x, replace_var vx vy f1, replace_var vx vy f2)
+    | MakeCls (x, {entry = l; actual_fv = fvs}, f) -> MakeCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, replace_var vx vy f)
+    | MakeLabel (x, l, f) -> MakeLabel (x, to_label (replace (to_id l)), replace_var vx vy f)
+    | MakePolyCls (x, {entry = l; actual_fv = fvs}, ftvs, f) -> MakePolyCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, ftvs, replace_var vx vy f)
+    | MakePolyLabel (x, l, ftvs, f) -> MakePolyLabel (x, to_label (replace (to_id l)), ftvs, replace_var vx vy f)
+    | SetTy _ | Insert _ -> raise @@ Closure_bug "SetTy or Insert appear in replace"
+    | AppCls_alt _ | AppDir_alt _ | MakeLabel_alt _ | MakeCls_alt _ | MakePolyLabel_alt _ | MakePolyCls_alt _ -> raise @@ Closure_bug "alt form appear in replace"
+
+  let rec to_alt ids = function
+    | Let (x, Coercion (CId _), f) -> 
+      let f = to_alt (V.add x ids) f in
+      if V.mem x (fv f) then raise @@ Closure_error "to_alt: id appear"
+      else f
+    | Let (x, CSeq (k1, k2), f) ->
+      begin match V.mem k1 ids, V.mem k2 ids with
+      | true, true -> 
+        let f = to_alt (V.add x ids) f in
+        if V.mem x (fv f) then raise @@ Closure_error "to_alt: id appear"
+        else f
+      | true, false -> to_alt ids @@ replace_var x k2 f
+      | false, true -> to_alt ids @@ replace_var x k1 f
+      | false, false -> Let (x, CSeq (k1, k2), to_alt ids f)
+      end
+    | Let (x, CApp (y, k), f) when V.mem k ids -> to_alt ids (replace_var x y f)
+    | Let (x, f1, f2) -> Let (x, to_alt ids f1, to_alt ids f2)
+    | IfEq (x, y, f1, f2) -> IfEq (x, y, to_alt ids f1, to_alt ids f2)
+    | IfLte (x, y, f1, f2) -> IfLte (x, y, to_alt ids f1, to_alt ids f2)
+    | AppCls (x, (y, k)) when V.mem k ids -> AppCls_alt (x, y)
+    | AppDir (l, (y, k)) when V.mem k ids -> AppDir_alt (l, y)
+    | CApp (x, k) when V.mem k ids -> Var x
+    | MakeCls (x, cls, f) -> MakeCls_alt (x, cls, to_alt ids f)
+    | MakeLabel (x, l, f) -> MakeLabel_alt (x, l, to_alt ids f)
+    | MakePolyCls (x, cls, ftvs, f) -> MakePolyCls_alt (x, cls, ftvs, to_alt ids f)
+    | MakePolyLabel (x, l, ftvs, f) -> MakePolyLabel_alt (x, l, ftvs, to_alt ids f)
+    | AppCls_alt _ | AppDir_alt _ | MakeLabel_alt _ | MakeCls_alt _ | MakePolyLabel_alt _ | MakePolyCls_alt _ -> raise @@ Closure_bug "alt form appear in replace"
+    | f -> f
+
+  let rec alt_funs = function
+    | h :: t -> 
+      begin match h with
+      | Fundef {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = f } -> 
+        Fundef_alt {name = l; tvs = (tvs, n); arg = y; formal_fv = ids; body = to_alt (V.singleton k) f } ::
+        Fundef {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = to_alt V.empty f } ::
+        (alt_funs t)
+      | Fundef_alt _ -> raise @@ Closure_bug "alt form appear in alt_funs"
+      end
+    | [] -> []
+end
+
+let toCls_program p alt =
+  toplevel := []; tvset := TV.empty;
+  let f = KNorm.toCls_exp KNorm.venv [] p in
+  if alt then Syntax.Cls.Prog (!tvset, Cls.alt_funs !toplevel, Cls.to_alt Syntax.Cls.V.empty f)
+  else Syntax.Cls.Prog (!tvset, List.rev !toplevel, f)
 
 (*
 let quad:int->int = fun (x:int) ->

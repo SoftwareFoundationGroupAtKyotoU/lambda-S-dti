@@ -375,6 +375,8 @@ module Cls = struct
 
   let to_label (x:id) = (x:label)
 
+  let to_id (x:label) = (x:id)
+
   type closure = { entry : label; actual_fv : id list }
 
   type ftv = { ftvs : tyarg list; offset : int }

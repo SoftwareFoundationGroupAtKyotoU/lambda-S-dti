@@ -583,7 +583,7 @@ let bench mode fmt itr decl =
     let _, _, kfunenvs, _ = Stdlib.pervasives in
     let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
     let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
-    let p = Closure.KNorm.toCls_program p in
+    let p = Closure.toCls_program p false in
     let c_code = Format.asprintf "%a" (ToC.toC_program false) p in
     let oc = Out_channel.create "logs/bench.c" in
     Printf.fprintf oc "%s" c_code;

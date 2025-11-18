@@ -139,12 +139,14 @@ let compile_process progs _ tyenv kfunenvs _ =
     let u'' = Typing.LS.type_of_program tyenv f in
     assert (Typing.is_equal u u'');
     print_debug "f: %a\n" Pp.LS.pp_program f;
-      let f(*, u'''*) = 
+      (* let f(*, u'''*) = 
         if !alt then Translate.LS.translate_alt tyenv f
         else Translate.LS.translate tyenv f 
-      in
+      in *)
       (* assert (Typing.is_equal u u'''); *)
-      print_debug "f: %a\n" Pp.LS1.pp_program f;
+
+    let f = Translate.LS.translate tyenv f in
+    print_debug "f: %a\n" Pp.LS1.pp_program f;
 
     (* k-Normalization *)
     print_debug "***** kNormal *****\n";
@@ -154,7 +156,7 @@ let compile_process progs _ tyenv kfunenvs _ =
     let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Compile_bad "kf is not exp" in
 
     print_debug "***** Closure *****\n";
-    let p = Closure.KNorm.toCls_program p in
+    let p = Closure.toCls_program p !alt in
     print_debug "%a\n" Pp.Cls.pp_program p;
 
     print_debug "***** toC *****\n";
