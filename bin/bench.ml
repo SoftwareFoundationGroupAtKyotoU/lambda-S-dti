@@ -7,11 +7,12 @@ open Lambda_S1_dti
 (* open Translate *)
 (* open Pp *)
 
-type mode = I | C | I_alt (* | C_alt *)
+type mode = I | C | I_alt | C_alt
 let string_of_mode = function
   | I -> "I"
   | C -> "C"
   | I_alt -> "I_alt"
+  | C_alt -> "C_alt"
 
 (* ------------------ *)
 (* Benchmark settings *)
@@ -35,7 +36,8 @@ let files = [
 let modes = [
   I;
   C; 
-  I_alt
+  I_alt;
+  C_alt;
   ]   
   (* [I; C] : I と C を実行 *)
 let log_base_dir = "logs"
@@ -311,7 +313,7 @@ let measure_execution_time f itr mode =
         let end_time = gettimeofday () in
         let elapsed_time = end_time -. start_time in
         result := (v, elapsed_time) :: !result
-      | C -> 
+      | C | C_alt -> 
         let v = f () in
         let filename = "logs/bench_time.json" in
         let json_data = Yojson.Basic.from_file filename in
@@ -596,6 +598,27 @@ let bench mode fmt itr decl =
       in ("-", vs, ts)
     in
     lst_elapsed_time
+  | C_alt -> 
+    let translated = Translate.LS.translate tyenv (tv_renew decl) in
+    log_section fmt "after Translation (λS∀mp)";
+    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.pp_print_flush fmt ();
+    let _, _, kfunenvs, _ = Stdlib.pervasives in
+    let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
+    let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
+    let p = Closure.toCls_program p true in
+    let c_code = Format.asprintf "%a" (ToC.toC_program true) p in
+    let oc = Out_channel.create "logs/bench.c" in
+    Printf.fprintf oc "%s" c_code;
+    close_out oc;
+    let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in
+    let _id, _vs, lst_elapsed_time =
+      let vs, ts =
+        measure_execution_time (fun () -> Core_unix.system "{ perf stat -r 100 -e duration_time:u -j ./logs/bench.out; } > logs/bench_time.json 2>&1") 1(*itr*) C_alt
+        |> split_pairs
+      in ("-", vs, ts)
+    in
+    lst_elapsed_time
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
@@ -725,7 +748,7 @@ let bench_file_mode
             let translated = Translate.LS.translate_alt tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | C -> 
+        | C | C_alt -> 
           let translated = Translate.LS.translate tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
@@ -756,7 +779,7 @@ let bench_file_mode
               (* let open Eval in  *)
               ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
             measure_mem_to_json ~label run
-        | C -> 
+        | C | C_alt -> 
           (* let translated = Translate.LS.translate tyenv (tv_renew decl) in
           let _, _, kfunenvs, _ = Stdlib.pervasives in
           let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in

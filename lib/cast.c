@@ -580,14 +580,14 @@ value app(value f, value v, value w) {									// reduction of f(v)
 		case(CLOSURE_alt):												// if f is closure
 		c = g->fundat.closure_alt.cls_alt.c;				// R_BETA : return f(v, fvs)
 		//printf("Heap size = %d\n", (int)GC_get_heap_size());
-		retx = c(arg, s, g->fundat.closure.fvs);
+		retx = c(arg, s, g->fundat.closure_alt.fvs);
 		//printf("Heap size = %d\n", (int)GC_get_heap_size());
 		break;
 
 		case(POLY_CLOSURE_alt):												// if f is closure
 		pc = g->fundat.poly_closure_alt.pcls_alt.pc;				// R_BETA : return f(v, fvs)
 		//printf("Heap size = %d\n", (int)GC_get_heap_size());
-		retx = pc(arg, s, g->fundat.poly_closure.fvs, g->tas);
+		retx = pc(arg, s, g->fundat.poly_closure_alt.fvs, g->tas);
 		//printf("Heap size = %d\n", (int)GC_get_heap_size());
 		break;
 	}

@@ -43,18 +43,19 @@ let cnt_v = ref 0
 
 let is_alt = ref false
 
-let toC_v x ppf v =
-  fprintf ppf "%s.f->fundat.closure%s.fvs[%d] = %s;"
+let toC_v x is_poly ppf v =
+  fprintf ppf "%s.f->fundat.%sclosure%s.fvs[%d] = %s;"
     x
+    (if is_poly then "poly_" else "")
     (if !is_alt then "_alt" else "")
     !cnt_v
     v;
   cnt_v := !cnt_v + 1
 
-let toC_vs ppf (x, vs) =
+let toC_vs ppf (x, is_poly, vs) =
   cnt_v := 0;
   let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf fv = pp_print_list (toC_v x) ppf fv ~pp_sep:toC_sep in
+  let toC_list ppf fv = pp_print_list (toC_v x is_poly) ppf fv ~pp_sep:toC_sep in
   fprintf ppf "%a"
     toC_list vs
 
@@ -457,7 +458,7 @@ let rec toC_exp ppf f = match f with
       x
       x
       (List.length vs)
-      toC_vs (x, vs)
+      toC_vs (x, false, vs)
       toC_exp f
   | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
@@ -468,7 +469,7 @@ let rec toC_exp ppf f = match f with
       x
       x
       (List.length vs)
-      toC_vs (x, vs)
+      toC_vs (x, true, vs)
       x
       (List.length ftv + n)
       toC_ftas (n, x, ftv)
@@ -507,7 +508,7 @@ let rec toC_exp ppf f = match f with
       x
       x
       (List.length vs)
-      toC_vs (x, vs)
+      toC_vs (x, false, vs)
       toC_exp f
   | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
@@ -520,7 +521,7 @@ let rec toC_exp ppf f = match f with
       x
       x
       (List.length vs)
-      toC_vs (x, vs)
+      toC_vs (x, true, vs)
       x
       (List.length ftv + n)
       toC_ftas (n, x, ftv)
