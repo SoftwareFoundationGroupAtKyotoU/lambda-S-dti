@@ -31,6 +31,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE
 %token <Utils.Error.range> INT BOOL UNIT QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
+%token <Utils.Error.range> COLCOL LBRACKET RBRACKET
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -44,6 +45,7 @@ exception Parser_bug of string
 %right LOR
 %right LAND
 %left  EQ NEQ LT LTE GT GTE
+%right COLCOL
 %left  PLUS MINUS
 %left  STAR DIV MOD
 
@@ -140,6 +142,12 @@ Seq_expr :
   | e1=Seq_expr op=Op e2=Seq_expr {
       BinOp (join_range (range_of_exp e1) (range_of_exp e2), op, e1, e2)
     }
+  | e=Cons_expr { e }
+
+Cons_expr :
+  | e1=Cons_expr COLCOL e2=Cons_expr {
+      ConsExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
+    }
   | Unary_expr { $1 }
 
 %inline Op :
@@ -181,10 +189,23 @@ Simple_expr :
   | start=LPAREN e=Expr COLON u=Type last=RPAREN {
       AscExp (join_range start last, e, u)
     }
+  | start=LBRACKET l=List_elms last=RBRACKET {
+      l (join_range start last) 
+    }
   | LPAREN e=Expr RPAREN { e }
+
+List_elms :
+  | /* empty */ { fun r -> NilExp(r, Typing.fresh_tyvar ()) }
+  | e=Cons_expr { fun r ->
+      ConsExp(range_of_exp e, e, NilExp(r, Typing.fresh_tyvar ()))
+    }
+  | e=Cons_expr SEMI l=List_elms { fun r ->
+      ConsExp(range_of_exp e, e, l r)
+    }
 
 Type :
   | u1=Simple_type RARROW u2=Type { TyFun (u1, u2) }
+  | LBRACKET u=Type RBRACKET { TyList u }
   | Simple_type { $1 }
 
 Simple_type :

@@ -18,7 +18,7 @@ let c_of_ty = function
   | TyFun (_, _) -> raise @@ ToC_bug "tyfun should be eliminated by closure"
   | TyVar (i, { contents = None }) -> "_ty" ^ string_of_int i
   | TyVar (i, { contents = Some _ }) -> "_tyfun" ^ string_of_int i
-  | TyCoercion _ -> raise @@ ToC_bug "tycoercion yet?"
+  | TyList _ -> raise @@ ToC_error "tylist yet"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function
@@ -101,6 +101,7 @@ let toC_tag ppf = function
   | B -> pp_print_string ppf "BOOL"
   | U -> pp_print_string ppf "UNIT"
   | Ar -> pp_print_string ppf "AR"
+  | Li -> raise @@ ToC_error "Li yet"
 
 let rec toC_crc ppf (c, x) = match c with
   | CId _ -> fprintf ppf "%s.s = &crc_id;" x
@@ -155,6 +156,7 @@ let rec toC_crc ppf (c, x) = match c with
       x
       x
       x
+  | CList _ -> raise @@ ToC_bug "Clist yet"
   | CFail _ -> raise @@ ToC_bug "CFail should not appear in translated term"
   | CTvProjInj _ -> raise @@ ToC_bug "CTvProjInj should not appear in translated term" 
     (* fprintf ppf "%a%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = PROJ_INJ_TV;\n%s.s->crcdat.tv = _ty%d;\n%s.s->r_p = %s_r_p;"

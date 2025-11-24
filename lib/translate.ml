@@ -35,8 +35,16 @@ let rec meet u1 u2 = match u1, u2 with
   | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
   | TyDyn, u | u, TyDyn -> u
   | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
+  | TyList u1, TyList u2 -> TyList (meet u1 u2)
   | _ ->
     raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
+
+let elm = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "elm: instantiated tyvar is given"
+  | TyList u -> u
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Translation_bug (asprintf "failed to match: elm(%a)" pp_ty u)
 
 module ITGL = struct
   open Syntax.ITGL
@@ -57,12 +65,15 @@ module ITGL = struct
     | i1, i2 when is_base_type i1 && is_base_type i2 && i1 = i2 -> CId i1
     | TyVar (i1, {contents = None}) as t, TyVar (i2, {contents = None}) when i1 = i2 -> CId t
     | TyFun (u11, u12), TyFun (u21, u22) -> CFun (make_s_coercion (r, neg p) u21 u11, make_s_coercion (r, p) u12 u22) 
+    | TyList u1, TyList u2 -> CList (make_s_coercion (r, p) u1 u2)
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
+    | TyList _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyList TyDyn), CInj Li)
     | TyVar tv, TyDyn -> CTvInj tv
     | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
     | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
+    | TyDyn, (TyList _ as u) -> CSeq (CProj (Li, (r, p)), make_s_coercion (r, p) (TyList TyDyn) u)
     | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
     | _ -> raise @@ Translation_bug (Format.asprintf "cannot exist such coercion: %a and %a in %a" Pp.pp_ty u1 Pp.pp_ty u2 Utils.Error.pp_range r)
 
@@ -136,6 +147,12 @@ module ITGL = struct
       let _, u1 = translate_exp env e1 in
       let e = AppExp (r, FunIExp (r, x, u1, e2), e1) in
       translate_exp env e
+    | NilExp (_, u) -> LS.NilExp u, TyList u
+    | ConsExp (r, e1, e2) ->
+      let f1, u1 = translate_exp env e1 in
+      let f2, u2 = translate_exp env e2 in
+      let u2' = TyList (elm u2) in (* TyDyn であれば TyList TyDyn にする *)
+      LS.ConsExp (coerce f1 r u1 (elm u2), coerce f2 r u2 u2'), u2'
 
   let translate env = function
     | Exp e ->
@@ -188,6 +205,8 @@ module LS = struct
     | LetExp (x, ys, f1, f2) -> (*new*)
       let u = Typing.LS.type_of_program env (Exp f1) in
       LS1.LetExp (x, ys, translate_exp env f1, translate_exp (Environment.add x (TyScheme (ys, u)) env) f2)
+    | NilExp u -> LS1.NilExp u
+    | ConsExp (f1, f2) -> LS1.ConsExp (translate_exp env f1, translate_exp env f2) 
   and translate_exp_k env k = function
     | Var (x, ys) -> LS1.CAppExp (LS1.Var (x, ys), k)
     | IConst i -> LS1.CAppExp (LS1.IConst i, k)
@@ -208,6 +227,9 @@ module LS = struct
     | LetExp (x, ys, f1, f2) -> 
       let u = Typing.LS.type_of_program env (Exp f1) in
       LS1.LetExp (x, ys, translate_exp env f1, translate_exp_k (Environment.add x (TyScheme (ys, u)) env) k f2)
+    | NilExp u -> LS1.CAppExp (LS1.NilExp u, k)
+    | ConsExp (f1, f2) ->
+      LS1.CAppExp (LS1.ConsExp (translate_exp env f1, translate_exp env f2), k)
 
   let translate env = function
     | Exp f -> LS1.Exp (translate_exp env f)
@@ -234,7 +256,8 @@ module LS = struct
     | LetExp (x, ys, f1, f2) -> (*new*)
       let u = Typing.LS.type_of_program env (Exp f1) in
       LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
-  and translate_exp_k_alt env k = function
+    | NilExp u -> LS1.NilExp u
+    | ConsExp (f1, f2) -> LS1.ConsExp (translate_exp env f1, translate_exp env f2)   and translate_exp_k_alt env k = function
     | Var (x, ys) -> LS1.CAppExp (LS1.Var (x, ys), k)
     | IConst i -> LS1.CAppExp (LS1.IConst i, k)
     | BConst b -> LS1.CAppExp (LS1.BConst b, k)
@@ -254,8 +277,11 @@ module LS = struct
     | LetExp (x, ys, f1, f2) -> 
       let u = Typing.LS.type_of_program env (Exp f1) in
       LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_k_alt (Environment.add x (TyScheme (ys, u)) env) k f2)
+    | NilExp u -> LS1.CAppExp (LS1.NilExp u, k)
+    | ConsExp (f1, f2) ->
+      LS1.CAppExp (LS1.ConsExp (translate_exp env f1, translate_exp env f2), k)
 
-  let translate_alt env = function
+let translate_alt env = function
     | Exp f -> LS1.Exp (translate_exp_alt env f)
     | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp_alt env f)
 end

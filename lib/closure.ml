@@ -27,7 +27,7 @@ module KNorm = struct
       in if not (exist_tv (TV.elements (Syntax.ftv_ty u1)) tvs) && not (exist_tv (TV.elements (Syntax.ftv_ty u2)) tvs) then 
         (tvset := TV.add newtv !tvset; (newu, fun x -> ufun1 (ufun2 x)))
       else (newu, fun x -> ufun1 (ufun2 (Cls.SetTy (newtv, x))))
-    | TyCoercion _ -> raise @@ Closure_bug "TyCoercion yet"
+    | TyList _ -> raise @@ Closure_error "tylist yet"
 
   let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
@@ -45,6 +45,7 @@ module KNorm = struct
       if not (List.mem tv tvs) then tvset := TV.add tv !tvset else ()
     | CFun (c1, c2) | CSeq (c1, c2) -> 
       crc_tv tvs c1; crc_tv tvs c2
+    | CList c -> crc_tv tvs c
     | CFail _ -> raise @@ Closure_bug "CFail appear in crc_tv" 
 
   let rec toCls_exp known tvs = function

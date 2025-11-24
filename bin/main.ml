@@ -5,7 +5,7 @@ exception Compile_bad of string
 exception Invalid_option of string
 
 let debug = ref false
-let ls1 = ref false
+let ls1 = ref true
 let alt = ref false
 let compile = ref false
 

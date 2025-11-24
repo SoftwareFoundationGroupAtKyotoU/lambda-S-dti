@@ -57,6 +57,8 @@ module LS1 = struct
       let idenv = Environment.add x newx (Environment.add k newk idenv) in
       FunExp_alt ((newx, u), newk, (alpha_exp idenv f1, alpha_exp idenv f2))
     | FixExp_alt _ -> raise @@ KNormal_bug "FixExp_alt should not be alpha_exp's argument"
+    | NilExp u -> NilExp u
+    | ConsExp (f1, f2) -> ConsExp (alpha_exp idenv f1, alpha_exp idenv f2)
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -138,7 +140,7 @@ module LS1 = struct
         | Var _ | BConst _ | IfExp _ | AppExp _ | AppExp_alt _ | LetExp _ | CAppExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _ | CSeqExp _ | CoercionExp _ -> raise @@ KNormal_bug "if-cond type should bool"
+        | IConst _ | UConst | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _ | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ -> raise @@ KNormal_bug "if-cond type should bool"
       end
     | FunExp ((x, _), k, f) -> 
       let tent_var = genvar "_var" in
@@ -186,6 +188,7 @@ module LS1 = struct
           KNorm.LetExp (x, f1, f2)
       end
     | CoercionExp c -> KNorm.CoercionExp c
+    | NilExp _ | ConsExp _ -> raise @@ KNormal_bug "nil, cons yet"
     | AppExp_alt (f1, f2) ->
       let f1 = k_normalize_exp tvsenv f1 in 
       let f2 = k_normalize_exp tvsenv f2 in

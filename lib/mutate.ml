@@ -53,7 +53,7 @@ let collect_head_funs (e : exp) : (range * id * ty) list * exp =
 (* Fun（後行順）・Fix（出現順）の個数カウント *)
 let rec count_fun_params (t : exp) : int =
   match t with
-  | Var _ | IConst _ | BConst _ | UConst _ (*| NilExp _*) -> 0
+  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
   | FunIExp (_,_,_,e0) | FunEExp (_,_,_,e0)
   | FixIExp (_,_,_,_,_,e0) | FixEExp (_,_,_,_,_,e0)
   (* | TFunExp (_,_,e0)
@@ -63,7 +63,7 @@ let rec count_fun_params (t : exp) : int =
       (match t with FunIExp _ | FunEExp _ -> 1 | _ -> 0) + count_fun_params e0
   | BinOp  (_,_,e1,e2)
   | AppExp (_,  e1,e2)
-  (* | ConsExp(_,  e1,e2) *)
+  | ConsExp(_,  e1,e2)
   | LetExp (_,_,e1,e2) -> count_fun_params e1 + count_fun_params e2
   | IfExp   (_,e1,e2,e3)
   (*| MatchExp(_,e1,e2,_,_,e3)*) ->
@@ -71,7 +71,7 @@ let rec count_fun_params (t : exp) : int =
 
 let rec count_fix_nodes (t : exp) : int =
   match t with
-  | Var _ | IConst _ | BConst _ | UConst _ (*| NilExp _*) -> 0
+  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
   | FixIExp (_,_,_,_,_,e0) | FixEExp (_,_,_,_,_,e0) -> 1 + count_fix_nodes e0
   | FunIExp (_,_,_,e0) | FunEExp (_,_,_,e0)
   (* | TFunExp(_,_,e0)
@@ -80,7 +80,7 @@ let rec count_fix_nodes (t : exp) : int =
   (*| CAppExp(_,_,e0)*) -> count_fix_nodes e0
   | BinOp  (_,_,e1,e2)
   | AppExp (_,  e1,e2)
-  (* | ConsExp(_,  e1,e2) *)
+  | ConsExp(_,  e1,e2)
   | LetExp (_,_,e1,e2) -> count_fix_nodes e1 + count_fix_nodes e2
   | IfExp   (_,e1,e2,e3)
   (*| MatchExp(_,e1,e2,_,_,e3)*) ->
@@ -121,7 +121,7 @@ type analysis = {
 (* collect_links c fixc t = (c', fixc', links) *)
 let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list =
   match t with
-  | Var _ | IConst _ | BConst _ | UConst _ (*| NilExp _*) -> (c, fixc, [])
+  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> (c, fixc, [])
 
   | FunIExp (_,_,_,e0) | FunEExp (_,_,_,e0) ->
       let c1, fixc1, ls1 = collect_links c fixc e0 in
@@ -148,7 +148,7 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list =
 
   | BinOp  (_,_,e1,e2)
   | AppExp (_,  e1,e2)
-  (* | ConsExp(_,  e1,e2) *)
+  | ConsExp(_,  e1,e2)
   | LetExp (_,_,e1,e2) ->
       let c1, f1, l1 = collect_links c fixc e1 in
       let c2, f2, l2 = collect_links c1 f1   e2 in
@@ -232,7 +232,7 @@ let rec apply
     (t:exp)
   : int * int * int * exp =
   match t with
-  | Var _ | IConst _ | BConst _ | UConst _ (*| NilExp _*) ->
+  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ ->
       (lamc, fixc, tappc, t)
 
   | FunIExp (r, id, ty, e0) ->
@@ -323,10 +323,10 @@ let rec apply
       let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
       (lamc2, fixc2, tappc2, AppExp (r, e1', e2'))
 
-  (* | ConsExp (r, e1, e2) ->
+  | ConsExp (r, e1, e2) ->
       let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
       let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-      (lamc2, fixc2, tappc2, ConsExp (r, e1', e2')) *)
+      (lamc2, fixc2, tappc2, ConsExp (r, e1', e2'))
 
   | LetExp (r, id, e1, e2) ->
       let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in

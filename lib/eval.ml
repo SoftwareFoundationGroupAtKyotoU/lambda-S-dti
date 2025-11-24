@@ -29,6 +29,8 @@ let rec normalize_coercion c = match c with
     normalize_coercion (CTvProj (tv, p))
   | CTvProj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), p) ->
     normalize_coercion (CSeq (CProj (Ar, p), CFun (CTvInj tv1, CTvProj (tv2, p))))
+  | CTvProj ((_, {contents = Some (TyList (TyVar tv))}), p) ->
+    normalize_coercion (CSeq (CProj (Li, p), CList (CTvProj (tv, p))))
   | CTvProj ((_, {contents = None}), _) -> c
   | CTvInj (_, {contents = Some u }) when is_base_type u ->
     normalize_coercion (CSeq (CId u, CInj (tag_of_ty u)))
@@ -36,6 +38,8 @@ let rec normalize_coercion c = match c with
     normalize_coercion (CTvInj tv)
   | CTvInj (_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}) ->
     normalize_coercion (CSeq (CFun (CTvProj (tv1, (Utils.Error.dummy_range, Pos)), CTvInj tv2), CInj Ar))
+  | CTvInj (_, {contents = Some (TyList (TyVar tv))}) ->
+    normalize_coercion (CSeq (CList (CTvInj tv), CInj Li))
   | CTvInj (_, {contents = None}) -> c
   | CTvProjInj ((_, {contents = Some u}), p) when is_base_type u ->
     normalize_coercion (CSeq (CProj (tag_of_ty u, p), CSeq (CId u, CInj (tag_of_ty u))))
@@ -43,6 +47,8 @@ let rec normalize_coercion c = match c with
     normalize_coercion (CTvProjInj (tv, p))
   | CTvProjInj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), p) ->
     normalize_coercion (CSeq (CProj (Ar, p), CSeq (CFun (CTvProjInj (tv1, (Utils.Error.dummy_range, Pos)), CTvProjInj (tv2, p)), CInj Ar)))
+  | CTvProjInj ((_, {contents = Some (TyList (TyVar tv))}), p) ->
+    normalize_coercion (CSeq (CProj (Li, p), CSeq (CList (CTvProjInj (tv, p)), CInj Li)))
   | CTvProjInj ((_, {contents = None}), _) -> c
   | CSeq (c1, (CInj _ as c2)) -> CSeq (normalize_coercion c1, c2)
   | CFail _ as c -> c
@@ -54,6 +60,12 @@ let rec normalize_coercion c = match c with
     begin match s', t' with
       | CId u1, CId u2 -> CId (TyFun (u1, u2))
       | _ -> CFun (s', t')
+    end
+  | CList s -> 
+    let s' = normalize_coercion s in
+    begin match s' with
+      | CId u -> CId (TyList u)
+      | _ -> CList s'
     end
   | CTvProj ((i, {contents = Some (TyFun (u1, u2))}), p) -> 
     normalize_coercion (CSeq (CProj (Ar, p), CFun (CTvInj (i, ref (Some u1)), CTvProj ((i, ref (Some u2)), p))))
@@ -75,6 +87,7 @@ let rec subst_coercion s = function
   let u = subst_type s (TyVar tv) in
   normalize_coercion (CTvProjInj ((a, {contents = Some u}), p))
 | CFun (c1, c2) -> CFun (subst_coercion s c1, subst_coercion s c2)
+| CList c -> CList (subst_coercion s c)
 | CId u -> CId (subst_type s u)
 | CSeq (c1, c2) -> CSeq (subst_coercion s c1, subst_coercion s c2)
 | CFail _ as c -> c
@@ -99,6 +112,15 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
         compose (CFun (CTvProj (tv1, (r, neg p)), (CTvInj tv2))) c2
+      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    end
+  | CTvInj (_, uref as tv), CSeq (CProj (Li, _), c2) ->
+    let x1 = fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
+    uref := Some (TyList x1);
+    begin match x1 with
+      | TyVar tv1 ->
+        compose (CList (CTvInj tv1)) c2
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
   | CTvInj (_, uref as tv), CSeq (CProj (t, _), c2) -> 
@@ -152,6 +174,15 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
         compose c1 (CFun (CTvInj tv1, CTvProj (tv2, p)))
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
+  | CSeq (c1, CInj Li), CTvProj ((_, uref as tv), p) ->
+    let x1 = fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
+    uref := Some (TyList x1);
+    begin match x1 with
+      | TyVar tv1 ->
+        compose c1 (CList (CTvProj (tv1, p)))
+      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    end
   | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
@@ -184,6 +215,12 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
       | CId u1, CId u2 -> CId (TyFun (u1, u2))
       | _ -> CFun (c1, c2) 
     end
+  | CList s, CList s' ->
+    let c = compose s s' in
+    begin match c with
+      | CId u -> CId (TyList u)
+      | _ -> CList c
+    end
   | _ -> raise @@ Eval_bug "cannot compose coercions"
 
 module LS1 = struct
@@ -212,6 +249,8 @@ module LS1 = struct
       let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
       LetExp (y, ys, subst_exp s f1, subst_exp s f2)
     | CoercionExp c -> CoercionExp (subst_coercion s c)
+    | NilExp u -> NilExp (subst_type s u)
+    | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
     | FunExp_alt ((x1, u1), k, (f1, f2)) -> FunExp_alt ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
     | FixExp_alt ((x, y, u1, u2), k, (f1, f2)) ->
       FixExp_alt ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
@@ -297,6 +336,11 @@ module LS1 = struct
         | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
       end
     | CoercionExp c -> CoercionV c
+    | NilExp _ -> NilV
+    | ConsExp (f1, f2) ->
+      let v2 = eval env f2 in
+      let v1 = eval env f1 in
+      ConsV (v1, v2)
     | AppExp_alt (f1, f2) ->
       let v1 = eval env f1 in
       let v2 = eval env f2 in

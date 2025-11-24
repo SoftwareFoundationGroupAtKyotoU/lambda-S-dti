@@ -27,6 +27,7 @@ let rec is_equal u1 u2 = match u1, u2 with
   | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_equal u11 u21) && (is_equal u12 u22)
+  | TyList u1, TyList u2 -> is_equal u1 u2
   | _ -> false
 
 let type_of_binop = function
@@ -41,6 +42,7 @@ let rec is_static_type = function
   | TyVar (_, { contents = Some u }) -> is_static_type u
   | TyFun (u1, u2) -> (is_static_type u1) && (is_static_type u2)
   | TyDyn -> false
+  | TyList u -> is_static_type u
   | _ -> true
 
 (* Substitutions for type variables *)
@@ -53,6 +55,7 @@ let subst_type (s: substitutions) (u: ty) =
   (* {X':->U'}(U) *)
   let rec subst u ((a', _), u' as s0) = match u with
     | TyFun (u1, u2) -> TyFun (subst u1 s0, subst u2 s0)
+    | TyList u -> TyList (subst u s0)
     | TyVar (a, { contents = None }) when a = a' -> u'
     | TyVar (_, { contents = Some u }) -> subst u s0
     | _ as u -> u
@@ -94,6 +97,15 @@ module ITGL = struct
       unify @@ CEqual (TyVar x, TyFun (x1, x2));
       unify @@ CConsistent (x1, u1);
       unify @@ CConsistent (x2, u2)
+    (* [U1] ~ [U2] *)
+    | CConsistent (TyList u1, TyList u2) -> 
+      unify @@ CConsistent (u1, u2)
+    (* [U] ~ X or X ~ [U] *)
+    | CConsistent (TyList u, TyVar x) | CConsistent (TyVar x, TyList u) as c ->
+      if TV.mem x (ftv_ty (TyList u)) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
+      else let y = fresh_tyvar () in
+      unify @@ CEqual (TyVar x, TyList y);
+      unify @@ CConsistent (y, u)
     (* U ~ X or X ~ U *)
     | CConsistent (u, TyVar x) | CConsistent (TyVar x, u) ->
       unify @@ CEqual (TyVar x, u)
@@ -113,6 +125,9 @@ module ITGL = struct
     | CEqual (TyFun (t11, t12), TyFun (t21, t22)) ->
       unify @@ CEqual (t11, t21);
       unify @@ CEqual (t12, t22)
+    (* [T1] = [T2] *)
+    | CEqual (TyList t1, TyList t2) ->
+      unify @@ CEqual (t1, t2)
     (* T = X or X = T *)
     | CEqual (t, TyVar (_, tref as tv)) (*when not (is_tyvar t)*) | CEqual (TyVar (_, tref as tv), t) as c ->
       if TV.mem tv (ftv_ty t) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
@@ -130,7 +145,7 @@ module ITGL = struct
    * to allow more type variables are generalized by let. *)
   let rec is_value env e = 
     let rec is_base_value env u e = match e, u with 
-      | _, (TyVar _ | TyDyn | TyFun _ | TyCoercion _ ) -> 
+      | _, (TyVar _ | TyDyn | TyFun _ | TyList _) -> 
         raise @@ Type_bug (asprintf "invalid base value: %a" pp_exp e)
       | Var (_, x, ys), u ->
         begin try
@@ -166,6 +181,23 @@ module ITGL = struct
       | AscExp (_, e, TyFun _) -> is_fun_value env e
       | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_fun_value env @@ AscExp (r, e, u)
       | _ -> false
+    in let rec is_list_value env = function
+      | Var (_, x, ys) ->  
+        begin try
+          let TyScheme (xs, u') = Environment.find x env in
+          let s = Utils.List.zip xs !ys in
+          begin match subst_type s u' with
+          | TyList _ -> true
+          | _ -> false
+          end
+        with Not_found ->
+          raise @@ Type_bug (asprintf "variable '%s' not found in the environment" x)
+        end
+      | NilExp _ -> true
+      | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2
+      | AscExp (_, e, TyList _) -> is_list_value env e
+      | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_list_value env @@ AscExp (r, e, u)
+      | _ -> false
     in let rec is_tyvar_value env a = function
       | Var (_, x, ys) ->
         begin try
@@ -194,12 +226,34 @@ module ITGL = struct
     | FixIExp _ -> true
     | AscExp (_, e, (TyInt | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
+    | AscExp (_, e, TyList _) -> is_list_value env e
     | AscExp (_, e, TyDyn) -> is_value env e
     | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_value env @@ AscExp (r, e, u)
     | AscExp (_, e, TyVar (a, { contents = None })) -> is_tyvar_value env a e
     | _ -> false
 
   (* Type inference *)
+
+  let rec type_of_meet u1 u2 = match u1, u2 with
+    | TyVar (_, { contents = Some u1 }), u2
+    | u1, TyVar (_, { contents = Some u2 }) ->
+      type_of_meet u1 u2
+    | TyBool, TyBool -> TyBool
+    | TyInt, TyInt -> TyInt
+    | TyUnit, TyUnit -> TyUnit
+    | TyDyn, u | u, TyDyn ->
+      unify @@ CConsistent (u, TyDyn);
+      u
+    | TyVar tv, u | u, TyVar tv ->
+      unify @@ CConsistent (u, TyVar tv);
+      TyVar tv
+    | TyFun (u11, u12), TyFun (u21, u22) ->
+      let u1 = type_of_meet u11 u21 in
+      let u2 = type_of_meet u12 u22 in
+      TyFun (u1, u2)
+    | TyList u1, TyList u2 ->
+      TyList (type_of_meet u1 u2)
+    | u1, u2 -> raise @@ Type_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
   let rec type_of_exp env = function
     | Var (_, x, ys) ->
@@ -227,25 +281,7 @@ module ITGL = struct
       unify @@ CConsistent (u, u1);
       u1
     | IfExp (_, e1, e2, e3) ->
-      let rec type_of_meet u1 u2 = match u1, u2 with
-        | TyVar (_, { contents = Some u1 }), u2
-        | u1, TyVar (_, { contents = Some u2 }) ->
-          type_of_meet u1 u2
-        | TyBool, TyBool -> TyBool
-        | TyInt, TyInt -> TyInt
-        | TyUnit, TyUnit -> TyUnit
-        | TyDyn, u | u, TyDyn ->
-          unify @@ CConsistent (u, TyDyn);
-          u
-        | TyVar tv, u | u, TyVar tv ->
-          unify @@ CConsistent (u, TyVar tv);
-          TyVar tv
-        | TyFun (u11, u12), TyFun (u21, u22) ->
-          let u1 = type_of_meet u11 u21 in
-          let u2 = type_of_meet u12 u22 in
-          TyFun (u1, u2)
-        | u1, u2 -> raise @@ Type_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
-      in let u1 = type_of_exp env e1 in
+      let u1 = type_of_exp env e1 in
       let u2 = type_of_exp env e2 in
       let u3 = type_of_exp env e3 in
       unify @@ CConsistent (u1, TyBool);
@@ -287,6 +323,12 @@ module ITGL = struct
         type_of_exp (Environment.add x us1 env) e2
       else
         type_of_exp env @@ AppExp (r, FunIExp (r, x, u1, e2), e1)
+    | NilExp (_, u) -> TyList u
+    | ConsExp (_, e1, e2) -> 
+      let u2 = type_of_exp env e2 in
+      let u1 = type_of_exp env e1 in
+      unify @@ CConsistent (TyList u1, u2);
+      type_of_meet (TyList u1) u2
 
   let type_of_program env = function
     | Exp e ->
@@ -300,6 +342,7 @@ module ITGL = struct
   let rec normalize_type = function
     | TyVar (_, { contents = Some u }) -> normalize_type u
     | TyFun (u1, u2) -> TyFun (normalize_type u1, normalize_type u2)
+    | TyList u -> TyList (normalize_type u)
     | _ as u -> u
 
   let normalize_tyenv =
@@ -328,6 +371,8 @@ module ITGL = struct
       AppExp (r, normalize_exp e1, normalize_exp e2)
     | LetExp (r, y, e1, e2) ->
       LetExp (r, y, normalize_exp e1, normalize_exp e2)
+    | NilExp (r, u) -> NilExp (r, normalize_type u)
+    | ConsExp (r, e1, e2) -> ConsExp (r, normalize_exp e1, normalize_exp e2)
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)
@@ -349,6 +394,9 @@ let rec type_of_coercion = function
     let (u11, u12) = type_of_coercion c1 in
     let (u21, u22) = type_of_coercion c2 in
     (TyFun (u12, u21), TyFun (u11, u22))
+  | CList c ->
+    let u1, u2 = type_of_coercion c in
+    (TyList u1, TyList u2)
   | CId u -> (u, u)
   | CSeq (c1, c2) ->
     let (u11, u12) = type_of_coercion c1 in
@@ -430,13 +478,19 @@ module LS = struct
           raise @@ Type_bug "not consistent"
       else
         raise @@ Type_bug "invalid source type"*)
-    | LetExp (x, xs, f1, f2) when is_value f1 ->
+    | LetExp (x, xs, f1, f2) (*when is_value f1*) ->
       let u1 = type_of_exp env f1 in
       let us1 = TyScheme (xs, u1) in
       let u2 = type_of_exp (Environment.add x us1 env) f2 in
       u2
-    | LetExp _ ->
-      raise @@ Type_bug "invalid translation for let expression"
+    (* | LetExp _ ->
+      raise @@ Type_bug "invalid translation for let expression" *)
+    | NilExp u -> TyList u
+    | ConsExp (f1, f2) ->
+      let u2 = type_of_exp env f2 in
+      let u1 = type_of_exp env f1 in
+      if (TyList u1) = u2 then u2
+      else raise @@ Type_bug (asprintf "cons: %a=%a" pp_ty (TyList u1) pp_ty u2)
 
   let type_of_program env = function
     | Exp e -> type_of_exp env e

@@ -38,8 +38,11 @@ rule main = parse
   }
 | "(" { Parser.LPAREN (range_of lexbuf) }
 | ")" { Parser.RPAREN (range_of lexbuf) }
+| "[" { Parser.LBRACKET (range_of lexbuf)}
+| "]" { Parser.RBRACKET (range_of lexbuf)}
 | ":" { Parser.COLON (range_of lexbuf) }
 | ";" { Parser.SEMI (range_of lexbuf) }
+| "::" { Parser.COLCOL (range_of lexbuf)}
 | ";;" { Parser.SEMISEMI (range_of lexbuf) }
 | "'" { Parser.QUOTE (range_of lexbuf) }
 | "=" { Parser.EQ (range_of lexbuf) }
