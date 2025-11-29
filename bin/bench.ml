@@ -18,7 +18,7 @@ let string_of_mode = function
 (* Benchmark settings *)
 let itr = 100
 let files = [
-  "church_small";
+  (* "church_small"; *)
   (* "church"; *)
   (* "church_big"; *)
   (* "tak"; *)
@@ -26,18 +26,18 @@ let files = [
   (* "fib"; *)
   (* "evenodd"; *)
   (* "loop"; *)
-  (*"loop_poly";
+  (* "loop_poly"; *)
   "mklist";
   "map";
   "fold";
-  "zipwith"; *)
+  "zipwith";
   (* "polypoly"; *)
 ]
 let modes = [
   I;
-  C; 
+  (* C;  *)
   I_alt;
-  C_alt;
+  (* C_alt; *)
   ]   
   (* [I; C] : I と C を実行 *)
 let log_base_dir = "logs"
@@ -488,6 +488,22 @@ let rec tv_renew_coercion c env = let open Syntax in match c with
     let c2, env = tv_renew_coercion c2 env in
     CSeq (c1, c2), env 
 
+let rec tv_renew_mf mf env = let open Syntax in match mf with
+  | MatchILit _ | MatchBLit _ | MatchULit -> mf, env
+  | MatchVar (x, u) -> 
+    let u, env = tv_renew_ty u env in
+    MatchVar (x, u), env
+  | MatchNil u -> 
+    let u, env = tv_renew_ty u env in
+    MatchNil u, env
+  | MatchCons (mf1, mf2) ->
+    let mf1, env = tv_renew_mf mf1 env in
+    let mf2, env = tv_renew_mf mf2 env in
+    MatchCons (mf1, mf2), env
+  | MatchWild u -> 
+    let u, env = tv_renew_ty u env in
+    MatchWild u, env
+
 let rec tv_renew_exp e env = let open Syntax.LS in match e with
   | Var (x, us) ->
     let env = List.fold_left us ~f:(fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) ~init:env in
@@ -520,11 +536,30 @@ let rec tv_renew_exp e env = let open Syntax.LS in match e with
     let e, env = tv_renew_exp e env in
     let c, env = tv_renew_coercion c env in
     CAppExp (e, c), env
+  | MatchExp (e, ms) ->
+    let e, env = tv_renew_exp e env in
+    let ms, env = tv_renew_ms ms env in
+    MatchExp (e, ms), env
   | LetExp (x, tvs, e1, e2) ->
-    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:Syntax.Environment.empty in
+    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:env in
     let e1, env = tv_renew_exp e1 env in
     let e2, env = tv_renew_exp e2 env in
     LetExp (x, tvs, e1, e2), env
+  | NilExp u -> 
+    let u, env = tv_renew_ty u env in
+    NilExp u, env
+  | ConsExp (e1, e2) ->
+    let e1, env = tv_renew_exp e1 env in
+    let e2, env = tv_renew_exp e2 env in
+    ConsExp (e1, e2), env
+  and tv_renew_ms ms env = match ms with
+  | (mf, e) :: ms ->
+    let mf, env = tv_renew_mf mf env in
+    let e, env = tv_renew_exp e env in
+    let ms, env = tv_renew_ms ms env in
+    (mf, e) :: ms, env
+  | [] -> [], env
+
 
 let tv_renew p = let open Syntax.LS in match p with
   | Exp e -> 

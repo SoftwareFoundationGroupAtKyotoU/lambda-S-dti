@@ -17,6 +17,8 @@ let reservedWords = [
   ("bool", fun r -> Parser.BOOL r);
   ("unit", fun r -> Parser.UNIT r);
   ("mod", fun r -> Parser.MOD r);
+  ("match", fun r -> Parser.MATCH r);
+  ("with", fun r -> Parser.WITH r);
 ]
 
 let range_of lexbuf =
@@ -59,6 +61,8 @@ rule main = parse
 | ">=" { Parser.GTE (range_of lexbuf) }
 | "&&" { Parser.LAND (range_of lexbuf) }
 | "||" { Parser.LOR (range_of lexbuf) }
+| "|" { Parser.VBAR (range_of lexbuf)}
+| "_" { Parser.UNDER (range_of lexbuf)}
 | ['a'-'z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
   {
     let id = Lexing.lexeme lexbuf in

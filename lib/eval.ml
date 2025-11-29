@@ -226,6 +226,13 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
 module LS1 = struct
   open Syntax.LS1
 
+  let rec subst_mf s = function
+    | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
+    | MatchWild u -> MatchWild (subst_type s u)
+    | MatchVar (x, u) -> MatchVar (x, subst_type s u)
+    | MatchNil u -> MatchNil (subst_type s u)
+    | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
+
   let rec subst_exp s = function
     | Var (x, ys) ->
       let subst_type = function
@@ -244,6 +251,8 @@ module LS1 = struct
     | AppExp (f1, f2, f3) -> AppExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
     | CAppExp (f1, f2) -> CAppExp (subst_exp s f1, subst_exp s f2)
     | CSeqExp (f1, f2) -> CSeqExp (subst_exp s f1, subst_exp s f2)
+    | MatchExp (f, ms) -> 
+      MatchExp (subst_exp s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
     | LetExp (y, ys, f1, f2) ->
       (* Remove substitutions captured by let exp s *)
       let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
@@ -336,6 +345,9 @@ module LS1 = struct
         | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
       end
     | CoercionExp c -> CoercionV c
+    | MatchExp (f, ms) ->
+      let v = eval env f in
+      eval_next ~debug:debug env v ms
     | NilExp _ -> NilV
     | ConsExp (f1, f2) ->
       let v2 = eval env f2 in
@@ -366,6 +378,29 @@ module LS1 = struct
           eval env f''
         in (f1', f2')
       in FunV_alt f
+  and match_mf ?(debug=false) env v mf = match v, mf with
+    | _, MatchVar (id, _) ->
+      let env = Environment.add id ([], v) env in
+      true, env
+    | ConsV (v1, v2), MatchCons (mf1, mf2) ->
+      let b1, env = match_mf ~debug:debug env v1 mf1 in
+      let b2, env = match_mf ~debug:debug env v2 mf2 in
+      b1&&b2, env 
+    | NilV, MatchNil _ -> true, env
+    | IntV i1, MatchILit i2 -> if i1 = i2 then (true, env) else (false, env)
+    | BoolV b1, MatchBLit b2 -> if b1 = b2 then (true, env) else (false, env)
+    | UnitV, MatchULit -> true, env
+    (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
+    | _, MatchWild _ -> true, env
+    | CoerceV (ConsV (v1, v2), CList s), MatchCons _ -> 
+      match_mf ~debug:debug env (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf (* lazy *)
+    | _ -> false, env 
+  and eval_next ?(debug=false) env v ms = match ms with
+    | (mf, f) :: ms ->
+      let b, env' = match_mf ~debug:debug env v mf in
+      if b then eval ~debug:debug env' f
+      else eval_next ~debug:debug env v ms
+    | [] -> raise @@ Eval_bug "Didn't match"
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
     print_debug "coerce <-- %a<%a>\n" Pp.LS1.pp_value v Pp.pp_coercion c;

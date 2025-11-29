@@ -84,6 +84,29 @@ let ftv_tyenv (env: tysc Environment.t): TV.t =
 
 type tyarg = Ty of ty | TyNu
 
+type matchform = (*match式でmatchさせることのできる形の種類を定義*)
+  | MatchVar of id * ty                      (*変数でmatchさせるMatchVar*)
+  (* | MatchAsc of matchform * ty *)
+  | MatchILit of int                    (*整数とmatchするMatchILit*)
+  | MatchBLit of bool                   (*bool値とmatchするMatchBLit*)
+  | MatchULit
+  | MatchNil of ty                (*空列とmatchするMatchEmptyList*)
+  | MatchCons of matchform * matchform  (*リストとmatchするMatchList*)
+  | MatchWild of ty
+
+let rec tv_matchform : matchform -> TV.t = function
+  | MatchVar (_, u) -> ftv_ty u
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
+  | MatchNil u -> ftv_ty u
+  (* | MatchAsc (mf, u) -> TV.union (tv_matchform mf) (ftv_ty u) *)
+  | MatchCons (mf1, mf2) -> TV.union (tv_matchform mf1) (tv_matchform mf2)
+
+let rec ftv_matchform : matchform -> TV.t = function
+  | MatchVar _ | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
+  | MatchNil _ -> TV.empty
+  (* | MatchAsc (mf, u) -> TV.union (ftv_matchform mf) (ftv_ty u) *)
+  | MatchCons (mf1, mf2) -> TV.union (ftv_matchform mf1) (ftv_matchform mf2)
+
 type polarity = Pos | Neg
 
 (** Returns the negation of the given polarity. *)
@@ -158,6 +181,7 @@ module ITGL = struct
     | FixEExp of range * id * id * ty * ty * exp
     | FixIExp of range * id * id * ty * ty * exp
     | AppExp of range * exp * exp
+    | MatchExp of range * exp * (matchform * exp) list
     | LetExp of range * id * exp * exp
     | NilExp of range * ty
     | ConsExp of range * exp * exp
@@ -175,10 +199,11 @@ module ITGL = struct
     | FixEExp (r, _, _, _, _, _)
     | FixIExp (r, _, _, _, _, _)
     | AppExp (r, _, _)
+    | MatchExp (r, _, _)
     | LetExp (r, _, _, _) 
     | NilExp (r, _) 
     | ConsExp (r, _, _) -> r
-
+    
   (* for polymorphic let declaration *)
   let rec tv_exp: exp -> TV.t = function
     | Var _
@@ -193,6 +218,7 @@ module ITGL = struct
     | FixEExp (_, _, _, u1, _, e)
     | FixIExp (_, _, _, u1, _, e) -> TV.union (ftv_ty u1) (tv_exp e)
     | AppExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
+    | MatchExp (_, e, ms) -> TV.union (tv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (tv_matchform mf) (tv_exp e)) ms)
     | LetExp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | NilExp (_, u) -> ftv_ty u
     | ConsExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
@@ -210,9 +236,10 @@ module ITGL = struct
     | FixEExp (_, _, _, u1, _, e) -> TV.union (ftv_ty u1) (ftv_exp e)
     | FixIExp (_, _, _, _, _, e) -> ftv_exp e
     | AppExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
+    | MatchExp (_, e, ms) -> TV.union (ftv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | LetExp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-    | NilExp (_, u) -> ftv_ty u
-    | ConsExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
+    | NilExp _ -> TV.empty
+    | ConsExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
 
   type program =
     | Exp of exp
@@ -232,6 +259,7 @@ module LS = struct
     | FixExp of id * id * ty * ty * exp
     | AppExp of exp * exp
     | CAppExp of exp * coercion
+    | MatchExp of exp * (matchform * exp) list
     | LetExp of id * tyvar list * exp * exp
     | NilExp of ty
     | ConsExp of exp * exp
@@ -266,6 +294,8 @@ module LS = struct
     | AppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CAppExp (f, c) ->
       TV.union (ftv_exp f) (ftv_coercion c)
+    | MatchExp (f, ms) ->
+      TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | LetExp (_, xs, f1, f2) ->
       TV.union (TV.diff (ftv_exp f1) (TV.of_list xs)) (ftv_exp f2)
     | NilExp _ -> TV.empty
@@ -298,6 +328,7 @@ module LS1 = struct
     | AppExp of exp * exp * exp
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
+    | MatchExp of exp * (matchform * exp) list
     | LetExp of id * tyvar list * exp * exp
     | CoercionExp of coercion
     | NilExp of ty
@@ -337,6 +368,8 @@ module LS1 = struct
     | AppExp (f1, f2, f3) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | MatchExp (f, ms) ->
+      TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | LetExp (_, xs, f1, f2) ->
       TV.union (TV.diff (ftv_exp f1) (TV.of_list xs)) (ftv_exp f2)
     | CoercionExp c -> ftv_coercion c

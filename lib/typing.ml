@@ -255,6 +255,26 @@ module ITGL = struct
       TyList (type_of_meet u1 u2)
     | u1, u2 -> raise @@ Type_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
+  let rec type_of_mf env mf ids = match mf with
+    | MatchILit _ -> (TyInt, env, ids)
+    | MatchBLit _ -> (TyBool, env, ids)
+    | MatchULit -> (TyUnit, env, ids)
+    | MatchVar (id, u) ->
+      if List.mem id ids then raise @@ Type_error "match: same var appeared"
+      else let env = Environment.add id (tysc_of_ty u) env in
+        (u, env, id :: ids)
+    | MatchNil u -> (TyList u, env, ids)
+    | MatchCons (mf1, mf2) ->
+      let u2, env, ids = type_of_mf env mf2 ids in
+      let u1, env, ids = type_of_mf env mf1 ids in
+      unify @@ CConsistent (TyList u1, u2);
+      type_of_meet (TyList u1) u2, env, ids
+    (* | MatchAsc (mf, u) ->
+      let u', env, ids = type_of_matchform env mf ids in
+      unify @@ CConsistent (u', u);
+      u, env, ids *)
+    | MatchWild u -> u, env, ids
+
   let rec type_of_exp env = function
     | Var (_, x, ys) ->
       begin try
@@ -315,6 +335,11 @@ module ITGL = struct
       in let u1 = type_of_exp env e1 in
       let u2 = type_of_exp env e2 in
       unify_dom_type_of_cod u1 u2
+    | MatchExp (_, e, ms) ->
+      let u_match = type_of_exp env e in
+      let u_exp = fresh_tyvar () in
+      type_of_ms env ms u_match u_exp;
+      u_exp
     | LetExp (r, x, e1, e2) ->
       let u1 = type_of_exp env e1 in
       if is_value env e1 then
@@ -329,6 +354,16 @@ module ITGL = struct
       let u1 = type_of_exp env e1 in
       unify @@ CConsistent (TyList u1, u2);
       type_of_meet (TyList u1) u2
+  and type_of_ms env ms u_match u_exp = match ms with
+    | (mf, e) :: ms ->
+      let u, env', _ = type_of_mf env mf [] in
+      unify @@ CConsistent (u_match, u);
+      let u_match = type_of_meet u_match u in
+      let u = type_of_exp env' e in
+      unify @@ CConsistent (u_exp, u);
+      let u_exp = type_of_meet u_exp u in
+      type_of_ms env ms u_match u_exp
+    | [] -> () 
 
   let type_of_program env = function
     | Exp e ->
@@ -347,6 +382,14 @@ module ITGL = struct
 
   let normalize_tyenv =
     Environment.map @@ fun (TyScheme (xs, u)) -> TyScheme (xs, normalize_type u)
+
+  let rec normalize_matchform = function
+    | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
+    | MatchWild u -> MatchWild (normalize_type u)
+    | MatchVar (x, u) -> MatchVar (x, normalize_type u)
+    | MatchNil u -> MatchNil (normalize_type u)
+    | MatchCons (mf1, mf2) -> MatchCons (normalize_matchform mf1, normalize_matchform mf2)
+    (* | MatchAsc (mf, u) -> MatchAsc (normalize_matchform mf, normalize_type u) *)
 
   let rec normalize_exp = function
     | Var (r, x, ys) -> Var (r, x, ref @@ List.map normalize_type !ys)
@@ -369,6 +412,8 @@ module ITGL = struct
       FixIExp (r, x, y, normalize_type u1, normalize_type u2, normalize_exp e)
     | AppExp (r, e1, e2) ->
       AppExp (r, normalize_exp e1, normalize_exp e2)
+    | MatchExp (r, e, ms) ->
+      MatchExp (r, normalize_exp e, List.map (fun (mf, e) -> normalize_matchform mf, normalize_exp e) ms)
     | LetExp (r, y, e1, e2) ->
       LetExp (r, y, normalize_exp e1, normalize_exp e2)
     | NilExp (r, u) -> NilExp (r, normalize_type u)
@@ -383,6 +428,20 @@ module ITGL = struct
     normalize_program p,
     normalize_type u
 end
+
+let rec meet u1 u2 = match u1, u2 with
+  | TyVar (_, { contents = Some _ }), _
+  | _, TyVar (_, { contents = Some _ }) ->
+    raise @@ Type_bug "meet: instantiated tyvar is given"
+  | TyBool, TyBool -> TyBool
+  | TyInt, TyInt -> TyInt
+  | TyUnit, TyUnit -> TyUnit
+  | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
+  | TyDyn, u | u, TyDyn -> u
+  | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
+  | TyList u1, TyList u2 -> TyList (meet u1 u2)
+  | _ ->
+    raise @@ Type_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
 let rec type_of_coercion = function
   | CInj t -> (type_of_tag t, TyDyn)
@@ -407,6 +466,24 @@ let rec type_of_coercion = function
 
 module LS = struct
   open Syntax.LS
+
+  let rec type_of_matchform env mf = match mf with
+    | MatchILit _ -> TyInt, env
+    | MatchBLit _ -> TyBool, env
+    | MatchULit -> TyUnit, env
+    | MatchVar (id, u) ->
+      let env = Environment.add id (tysc_of_ty u) env in
+      u, env
+    | MatchNil u -> TyList u, env
+    | MatchCons (mf1, mf2) ->
+      let u2, env = type_of_matchform env mf2 in
+      let u1, env = type_of_matchform env mf1 in
+      meet (TyList u1) u2, env
+    (* | MatchAsc (mf, u) ->
+      let u', env, ids = type_of_matchform env mf ids in
+      unify @@ CConsistent (u', u);
+      u, env, ids *)
+    | MatchWild u -> u, env
 
   let rec type_of_exp env = function
     | Var (x, ys) -> begin
@@ -466,6 +543,10 @@ module LS = struct
           raise @@ Type_bug "not consistent"
       else
         raise @@ Type_bug "invalid source type"
+    | MatchExp (f, ms) ->
+      let u_match = type_of_exp env f in 
+      let u = type_of_ms env u_match ms in
+      u
     (*| CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
     | CastExp (r, f, u1, TyVar (_, { contents = Some u2 }), p) ->
       type_of_exp env @@ CastExp (r, f, u1, u2, p)
@@ -491,6 +572,17 @@ module LS = struct
       let u1 = type_of_exp env f1 in
       if (TyList u1) = u2 then u2
       else raise @@ Type_bug (asprintf "cons: %a=%a" pp_ty (TyList u1) pp_ty u2)
+  and type_of_ms env u_match = function
+    | (mf, f) :: t ->
+      let u_match', env' = type_of_matchform env mf in
+      if u_match <> u_match' then raise @@ Type_bug ("match u_match")
+      else 
+        let u_exp' = type_of_exp env' f in
+        if t = [] then u_exp'
+        else let u_exp = type_of_ms env u_match t in
+          if u_exp = u_exp' then u_exp
+          else raise @@ Type_bug ("match u_exp")
+    | [] -> raise @@ Type_bug ("match empty")
 
   let type_of_program env = function
     | Exp e -> type_of_exp env e

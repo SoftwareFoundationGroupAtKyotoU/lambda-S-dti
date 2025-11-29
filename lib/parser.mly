@@ -32,6 +32,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> INT BOOL UNIT QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET
+%token <Utils.Error.range> MATCH WITH VBAR UNDER
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -59,13 +60,13 @@ toplevel :
 
 Program :
   | Expr SEMISEMI { Exp $1 }
-  | start=LET x=ID params=list(Param) u=Opt_type_annot EQ e=Expr SEMISEMI {
+  | start=LET x=ID params=list(Param) u=OptTypeAnnot EQ e=Expr SEMISEMI {
       let r = join_range start (range_of_exp e) in
       let e = match u with None -> e | Some u -> AscExp (range_of_exp e, e, u) in
       let e = List.fold_right (param_to_fun r) params e in
       LetDecl (x.value, e)
     }
-  | start=LET REC x=ID params=nonempty_list(Param) u2=Opt_type_annot EQ e=Expr SEMISEMI {
+  | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e=Expr SEMISEMI {
       let r = join_range start (range_of_exp e) in
       let u2 = opt_ty_to_fresh_ty u2 in
       match params with
@@ -81,13 +82,31 @@ Program :
     }
 
 Expr :
-  | start=LET x=ID params=list(Param) u1=Opt_type_annot EQ e1=Expr IN e2=Expr {
+  | e=LetExpr { e }
+  | e=FunExpr { e }
+  | e=MatchExpr { e }
+  | SeqExpr { $1 }
+
+Param :
+  | x=ID { (x, None) }
+  | LPAREN x=ID COLON u=Type RPAREN { (x, Some u) }
+
+%inline OptTypeAnnot :
+  | /* empty */ { None }
+  | COLON u=Type { Some u }
+
+%inline OptSimpleTypeAnnot :
+  | /* empty */ { None }
+  | COLON u=SimpleType { Some u }
+
+LetExpr :
+  | start=LET x=ID params=list(Param) u1=OptTypeAnnot EQ e1=Expr IN e2=Expr {
       let r = join_range start (range_of_exp e2) in
       let e1 = match u1 with None -> e1 | Some u1 -> AscExp (range_of_exp e1, e1, u1) in
       let e1 = List.fold_right (param_to_fun r) params e1 in
       LetExp (r, x.value, e1, e2)
     }
-  | start=LET REC x=ID params=nonempty_list(Param) u2=Opt_type_annot EQ e1=Expr IN e2=Expr {
+  | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e1=Expr IN e2=Expr {
       let r = join_range start (range_of_exp e2) in
       let u2 = opt_ty_to_fresh_ty u2 in
       match params with
@@ -101,54 +120,108 @@ Expr :
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
         LetExp (r, x.value, FixEExp (r, x.value, y.value, u1, u2, e1), e2)
     }
-  | start=FUN params=nonempty_list(Param) u=Opt_simple_type_annot RARROW e=Expr {
+
+FunExpr :
+  | start=FUN params=nonempty_list(Param) u=OptSimpleTypeAnnot RARROW e=Expr {
       let r = join_range start (range_of_exp e) in
       let e = match u with None -> e | Some u -> AscExp (range_of_exp e, e, u) in
       List.fold_right (param_to_fun r) params e
     }
-  | Seq_expr { $1 }
 
-Param :
-  | x=ID { (x, None) }
-  | LPAREN x=ID COLON u=Type RPAREN { (x, Some u) }
+MatchExpr :
+  | start=MATCH e=Expr WITH option(VBAR) ms=MatchCondExpr { 
+    let last_exp = snd (List.hd (List.rev ms)) in
+    let r = join_range start (range_of_exp last_exp) in
+    MatchExp (r, e, ms) 
+    }
 
-%inline Opt_type_annot :
-  | /* empty */ { None }
-  | COLON u=Type { Some u }
+MatchCondExpr :
+  | m=MatchFormExpr RARROW e=Expr { [(m, e)] }
+  | m=MatchFormExpr RARROW e=NotMatchExpr VBAR ms=MatchCondExpr { (m, e) :: ms }
 
-%inline Opt_simple_type_annot :
-  | /* empty */ { None }
-  | COLON u=Simple_type { Some u }
+MatchFormExpr :
+  | m1=MatchFormLitExpr COLCOL m2=MatchFormExpr { MatchCons (m1, m2) }
+  | m=MatchFormLitExpr { m }
 
-Seq_expr :
-  | e1=Seq_expr SEMI e2=Seq_expr {
+MatchFormLitExpr :
+  | x=ID { MatchVar (x.value, Typing.fresh_tyvar ()) }
+  | i=INTV { MatchILit i.value }
+  | TRUE   { MatchBLit true }
+  | FALSE  { MatchBLit false }
+  | LPAREN RPAREN { MatchULit }
+  | LBRACKET ms=separated_list(SEMI, MatchFormLitExpr) RBRACKET {
+    let rec makelist l = match l with
+      | h :: t -> MatchCons (h, makelist t)
+      | [] -> MatchNil (Typing.fresh_tyvar ())
+    in makelist ms 
+    }
+  // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
+  | LPAREN m=MatchFormExpr RPAREN { m }
+  | UNDER { MatchWild (Typing.fresh_tyvar ()) }
+
+NotMatchExpr :
+  | e=NotMatchLetExpr { e }
+  | e=NotMatchFunExpr { e }
+  | e=SeqExpr { e }
+
+NotMatchLetExpr :
+  | start=LET x=ID params=list(Param) u1=OptTypeAnnot EQ e1=Expr IN e2=NotMatchExpr {
+      let r = join_range start (range_of_exp e2) in
+      let e1 = match u1 with None -> e1 | Some u1 -> AscExp (range_of_exp e1, e1, u1) in
+      let e1 = List.fold_right (param_to_fun r) params e1 in
+      LetExp (r, x.value, e1, e2)
+    }
+  | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e1=Expr IN e2=NotMatchExpr {
+      let r = join_range start (range_of_exp e2) in
+      let u2 = opt_ty_to_fresh_ty u2 in
+      match params with
+      | [] ->
+        raise @@ Parser_bug "params must not be empty"
+      | (y, None) :: params ->
+        let u1 = Typing.fresh_tyvar () in
+        let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
+        LetExp (r, x.value, FixIExp (r, x.value, y.value, u1, u2, e1), e2)
+      | (y, Some u1) :: params ->
+        let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
+        LetExp (r, x.value, FixEExp (r, x.value, y.value, u1, u2, e1), e2)
+    }
+
+NotMatchFunExpr :
+  | start=FUN params=nonempty_list(Param) u=OptSimpleTypeAnnot RARROW e=NotMatchExpr {
+      let r = join_range start (range_of_exp e) in
+      let e = match u with None -> e | Some u -> AscExp (range_of_exp e, e, u) in
+      List.fold_right (param_to_fun r) params e
+    }
+
+SeqExpr :
+  | e1=SeqExpr SEMI e2=SeqExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
     }
-  | start=IF e1=Seq_expr THEN e2=Seq_expr ELSE e3=Seq_expr %prec prec_if {
+  | start=IF e1=SeqExpr THEN e2=SeqExpr ELSE e3=SeqExpr %prec prec_if {
       let r = join_range start (range_of_exp e3) in
       IfExp (r, e1, e2, e3)
   }
-  | e1=Seq_expr LOR e2=Seq_expr {
+  | e1=SeqExpr LOR e2=SeqExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       let t, f = BConst (r, true), BConst (r, false) in
       IfExp (r, e1, t, IfExp (r, e2, t, f))
     }
-  | e1=Seq_expr LAND e2=Seq_expr {
+  | e1=SeqExpr LAND e2=SeqExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       let t, f = BConst (r, true), BConst (r, false) in
       IfExp (r, e1, IfExp (r, e2, t, f), f)
     }
-  | e1=Seq_expr op=Op e2=Seq_expr {
+  | e1=SeqExpr op=Op e2=SeqExpr {
       BinOp (join_range (range_of_exp e1) (range_of_exp e2), op, e1, e2)
     }
-  | e=Cons_expr { e }
+  | e=ConsExpr { e }
 
-Cons_expr :
-  | e1=Cons_expr COLCOL e2=Cons_expr {
+ConsExpr :
+  | e1=ConsExpr COLCOL e2=ConsExpr {
       ConsExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
     }
-  | Unary_expr { $1 }
+  | UnaryExpr { $1 }
 
 %inline Op :
   | PLUS { Plus }
@@ -163,22 +236,22 @@ Cons_expr :
   | GT { Gt }
   | GTE { Gte }
 
-Unary_expr :
-  | PLUS e=Unary_expr { e }
-  | start_r=MINUS e=Unary_expr {
+UnaryExpr :
+  | PLUS e=UnaryExpr { e }
+  | start_r=MINUS e=UnaryExpr {
       let r = join_range start_r (range_of_exp e) in
       let zero = IConst (dummy_range, 0) in
       BinOp (r, Minus, zero, e)
     }
-  | App_expr { $1 }
+  | AppExpr { $1 }
 
-App_expr :
-  | e1=App_expr e2=Simple_expr {
+AppExpr :
+  | e1=AppExpr e2=SimpleExpr {
       AppExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
     }
-  | Simple_expr { $1 }
+  | SimpleExpr { $1 }
 
-Simple_expr :
+SimpleExpr :
   | i=INTV { IConst (i.range, i.value) }
   | r=TRUE { BConst (r, true) }
   | r=FALSE { BConst (r, false) }
@@ -189,26 +262,26 @@ Simple_expr :
   | start=LPAREN e=Expr COLON u=Type last=RPAREN {
       AscExp (join_range start last, e, u)
     }
-  | start=LBRACKET l=List_elms last=RBRACKET {
+  | start=LBRACKET l=ListElms last=RBRACKET {
       l (join_range start last) 
     }
   | LPAREN e=Expr RPAREN { e }
 
-List_elms :
+ListElms :
   | /* empty */ { fun r -> NilExp(r, Typing.fresh_tyvar ()) }
-  | e=Cons_expr { fun r ->
+  | e=ConsExpr { fun r ->
       ConsExp(range_of_exp e, e, NilExp(r, Typing.fresh_tyvar ()))
     }
-  | e=Cons_expr SEMI l=List_elms { fun r ->
+  | e=ConsExpr SEMI l=ListElms { fun r ->
       ConsExp(range_of_exp e, e, l r)
     }
 
 Type :
-  | u1=Simple_type RARROW u2=Type { TyFun (u1, u2) }
+  | u1=SimpleType RARROW u2=Type { TyFun (u1, u2) }
   | LBRACKET u=Type RBRACKET { TyList u }
-  | Simple_type { $1 }
+  | SimpleType { $1 }
 
-Simple_type :
+SimpleType :
   | INT { TyInt }
   | BOOL { TyBool }
   | UNIT { TyUnit }

@@ -59,6 +59,7 @@ module LS1 = struct
     | FixExp_alt _ -> raise @@ KNormal_bug "FixExp_alt should not be alpha_exp's argument"
     | NilExp u -> NilExp u
     | ConsExp (f1, f2) -> ConsExp (alpha_exp idenv f1, alpha_exp idenv f2)
+    | MatchExp _ -> raise @@ KNormal_bug "match yet"
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -137,7 +138,7 @@ module LS1 = struct
             | Gte -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, IfEqExp (x, y, f2', f3'), f2')
             | _ -> raise @@ KNormal_bug "if-cond type should bool"
           end
-        | Var _ | BConst _ | IfExp _ | AppExp _ | AppExp_alt _ | LetExp _ | CAppExp _ as f ->
+        | Var _ | BConst _ | IfExp _ | AppExp _ | AppExp_alt _ | LetExp _ | CAppExp _ | MatchExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
         | IConst _ | UConst | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _ | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ -> raise @@ KNormal_bug "if-cond type should bool"
@@ -160,6 +161,7 @@ module LS1 = struct
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in 
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CSeqExp (x, y)
+    | MatchExp _ -> raise @@ KNormal_bug "match yet"
     | LetExp (x, tvs, f1, f2) -> 
       begin match f1 with
         | FunExp ((y, _), k, f1) ->

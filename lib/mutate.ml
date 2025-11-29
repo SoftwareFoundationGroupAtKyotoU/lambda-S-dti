@@ -68,6 +68,8 @@ let rec count_fun_params (t : exp) : int =
   | IfExp   (_,e1,e2,e3)
   (*| MatchExp(_,e1,e2,_,_,e3)*) ->
       count_fun_params e1 + count_fun_params e2 + count_fun_params e3
+  | MatchExp (_, e, ms) ->
+    count_fun_params e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fun_params e) ms)
 
 let rec count_fix_nodes (t : exp) : int =
   match t with
@@ -85,6 +87,8 @@ let rec count_fix_nodes (t : exp) : int =
   | IfExp   (_,e1,e2,e3)
   (*| MatchExp(_,e1,e2,_,_,e3)*) ->
       count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
+  | MatchExp (_, e, ms) ->
+    count_fix_nodes e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fix_nodes e) ms)
 
 let (*rec*) count_tapp_nodes ((*t*)_ : exp) : int = 0
   (*match t with
@@ -166,6 +170,9 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list =
   | AscExp (_,e0,_)
   (*| CAppExp(_,_,e0)*) ->
       collect_links c fixc e0
+  | MatchExp (_, e, ms) ->
+    let c1, f1, l1 = collect_links c fixc e in
+    List.fold_left (fun (c, f, l) -> fun (_, e) -> let c, f, l' = collect_links c f e in c, f, l @ l') (c1, f1, l1) ms
 
 let build_link_map (ls:link list) : (int * (int * int) list) list =
   let tbl : (int, (int * int) list) Hashtbl.t = Hashtbl.create 17 in
@@ -338,6 +345,20 @@ let rec apply
       let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
       let lamc3, fixc3, tappc3, e3' = apply a sel lamc2 fixc2 tappc2 e3 in
       (lamc3, fixc3, tappc3, IfExp (r, e1', e2', e3'))
+
+  | MatchExp (r, e, ms) ->
+    let lamc1, fixc1, tappc1, e = apply a sel lamc fixc tappc e in
+    let lamc = ref lamc1 in 
+    let fixc = ref fixc1 in
+    let tappc = ref tappc1 in
+    let ms = 
+      List.map 
+        (fun (mf, e) -> 
+          let lamc', fixc', tappc', e' = apply a sel !lamc !fixc !tappc e 
+        in lamc := lamc'; fixc := fixc'; tappc := tappc';
+        mf, e')
+        ms
+    in (!lamc, !fixc, !tappc, MatchExp (r, e, ms))
 
   (* | MatchExp (r, e1, e2, x, y, e3) ->
       let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
