@@ -578,26 +578,31 @@ module KNorm = struct
   open Syntax.KNorm
 
   let gt_exp e e1 = match e, e1 with
-    | (Var _ | IConst _ | UConst), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)
-    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | AppExp _ | AppTy _ | AppExp_alt _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
-    | (IfEqExp _ | IfLteExp _), (LetExp _ | LetRecExp _) -> true
+    | (Var _ | IConst _ | Nil), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)
+    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | AppExp _ | AppTy _ | AppExp_alt _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
+    | (IfEqExp _ | IfLteExp _ | MatchExp _), (LetExp _ | LetRecExp _) -> true
     | _ -> false
   
   let gte_exp e e1 = match e, e1 with
-    | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ -> true
+    | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ | Cons _, Cons _ -> true
     | AppTy _, AppTy _ | AppExp _, AppExp _ | AppExp_alt _, AppExp_alt _ | (LetExp _ | LetRecExp _ | LetRecExp_alt _) , (LetExp _ | LetRecExp _ | LetRecExp_alt _) -> true
     | (IfEqExp _ | IfLteExp _), (IfEqExp _ | IfLteExp _) -> true
+    | MatchExp _, MatchExp _ -> true
     | _ -> gt_exp e e1
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | IConst i -> pp_print_int ppf i
-    | UConst -> pp_print_string ppf "()"
+    (* | UConst -> pp_print_string ppf "()" *)
+    | Nil -> pp_print_string ppf "[]"
     | Add (x, y) -> fprintf ppf "%s + %s" x y
     | Sub (x, y) -> fprintf ppf "%s - %s" x y
     | Mul (x, y) -> fprintf ppf "%s * %s" x y
     | Div (x, y) -> fprintf ppf "%s / %s" x y
     | Mod (x, y) -> fprintf ppf "%s mod %s" x y
+    | Cons (x, y) -> fprintf ppf "%s :: %s" x y
+    | Hd x -> fprintf ppf "hd(%s)" x
+    | Tl x -> fprintf ppf "tl(%s)" x
     | IfEqExp (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -610,6 +615,10 @@ module KNorm = struct
         y
         pp_exp e1
         pp_exp e2
+    | MatchExp (x, ms) as e ->
+      fprintf ppf "match %s with %a"
+        x        
+        pp_match (ms, e)
     | AppExp (x, (y, z)) -> 
       fprintf ppf "%s (%s, %s)" x y z
     | AppTy (x, _, tas) ->
@@ -646,6 +655,13 @@ module KNorm = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
         (with_paren (gte_exp e e3) pp_exp) e3
+  and pp_match ppf = function
+    | ((mf, e1) :: m, e) -> 
+      fprintf ppf "| %a -> %a %a"
+        pp_matchform mf
+        (with_paren (gte_exp e e1) pp_exp) e1
+        pp_match (m, e)
+    | ([], _) -> fprintf ppf ""
     
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
@@ -669,14 +685,31 @@ module KNorm = struct
           pp_exp e1
           pp_exp e2
 
+  let gt_value v1 v2 = match v1, v2 with
+    | (IntV _ | FunV _ | FunV_alt _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
+    | (IntV _ | FunV _ | FunV_alt _ | CoercionV _), CoerceV _ -> true
+    | _ -> false
+
+  let gte_value v1 v2 = match v1, v2 with
+    | (FunV _ | FunV_alt _), (FunV _ | FunV_alt _) -> true
+    | CoerceV _, CoerceV _ -> true
+    | ConsV _, ConsV _ -> true
+    | _ -> gt_value v1 v2
+
   let rec pp_value ppf = function
     | IntV i -> pp_print_int ppf i
-    | UnitV -> pp_print_string ppf "()"
+    (* | UnitV -> pp_print_string ppf "()" *)
+    | NilV -> pp_print_string ppf "[]"
+    | ConsV (v1, v2) as v ->
+      fprintf ppf "%a :: %a"
+        (with_paren (gte_value v v1) pp_value) v1
+        (with_paren (gt_value v v2) pp_value) v2
     | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v, c) -> fprintf ppf "%a<<%a>>"pp_value v pp_coercion c
+    | CoerceV (v1, c) as v -> 
+      fprintf ppf "%a<<%a>>"
+        (with_paren (gt_value v v1) pp_value) v1
+        pp_coercion c
     | CoercionV c -> pp_coercion ppf c
-    (* | NilV -> pp_print_string ppf "[]"
-    | ConsV (v1, v2) -> fprintf ppf "%a :: %a" pp_value pp_value v1 pp_value v2 *)
 end
 
 module Cls = struct
@@ -702,12 +735,16 @@ module Cls = struct
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | Int i -> pp_print_int ppf i
-    | Unit -> pp_print_string ppf "()"
+    (* | Unit -> pp_print_string ppf "()" *)
+    | Nil -> pp_print_string ppf "[]"
     | Add (x, y) -> fprintf ppf "%s + %s" x y
     | Sub (x, y) -> fprintf ppf "%s - %s" x y
     | Mul (x, y) -> fprintf ppf "%s * %s" x y
     | Div (x, y) -> fprintf ppf "%s / %s" x y
     | Mod (x, y) -> fprintf ppf "%s mod %s" x y
+    | Cons (x, y) -> fprintf ppf "%s :: %s" x y
+    | Hd x -> fprintf ppf "hd(%s)" x
+    | Tl x -> fprintf ppf "tl(%s)" x
     | IfEq (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -720,6 +757,10 @@ module Cls = struct
         y
         pp_exp e1
         pp_exp e2
+    | Match (x, ms) ->
+      fprintf ppf "match %s with %a"
+        x        
+        pp_match ms
     | AppCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
     | AppDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
     | AppCls_alt (x, y) -> fprintf ppf "%s:cls_alt %s" x y
@@ -797,6 +838,13 @@ module Cls = struct
           pp_exp f1
           pp_exp f2
     | Insert _ -> raise @@ Syntax_error (*"insert or setty was applied to Cls.pp_exp"*)
+  and pp_match ppf = function
+    | (mf, e) :: m -> 
+      fprintf ppf "| %a -> %a %a"
+        pp_matchform mf
+        pp_exp e
+        pp_match m
+    | [] -> fprintf ppf ""
 
   let pp_fv ppf x =
     fprintf ppf "%s"

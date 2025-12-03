@@ -15,6 +15,7 @@ typedef enum ground_ty {
 	G_BOOL,
 	G_UNIT,
 	G_AR,
+	G_LI,
 } ground_ty;
 
 typedef struct ty ty;
@@ -26,6 +27,7 @@ typedef struct ty {
 		BASE_BOOL,
 		BASE_UNIT,
 		TYFUN,
+		TYLIST,
 		TYVAR,
 		SUBSTITUTED,
 	} tykind;
@@ -35,6 +37,7 @@ typedef struct ty {
 			ty *left;
 			ty *right;
 		} tyfun;
+		ty *tylist;
 	} tydat;
 	
 } ty;
@@ -49,6 +52,7 @@ typedef struct crc {
 		PROJ_TV,
 		PROJ_INJ_TV,
 		FUN,
+		LIST,
 		ID,
 		SEQ,
 		BOT
@@ -60,6 +64,7 @@ typedef struct crc {
 			crc *c1;
 			crc *c2;
 		} two_crc;
+		crc *one_crc;
 	} crcdat;
 	ran_pol r_p;
 } crc;
@@ -131,6 +136,25 @@ typedef struct fun {
 	ty **tas;
 } fun;
 
+typedef struct lst lst;
+
+typedef struct lst {
+	enum lstkind {
+		UNWRAPPED_LIST,
+		WRAPPED_LIST
+	} lstkind;
+	union lstdat {
+		struct unwrap_l {
+			value *h;
+			value *t;
+		} unwrap_l;
+		struct wrap_l {
+			lst *w;
+			crc *c;
+		} wrap_l;
+	} lstdat;
+} lst;
+
 typedef struct dyn {
 	value *v;
 	crc *d;
@@ -153,6 +177,7 @@ typedef union value {
 	int i_b_u;
 	dyn *d;
 	fun *f;
+	lst *l;
 	crc *s;
 } value;
 
@@ -166,11 +191,18 @@ value app(value, value, value);
 
 value app_alt(value, value);
 
+value hd(lst);
+
+value tl(lst);
+
+int did_not_match();
+
 extern ty tydyn;
 extern ty tyint;
 extern ty tybool;
 extern ty tyunit;
 extern ty tyar;
+extern ty tyli;
 extern ty *(newty)();
 
 extern crc crc_id;
@@ -178,10 +210,13 @@ extern crc crc_inj_INT;
 extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
 extern crc inj_AR;
+extern crc inj_LI;
 
 crc *make_crc_inj_ar(crc*);
+crc *make_crc_inj_li(crc*);
 crc *make_crc_proj(ground_ty, ran_pol, crc*);
 crc *make_crc_fun(crc*, crc*);
+crc *make_crc_list(crc*);
 
 extern value (fun_print_int)(value, value);
 extern value (fun_print_bool)(value, value);
@@ -194,6 +229,7 @@ extern value (fun_alt_print_newline)(value);
 extern value print_int;
 extern value print_bool;
 extern value print_newline;
-// extern int(stdlib)();
+extern int(stdlib)();
+extern int(stdlib_alt)();
 
 #endif

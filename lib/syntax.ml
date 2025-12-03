@@ -399,18 +399,23 @@ module KNorm = struct
   type exp =
     | Var of id
     | IConst of int
-    | UConst
+    (* | UConst *)
     | Add of id * id
     | Sub of id * id
     | Mul of id * id
     | Div of id * id
     | Mod of id * id
+    | Nil
+    | Cons of id * id
+    | Hd of id
+    | Tl of id
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
     | AppExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
     | CAppExp of id * id
     | CSeqExp of id * id
+    | MatchExp of id * (matchform * exp) list
     | LetExp of id * exp * exp
     | LetRecExp of id * tyvar list * (id * id) * exp * exp
     | CoercionExp of coercion
@@ -425,7 +430,9 @@ module KNorm = struct
 
   type value =
     | IntV of int
-    | UnitV
+    (* | UnitV *)
+    | NilV
+    | ConsV of value * value
     | FunV of ((tyvar list * ty list) -> (value * value) -> value)
     | CoerceV of value * coercion
     | CoercionV of coercion
@@ -448,14 +455,19 @@ module Cls = struct
   type exp =
     | Var of id
     | Int of int
-    | Unit
+    (* | Unit *)
+    | Nil
     | Add of id * id
     | Sub of id * id
     | Mul of id * id
     | Div of id * id
     | Mod of id * id
+    | Cons of id * id
+    | Hd of id
+    | Tl of id
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
+    | Match of id * (matchform * exp) list
     | AppTy of id * int * tyarg list
     | AppCls of id * (id * id)
     | AppDir of label * (id * id)
@@ -491,11 +503,18 @@ module Cls = struct
     let big_union vars = List.fold_right union vars empty
   end
 
+  let rec fv_mf = function
+    | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
+    | MatchVar (x, _) -> V.singleton x
+    | MatchCons (mf1, mf2) -> V.big_union [fv_mf mf1; fv_mf mf2]
+
   let rec fv = function
-    | Var id -> V.singleton id
-    | Int _ | Unit -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) -> V.of_list [x; y]
+    | Var x | Hd x | Tl x  -> V.singleton x
+    | Int _ | Nil -> V.empty
+    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
     | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv f1; fv f2]
+    | Match (x, ms) -> 
+      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_mf mf) (fv f)) ms)
     | AppTy (x, _, _) -> V.singleton x
     | SetTy (_, f) -> fv f
     | AppDir (_, (y, z)) -> V.of_list [y; z]

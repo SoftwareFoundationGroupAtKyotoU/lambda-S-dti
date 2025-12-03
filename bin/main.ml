@@ -4,8 +4,8 @@ open Lambda_S1_dti
 exception Compile_bad of string
 exception Invalid_option of string
 
-let debug = ref true
-let ls1 = ref true
+let debug = ref false
+let ls1 = ref false
 let alt = ref false
 let compile = ref false
 

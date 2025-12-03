@@ -27,7 +27,15 @@ module KNorm = struct
       in if not (exist_tv (TV.elements (Syntax.ftv_ty u1)) tvs) && not (exist_tv (TV.elements (Syntax.ftv_ty u2)) tvs) then 
         (tvset := TV.add newtv !tvset; (newu, fun x -> ufun1 (ufun2 x)))
       else (newu, fun x -> ufun1 (ufun2 (Cls.SetTy (newtv, x))))
-    | TyList _ -> raise @@ Closure_error "tylist yet"
+    | TyList u -> 
+      let u, ufun = ty_tv tvs u in
+      let newu = Typing.fresh_tyvar () in
+      let newtv = match newu with
+        | TyVar (i, u') -> u' := Some (TyList u); (i, u')
+        | _ -> raise @@ Closure_bug "not tyvar was created"
+      in if not (exist_tv (TV.elements (Syntax.ftv_ty u)) tvs) then 
+        (tvset := TV.add newtv !tvset; (newu, fun x -> ufun x))
+      else (newu, fun x -> ufun (Cls.SetTy (newtv, x)))
 
   let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
@@ -51,12 +59,17 @@ module KNorm = struct
   let rec toCls_exp known tvs = function
     | Var x -> Cls.Var x
     | IConst i -> Cls.Int i
-    | UConst -> Cls.Unit
+    (* | UConst -> Cls.Unit *)
     | Add (x, y) -> Cls.Add (x, y)
     | Sub (x, y) -> Cls.Sub (x, y)
     | Mul (x, y) -> Cls.Mul (x, y)
     | Div (x, y) -> Cls.Div (x, y)
     | Mod (x, y) -> Cls.Mod (x, y)
+    | Nil -> Cls.Nil
+    | Cons (x, y) -> Cls.Cons (x, y) 
+    | Hd x -> Cls.Hd x
+    | Tl x -> Cls.Tl x
+    | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
     | AppExp (x, y) when Cls.V.mem x known -> Cls.AppDir (Cls.to_label x, y)
@@ -148,14 +161,19 @@ module Cls = struct
     match f with
     | Var x -> Var (replace x)
     | Int i -> Int i
-    | Unit -> Unit
+    (* | Unit -> Unit *)
+    | Nil -> Nil
     | Add (x, y) -> Add (replace x, replace y)
     | Sub (x, y) -> Sub (replace x, replace y)
     | Mul (x, y) -> Mul (replace x, replace y)
     | Div (x, y) -> Div (replace x, replace y)
     | Mod (x, y) -> Mod (replace x, replace y)
+    | Cons (x, y) -> Cons (replace x, replace y)
+    | Hd x -> Hd (replace x)
+    | Tl x -> Tl (replace x)
     | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
     | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)
     | AppTy (x, n, tas) -> AppTy (replace x, n, tas)
     | AppCls (x, (y, k)) -> AppCls (replace x, (replace y, replace k))
     | AppDir (l, (y, k)) -> AppDir (to_label (replace (to_id l)), (replace y, replace k))
@@ -189,6 +207,7 @@ module Cls = struct
     | Let (x, f1, f2) -> Let (x, to_alt ids f1, to_alt ids f2)
     | IfEq (x, y, f1, f2) -> IfEq (x, y, to_alt ids f1, to_alt ids f2)
     | IfLte (x, y, f1, f2) -> IfLte (x, y, to_alt ids f1, to_alt ids f2)
+    | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, to_alt ids f) ms)
     | AppCls (x, (y, k)) when V.mem k ids -> AppCls_alt (x, y)
     | AppDir (l, (y, k)) when V.mem k ids -> AppDir_alt (l, y)
     | CApp (x, k) when V.mem k ids -> Var x

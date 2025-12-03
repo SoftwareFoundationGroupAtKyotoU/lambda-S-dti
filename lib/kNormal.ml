@@ -17,6 +17,16 @@ module LS1 = struct
   open Syntax.LS1
 
   (* alpha : 変数の名前が被らないように付け替える *)
+  let rec alpha_mf idenv = function
+    | MatchILit _ | MatchBLit _ | MatchULit | MatchNil _ | MatchWild _  as mf -> mf, idenv
+    | MatchVar (x, u) ->
+      let newx = genvar x in
+      MatchVar (newx, u), Environment.add x newx idenv
+    | MatchCons (mf1, mf2) -> 
+      let mf1, idenv = alpha_mf idenv mf1 in
+      let mf2, idenv = alpha_mf idenv mf2 in
+      MatchCons (mf1, mf2), idenv
+
   let rec alpha_exp idenv = function
     | Var (x, tas) -> Var (Environment.find x idenv, tas)
     | IConst _ | BConst _ | UConst as f -> f
@@ -59,7 +69,8 @@ module LS1 = struct
     | FixExp_alt _ -> raise @@ KNormal_bug "FixExp_alt should not be alpha_exp's argument"
     | NilExp u -> NilExp u
     | ConsExp (f1, f2) -> ConsExp (alpha_exp idenv f1, alpha_exp idenv f2)
-    | MatchExp _ -> raise @@ KNormal_bug "match yet"
+    | MatchExp (f, ms) -> 
+      MatchExp (alpha_exp idenv f, List.map (fun (mf, f) -> let mf, idenv = alpha_mf idenv mf in (mf, alpha_exp idenv f)) ms)
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -90,6 +101,21 @@ module LS1 = struct
       KNorm.LetExp (x, f, f') (* todo:考える。とりあえず[] *)
       (*多分大丈夫、applicationにしか不要で、(fun x...) vなら既に代入済み、(fun (x:?)...) vならcast済み*)
 
+  let rec k_normalize_mf tvsenv f = function
+    | MatchILit _ | MatchNil _ | MatchWild _  as mf -> mf, tvsenv, fun f -> f
+    | MatchBLit b -> 
+      let i = if b then 1 else 0 in
+      MatchILit i, tvsenv, fun f -> f
+    | MatchULit ->
+      MatchILit 0, tvsenv, fun f -> f
+    | MatchVar (x, u) -> MatchWild u, Environment.add x [] tvsenv, fun f' -> KNorm.LetExp (x, f, f')
+    | MatchCons (mf1, mf2) -> 
+      let x = genvar "_var" in
+      let mf1, tvsenv, decl_var1 = k_normalize_mf tvsenv (KNorm.LetExp (x, f, Hd x)) mf1 in
+      let y = genvar "_var" in
+      let mf2, tvsenv, decl_var2 = k_normalize_mf tvsenv (KNorm.LetExp (y, f, Tl y)) mf2 in
+      MatchCons (mf1, mf2), tvsenv, fun f -> decl_var1 (decl_var2 f)
+
   let rec k_normalize_exp tvsenv = function
     | Var (x, tas) -> 
       let tvs = Environment.find x tvsenv in 
@@ -98,7 +124,7 @@ module LS1 = struct
       else raise @@ KNormal_bug "tas and tvs don't have same length"
     | IConst i -> KNorm.IConst i
     | BConst b -> let i = if b then 1 else 0 in KNorm.IConst i
-    | UConst -> KNorm.UConst
+    | UConst -> KNorm.IConst 0
     | BinOp (op, f1, f2) as f -> begin match op with
       | Plus -> 
         let f1 = k_normalize_exp tvsenv f1 in
@@ -161,7 +187,10 @@ module LS1 = struct
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in 
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CSeqExp (x, y)
-    | MatchExp _ -> raise @@ KNormal_bug "match yet"
+    | MatchExp (f, ms) ->
+      let f = k_normalize_exp tvsenv f in
+      let msf = fun f -> List.map (fun (mf, f') -> let mf, tvsenv, decl_var = k_normalize_mf tvsenv f mf in mf, decl_var @@ k_normalize_exp tvsenv f') ms in
+      insert_let f @@ fun x -> KNorm.MatchExp (x, msf (Var x))
     | LetExp (x, tvs, f1, f2) -> 
       begin match f1 with
         | FunExp ((y, _), k, f1) ->
@@ -190,7 +219,11 @@ module LS1 = struct
           KNorm.LetExp (x, f1, f2)
       end
     | CoercionExp c -> KNorm.CoercionExp c
-    | NilExp _ | ConsExp _ -> raise @@ KNormal_bug "nil, cons yet"
+    | NilExp _ -> KNorm.Nil
+    | ConsExp (f1, f2) -> 
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Cons (x, y)
     | AppExp_alt (f1, f2) ->
       let f1 = k_normalize_exp tvsenv f1 in 
       let f2 = k_normalize_exp tvsenv f2 in
@@ -236,16 +269,23 @@ module KNorm = struct
   (* beta : let x = y in ... となっているようなxをyに置き換える *)
   let rec beta_exp idenv = function
     | Var x -> Var (find x idenv)
-    | IConst _ | UConst as f -> f
+    | IConst _ | Nil as f -> f
     | Add (x, y) -> Add (find x idenv, find y idenv)
     | Sub (x, y) -> Sub (find x idenv, find y idenv)
     | Mul (x, y) -> Mul (find x idenv, find y idenv)
     | Div (x, y) -> Div (find x idenv, find y idenv)
     | Mod (x, y) -> Mod (find x idenv, find y idenv)
+    | Cons (x, y) -> Cons (find x idenv, find y idenv)
+    | Hd x -> Hd (find x idenv)
+    | Tl x -> Tl (find x idenv)
     | IfEqExp (x, y, f1, f2) ->
       IfEqExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
     | IfLteExp (x, y, f1, f2) ->
       IfLteExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
+    | MatchExp (x, ms) ->
+      let x = find x idenv in
+      let ms = List.map (fun (mf, f) -> mf, beta_exp idenv f) ms in
+      MatchExp (x, ms)
     | AppExp (x, (y, z)) -> AppExp (find x idenv, (find y idenv, find z idenv))
     | AppTy (x, tvs, tas) -> AppTy (find x idenv, tvs, tas)
     | CAppExp (x, y) -> CAppExp (find x idenv, find y idenv)
@@ -281,6 +321,7 @@ module KNorm = struct
   let rec assoc_exp = function
     | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, assoc_exp f1, assoc_exp f2)
     | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, assoc_exp f1, assoc_exp f2)
+    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, assoc_exp f) ms)
     (*| CastExp (r, f, u1, u2, p) -> CastExp (r, assoc_exp f, u1, u2, p)*)
     | LetExp (x, f1, f2) ->
       let rec insert = function

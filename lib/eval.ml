@@ -448,10 +448,11 @@ module KNorm = struct
       | Ty u -> Ty (subst_type s u)
       | TyNu -> TyNu
     in function
-    | Var _ | IConst _ | UConst as f -> f
-    | Add _ | Sub _ | Mul _ | Div _ | Mod _ as f -> f
+    | Var _ | IConst _ | Nil as f -> f
+    | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Hd _ | Tl _ as f -> f
     | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp s f1, subst_exp s f2)
     | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp s f1, subst_exp s f2)
+    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, subst_exp s f) ms)
     | AppExp _ | CAppExp _ | CSeqExp _ as f -> f
     | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_type_k s) tas)
     (* | CastExp (r, x, u1, u2, p) -> CastExp (r, x, subst_type s u1, subst_type s u2, p) *)
@@ -471,7 +472,8 @@ module KNorm = struct
     | Var x -> 
       Environment.find x kenv
     | IConst i -> IntV i
-    | UConst -> UnitV
+    (* | UConst -> UnitV *)
+    | Nil -> NilV
     | Add (x1, x2) ->
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
@@ -507,6 +509,24 @@ module KNorm = struct
         | IntV i1, IntV i2 -> IntV (i1 mod i2)
         | _ -> raise @@ Eval_bug "Mod: unexpected type of argument"
       end
+    | Cons (x1, x2) ->
+      let v1 = Environment.find x1 kenv in
+      let v2 = Environment.find x2 kenv in
+      ConsV (v1, v2)
+    | Hd x ->
+      let v = Environment.find x kenv in
+      begin match v with
+      | ConsV (v1, _) -> v1
+      | CoerceV (ConsV (v1, _), CList s) -> coerce ~debug:debug v1 s
+      | _ -> raise @@ Eval_bug "hd: not list value"
+      end
+    | Tl x ->
+      let v = Environment.find x kenv in
+      begin match v with
+      | ConsV (_, v2) -> v2
+      | CoerceV (ConsV (_, v2), s) -> coerce ~debug:debug v2 s
+      | _ -> raise @@ Eval_bug "hd: not list value"
+      end
     | IfEqExp (x1, x2, f1, f2) ->
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
@@ -521,6 +541,9 @@ module KNorm = struct
         | IntV i1, IntV i2 -> if i1 <= i2 then eval_exp kenv f1 else eval_exp kenv f2
         | _ -> raise @@ Eval_bug "IfLteExp: not int value"
       end
+    | MatchExp (x, ms) ->
+      let v = Environment.find x kenv in
+      eval_next ~debug:debug kenv v ms
     | AppExp (x1, (x2, x3)) -> 
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
@@ -598,6 +621,30 @@ module KNorm = struct
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
       | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm.pp_value v)
+  and match_mf ?(debug=false) kenv v mf = match v, mf with
+    (* | _, MatchVar (id, _) ->
+      let kenv = Environment.add id v kenv in
+      true, kenv *)
+    | ConsV (v1, v2), MatchCons (mf1, mf2) ->
+      let b1, kenv = match_mf ~debug:debug kenv v1 mf1 in
+      let b2, kenv = match_mf ~debug:debug kenv v2 mf2 in
+      b1&&b2, kenv 
+    | NilV, MatchNil _ -> true, kenv
+    | IntV i1, MatchILit i2 -> if i1 = i2 then (true, kenv) else (false, kenv)
+    (* | IntV i, MatchBLit b -> if i = 1 && b then (true, kenv) else if i = 0 && not b then (false, kenv) else raise @@ Eval_bug "MatchBLit didn't match"
+    | IntV 0, MatchULit -> true, kenv *)
+    (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
+    | _, MatchWild _ -> true, kenv
+    | CoerceV (ConsV (v1, v2), CList s), MatchCons _ -> 
+      match_mf ~debug:debug kenv (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf (* lazy *)
+    | _, (MatchVar _ | MatchBLit _ | MatchULit) -> raise @@ Eval_bug "MatchVar, MatchBLit, MatchULit  does not appear in KNormal form"
+    | _ -> false, kenv 
+  and eval_next ?(debug=false) kenv v ms = match ms with
+    | (mf, f) :: ms ->
+      let b, kenv' = match_mf ~debug:debug kenv v mf in
+      if b then eval_exp ~debug:debug kenv' f
+      else eval_next ~debug:debug kenv v ms
+    | [] -> raise @@ Eval_bug "Didn't match"
   and eval_app_val ?(debug=false) kenv v1 v2 v3 = match v1 with
     | FunV proc -> proc ([], []) (v2, v3)
     | FunV_alt proc -> snd (proc ([], [])) (v2, v3)

@@ -70,13 +70,13 @@ module KNorm = struct
     | IntV 1, CoercionV c -> 
       print_string "true";
       begin match c with
-        | CId _ -> UnitV
-        | c -> CoerceV (UnitV, c)
+        | CId _ -> IntV 0
+        | c -> CoerceV (IntV 0, c)
       end
     | IntV 0, CoercionV c -> print_string "false";
       begin match c with
-        | CId _ -> UnitV
-        | c -> CoerceV (UnitV, c)
+        | CId _ -> IntV 0
+        | c -> CoerceV (IntV 0, c)
       end
     | _ -> raise @@ Stdlib_bug "print_bool: unexpected value"
   )
@@ -85,18 +85,18 @@ module KNorm = struct
     | IntV i, CoercionV c -> 
       print_int i;
       begin match c with
-        | CId _ -> UnitV
-        | c -> CoerceV (UnitV, c)
+        | CId _ -> IntV 0
+        | c -> CoerceV (IntV 0, c)
       end
     | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
   )
 
   let lib_print_newline = FunV (fun _ -> function
-    | UnitV, CoercionV c -> 
+    | IntV 0, CoercionV c -> 
       print_newline (); 
       begin match c with
-        | CId _ -> UnitV
-        | c -> CoerceV (UnitV, c)
+        | CId _ -> IntV 0
+        | c -> CoerceV (IntV 0, c)
       end
     | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
   )

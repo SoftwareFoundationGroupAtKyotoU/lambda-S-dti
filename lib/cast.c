@@ -8,6 +8,7 @@ ty tyint = { .tykind = BASE_INT };
 ty tybool = { .tykind = BASE_BOOL };
 ty tyunit = { .tykind = BASE_UNIT };
 ty tyar = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
+ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
 
 crc crc_id = { .crckind = ID };
 crc inj_INT = { .crckind = INJ, .crcdat = { .g = G_INT } };
@@ -17,12 +18,21 @@ crc crc_inj_BOOL = { .crckind = SEQ, .crcdat = { .two_crc = { .c1 = &crc_id, .c2
 crc inj_UNIT = { .crckind = INJ, .crcdat = { .g = G_UNIT } };
 crc crc_inj_UNIT = { .crckind = SEQ, .crcdat = { .two_crc = { .c1 = &crc_id, .c2=&inj_UNIT } } };
 crc inj_AR = { .crckind = INJ, .crcdat = { .g = G_AR } };
+crc inj_LI = { .crckind = INJ, .crcdat = { .g = G_LI } };
 
 crc *make_crc_inj_ar (crc *g){
 	crc *retcrc = (crc*)GC_MALLOC(sizeof(crc));
 	retcrc->crckind = SEQ;
 	retcrc->crcdat.two_crc.c1 = g;
 	retcrc->crcdat.two_crc.c2 = &inj_AR;
+	return retcrc;
+}
+
+crc *make_crc_inj_li (crc *g){
+	crc *retcrc = (crc*)GC_MALLOC(sizeof(crc));
+	retcrc->crckind = SEQ;
+	retcrc->crcdat.two_crc.c1 = g;
+	retcrc->crcdat.two_crc.c2 = &inj_LI;
 	return retcrc;
 }
 
@@ -42,6 +52,13 @@ crc *make_crc_fun(crc *c1, crc *c2) {
 	retcrc->crckind = FUN;
 	retcrc->crcdat.two_crc.c1 = c1;
 	retcrc->crcdat.two_crc.c2 = c2;	
+	return retcrc;
+}
+
+crc *make_crc_list(crc *c) {
+	crc *retcrc = (crc*)GC_MALLOC(sizeof(crc));
+	retcrc->crckind = LIST;
+	retcrc->crcdat.one_crc = c;
 	return retcrc;
 }
 
@@ -98,6 +115,12 @@ crc* normalize_crc(crc *c) {
 			c2->crcdat.tv = c->crcdat.tv->tydat.tyfun.right;
 			crc *cfun = make_crc_fun(c1, c2);
 			return make_crc_inj_ar(cfun);
+		} else if (c->crcdat.tv->tykind == TYLIST) {         // X! [X:=[X1]] -> [X1!];[★]!
+			crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+			clist_->crckind = INJ_TV;
+			clist_->crcdat.tv = c->crcdat.tv->tydat.tylist;
+			crc *clist = make_crc_list(clist_);
+			return make_crc_inj_ar(clist);
 		} else if (c->crcdat.tv->tykind == SUBSTITUTED) {
 			c->crcdat.tv = ty_find(c->crcdat.tv);
 			return normalize_crc(c);
@@ -121,6 +144,13 @@ crc* normalize_crc(crc *c) {
 			c2->r_p = c->r_p;
 			crc *cfun = make_crc_fun(c1, c2);
 			return make_crc_proj(G_AR, c->r_p, cfun);
+		} else if (c->crcdat.tv->tykind == TYLIST) {        // X?p [X:=[X1]] -> [★]?p;[X1?p]
+			crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+			clist_->crckind = PROJ_TV;
+			clist_->r_p = c->r_p;
+			clist_->crcdat.tv = c->crcdat.tv->tydat.tylist;
+			crc *clist = make_crc_list(clist_);
+			return make_crc_proj(G_LI, c->r_p, clist);
 		} else if (c->crcdat.tv->tykind == SUBSTITUTED) {
 			c->crcdat.tv = ty_find(c->crcdat.tv);
 			return normalize_crc(c);
@@ -133,8 +163,8 @@ crc* normalize_crc(crc *c) {
 		} else if (c->crcdat.tv->tykind == BASE_BOOL) {
 			return make_crc_proj(G_BOOL, c->r_p, &crc_inj_BOOL);
 		} else if (c->crcdat.tv->tykind == BASE_UNIT) {
-			return make_crc_proj(G_UNIT, c->r_p, &crc_inj_UNIT);   // ?pX! [X:=X1=>X2] -> (★→★)?p(?pX1!=>?pX2!);(★→★)!
-		} else if (c->crcdat.tv->tykind == TYFUN) {
+			return make_crc_proj(G_UNIT, c->r_p, &crc_inj_UNIT);
+		} else if (c->crcdat.tv->tykind == TYFUN) {   				// ?pX! [X:=X1=>X2] -> (★→★)?p(?pX1!=>?pX2!);(★→★)!
 			ty *t1 = c->crcdat.tv->tydat.tyfun.left;
 			ty *t2 = c->crcdat.tv->tydat.tyfun.right;
 			crc *c1 = (crc*)GC_MALLOC(sizeof(crc));
@@ -148,6 +178,15 @@ crc* normalize_crc(crc *c) {
 			crc *cfun = make_crc_fun(c1, c2);
 			crc *car = make_crc_inj_ar(cfun);
 			return make_crc_proj(G_AR, c->r_p, car);
+		} else if (c->crcdat.tv->tykind == TYLIST) {				// ?pX! [X:=[X1]] -> [★]?p[?pX1!];[★]!
+			ty *t = c->crcdat.tv->tydat.tylist;
+			crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+			clist_->crckind = PROJ_INJ_TV;
+			clist_->crcdat.tv = t;
+			clist_->r_p = c->r_p;
+			crc *clist = make_crc_list(clist_);
+			crc *cli = make_crc_inj_li(clist);
+			return make_crc_proj(G_LI, c->r_p, cli);
 		} else if (c->crcdat.tv->tykind == SUBSTITUTED) {
 			c->crcdat.tv = ty_find(c->crcdat.tv);
 			return normalize_crc(c);
@@ -190,7 +229,7 @@ crc* compose(crc *c1, crc *c2) {
 				return retc;
 			} 
 		} 
-	} else if (c1->crckind == INJ_TV) {								    // X!
+	} else if (c1->crckind == INJ_TV) {								    // X!;;s
 		c1 = normalize_crc(c1);
 		if (c1->crckind != INJ_TV) {								    
 			return compose(c1, c2);
@@ -210,6 +249,16 @@ crc* compose(crc *c1, crc *c2) {
 				cfun2->crcdat.tv = c1->crcdat.tv->tydat.tyfun.right;
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				return compose(cfun, c2->crcdat.two_crc.c2);
+			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_LI) {                        //X!;;[★]?p;i -> [X1!];;i [X:=[X1]]
+				// printf("DTI : list was inferred\n");
+				c1->crcdat.tv->tykind = TYLIST;
+				c1->crcdat.tv->tydat.tylist = newty();
+				// printf("%p <- [%p]\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tylist);
+				crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+				clist_->crckind = INJ_TV;
+				clist_->crcdat.tv = c1->crcdat.tv->tydat.tylist;
+				crc *clist = make_crc_list(clist_);
+				return compose(clist, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_INT) {                     //X!;;int?p;i -> i [X:=int]
 				// printf("DTI : int was inferred\n");
 				// printf("%p <- int\n", c1->crcdat.tv);
@@ -276,6 +325,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				crc *cprojfun = make_crc_proj(G_AR, c1->r_p, cfun);
 				return compose(cprojfun, c2->crcdat.two_crc.c2);
+			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_LI) {                                //?pX!;;[★]?q;i -> [★]?p;[?qX1!];;i [X:=[X1]]
+				// printf("DTI : list was inferred\n");
+				c1->crcdat.tv->tykind = TYLIST;
+				c1->crcdat.tv->tydat.tylist = newty();
+				// printf("%p <- [%p])\n", c1->crcdat.tv, c1->crcdat.tv->tydat.tylist);
+				crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+				clist_->crckind = PROJ_INJ_TV;
+				clist_->crcdat.tv = c1->crcdat.tv->tydat.tylist;
+				// clist_->r_p = c1->r_p;
+				crc *clist = make_crc_list(clist_);
+				crc *cprojlist = make_crc_proj(G_LI, c1->r_p, clist);
+				return compose(cprojlist, c2->crcdat.two_crc.c2);
 			} else if (c2->crcdat.two_crc.c1->crcdat.g == G_INT) {                     //?pX!;;int?q;i -> int?p;i [X:=int]
 				// printf("DTI : int was inferred\n");
 				// printf("%p <- int\n", c1->crcdat.tv);
@@ -352,6 +413,16 @@ crc* compose(crc *c1, crc *c2) {
 				cfun2->crcdat.tv = c2->crcdat.tv->tydat.tyfun.right;
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				return compose(c1->crcdat.two_crc.c1, cfun);
+			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_LI) {						//g;[★]!;;X?p -> g;;[X1?p] [X:=[X1]]
+				// printf("DTI : list was inferred\n");
+				c2->crcdat.tv->tykind = TYLIST;
+				c2->crcdat.tv->tydat.tylist = newty();
+				// printf("%p <- [%p]\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tylist);
+				crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+				clist_->crckind = PROJ_TV;
+				clist_->crcdat.tv = c2->crcdat.tv->tydat.tylist;
+				crc *clist = make_crc_list(clist_);
+				return compose(c1->crcdat.two_crc.c1, clist);
 			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_INT) {                      //g;int!;;X?p -> g [X:=int]
 				// printf("DTI : int was inferred\n");
 				// printf("%p <- int\n", c2->crcdat.tv);
@@ -372,7 +443,7 @@ crc* compose(crc *c1, crc *c2) {
 			c2 = normalize_crc(c2);
 			if (c2->crckind != PROJ_INJ_TV) {
 				return compose(c1, c2);
-			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_AR) {						//g;(★→★)!;;X?p -> g;;X1!=>X2?p [X:=X1=>X2]
+			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_AR) {						//g;(★→★)!;;?pX! -> g;;X1!=>X2?p;(★->★)! [X:=X1=>X2]
 				// printf("DTI : arrow was inferred\n");
 				c2->crcdat.tv->tykind = TYFUN;
 				c2->crcdat.tv->tydat.tyfun.left = newty();
@@ -387,7 +458,18 @@ crc* compose(crc *c1, crc *c2) {
 				crc *cfun = make_crc_fun(cfun1, cfun2);
 				crc *cfuninj = make_crc_inj_ar(cfun);
 				return compose(c1->crcdat.two_crc.c1, cfuninj);
-			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_INT) {                      //g;int!;;X?p -> g [X:=int]
+			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_LI) {						//g;[★]!;;?pX! -> g;;[?pX1!];[★]! [X:=[X1]]
+				// printf("DTI : list was inferred\n");
+				c2->crcdat.tv->tykind = TYLIST;
+				c2->crcdat.tv->tydat.tylist = newty();
+				// printf("%p <- [%p]\n", c2->crcdat.tv, c2->crcdat.tv->tydat.tylist);
+				crc *clist_ = (crc*)GC_MALLOC(sizeof(crc));
+				clist_->crckind = PROJ_INJ_TV;
+				clist_->crcdat.tv = c2->crcdat.tv->tydat.tylist;
+				crc *clist = make_crc_list(clist_);
+				crc *clistinj = make_crc_inj_li(clist);
+				return compose(c1->crcdat.two_crc.c1, clistinj);
+			} else if (c1->crcdat.two_crc.c2->crcdat.g == G_INT) {                      //g;int!;;?pX! -> g;;id;int! -> g;int! [X:=int]
 				// printf("DTI : int was inferred\n");
 				// printf("%p <- int\n", c2->crcdat.tv);
 				*c2->crcdat.tv = tyint;
@@ -421,6 +503,15 @@ crc* compose(crc *c1, crc *c2) {
 		retc->crcdat.two_crc.c1 = compose(c2->crcdat.two_crc.c1, c1->crcdat.two_crc.c1);
 		retc->crcdat.two_crc.c2 = compose(c1->crcdat.two_crc.c2, c2->crcdat.two_crc.c2);
 		if (retc->crcdat.two_crc.c1->crckind == ID && retc->crcdat.two_crc.c2->crckind == ID) { //s=>t;;s'=>t' -> id (if s=id and t=id)
+			return &crc_id;
+		} else {
+			return retc;
+		}
+	} else if (c1->crckind == LIST && c2->crckind == LIST) {
+		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
+		retc->crckind = LIST;
+		retc->crcdat.one_crc = compose(c1->crcdat.one_crc, c2->crcdat.one_crc);
+		if (retc->crcdat.one_crc->crckind == ID) {
 			return &crc_id;
 		} else {
 			return retc;
@@ -481,6 +572,43 @@ value coerce(value v, crc *s) {
 			retv.d->v->f = v.f;
 			retv.d->d = s;
 		}
+	} else if (s->crckind == LIST) { // v<[s']>
+		if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
+			crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.one_crc);
+			if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
+				retv.l = v.l->lstdat.wrap_l.w;
+			} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
+				retv.l = (lst*)GC_MALLOC(sizeof(lst));
+				retv.l->lstkind = WRAPPED_LIST;
+				retv.l->lstdat.wrap_l.w = v.l->lstdat.wrap_l.w;
+				retv.l->lstdat.wrap_l.c = c;
+			}
+		} else {                   // u<[s']> -> u<<[s']>>
+			retv.l = (lst*)GC_MALLOC(sizeof(lst));
+			retv.l->lstkind = WRAPPED_LIST;
+			retv.l->lstdat.wrap_l.w = v.l;
+			retv.l->lstdat.wrap_l.c = s->crcdat.one_crc;
+		}
+	} else if (s->crckind == SEQ && s->crcdat.two_crc.c1->crckind == LIST) { // v<[s'];G!>
+		retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
+		retv.d->v = (value*)GC_MALLOC(sizeof(value));
+		if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {                                      // u<<[s]>><[s'];G!>
+			crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.one_crc);
+			retv.d->v->l = v.l->lstdat.wrap_l.w;
+			retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
+			retv.d->d->crckind = SEQ;
+			retv.d->d->crcdat.two_crc.c2 = s->crcdat.two_crc.c2;
+			if (c->crckind == ID) { // u<<[s]>><[s'];G!> -> u<id;G!> -> u<<id;G!>>
+				retv.d->d->crcdat.two_crc.c1 = c;
+			} else { 									// u<<[s]>><[s'];G!> -> u<[s;;s'];G!> -> u<<[s;;s'];G!>>
+				retv.d->d->crcdat.two_crc.c1 = (crc*)GC_MALLOC(sizeof(crc));
+				retv.d->d->crcdat.two_crc.c1->crckind = LIST;
+				retv.d->d->crcdat.two_crc.c1->crcdat.one_crc = c;
+			}
+		} else { // u<[s'];G!> -> u<<[s'];G!>>
+			retv.d->v->l = v.l;
+			retv.d->d = s;
+		}
 	} else if (s->crckind == SEQ && s->crcdat.two_crc.c2->crckind == INJ) { // v<id;G!> -> v<<id;G!>>
 		retv.d = (dyn*)GC_MALLOC(sizeof(dyn)); 
 		retv.d->v = (value*)GC_MALLOC(sizeof(value));
@@ -503,6 +631,11 @@ value coerce(value v, crc *s) {
 			retv.f->fundat.wrap.w = v.d->v->f;
 			retv.f->fundat.wrap.c_arg = c1->crcdat.two_crc.c1;
 			retv.f->fundat.wrap.c_res = c1->crcdat.two_crc.c2;
+		} else if (c1->crckind == LIST) {        // u<<d>><s> -> u<[s]> -> u<<[s]>>
+			retv.l = (lst*)GC_MALLOC(sizeof(lst));
+			retv.l->lstkind = WRAPPED_LIST;
+			retv.l->lstdat.wrap_l.w = v.d->v->l;
+			retv.l->lstdat.wrap_l.c = c1->crcdat.one_crc;
 		} else if (c1->crckind == BOT) {
 			blame(c1->r_p);
 			exit(1);
@@ -649,6 +782,27 @@ value app_alt(value f, value v) {									// reduction of f(v)
 	return retx;
 }
 
+value hd(lst l) {
+	if (l.lstkind == WRAPPED_LIST) {
+		return coerce(*l.lstdat.wrap_l.w->lstdat.unwrap_l.h, l.lstdat.wrap_l.c);
+	} else {
+		return *l.lstdat.unwrap_l.h;
+	}
+}
+
+value tl(lst l) {
+	if (l.lstkind == WRAPPED_LIST) {
+		return coerce(*l.lstdat.wrap_l.w->lstdat.unwrap_l.t, make_crc_list(l.lstdat.wrap_l.c));
+	} else {
+		return *l.lstdat.unwrap_l.t;
+	}
+}
+
+int did_not_match() {
+	printf("didn't match");
+	exit(1);
+}
+
 value fun_print_int(value v, value w) {
 	value retv;
 	printf("%d", v.i_b_u);
@@ -723,20 +877,33 @@ value print_int;
 value print_bool;
 value print_newline;
 
-// int stdlib() {
-// 	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
-// 	print_int.f->fundat.label_alt.l = fun_print_int;
-// 	print_int.f->fundat.label_alt.l_a = fun_alt_print_int;
-// 	print_int.f->funkind = LABEL_alt;
-// 	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
-// 	print_bool.f->fundat.label_alt.l = fun_print_bool;
-// 	print_bool.f->fundat.label_alt.l_a = fun_alt_print_bool;
-// 	print_bool.f->funkind = LABEL_alt;
-// 	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
-// 	print_newline.f->fundat.label_alt.l = fun_print_newline;
-// 	print_newline.f->fundat.label_alt.l_a = fun_alt_print_newline;
-// 	print_newline.f->funkind = LABEL_alt;
-// 	return 0;
-// }
+int stdlib() {
+	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_int.f->fundat.label = fun_print_int;
+	print_int.f->funkind = LABEL;
+	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_bool.f->fundat.label = fun_print_bool;
+	print_bool.f->funkind = LABEL;
+	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_newline.f->fundat.label = fun_print_newline;
+	print_newline.f->funkind = LABEL;
+	return 0;
+}
+
+int stdlib_alt() {
+	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_int.f->fundat.label_alt.l = fun_print_int;
+	print_int.f->fundat.label_alt.l_a = fun_alt_print_int;
+	print_int.f->funkind = LABEL_alt;
+	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_bool.f->fundat.label_alt.l = fun_print_bool;
+	print_bool.f->fundat.label_alt.l_a = fun_alt_print_bool;
+	print_bool.f->funkind = LABEL_alt;
+	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
+	print_newline.f->fundat.label_alt.l = fun_print_newline;
+	print_newline.f->fundat.label_alt.l_a = fun_alt_print_newline;
+	print_newline.f->funkind = LABEL_alt;
+	return 0;
+}
 
 //value print_newline_ = { .f = { .fundat = { .label = fun_print_newline }, .funkind = LABEL } };

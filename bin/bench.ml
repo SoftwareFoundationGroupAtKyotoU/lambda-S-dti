@@ -16,7 +16,7 @@ let string_of_mode = function
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 100
+let itr = 1
 let files = [
   (* "church_small"; *)
   (* "church"; *)
@@ -34,10 +34,10 @@ let files = [
   (* "polypoly"; *)
 ]
 let modes = [
-  I;
-  (* C;  *)
-  I_alt;
-  (* C_alt; *)
+  (* I; *)
+  C; 
+  (* I_alt; *)
+  C_alt;
   ]   
   (* [I; C] : I と C を実行 *)
 let log_base_dir = "logs"
