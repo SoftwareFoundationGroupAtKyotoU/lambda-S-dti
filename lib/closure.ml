@@ -143,14 +143,6 @@ module KNorm = struct
         else Cls.MakePolyCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2' *)
     | LetRecExp_alt _ | AppExp_alt _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
-
-  let ini x vs = Cls.V.add x vs
-
-  let venv = 
-    ini "print_newline"
-    @@ ini "print_bool"
-    @@ ini "print_int"
-    @@ Cls.V.empty
 end
 
 module Cls = struct
@@ -232,7 +224,7 @@ end
 
 let toCls_program p alt =
   toplevel := []; tvset := TV.empty;
-  let f = KNorm.toCls_exp KNorm.venv [] p in
+  let f = KNorm.toCls_exp Stdlib.venv [] p in
   if alt then Syntax.Cls.Prog (!tvset, Cls.alt_funs !toplevel, Cls.to_alt Syntax.Cls.V.empty f)
   else Syntax.Cls.Prog (!tvset, List.rev !toplevel, f)
 

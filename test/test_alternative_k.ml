@@ -23,10 +23,10 @@ let run tyenv kfunenvs kenv program =
   let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
   try
     let kenv, _, kv = Eval.KNorm.eval_program kenv kf in
-    new_tyenv, kfunenvs, kenv, asprintf "%a" Pp.KNorm.pp_value kv
+    new_tyenv, kfunenvs, kenv, asprintf "%a" Pp.KNorm.pp_value2 kv
   with
-  | Eval.KBlame (_, Pos) -> tyenv, kfunenvs, kenv, "blame+"
-  | Eval.KBlame (_, Neg) -> tyenv, kfunenvs, kenv, "blame-"
+  | KNorm.KBlame (_, Pos) -> tyenv, kfunenvs, kenv, "blame+"
+  | KNorm.KBlame (_, Neg) -> tyenv, kfunenvs, kenv, "blame-"
 
 let test_examples =
   let test i cases =
@@ -37,7 +37,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_kvalue actual_kvalue;
            tyenv, kfunenvs, kenv
         )
-        (let _, tyenv, kfunenvs, kenv = Stdlib.pervasives in tyenv, kfunenvs, kenv)
+        (let _, tyenv, kfunenvs, kenv = Stdlib.pervasives true false false in tyenv, kfunenvs, kenv)
         cases
   in
   List.mapi test test_cases

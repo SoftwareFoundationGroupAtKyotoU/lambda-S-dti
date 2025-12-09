@@ -160,20 +160,7 @@ typedef struct dyn {
 	crc *d;
 } dyn;
 
-// typedef union uncoerced_value {
-// 	int i_b_u;
-// 	// dyn *d;
-// 	fun *f;
-// 	crc *s;
-// } uncoerced_value;
-
 typedef union value {
-	// enum valkind {
-	// 	UNCOERCED,
-	// 	COERCED,
-	// } valkind;
-	// uncoerced_value u;
-	// crc *d;
 	int i_b_u;
 	dyn *d;
 	fun *f;
@@ -217,19 +204,5 @@ crc *make_crc_inj_li(crc*);
 crc *make_crc_proj(ground_ty, ran_pol, crc*);
 crc *make_crc_fun(crc*, crc*);
 crc *make_crc_list(crc*);
-
-extern value (fun_print_int)(value, value);
-extern value (fun_print_bool)(value, value);
-extern value (fun_print_newline)(value, value);
-
-extern value (fun_alt_print_int)(value);
-extern value (fun_alt_print_bool)(value);
-extern value (fun_alt_print_newline)(value);
-
-extern value print_int;
-extern value print_bool;
-extern value print_newline;
-extern int(stdlib)();
-extern int(stdlib_alt)();
 
 #endif

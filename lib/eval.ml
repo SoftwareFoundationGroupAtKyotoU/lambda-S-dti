@@ -1,10 +1,5 @@
 open Format
 open Syntax
-open Utils.Error
-
-exception Blame of range * Syntax.polarity
-
-exception KBlame of Utils.Error.range * Syntax.polarity
 
 exception Eval_bug of string
 
@@ -427,7 +422,7 @@ module LS1 = struct
   and eval_app_val_alt ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
     | FunV_alt proc -> fst (proc ([], [])) v2
     | CoerceV (v1, CFun (s, t)) -> eval_app_val env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
-    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+    | _ -> raise @@ Eval_bug (asprintf "app: application of non procedure value: %a" Pp.LS1.pp_value v1)
 
   let eval_program ?(debug=false) env p =
     match p with
@@ -618,7 +613,7 @@ module KNorm = struct
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
     | v -> match normalize_coercion c with
       | CId _ -> v
-      | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
+      | CFail (_, (r, p), _) -> raise @@ KBlame (r, p)
       | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm.pp_value v)
   and match_mf ?(debug=false) kenv v mf = match v, mf with

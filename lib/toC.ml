@@ -818,7 +818,9 @@ let rec toC_exp ppf f = match f with
 let toC_tydecl ppf (i, { contents = opu }) =
   match opu with
   | None -> fprintf ppf "ty *_ty%d;" i
-  | Some _ -> fprintf ppf "ty *_tyfun%d;" i
+  | Some TyFun _ -> fprintf ppf "ty *_tyfun%d;" i
+  | Some TyList _ -> fprintf ppf "ty *_tylist%d;" i
+  | _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
 
 let toC_tydecls ppf l = 
   if List.length l = 0 then fprintf ppf ""
@@ -846,7 +848,14 @@ let toC_tycontent ppf (i, { contents = opu }) =
       (c_of_ty u1)
       i
       (c_of_ty u2)
-  | Some _ -> raise @@ ToC_bug "not tyfun is in tyvar option"
+  | Some TyList u ->
+    fprintf ppf "_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;"
+      i
+      i
+      i
+      i
+      (c_of_ty u)
+  | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
 
 let toC_tycontents ppf l = 
   let toC_sep ppf () = fprintf ppf "\n" in
@@ -1116,7 +1125,7 @@ let toC_program alt ppf (Prog (tvset, toplevel, f)) =
   is_main := false;
   is_alt := alt;
   fprintf ppf "%s\n%a\n%a%s%s%s%a%s"
-    "#include <gc.h>\n#include \"../lib/cast.h\"\n"
+    "#include <gc.h>\n#include \"../lib/cast.h\"\n#include \"../lib/stdlib.h\"\n"
     toC_tys (TV.elements tvset)
     toC_fundefs toplevel
     "int main() {\n"

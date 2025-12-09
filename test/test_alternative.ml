@@ -22,10 +22,10 @@ let run env tyenv program =
   (* assert (Typing.is_equal u u'''); *)
   try
     let env, _, v = Eval.LS1.eval_program env f in
-    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value v
+    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value2 v
   with
-  | Eval.Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
-  | Eval.Blame (_, Neg) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame-"
+  | LS1.Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
+  | LS1.Blame (_, Neg) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame-"
 
 let test_examples =
   let test i cases =
@@ -37,7 +37,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
            env, tyenv
         )
-        (let env, tyenv, _, _ = Stdlib.pervasives in env, tyenv)
+        (let env, tyenv, _, _ = Stdlib.pervasives true false false in env, tyenv)
         cases
   in
   List.mapi test test_cases

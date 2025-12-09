@@ -139,6 +139,102 @@ let rec pp_matchform ppf = function
       pp_matchform mf2
   | MatchWild _ -> pp_print_string ppf "_"
 
+let gt_coercion c1 c2 = match c1, c2 with
+  | (CInj _ | CProj _ | CTvInj _ | CTvProj _ | CTvProjInj _ | CId _ | CFail _ | CFun _ | CList _), CSeq _ -> true
+  | _ -> false
+
+let rec pp_coercion ppf = function
+  | CInj t -> 
+    fprintf ppf "%a!"
+      pp_tag t
+  | CProj (t, _) ->
+    fprintf ppf "%a?p"
+      pp_tag t
+  | CTvInj (_, {contents = None} as tv) ->
+    fprintf ppf "%a!"
+      pp_ty (TyVar tv)
+  | CTvProj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "%a?p"
+      pp_ty (TyVar tv)
+  | CTvProjInj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "?p%a!"
+      pp_ty (TyVar tv)
+  | CTvInj tv ->
+    fprintf ppf "|%a|!"
+      pp_ty (TyVar tv)
+  | CTvProj (tv, _) ->
+    fprintf ppf "|%a|?"
+      pp_ty (TyVar tv)
+  | CTvProjInj (tv, _) ->
+    fprintf ppf "?|%a|!"
+      pp_ty (TyVar tv)
+  | CFun (c1, c2) as c ->
+    fprintf ppf "%a->%a"
+      (with_paren (gt_coercion c c1) pp_coercion) c1
+      (with_paren (gt_coercion c c2) pp_coercion) c2
+  | CList c ->
+    fprintf ppf "[%a]"
+      pp_coercion c
+  | CId u ->
+    fprintf ppf "id{%a}" 
+      pp_ty u
+  | CSeq (c1, c2) ->
+    fprintf ppf "%a;%a"
+      pp_coercion c1
+      pp_coercion c2
+  | CFail (t1, _, t2) ->
+    fprintf ppf "⊥{%a,p,%a}"
+      pp_tag t1
+      pp_tag t2
+
+let pp_coercion2 ppf c = 
+  let pp_ty = pp_ty2 in
+  let rec pp_coercion ppf = function
+  | CInj t -> 
+    fprintf ppf "%a!"
+      pp_tag t
+  | CProj (t, _) ->
+    fprintf ppf "%a?p"
+      pp_tag t
+  | CTvInj (_, {contents = None} as tv) ->
+    fprintf ppf "%a!"
+      pp_ty (TyVar tv)
+  | CTvProj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "%a?p"
+      pp_ty (TyVar tv)
+  | CTvProjInj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "?p%a!"
+      pp_ty (TyVar tv)
+  | CTvInj tv ->
+    fprintf ppf "|%a|!"
+      pp_ty (TyVar tv)
+  | CTvProj (tv, _) ->
+    fprintf ppf "|%a|?"
+      pp_ty (TyVar tv)
+  | CTvProjInj (tv, _) ->
+    fprintf ppf "?|%a|!"
+      pp_ty (TyVar tv)
+  | CFun (c1, c2) as c ->
+    fprintf ppf "%a->%a"
+      (with_paren (gt_coercion c c1) pp_coercion) c1
+      (with_paren (gt_coercion c c2) pp_coercion) c2
+  | CList c ->
+    fprintf ppf "[%a]"
+      pp_coercion c
+  | CId u ->
+    fprintf ppf "id{%a}" 
+      pp_ty u
+  | CSeq (c1, c2) ->
+    fprintf ppf "%a;%a"
+      pp_coercion c1
+      pp_coercion c2
+  | CFail (t1, _, t2) ->
+    fprintf ppf "⊥{%a,p,%a}"
+      pp_tag t1
+      pp_tag t2
+  in
+  pp_coercion ppf c
+
 module ITGL = struct
   open Syntax.ITGL
 
@@ -236,63 +332,6 @@ module ITGL = struct
         x
         pp_exp e
 end
-
-let rec pp_coercion ppf c = match c with (* TODO : もう少し簡略化 *)
-  | CInj t -> 
-    fprintf ppf "%a!"
-      pp_tag t
-  | CProj (t, _) ->
-    fprintf ppf "%a?p"
-      pp_tag t
-  | CTvInj (_, {contents = None} as tv) ->
-    fprintf ppf "%a!"
-      pp_ty (TyVar tv)
-  | CTvProj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "%a?p"
-      pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "?p%a!"
-      pp_ty (TyVar tv)
-  | CTvInj tv ->
-    fprintf ppf "|%a|!"
-      pp_ty (TyVar tv)
-  | CTvProj (tv, _) ->
-    fprintf ppf "|%a|?"
-      pp_ty (TyVar tv)
-  | CTvProjInj (tv, _) ->
-    fprintf ppf "?|%a|!"
-      pp_ty (TyVar tv)
-    (* pp_coercion ppf (normalize_coercion c) *)
-  | CFun (CSeq _ as c1, (CSeq _ as c2)) ->
-    fprintf ppf "(%a)->(%a)"
-      pp_coercion c1
-      pp_coercion c2
-  | CFun (CSeq _ as c1, c2) ->
-    fprintf ppf "(%a)->%a"
-      pp_coercion c1
-      pp_coercion c2
-  | CFun (c1, (CSeq _ as c2)) ->
-    fprintf ppf "%a->(%a)"
-      pp_coercion c1
-      pp_coercion c2
-  | CFun (c1, c2) ->
-    fprintf ppf "%a->%a"
-      pp_coercion c1
-      pp_coercion c2
-  | CList c ->
-    fprintf ppf "[%a]"
-      pp_coercion c
-  | CId u ->
-    fprintf ppf "id{%a}" 
-      pp_ty u
-  | CSeq (c1, c2) ->
-    fprintf ppf "%a;%a"
-      pp_coercion c1
-      pp_coercion c2
-  | CFail (t1, _, t2) ->
-    fprintf ppf "⊥{%a,p,%a}"
-      pp_tag t1
-      pp_tag t2
 
 module LS = struct
   open Syntax.LS
@@ -525,7 +564,7 @@ module LS1 = struct
     | AppExp_alt (f1, f2) as f ->
       fprintf ppf "%a %a"
         (with_paren (gt_exp f f1) pp_exp) f1
-        (with_paren (gte_exp f f1) pp_exp) f2
+        (with_paren (gte_exp f f2) pp_exp) f2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf "| %a -> %a %a"
@@ -572,6 +611,24 @@ module LS1 = struct
       fprintf ppf "%a :: %a"
         (with_paren (gte_value v v1) pp_value) v1
         (with_paren (gt_value v v2) pp_value) v2
+
+  let rec pp_value2 ppf = function
+    | BoolV b -> pp_print_bool ppf b
+    | IntV i -> pp_print_int ppf i
+    | UnitV -> pp_print_string ppf "()"
+    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | CoerceV (v1, c) as v ->
+      fprintf ppf "%a<<%a>>"
+        (with_paren (gt_value v v1) pp_value2) v1
+        pp_coercion2 c
+    | CoercionV c -> 
+      fprintf ppf "%a"
+        pp_coercion2 c
+    | NilV -> pp_print_string ppf "[]"
+    | ConsV (v1, v2) as v ->
+      fprintf ppf "%a :: %a"
+        (with_paren (gte_value v v1) pp_value2) v1
+        (with_paren (gt_value v v2) pp_value2) v2
 end
 
 module KNorm = struct 
@@ -698,7 +755,6 @@ module KNorm = struct
 
   let rec pp_value ppf = function
     | IntV i -> pp_print_int ppf i
-    (* | UnitV -> pp_print_string ppf "()" *)
     | NilV -> pp_print_string ppf "[]"
     | ConsV (v1, v2) as v ->
       fprintf ppf "%a :: %a"
@@ -710,6 +766,20 @@ module KNorm = struct
         (with_paren (gt_value v v1) pp_value) v1
         pp_coercion c
     | CoercionV c -> pp_coercion ppf c
+
+  let rec pp_value2 ppf = function
+    | IntV i -> pp_print_int ppf i
+    | NilV -> pp_print_string ppf "[]"
+    | ConsV (v1, v2) as v ->
+      fprintf ppf "%a :: %a"
+        (with_paren (gte_value v v1) pp_value2) v1
+        (with_paren (gt_value v v2) pp_value2) v2
+    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | CoerceV (v1, c) as v -> 
+      fprintf ppf "%a<<%a>>"
+        (with_paren (gt_value v v1) pp_value2) v1
+        pp_coercion2 c
+    | CoercionV c -> pp_coercion2 ppf c
 end
 
 module Cls = struct

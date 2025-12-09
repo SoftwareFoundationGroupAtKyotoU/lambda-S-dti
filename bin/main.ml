@@ -5,11 +5,11 @@ exception Compile_bad of string
 exception Invalid_option of string
 
 let debug = ref false
-let ls1 = ref false
+let k = ref false
 let alt = ref false
 let compile = ref false
 
-let programs = ref [] (*Stdlibのために、要変更*)
+let programs = ref []
 
 let opt_file = ref None
 
@@ -17,57 +17,59 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
   (* Used in all modes *)
   let print f = fprintf std_formatter f in
   (* Used in debug mode *)
+  (* for ref debug, print_debug is defined in each function *)
   let print_debug f = Utils.Format.make_print_debug !debug f in
   flush stderr;
   flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then print "# @?";
   begin try
-      (* Parsing *)
-      print_debug "***** Parser *****\n";
-      let e = Parser.toplevel Lexer.main lexbuf in
-      print_debug "e: %a\n" Pp.ITGL.pp_program e;
-      (* programs := e :: !programs; *)
+    (* Parsing *)
+    let e = Parser.toplevel Lexer.main lexbuf in
+    print_debug "***** Parser *****\n";
+    print_debug "e: %a\n" Pp.ITGL.pp_program e;
 
-      (* Type inference *)
-      print_debug "***** Typing *****\n";
-      let e, u = Typing.ITGL.type_of_program tyenv e in
-      print_debug "e: %a\n" Pp.ITGL.pp_program e;
-      print_debug "U: %a\n" Pp.pp_ty u;
+    (* Type inference *)
+    print_debug "***** Typing *****\n";
+    let e, u = Typing.ITGL.type_of_program tyenv e in
+    print_debug "e: %a\n" Pp.ITGL.pp_program e;
+    print_debug "U: %a\n" Pp.pp_ty u;
 
-      (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
-       * normalized input *)
-      let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
+    (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
+     * normalized input *)
+    let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
       
-      (* Translation *)
-      print_debug "***** Coercion-insertion *****\n";
-      let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in 
-      print_debug "f: %a\n" Pp.LS.pp_program f;
-      print_debug "U: %a\n" Pp.pp_ty u';
-      assert (Typing.is_equal u u');
-      let u'' = Typing.LS.type_of_program tyenv f in
-      assert (Typing.is_equal u u'');
-      print_debug "f: %a\n" Pp.LS.pp_program f;
-      let f(*, u'''*) = 
-        if !alt then Translate.LS.translate_alt tyenv f
-        else Translate.LS.translate tyenv f 
-      in
-      (* assert (Typing.is_equal u u'''); *)
-      print_debug "f: %a\n" Pp.LS1.pp_program f;
+    (* Translation *)
+    print_debug "***** Coercion-insertion *****\n";
+    let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in 
+    (* new_tyenv include current LetDecl type, so type check and translation must be executed in old tyenv *)
+    print_debug "f: %a\n" Pp.LS.pp_program f;
+    print_debug "U: %a\n" Pp.pp_ty u';
+    assert (Typing.is_equal u u');
+    let u'' = Typing.LS.type_of_program tyenv f in
+    assert (Typing.is_equal u u'');
 
-      let (env, kfunenvs, kenv) = 
-      if !ls1 then begin
+    print_debug "***** CPS-translation *****\n";
+    let f(*, u'''*) =                                  (* TODO: tlanslation into LS1 should return type u'''? *)
+      if !alt then Translate.LS.translate_alt tyenv f
+      else Translate.LS.translate tyenv f 
+    in
+    (* assert (Typing.is_equal u u'''); *)
+    print_debug "f: %a\n" Pp.LS1.pp_program f;
+
+    let (env, kfunenvs, kenv) = 
+    if not !k then begin
       (* Evaluation *)
       print_debug "***** Eval *****\n";
       let env, x, v = Eval.LS1.eval_program env f ~debug:!debug
       in print "%a : %a = %a\n"
         pp_print_string x
         Pp.pp_ty2 u
-        Pp.LS1.pp_value v;
+        Pp.LS1.pp_value2 v;
       (env, kfunenvs, kenv)
-      end
-      else begin
+    end
+    else begin
       (* k-Normalization *)
-      print_debug "***** kNormal *****\n";
+      print_debug "***** k-Normalization *****\n";
       let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
       print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
       (* Evaluation on kNormalized term *)
@@ -77,44 +79,35 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
       print_debug "%a : %a = %a\n"
         pp_print_string kx
         Pp.pp_ty2 u
-        Pp.KNorm.pp_value kv;
+        Pp.KNorm.pp_value2 kv;
       (env, kfunenvs, kenv)
-      end in
-      read_eval_print lexbuf env new_tyenv kfunenvs kenv 
-      (* TODO: new_tyenv need? *)
-    with
-    | Failure message ->
-      print "Failure: %s\n" message;
-      Utils.Lexing.flush_input lexbuf
-    | Parser.Error -> (* Menhir *)
-      let token = Lexing.lexeme lexbuf in
-      print "Parser.Error: unexpected token %s\n" token;
-      Utils.Lexing.flush_input lexbuf
-    | Typing.Type_error message ->
-      print "Type_error: %s\n" message
-    | Eval.Blame (r, p) -> begin
-        match p with
-        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
-        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
-      end
-    | Eval.KBlame (r, p) -> begin
-        match p with
-        | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
-        | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
-      end
+    end in
+    read_eval_print lexbuf env new_tyenv kfunenvs kenv 
+  with
+  | Failure message ->
+    print "Failure: %s\n" message;
+    Utils.Lexing.flush_input lexbuf
+  | Parser.Error -> (* Menhir *)
+    let token = Lexing.lexeme lexbuf in
+    print "Parser.Error: unexpected token %s\n" token;
+    Utils.Lexing.flush_input lexbuf
+  | Typing.Type_error message ->
+    print "Type_error: %s\n" message
+  | Syntax.LS1.Blame (r, p) | Syntax.KNorm.KBlame (r, p) -> 
+    begin match p with
+    | Pos -> print "Blame on the expression side:\n%a\n" Utils.Error.pp_range r
+    | Neg -> print "Blame on the environment side:\n%a\n" Utils.Error.pp_range r
+    end
   end;
-  (match !opt_file with
-    | None -> (*programs := [];*) read_eval_print lexbuf env tyenv kfunenvs kenv
-    | Some _ ->())
+  read_eval_print lexbuf env tyenv kfunenvs kenv
 
-let compile_process progs _ tyenv kfunenvs _ = 
-  (* Used in all modes *)
-  (*let print f = fprintf std_formatter f in*)
+let compile_process progs tyenv kfunenvs = 
   (* Used in debug mode *)
   let print_debug f = Utils.Format.make_print_debug !debug f in
   let rec to_exp ps = match ps with
     | Syntax.ITGL.Exp e :: [] -> e
-    | Syntax.ITGL.LetDecl (x, e) :: t -> Syntax.ITGL.LetExp (Utils.Error.dummy_range, x, e, to_exp t)
+    | Syntax.ITGL.LetDecl (x, e) :: [] -> Syntax.ITGL.LetExp (Syntax.ITGL.range_of_exp e, x, e, UConst Utils.Error.dummy_range)
+    | Syntax.ITGL.LetDecl (x, e) :: t -> Syntax.ITGL.LetExp (Syntax.ITGL.range_of_exp e, x, e, to_exp t)
     | _ -> raise @@ Compile_bad "exp appear in not only last"
   in let e = Syntax.ITGL.Exp (to_exp (List.rev progs)) in
   begin try
@@ -131,25 +124,20 @@ let compile_process progs _ tyenv kfunenvs _ =
     let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
 
     (* Translation *)
-    print_debug "***** Cast-insertion *****\n";
+    print_debug "***** Coercion-insertion *****\n";
     let _, f, u' = Translate.ITGL.translate tyenv e in
     print_debug "f: %a\n" Pp.LS.pp_program f;
     print_debug "U: %a\n" Pp.pp_ty u';
     assert (Typing.is_equal u u');
     let u'' = Typing.LS.type_of_program tyenv f in
     assert (Typing.is_equal u u'');
-    print_debug "f: %a\n" Pp.LS.pp_program f;
-      (* let f(*, u'''*) = 
-        if !alt then Translate.LS.translate_alt tyenv f
-        else Translate.LS.translate tyenv f 
-      in *)
-      (* assert (Typing.is_equal u u'''); *)
 
+    print_debug "***** CPS-translation *****\n";
     let f = Translate.LS.translate tyenv f in
     print_debug "f: %a\n" Pp.LS1.pp_program f;
 
     (* k-Normalization *)
-    print_debug "***** kNormal *****\n";
+    print_debug "***** kNormalization *****\n";
     let kf, _ = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
     print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
 
@@ -170,7 +158,7 @@ let compile_process progs _ tyenv kfunenvs _ =
   | Typing.Type_error message -> raise @@ Typing.Type_error message
   end
 
-let rec read_compile lexbuf env tyenv kfunenvs kenv = 
+let rec read_compile lexbuf tyenv kfunenvs =
   (* Used in all modes *)
   let print f = fprintf std_formatter f in
   (* Used in debug mode *)
@@ -178,78 +166,94 @@ let rec read_compile lexbuf env tyenv kfunenvs kenv =
   flush stderr;
   flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then print "# @?";
-  try
-    print_debug "***** Parser *****\n";
+  begin try
     let e = Parser.toplevel Lexer.main lexbuf in
+    print_debug "***** Parser *****\n";
     print_debug "e: %a\n" Pp.ITGL.pp_program e;
     programs := e :: !programs;
 
     match e, !opt_file with
     | Syntax.ITGL.Exp _, None -> 
-        let c_code = compile_process !programs env tyenv kfunenvs kenv in
-        (* Printf.printf "%s\n" c_code; *)
-        programs := [];
-        let oc = open_out "result_C/stdout.c" in
-        Printf.fprintf oc "%s" c_code;
-        close_out oc;
-        let _ = Sys.command "gcc result_C/stdout.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -O2 -g3" in
-        let _ = Sys.command "result/stdout.out" in
-        print "\n";
-        read_compile lexbuf env (*new_*)tyenv kfunenvs kenv
+      let c_code = compile_process !programs tyenv kfunenvs in
+      programs := [];
+      flush stderr;
+      let oc = open_out "result_C/stdout.c" in
+      Printf.fprintf oc "%s" c_code;
+      close_out oc;
+      let _ = Sys.command "gcc result_C/stdout.c lib/cast.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -O2 -g3" in
+      let _ = Sys.command "result/stdout.out" in
+      print_debug "\n";
+      read_compile lexbuf tyenv kfunenvs
     | Syntax.ITGL.Exp _, Some f -> 
-        let c_code = compile_process !programs env tyenv kfunenvs kenv in
-        programs := [];
-        let oc = open_out ("../result_C/"^f^"_out.c") in
-        Printf.fprintf oc "%s" c_code;
-        close_out oc;
-        let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
-        let _ = Sys.command ("../result/"^f^".out") in
-        print "\n"
-    | _, None -> read_compile lexbuf env (*new_*)tyenv kfunenvs kenv
+      let c_code = compile_process !programs tyenv kfunenvs in
+      programs := [];
+      flush stderr;
+      let oc = open_out ("../result_C/"^f^"_out.c") in
+      Printf.fprintf oc "%s" c_code;
+      close_out oc;
+      let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/cast.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
+      let _ = Sys.command ("../result/"^f^".out") in
+      ()
+    | _, None -> read_compile lexbuf tyenv kfunenvs
     | _, Some f ->
-        if lexbuf.lex_eof_reached then
-          let c_code = compile_process !programs env tyenv kfunenvs kenv in
+      begin try 
+        read_compile lexbuf tyenv kfunenvs
+      with
+      | Lexer.Eof ->
+        if !programs <> [] then
+          let c_code = compile_process !programs tyenv kfunenvs in
+          flush stderr;
+          programs := [];
           let oc = open_out ("../result/"^f^"_out.c") in
           Printf.fprintf oc "%s" c_code;
-          close_out oc
+          close_out oc;
         else 
-          read_compile lexbuf env (*new_*)tyenv kfunenvs kenv
+          raise Lexer.Eof
+      end
   with
-    | Failure message ->
-      print "Failure: %s\n" message;
-      Utils.Lexing.flush_input lexbuf
-    | Parser.Error -> (* Menhir *)
-      let token = Lexing.lexeme lexbuf in
-      print "Parser.Error: unexpected token %s\n" token;
-      Utils.Lexing.flush_input lexbuf
-    | Typing.Type_error message ->
-      print "Type_error: %s\n" message
-    | ToC.ToC_error message ->
-      print "%s\n" message
+  | Failure message ->
+    fprintf err_formatter "Failure: %s\n" message;
+    flush stderr;
+    Utils.Lexing.flush_input lexbuf;
+  | Parser.Error -> (* Menhir *)
+    let token = Lexing.lexeme lexbuf in
+    fprintf err_formatter "Parser.Error: unexpected token %s\n" token;
+    flush stderr;
+    Utils.Lexing.flush_input lexbuf;
+  | Typing.Type_error message ->
+    fprintf err_formatter "Type_error: %s\n" message;
+    flush stderr;
+  | ToC.ToC_error message ->
+    fprintf err_formatter "%s\n" message;
+    flush stderr;
+  end;
+  read_compile lexbuf tyenv kfunenvs
 
 let start file =
   let print_debug f = Utils.Format.make_print_debug !debug f in
   opt_file := file;
   print_debug "***** Lexer *****\n";
   let channel, lexbuf = match file with
-    | None ->
-        print_debug "Reading from stdin\n%!";
-        stdin, Lexing.from_channel stdin
-    | Some f ->
-        print_debug "Reading from file \"%s\"\n%!" f;
-        let channel = open_in f in
-        let lexbuf = Lexing.from_channel channel in
-        lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = f};
-        channel, lexbuf
+  | None ->
+    print_debug "Reading from stdin\n%!";
+    stdin, Lexing.from_channel stdin
+  | Some f ->
+    print_debug "Reading from file \"%s\"\n%!" f;
+    let channel = open_in f in
+    let lexbuf = Lexing.from_channel channel in
+    lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = f};
+    channel, lexbuf
   in
-  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives in
+  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives !alt !debug !compile in
   try
-    if !compile && !ls1 then raise @@ Invalid_option "-c and -LS1 are imcompatible"
-    else if !compile then read_compile lexbuf env tyenv kfunenvs kenv
-    else read_eval_print lexbuf env tyenv kfunenvs kenv
+    if !compile then
+      read_compile lexbuf tyenv kfunenvs
+    else 
+      read_eval_print lexbuf env tyenv kfunenvs kenv
   with
     | Lexer.Eof ->
       (* Exiting normally *)
+      (* print_debug "end of file!\n"; *)
       close_in channel
     | Stdlib.Stdlib_exit i ->
       (* Exiting with the status code *)
@@ -270,14 +274,14 @@ let () =
   let file = ref None in
   let options = Arg.align [
       ("-d", Arg.Set debug, " Enable debug mode");
-      ("-LS1", Arg.Set ls1, " Evaluate on LS1");
+      ("-k", Arg.Set k, " Evaluate on k-Normal form");
       ("-alt", Arg.Set alt, " Use alternative translation");
       ("-c", Arg.Set compile, " Compile the program to C code and run it");
     ]
   in
   let parse_argv arg = match !file with
-    | None -> file := Some arg
-    | Some _ -> raise @@ Arg.Bad "error: only one file can be specified"
+  | None -> file := Some arg
+  | Some _ -> raise @@ Arg.Bad "error: only one file can be specified"
   in
   Arg.parse options parse_argv usage;
   start !file

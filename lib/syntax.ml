@@ -393,6 +393,8 @@ module LS1 = struct
     | NilV
     | ConsV of value * value
     | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
+  
+  exception Blame of range * polarity
 end
 
 module KNorm = struct
@@ -437,6 +439,8 @@ module KNorm = struct
     | CoerceV of value * coercion
     | CoercionV of coercion
     | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
+
+  exception KBlame of range * polarity
 end
 
 module Cls = struct

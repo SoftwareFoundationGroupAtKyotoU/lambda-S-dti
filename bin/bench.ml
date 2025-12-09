@@ -16,7 +16,7 @@ let string_of_mode = function
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 1
+let itr = 100
 let files = [
   (* "church_small"; *)
   (* "church"; *)
@@ -130,7 +130,7 @@ module Fast_alloc = struct
     (* Blame 等は事前検出してスキップ *)
     let ok =
       try thunk (); true with
-      | Eval.Blame _ ->
+      | Syntax.LS1.Blame _ ->
           log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (C)@."; false
       (* | LambdaCSPolyMP.EvalS.Blame _ ->
           log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (S)@."; false *)
@@ -198,7 +198,7 @@ module CB = struct
     (* プレフライトで例外検出してスキップ *)
     let ok =
       try thunk (); true with
-      | Eval.Blame _ ->
+      | Syntax.LS1.Blame _ ->
           log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (C)@."; false
       (* | LambdaCSPolyMP.EvalS.Blame _ ->
           log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (S)@."; false *)
@@ -330,7 +330,7 @@ let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
       (* Fast_alloc を呼びなおして値を作る（ログは emit_text_log のときだけ） *)
       let ok =
         try thunk (); true with
-        | Eval.Blame _ -> false
+        | Syntax.LS1.Blame _ -> false
         (* | LambdaCSPolyMP.EvalS.Blame _ -> false *)
         | _ -> false
       in
@@ -619,7 +619,7 @@ let bench mode fmt itr decl =
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
-    let _, _, kfunenvs, _ = Stdlib.pervasives in
+    let _, _, kfunenvs, _ = Stdlib.pervasives false false true in
     let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
     let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
     let p = Closure.toCls_program p false in
@@ -640,7 +640,7 @@ let bench mode fmt itr decl =
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
-    let _, _, kfunenvs, _ = Stdlib.pervasives in
+    let _, _, kfunenvs, _ = Stdlib.pervasives true false true in
     let kf, _ = KNormal.kNorm_funs kfunenvs translated ~debug:false in
     let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
     let p = Closure.toCls_program p true in
@@ -754,7 +754,7 @@ let bench_file_mode
         try bench mode fmt itr decl
         with
         (* | LambdaCSPolyMP.EvalC.Blame _ *)
-        | Eval.Blame _ -> Format.fprintf fmt "blame"; []
+        | Syntax.LS1.Blame _ -> Format.fprintf fmt "blame"; []
         | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
         | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
         | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
@@ -872,7 +872,7 @@ let bench_file_mode
           (Pp.print_coercion_type tyenv_e) cty2; *)
     | Failure message -> Format.fprintf fmt "Failure: %s\n" message
     | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
-    | Eval.Blame _ -> Format.fprintf fmt "evaluation blame \n"
+    | Syntax.LS1.Blame _ -> Format.fprintf fmt "evaluation blame \n"
     | Eval.Eval_bug _ -> Format.fprintf fmt "evaluation bug!! \n"
     | _ -> Format.fprintf fmt "some error was happened\n"
   );

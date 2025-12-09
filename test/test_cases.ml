@@ -2,7 +2,7 @@ let tests = [
   (* Constants *)
   ["1", "int", "1", "1"];
   ["true", "bool", "true", "1"];
-  ["()", "unit", "()", "()"];
+  ["()", "unit", "()", "0"];
   (* Unary operators *)
   ["-1", "int", "-1", "-1"];
   ["--2", "int", "2", "2"];
@@ -34,33 +34,33 @@ let tests = [
   (* application *)
   ["(fun x -> x + 1) 3", "int", "4", "4"];
   ["(fun (x:?) -> x + 1) 3", "int", "4", "4"];
-  (* ["(fun (x:?) -> x + 1) false", "int", "blame+", "blame+"]; *)
+  ["(fun (x:?) -> x + 1) false", "int", "blame+", "blame+"];
   ["(fun x y -> x + y) 3 4", "int", "7", "7"];
   ["(fun (x:?) -> x 2) (fun y -> y)", "?", "2<<id{int};int!>>", "2<<id{int};int!>>"];
   ["(fun (x:?) -> x 2) (fun (y: int) -> y)", "?", "2<<id{int};int!>>", "2<<id{int};int!>>"];
   ["(fun (x:?) -> x 2) (fun y -> true)", "?", "true<<id{bool};bool!>>", "1<<id{bool};bool!>>"];
-  (* ["(fun (x:?) -> x) (fun y -> true)", "?", "<fun><<id{? -> ?};(? -> ?)!>>", "<fun><<id{? -> ?};(? -> ?)!>>"]; *)
+  ["(fun (x:?) -> x) (fun y -> true)", "?", "<fun><<'a?p->(id{bool};bool!);(? -> ?)!>>", "<fun><<'a?p->(id{bool};bool!);(? -> ?)!>>"];
   ["(fun x -> 1 + ((fun (y:?) -> y) x)) 2", "int", "3", "3"];
   (* sequence *)
   ["(); 1 + 2", "int", "3", "3"];
   ["(():?); 1 + 2", "int", "3", "3"];
   (* dynamic type inference *)
   ["(fun (f:?) -> f 2) (fun y -> y)", "?", "2<<id{int};int!>>", "2<<id{int};int!>>"];
-  (* *) ["(fun (f:?) -> f 2) ((fun x -> x) ((fun (y:?) -> y) (fun z -> z + 1)))", "?", "3<<id{int};int!>>", "3<<id{int};int!>>"];
+  ["(fun (f:?) -> f 2) ((fun x -> x) ((fun (y:?) -> y) (fun z -> z + 1)))", "?", "3<<id{int};int!>>", "3<<id{int};int!>>"];
   ["(fun (x:?) -> (fun y -> y) x) (fun (z:?) -> z + 1) 3", "int", "4", "4"];
   ["(fun x -> x) ((fun (y:?) -> y) (fun x -> x + 1)) 1", "int", "2", "2"];
   ["(fun (f:?) -> f (); f true) (fun (x:?) -> x)", "?", "true<<id{bool};bool!>>", "1<<id{bool};bool!>>"];
-  (* ["(fun (f:?) -> f (); f true) (fun x -> x)", "?", "blame-", "blame-"]; *)
+  ["(fun (f:?) -> f (); f true) (fun x -> x)", "?", "blame-", "blame-"];
   ["(fun (f:?) -> let d = f 2 in f true) (fun (x:?) -> x)", "?", "true<<id{bool};bool!>>", "1<<id{bool};bool!>>"];
-  (* ["(fun (f:?) -> let d = f 2 in f true) (fun x -> x)", "?", "blame-", "blame-"]; *)
+  ["(fun (f:?) -> let d = f 2 in f true) (fun x -> x)", "?", "blame-", "blame-"];
   (* let-poly *)
   ["let s = fun x y z -> x z (y z) in s", "('a -> 'b -> 'c) -> ('a -> 'b) -> 'a -> 'c", "<fun>", "<fun>"];
   ["let k = fun x y -> x in k", "'a -> 'b -> 'a", "<fun>", "<fun>"];
   ["let s = fun x y z -> x z (y z) in let k = fun x y -> x in s k k", "'a -> 'a", "<fun>", "<fun>"];
   ["let s = fun x y z -> x z (y z) in let k = fun x y -> x in s k k 1", "int", "1", "1"];
   ["let s = fun (x:?) (y:?) (z:?) -> x z (y z) in let k = fun x y -> x in s k k 1", "?", "1<<id{int};int!>>", "1<<id{int};int!>>"];
-  (* ["let succ x = x + 1 in let twice f x = f (f x) in twice succ 1", "int", "3", "3"]; *)
-  (* ["let id x = x in let did (x:?) = x in let succ x = x + 1 in (fun (x:?) -> x 1) (id (did succ))", "?", "2: int => ?", "2: int => ?"]; *)
+  ["let succ x = x + 1 in let twice f x = f (f x) in twice succ 1", "int", "3", "3"];
+  ["let id x = x in let did (x:?) = x in let succ x = x + 1 in (fun (x:?) -> x 1) (id (did succ))", "?", "2<<id{int};int!>>", "2<<id{int};int!>>"];
   ["let id x = x in id (); id true", "bool", "true", "1"];
   ["let g = fun x -> ((fun y -> y) : ?->?) x in g (); g 3", "?", "3<<id{int};int!>>", "3<<id{int};int!>>"];
   ["let f = fun x -> 1 + ((fun (y:?) -> y) x) in 2", "int", "2", "2"];
@@ -77,13 +77,13 @@ let tests = [
   ];
   [
     "let twice f x = f (f x)", "('a -> 'a) -> 'a -> 'a", "<fun>", "<fun>";
-    (* "twice succ 3", "int", "5", "5";
-    "twice not true", "bool", "true", "1"; *)
+    "twice succ 3", "int", "5", "5";
+    "twice not true", "bool", "true", "1";
   ];
   [
     "let dtwice (f:?) (x:?) = f (f x)", "? -> ? -> ?", "<fun>", "<fun>";
-    (* "dtwice succ 3", "?", "5: int => ?", "5: int => ?";
-    "dtwice not true", "?", "true: bool => ?", "1: bool => ?"; *)
+    "dtwice succ 3", "?", "5<<id{int};int!>>", "5<<id{int};int!>>";
+    "dtwice not true", "?", "true<<id{bool};bool!>>", "1<<id{bool};bool!>>";
   ];
   [
     "let f x: 'a = x", "'a -> 'a", "<fun>", "<fun>";
@@ -132,13 +132,13 @@ let tests = [
     "g true", "bool", "true", "1";
     "g", "'a -> 'a", "<fun>", "<fun>";
   ];
-  (* [
-    "let f: 'a -> 'a -> ? = fun x y -> 0", "'a -> 'a -> ?", "<fun>", "<fun>";
+  [
+    "let f: 'a -> 'a -> ? = fun x y -> 0", "'a -> 'a -> ?", "<fun><<id{'a}->id{'a}->(id{int};int!)>>", "<fun><<id{'a}->id{'a}->(id{int};int!)>>";
     "let g1 x = ((fun y -> y) : ? -> ?) x", "'a -> ?", "<fun>", "<fun>";
     "fun x y -> f (g1 x) (g1 y)", "'a -> 'b -> ?", "<fun>", "<fun>";
     "let g2 (x: 'a) = ((fun y -> y) : ? -> ?) x", "'a -> ?", "<fun>", "<fun>";
     "fun x y -> f (g2 x) (g2 y)", "'a -> 'b -> ?", "<fun>", "<fun>";
-  ]; *)
+  ];
   [
     "let f = ((((fun x -> x): 'a ->'a): ?): 'a->'a)", "'a -> 'a", "<fun>", "<fun>";
     "f 3", "int", "3", "3";
@@ -164,8 +164,8 @@ let tests = [
   ["let rec f n (x:?) = if n <= 0 then x else f 0 x in f 10 true", "bool", "true", "1"];
   ["let rec id x = x in id (); id true", "bool", "true", "1"];
   (* stdlib *)
-  (* ["succ 2", "int", "3", "3"];
-  ["prec 0", "int", "-1", "-1"]; *)
+  ["succ 2", "int", "3", "3"];
+  ["prec 0", "int", "-1", "-1"];
   (* alpha, beta *)
   ["let x = 2 in let x = 4 in x + x", "int", "8", "8"];
   ["let x = 2 in let y = x in (fun y -> y) y", "int", "2", "2"];
