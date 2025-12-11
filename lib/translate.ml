@@ -337,7 +337,7 @@ module LS = struct
     | ConsExp (f1, f2) ->
       LS1.CAppExp (LS1.ConsExp (translate_exp_alt env f1, translate_exp_alt env f2), k)
 
-let translate_alt env = function
+  let translate_alt env = function
     | Exp f -> LS1.Exp (translate_exp_alt env f)
     | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp_alt env f)
 end

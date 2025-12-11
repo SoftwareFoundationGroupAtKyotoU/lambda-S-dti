@@ -37,7 +37,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
            env, tyenv
         )
-        (let env, tyenv, _, _ = Stdlib.pervasives true false false in env, tyenv)
+        (let env, tyenv, _, _ = Stdlib.pervasives ~alt:true ~debug:false ~compile:false in env, tyenv)
         cases
   in
   List.mapi test test_cases

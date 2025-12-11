@@ -865,11 +865,13 @@ let toC_tycontents ppf l =
 
 (*型定義全体を記述*)
 let toC_tys ppf l =
-  fprintf ppf "%a%s%a%s"
-    toC_tydecls l
-    "int set_tys() {\n" (*Cではset_tys()関数内で型の定義を行う．main関数で最初に呼び出す*)
-    toC_tycontents l
-    "return 0;\n}\n"
+  if l = [] then fprintf ppf ""
+  else 
+    fprintf ppf "%a%s%a%s"
+      toC_tydecls l
+      "int set_tys() {\n" (*Cではset_tys()関数内で型の定義を行う．main関数で最初に呼び出す*)
+      toC_tycontents l
+      "return 0;\n}\n\n"
 
 (* ================================ *)
 
@@ -1108,7 +1110,7 @@ let toC_fundef ppf fundef = match fundef with
   
 (*関数定義全体を記述*)
 let toC_fundefs ppf toplevel =
-  (if List.length toplevel = 0 then pp_print_string ppf ""
+  (if toplevel = [] then pp_print_string ppf ""
   else let toC_sep ppf () = fprintf ppf "\n\n" in
   let toC_list ppf labels = pp_print_list toC_label ppf labels ~pp_sep:toC_sep in
   fprintf ppf "%a\n\n"
@@ -1124,12 +1126,12 @@ let toC_fundefs ppf toplevel =
 let toC_program alt ppf (Prog (tvset, toplevel, f)) = 
   is_main := false;
   is_alt := alt;
-  fprintf ppf "%s\n%a\n%a%s%s%s%a%s"
+  fprintf ppf "%s\n%a%a%s%s%s%a%s"
     "#include <gc.h>\n#include \"../lib/cast.h\"\n#include \"../lib/stdlib.h\"\n"
     toC_tys (TV.elements tvset)
     toC_fundefs toplevel
     "int main() {\n"
     (if !is_alt then "stdlib_alt();\n" else "stdlib();\n")
-    "set_tys();\n"
+    (if TV.is_empty tvset then "" else "set_tys();\n")
     toC_exp f
     "}"

@@ -227,7 +227,7 @@ module KNorm = struct
       )
 end
 
-let pervasives alt debug compile = 
+let pervasives ~alt:alt ~debug:debug ~compile:compile = 
   is_alt := alt;
   is_debug := debug;
   let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty), Environment.empty in

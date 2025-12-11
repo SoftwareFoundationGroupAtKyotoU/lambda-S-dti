@@ -13,75 +13,120 @@ let programs = ref []
 
 let opt_file = ref None
 
+let print f = fprintf std_formatter f
+let print_debug f = Utils.Format.make_print_debug !debug f
+
+let parse_print lexbuf = 
+  let e = Parser.toplevel Lexer.main lexbuf in
+  (* NOTE: Lexer.Eof arises here, and text below will not shown *)
+  print_debug "***** Parser *****\n";
+  print_debug "e: %a\n" Pp.ITGL.pp_program e;
+  e
+
+let typing_ITGL_print tyenv e =
+  print_debug "***** Typing *****\n";
+  let e, u = Typing.ITGL.type_of_program tyenv e in
+  print_debug "e: %a\n" Pp.ITGL.pp_program e;
+  print_debug "U: %a\n" Pp.pp_ty u;
+  e, u
+
+let translation_LS_print tyenv e =
+  print_debug "***** Coercion-insertion *****\n";
+  let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in 
+  (* NOTE: new_tyenv include current LetDecl type, so type check and translation must be executed in old tyenv *)
+  print_debug "f: %a\n" Pp.LS.pp_program f;
+  print_debug "U: %a\n" Pp.pp_ty u';
+  new_tyenv, f, u'
+
+let translation_LS1_print ~alt tyenv f =
+  print_debug "***** CPS-translation *****\n";
+  let f(*, u'''*) =                                  (* TODO: tlanslation into LS1 should return type u'''? *)
+    if alt then Translate.LS.translate_alt tyenv f
+    else Translate.LS.translate tyenv f 
+  in print_debug "f: %a\n" Pp.LS1.pp_program f;
+  f(*, u'''*) 
+  
+let kNormal_print (tvsenv, alphaenv, betaenv) f = 
+  print_debug "***** k-Normalization *****\n";
+  let f, alphaenv = KNormal.LS1.alpha_program alphaenv f in
+  print_debug "alpha: %a\n" Pp.LS1.pp_program f;
+  let f, tvsenv = KNormal.LS1.k_normalize_program tvsenv f in
+  print_debug "k_normalize: %a\n" Pp.KNorm.pp_program f;
+  let rec iter betaenv f =
+    let fbeta, betaenv = KNormal.KNorm.beta_program betaenv f in
+    let fassoc = KNormal.KNorm.assoc_program fbeta in
+    if f = fassoc then f, (tvsenv, alphaenv, betaenv)
+    else 
+      (print_debug "beta: %a\n" Pp.KNorm.pp_program fbeta;
+      print_debug "assoc: %a\n" Pp.KNorm.pp_program fassoc;
+      iter betaenv fassoc)
+  in let kf, kfunenvs = iter betaenv f in
+  print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
+  kf, kfunenvs
+
+let eval_print env f u =
+  print_debug "***** Eval *****\n";
+  let env, x, v = Eval.LS1.eval_program env f ~debug:!debug in 
+  print "%a : %a = %a\n"
+    pp_print_string x
+    Pp.pp_ty2 u
+    Pp.LS1.pp_value2 v;
+  env 
+
+let keval_print kenv kf u =
+  print_debug "***** k-Eval *****\n";
+  let kenv, kx, kv = Eval.KNorm.eval_program kenv kf ~debug:!debug in
+  print_debug "k-Normal :: ";
+  print "%a : %a = %a\n"
+    pp_print_string kx
+    Pp.pp_ty2 u
+    Pp.KNorm.pp_value2 kv;
+  kenv
+
+let closure_print ~alt kf venv = 
+  print_debug "***** Closure *****\n";
+  let p = Closure.toCls_program kf venv ~alt:alt in
+  print_debug "%a\n" Pp.Cls.pp_program p;
+  p
+
+let toC_print ~alt p = 
+  print_debug "***** toC *****\n";
+  let toC_program = ToC.toC_program alt in
+  let c_code = asprintf "%a" toC_program p in
+  print_debug "%s\n" c_code;
+  c_code
+
 let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
-  (* Used in all modes *)
-  let print f = fprintf std_formatter f in
-  (* Used in debug mode *)
-  (* for ref debug, print_debug is defined in each function *)
-  let print_debug f = Utils.Format.make_print_debug !debug f in
   flush stderr;
   flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then print "# @?";
   begin try
     (* Parsing *)
-    let e = Parser.toplevel Lexer.main lexbuf in
-    print_debug "***** Parser *****\n";
-    print_debug "e: %a\n" Pp.ITGL.pp_program e;
-
+    let e = parse_print lexbuf in
     (* Type inference *)
-    print_debug "***** Typing *****\n";
-    let e, u = Typing.ITGL.type_of_program tyenv e in
-    print_debug "e: %a\n" Pp.ITGL.pp_program e;
-    print_debug "U: %a\n" Pp.pp_ty u;
-
-    (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
-     * normalized input *)
+    let e, u = typing_ITGL_print tyenv e in
+    (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect normalized input *)
     let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-      
-    (* Translation *)
-    print_debug "***** Coercion-insertion *****\n";
-    let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in 
-    (* new_tyenv include current LetDecl type, so type check and translation must be executed in old tyenv *)
-    print_debug "f: %a\n" Pp.LS.pp_program f;
-    print_debug "U: %a\n" Pp.pp_ty u';
+    (* Coercion-insertion *)
+    let new_tyenv, f, u' = translation_LS_print tyenv e in
     assert (Typing.is_equal u u');
     let u'' = Typing.LS.type_of_program tyenv f in
     assert (Typing.is_equal u u'');
-
-    print_debug "***** CPS-translation *****\n";
-    let f(*, u'''*) =                                  (* TODO: tlanslation into LS1 should return type u'''? *)
-      if !alt then Translate.LS.translate_alt tyenv f
-      else Translate.LS.translate tyenv f 
-    in
+    (* CPS-Translation *)
+    let f(*, u'''*) = translation_LS1_print ~alt:!alt tyenv f in
     (* assert (Typing.is_equal u u'''); *)
-    print_debug "f: %a\n" Pp.LS1.pp_program f;
-
-    let (env, kfunenvs, kenv) = 
-    if not !k then begin
+    let env, kfunenvs, kenv = 
+    if not !k then
       (* Evaluation *)
-      print_debug "***** Eval *****\n";
-      let env, x, v = Eval.LS1.eval_program env f ~debug:!debug
-      in print "%a : %a = %a\n"
-        pp_print_string x
-        Pp.pp_ty2 u
-        Pp.LS1.pp_value2 v;
-      (env, kfunenvs, kenv)
-    end
-    else begin
+      let env = eval_print env f u in
+      env, kfunenvs, kenv
+    else
       (* k-Normalization *)
-      print_debug "***** k-Normalization *****\n";
-      let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
-      print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
+      let kf, kfunenvs = kNormal_print kfunenvs f in
       (* Evaluation on kNormalized term *)
-      print_debug "***** Eval *****\n";
-      let kenv, kx, kv = Eval.KNorm.eval_program kenv kf ~debug:!debug in
-      print_debug "k-Normal :: ";
-      print_debug "%a : %a = %a\n"
-        pp_print_string kx
-        Pp.pp_ty2 u
-        Pp.KNorm.pp_value2 kv;
-      (env, kfunenvs, kenv)
-    end in
+      let kenv = keval_print kenv kf u in
+      env, kfunenvs, kenv
+    in
     read_eval_print lexbuf env new_tyenv kfunenvs kenv 
   with
   | Failure message ->
@@ -102,80 +147,49 @@ let rec read_eval_print lexbuf env tyenv kfunenvs kenv =
   read_eval_print lexbuf env tyenv kfunenvs kenv
 
 let compile_process progs tyenv kfunenvs = 
-  (* Used in debug mode *)
-  let print_debug f = Utils.Format.make_print_debug !debug f in
   let rec to_exp ps = match ps with
     | Syntax.ITGL.Exp e :: [] -> e
     | Syntax.ITGL.LetDecl (x, e) :: [] -> Syntax.ITGL.LetExp (Syntax.ITGL.range_of_exp e, x, e, UConst Utils.Error.dummy_range)
     | Syntax.ITGL.LetDecl (x, e) :: t -> Syntax.ITGL.LetExp (Syntax.ITGL.range_of_exp e, x, e, to_exp t)
     | _ -> raise @@ Compile_bad "exp appear in not only last"
   in let e = Syntax.ITGL.Exp (to_exp (List.rev progs)) in
+  programs := [];
   begin try
-    print_debug "\n========== Compilation ==========\n";
-
+    print_debug "========== Compilation ==========\n";
     (* Type inference *)
-    print_debug "***** Typing *****\n";
-    let e, u = Typing.ITGL.type_of_program tyenv e in
-    print_debug "e: %a\n" Pp.ITGL.pp_program e;
-    print_debug "U: %a\n" Pp.pp_ty u;
-
+    let e, u = typing_ITGL_print tyenv e in
     (* NOTE: Typing.ITGL.translate and Typing.LS.type_of_program expect
      * normalized input *)
     let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-
-    (* Translation *)
-    print_debug "***** Coercion-insertion *****\n";
-    let _, f, u' = Translate.ITGL.translate tyenv e in
-    print_debug "f: %a\n" Pp.LS.pp_program f;
-    print_debug "U: %a\n" Pp.pp_ty u';
+    (* Coercion-insertion *)
+    let _, f, u' = translation_LS_print tyenv e in
     assert (Typing.is_equal u u');
     let u'' = Typing.LS.type_of_program tyenv f in
     assert (Typing.is_equal u u'');
-
-    print_debug "***** CPS-translation *****\n";
-    let f = Translate.LS.translate tyenv f in
-    print_debug "f: %a\n" Pp.LS1.pp_program f;
-
+    (* CPS-translation *)
+    (* NOTE: when generating C, alternative translation is done in closure conversion *)
+    let f = translation_LS1_print ~alt:false tyenv f in
     (* k-Normalization *)
-    print_debug "***** kNormalization *****\n";
-    let kf, _ = KNormal.kNorm_funs kfunenvs f ~debug:!debug in
-    print_debug "kf: %a\n" Pp.KNorm.pp_program kf;
-
-    let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Compile_bad "kf is not exp" in
-
-    print_debug "***** Closure *****\n";
-    let p = Closure.toCls_program p !alt in
-    print_debug "%a\n" Pp.Cls.pp_program p;
-
-    print_debug "***** toC *****\n";
-    let toC_program = ToC.toC_program !alt in
-    let c_code = asprintf "%a" toC_program p in
-    print_debug "%s\n" c_code;
+    let kf, _ = kNormal_print kfunenvs f in
+    (* Closure-conversion *)
+    let p = closure_print ~alt:!alt kf Stdlib.venv in
+    let c_code = toC_print ~alt:!alt p in
     c_code
-    
   with
   | Failure message -> raise @@ Failure message
   | Typing.Type_error message -> raise @@ Typing.Type_error message
   end
 
 let rec read_compile lexbuf tyenv kfunenvs =
-  (* Used in all modes *)
-  let print f = fprintf std_formatter f in
-  (* Used in debug mode *)
-  let print_debug f = Utils.Format.make_print_debug !debug f in
   flush stderr;
   flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then print "# @?";
   begin try
-    let e = Parser.toplevel Lexer.main lexbuf in
-    print_debug "***** Parser *****\n";
-    print_debug "e: %a\n" Pp.ITGL.pp_program e;
+    let e = parse_print lexbuf in
     programs := e :: !programs;
-
     match e, !opt_file with
     | Syntax.ITGL.Exp _, None -> 
       let c_code = compile_process !programs tyenv kfunenvs in
-      programs := [];
       flush stderr;
       let oc = open_out "result_C/stdout.c" in
       Printf.fprintf oc "%s" c_code;
@@ -186,12 +200,11 @@ let rec read_compile lexbuf tyenv kfunenvs =
       read_compile lexbuf tyenv kfunenvs
     | Syntax.ITGL.Exp _, Some f -> 
       let c_code = compile_process !programs tyenv kfunenvs in
-      programs := [];
       flush stderr;
       let oc = open_out ("../result_C/"^f^"_out.c") in
       Printf.fprintf oc "%s" c_code;
       close_out oc;
-      let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/cast.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
+      let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/cast.c ../lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
       let _ = Sys.command ("../result/"^f^".out") in
       ()
     | _, None -> read_compile lexbuf tyenv kfunenvs
@@ -203,7 +216,6 @@ let rec read_compile lexbuf tyenv kfunenvs =
         if !programs <> [] then
           let c_code = compile_process !programs tyenv kfunenvs in
           flush stderr;
-          programs := [];
           let oc = open_out ("../result/"^f^"_out.c") in
           Printf.fprintf oc "%s" c_code;
           close_out oc;
@@ -230,7 +242,6 @@ let rec read_compile lexbuf tyenv kfunenvs =
   read_compile lexbuf tyenv kfunenvs
 
 let start file =
-  let print_debug f = Utils.Format.make_print_debug !debug f in
   opt_file := file;
   print_debug "***** Lexer *****\n";
   let channel, lexbuf = match file with
@@ -244,12 +255,10 @@ let start file =
     lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = f};
     channel, lexbuf
   in
-  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives !alt !debug !compile in
+  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives ~alt:!alt ~debug:!debug ~compile:!compile in
   try
-    if !compile then
-      read_compile lexbuf tyenv kfunenvs
-    else 
-      read_eval_print lexbuf env tyenv kfunenvs kenv
+    if !compile then read_compile lexbuf tyenv kfunenvs
+    else read_eval_print lexbuf env tyenv kfunenvs kenv
   with
     | Lexer.Eof ->
       (* Exiting normally *)

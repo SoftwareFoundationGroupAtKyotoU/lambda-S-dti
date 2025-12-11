@@ -143,6 +143,11 @@ module KNorm = struct
         else Cls.MakePolyCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2' *)
     | LetRecExp_alt _ | AppExp_alt _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
+
+  let toCls kf known = 
+    let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
+    toplevel := []; tvset := TV.empty;
+    toCls_exp known [] f
 end
 
 module Cls = struct
@@ -220,13 +225,16 @@ module Cls = struct
       | Fundef_alt _ -> raise @@ Closure_bug "alt form appear in alt_funs"
       end
     | [] -> []
+
+  let altCls p alt =
+    if alt then Prog (!tvset, alt_funs !toplevel, to_alt V.empty p)
+    else Prog (!tvset, List.rev !toplevel, p)
 end
 
-let toCls_program p alt =
-  toplevel := []; tvset := TV.empty;
-  let f = KNorm.toCls_exp Stdlib.venv [] p in
-  if alt then Syntax.Cls.Prog (!tvset, Cls.alt_funs !toplevel, Cls.to_alt Syntax.Cls.V.empty f)
-  else Syntax.Cls.Prog (!tvset, List.rev !toplevel, f)
+let toCls_program kf venv ~alt =
+  let p = KNorm.toCls kf venv in
+  let p = Cls.altCls p alt in
+  p
 
 (*
 let quad:int->int = fun (x:int) ->

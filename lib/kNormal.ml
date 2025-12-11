@@ -1,5 +1,4 @@
 open Syntax
-open Format
 
 exception KNormal_error of string
 exception KNormal_bug of string
@@ -343,16 +342,13 @@ module KNorm = struct
     | LetRecDecl_alt (x, tvs, arg, (f1, f2)) -> LetRecDecl_alt (x, tvs, arg, (assoc_exp f1, assoc_exp f2))
 end
 
-let kNorm_funs ?(debug=false) (tvsenv, alphaenv, betaenv) f = 
+let kNorm_funs (tvsenv, alphaenv, betaenv) f = 
   let f, alphaenv = LS1.alpha_program alphaenv f in
-  if debug then fprintf err_formatter "alpha: %a\n" Pp.LS1.pp_program f;
   let f, tvsenv = LS1.k_normalize_program tvsenv f in
-  if debug then fprintf err_formatter "k_normalize: %a\n" Pp.KNorm.pp_program f;
   let rec iter betaenv f =
     let fbeta, betaenv = KNorm.beta_program betaenv f in
     let fassoc = KNorm.assoc_program fbeta in
-    if f = fassoc then f, (tvsenv, alphaenv, betaenv) else 
-      (if debug then fprintf err_formatter "beta: %a\n" Pp.KNorm.pp_program fbeta;
-      if debug then fprintf err_formatter "assoc: %a\n" Pp.KNorm.pp_program fassoc;
-      iter betaenv fassoc)
-  in iter betaenv f
+    if f = fassoc then f, (tvsenv, alphaenv, betaenv)
+    else iter betaenv fassoc
+  in let kf, kfunenvs = iter betaenv f in
+  kf, kfunenvs
