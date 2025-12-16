@@ -120,7 +120,7 @@ crc* normalize_crc(crc *c) {
 			clist_->crckind = INJ_TV;
 			clist_->crcdat.tv = c->crcdat.tv->tydat.tylist;
 			crc *clist = make_crc_list(clist_);
-			return make_crc_inj_ar(clist);
+			return make_crc_inj_li(clist);
 		} else if (c->crcdat.tv->tykind == SUBSTITUTED) {
 			c->crcdat.tv = ty_find(c->crcdat.tv);
 			return normalize_crc(c);
@@ -488,6 +488,8 @@ crc* compose(crc *c1, crc *c2) {
 		}
 	} else if (c1->crckind == BOT) {
 		return c1;
+	} else if (c2->crckind == INJ_TV) {
+		return compose(c1, normalize_crc(c2));
 	} else if (c2->crckind == BOT) {
 		return c2;
 	} else if (c2->crckind == SEQ && c2->crcdat.two_crc.c2->crckind == INJ) {          //g;;h;G! -> (g;;h);G!
@@ -495,7 +497,7 @@ crc* compose(crc *c1, crc *c2) {
 		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
 		retc->crckind = SEQ;
 		retc->crcdat.two_crc.c1 = compose(c1, c2->crcdat.two_crc.c1);
-		retc = c2->crcdat.two_crc.c2;
+		retc->crcdat.two_crc.c2 = c2->crcdat.two_crc.c2;
 		return retc;
 	} else if (c1->crckind == FUN && c2->crckind == FUN) {                             //s=>t;;s'=>t' -> s';;s=>t;;t'
 		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -517,7 +519,7 @@ crc* compose(crc *c1, crc *c2) {
 			return retc;
 		}
 	}
-	// printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
+	printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
 	exit(1);
 }
 
@@ -583,6 +585,9 @@ value coerce(value v, crc *s) {
 				retv.l->lstdat.wrap_l.w = v.l->lstdat.wrap_l.w;
 				retv.l->lstdat.wrap_l.c = c;
 			}
+		// } else if (v.l == NULL) {
+		// 	printf("Null should not be a wrapped list: coercion is [%d]", s->crcdat.one_crc->crckind);
+		// 	exit(1);
 		} else {                   // u<[s']> -> u<<[s']>>
 			retv.l = (lst*)GC_MALLOC(sizeof(lst));
 			retv.l->lstkind = WRAPPED_LIST;
@@ -593,7 +598,7 @@ value coerce(value v, crc *s) {
 		retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
 		retv.d->v = (value*)GC_MALLOC(sizeof(value));
 		if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {                                      // u<<[s]>><[s'];G!>
-			crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.one_crc);
+			crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.two_crc.c1->crcdat.one_crc);
 			retv.d->v->l = v.l->lstdat.wrap_l.w;
 			retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
 			retv.d->d->crckind = SEQ;
@@ -700,28 +705,52 @@ value app(value f, value v, value w) {									// reduction of f(v)
 		break;
 
 		case(LABEL_alt):												// if f is "label" function
-		l = g->fundat.label_alt.l;							// R_BETA : return f(v)
-		retx = l(arg, s);
-		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		if (s.s->crckind == ID) {
+			value (*l_a)(value);
+			l_a = g->fundat.label_alt.l_a;
+			retx = l_a(arg);
+		} else {
+			l = g->fundat.label_alt.l;							// R_BETA : return f(v)
+			retx = l(arg, s);
+			//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		}
 		break;
 
 		case(POLY_LABEL_alt):
-		pl = g->fundat.poly_label_alt.pl;
-		retx = pl(arg, s, g->tas);
+		if (s.s->crckind == ID) {
+			value (*pl_a)(value, ty**);
+			pl_a = g->fundat.poly_label_alt.pl_a;
+			retx = pl_a(arg, g->tas);
+		} else {
+			pl = g->fundat.poly_label_alt.pl;
+			retx = pl(arg, s, g->tas);
+		}
 		break;
 
 		case(CLOSURE_alt):												// if f is closure
-		c = g->fundat.closure_alt.cls_alt.c;				// R_BETA : return f(v, fvs)
-		//printf("Heap size = %d\n", (int)GC_get_heap_size());
-		retx = c(arg, s, g->fundat.closure_alt.fvs);
-		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		if (s.s->crckind == ID) {
+			value (*c_a)(value, value*);
+			c_a = g->fundat.closure_alt.cls_alt.c_a;
+			retx = c_a(arg, g->fundat.closure_alt.fvs);
+		} else {
+			c = g->fundat.closure_alt.cls_alt.c;				// R_BETA : return f(v, fvs)
+			//printf("Heap size = %d\n", (int)GC_get_heap_size());
+			retx = c(arg, s, g->fundat.closure_alt.fvs);
+			//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		}
 		break;
 
 		case(POLY_CLOSURE_alt):												// if f is closure
-		pc = g->fundat.poly_closure_alt.pcls_alt.pc;				// R_BETA : return f(v, fvs)
-		//printf("Heap size = %d\n", (int)GC_get_heap_size());
-		retx = pc(arg, s, g->fundat.poly_closure_alt.fvs, g->tas);
-		//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		if (s.s->crckind == ID) {
+			value (*pc_a)(value, value*, ty**);
+			pc_a = g->fundat.poly_closure_alt.pcls_alt.pc_a;
+			retx = pc_a(arg, g->fundat.closure_alt.fvs, g->tas);
+		} else {
+			pc = g->fundat.poly_closure_alt.pcls_alt.pc;				// R_BETA : return f(v, fvs)
+			//printf("Heap size = %d\n", (int)GC_get_heap_size());
+			retx = pc(arg, s, g->fundat.poly_closure_alt.fvs, g->tas);
+			//printf("Heap size = %d\n", (int)GC_get_heap_size());
+		}
 		break;
 	}
 	return retx;
@@ -733,6 +762,7 @@ value app_alt(value f, value v) {									// reduction of f(v)
 	fun *g;
 
 	value arg;
+	value s;
 
 	value (*l_a)(value);
 	value (*c_a)(value, value*);
@@ -740,20 +770,21 @@ value app_alt(value f, value v) {									// reduction of f(v)
 	value (*pc_a)(value, value*, ty**);
 // 	ran_pol neg_r_p;
 
-	arg = v;
-	g = f.f;
-
-	switch(g->funkind) {
-		case(WRAPPED): {
-		value s;
-		value f_;
+	if (f.f->funkind == WRAPPED) {
 		s.s = f.f->fundat.wrap.c_res;
 		arg = coerce(v, f.f->fundat.wrap.c_arg);
-		f_.f = f.f->fundat.wrap.w;
-		retx = app(f_, arg, s);
-		break;
+		g = f.f->fundat.wrap.w;
+		if (s.s->crckind != ID) {
+			value f_ = { .f = g };
+			return app(f_, arg, s);
 		}
+	} else {
+		arg = v;
+		g = f.f;
+	}
 
+
+	switch(g->funkind) {
 		case(LABEL_alt):												// if f is "label" function
 		l_a = g->fundat.label_alt.l_a;							// R_BETA : return f(v)
 		retx = l_a(arg);

@@ -15,6 +15,13 @@ let nu_to_fresh = function
 | Ty u -> u
 | TyNu -> Typing.fresh_tyvar ()
 
+let rec subst_mf s = function
+  | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
+  | MatchWild u -> MatchWild (subst_type s u)
+  | MatchVar (x, u) -> MatchVar (x, subst_type s u)
+  | MatchNil u -> MatchNil (subst_type s u)
+  | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
+
 let rec normalize_coercion c = match c with
   | CId TyDyn -> c
   | CSeq (CProj _ as c1, c2) -> CSeq (c1, normalize_coercion c2)
@@ -220,13 +227,6 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
 
 module LS1 = struct
   open Syntax.LS1
-
-  let rec subst_mf s = function
-    | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
-    | MatchWild u -> MatchWild (subst_type s u)
-    | MatchVar (x, u) -> MatchVar (x, subst_type s u)
-    | MatchNil u -> MatchNil (subst_type s u)
-    | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
 
   let rec subst_exp s = function
     | Var (x, ys) ->
@@ -447,7 +447,7 @@ module KNorm = struct
     | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Hd _ | Tl _ as f -> f
     | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp s f1, subst_exp s f2)
     | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp s f1, subst_exp s f2)
-    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, subst_exp s f) ms)
+    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
     | AppExp _ | CAppExp _ | CSeqExp _ as f -> f
     | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_type_k s) tas)
     (* | CastExp (r, x, u1, u2, p) -> CastExp (r, x, subst_type s u1, subst_type s u2, p) *)

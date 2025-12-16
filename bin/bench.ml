@@ -7,7 +7,7 @@ open Lambda_S1_dti
 (* open Translate *)
 (* open Pp *)
 
-type mode = I | C | I_alt | C_alt
+type mode = I | C | I_alt | A
 let string_of_mode = function
   | I -> "I"
   | C -> "C"
@@ -18,20 +18,20 @@ let string_of_mode = function
 (* Benchmark settings *)
 let itr = 100
 let files = [
-  (* "church_small"; *)
-  (* "church"; *)
-  (* "church_big"; *)
-  (* "tak"; *)
+  (* "church_small"; OK *)
+  (* "church"; OK *)
+  (* "church_big"; OK, 9791.4s *)
+  (* "tak"; OK *)
   (* "easy"; *)
-  (* "fib"; *)
+  "fib";
   (* "evenodd"; *)
-  (* "loop"; *)
-  (* "loop_poly"; *)
-  (* "mklist"; *)
-  (* "map"; *)
-  (* "fold"; *)
-  "zipwith";
-  (* "polypoly"; *)
+  (* "loop"; OK *)
+  (* "loop_poly"; same as loop *)
+  (* "mklist"; OK *)
+  (* "map"; OK *)
+  (* "fold"; OK *)
+  (* "zipwith"; *)
+  (* "polypoly"; NG *)
 ]
 let modes = [
   (* I; *)
@@ -614,46 +614,7 @@ let bench mode fmt itr decl =
           in (id, vs, ts)
     in
     lst_elapsed_time
-  | C -> 
-    let translated = Translate.LS.translate tyenv (tv_renew decl) in
-    log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
-    Format.pp_print_flush fmt ();
-    let _, _, kfunenvs, _ = Stdlib.pervasives false false true in
-    let kf, _ = KNormal.kNorm_funs kfunenvs translated in
-    let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
-    let c_code = Format.asprintf "%a" (ToC.toC_program false) p in
-    let oc = Out_channel.create "logs/bench.c" in
-    Printf.fprintf oc "%s" c_code;
-    close_out oc;
-    let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in
-    let _id, _vs, lst_elapsed_time =
-      let vs, ts =
-        measure_execution_time (fun () -> Core_unix.system "{ perf stat -r 100 -e duration_time:u -j ./logs/bench.out; } > logs/bench_time.json 2>&1") 1(*itr*) C
-        |> split_pairs
-      in ("-", vs, ts)
-    in
-    lst_elapsed_time
-  | C_alt -> 
-    let translated = Translate.LS.translate tyenv (tv_renew decl) in
-    log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
-    Format.pp_print_flush fmt ();
-    let _, _, kfunenvs, _ = Stdlib.pervasives true false true in
-    let kf, _ = KNormal.kNorm_funs kfunenvs translated in
-    let p = Closure.toCls_program kf Stdlib.venv ~alt:true in
-    let c_code = Format.asprintf "%a" (ToC.toC_program true) p in
-    let oc = Out_channel.create "logs/bench.c" in
-    Printf.fprintf oc "%s" c_code;
-    close_out oc;
-    let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in
-    let _id, _vs, lst_elapsed_time =
-      let vs, ts =
-        measure_execution_time (fun () -> Core_unix.system "{ perf stat -r 100 -e duration_time:u -j ./logs/bench.out; } > logs/bench_time.json 2>&1") 1(*itr*) C_alt
-        |> split_pairs
-      in ("-", vs, ts)
-    in
-    lst_elapsed_time
+  | C | C_alt -> raise @@ Failure "bench C, or C_alt"
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
@@ -722,6 +683,16 @@ let bench_file_mode
                ~ordinal ~total_targets
   in
 
+  let () = match mode with
+  | I | I_alt -> ()
+  | C -> 
+    let c_dir = Printf.sprintf "%s/C" log_dir in
+    if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir
+  | C_alt -> 
+    let c_alt_dir = Printf.sprintf "%s/C_alt" log_dir in
+    if not (Sys_unix.file_exists_exn c_alt_dir) then Core_unix.mkdir c_alt_dir;
+  in
+
   let counter = ref 0 in
   List.iteri mutants (fun i p ->
     try( 
@@ -749,7 +720,35 @@ let bench_file_mode
 
       (* Benchmarking *)
       let lst_elapsed_time =
-        try bench mode fmt itr decl
+        try 
+          match mode with
+          | I | I_alt -> bench mode fmt itr decl
+          | C -> 
+            let translated = Translate.LS.translate tyenv (tv_renew decl) in
+            log_section fmt "after Translation (λS∀mp)";
+            Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+            Format.pp_print_flush fmt ();
+            let _, _, kfunenvs, _ = Stdlib.pervasives false false true in
+            let kf, _ = KNormal.kNorm_funs kfunenvs translated in
+            let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
+            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~bench:idx) p in
+            let oc = Out_channel.create (Format.asprintf "%s/C/%s%d.c" log_dir file idx) in
+            Printf.fprintf oc "%s" c_code;
+            close_out oc;
+            []
+          | C_alt -> 
+            let translated = Translate.LS.translate tyenv (tv_renew decl) in
+            log_section fmt "after Translation (λS∀mp)";
+            Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+            Format.pp_print_flush fmt ();
+            let _, _, kfunenvs, _ = Stdlib.pervasives true false true in
+            let kf, _ = KNormal.kNorm_funs kfunenvs translated in
+            let p = Closure.toCls_program kf Stdlib.venv ~alt:true in
+            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:true ~bench:idx) p in
+            let oc = Out_channel.create (Format.asprintf "%s/C_alt/%s%d.c" log_dir file idx) in
+            Printf.fprintf oc "%s" c_code;
+            close_out oc;
+            []
         with
         (* | LambdaCSPolyMP.EvalC.Blame _ *)
         | Syntax.LS1.Blame _ -> Format.fprintf fmt "blame"; []
@@ -884,6 +883,74 @@ let bench_file_mode
        Out_channel.output_string oc "\n]}\n"; Out_channel.close oc
     | Some _, Text -> raise @@ Failure "yet");
 
+  let () = match mode with
+  | I | I_alt -> ()
+  | C -> 
+    let bench_dir = Printf.sprintf "%s/bench" log_dir in
+    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_mutants.h" log_dir file) in
+    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "#endif";
+    close_out oc;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s.c" log_dir file) in
+    Printf.fprintf oc "%s\n%s\n%s"
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s_mutants.h\"\n" file)
+      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
+      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/C_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir file;
+    close_out oc;
+    (* gcc map.c ../../../lib/cast.c ../../../lib/stdlib.c ../C/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
+    let _ = Core_unix.system @@ 
+      Format.asprintf "gcc %s/%s.c lib/cast.c lib/stdlib.c lib/bench_json.c %s/C/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s.out -O2"
+        bench_dir
+        file
+        log_dir
+        file
+        bench_dir
+        file
+    in
+    ignore (Core_unix.system @@ Format.asprintf "%s/%s.out" bench_dir file)
+  | C_alt ->
+    let bench_dir = Printf.sprintf "%s/bench" log_dir in
+    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_alt_mutants.h" log_dir file) in
+    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "#endif";
+    close_out oc;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_alt.c" log_dir file) in
+    Printf.fprintf oc "%s\n%s\n%s"
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s_alt_mutants.h\"\n" file)
+      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
+      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/C_alt_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir file;
+    close_out oc;
+    let _ = Core_unix.system @@ 
+      Format.asprintf "gcc %s/%s_alt.c lib/cast.c lib/stdlib.c lib/bench_json.c %s/C_alt/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s_alt.out -O2"
+        bench_dir
+        file
+        log_dir
+        file
+        bench_dir
+        file
+    in
+    ignore (Core_unix.system @@ Format.asprintf "%s/%s_alt.out" bench_dir file)
+  in
   (* ターゲットの進捗バーを確定（改行しない） *)
   Target_progress.print ~final:false prog
 

@@ -64,8 +64,19 @@ module ITGL = struct
   let rec make_s_coercion (r, p) u1 u2 = match u1, u2 with
     | i1, i2 when is_base_type i1 && is_base_type i2 && i1 = i2 -> CId i1
     | TyVar (i1, {contents = None}) as t, TyVar (i2, {contents = None}) when i1 = i2 -> CId t
-    | TyFun (u11, u12), TyFun (u21, u22) -> CFun (make_s_coercion (r, neg p) u21 u11, make_s_coercion (r, p) u12 u22) 
-    | TyList u1, TyList u2 -> CList (make_s_coercion (r, p) u1 u2)
+    | TyFun (u11, u12), TyFun (u21, u22) -> 
+      let s1 = make_s_coercion (r, neg p) u21 u11 in
+      let s2 = make_s_coercion (r, p) u12 u22 in
+      begin match s1, s2 with
+      | CId u1, CId u2 -> CId (TyFun (u1, u2))
+      | _ -> CFun (s1, s2)
+      end
+    | TyList u1, TyList u2 -> 
+      let s = make_s_coercion (r, p) u1 u2 in
+      begin match s with 
+      | CId u -> CId (TyList u)
+      | _ -> CList s
+      end
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)

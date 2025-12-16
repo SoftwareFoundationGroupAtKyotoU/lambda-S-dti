@@ -91,7 +91,7 @@ let closure_print ~alt kf venv =
 
 let toC_print ~alt p = 
   print_debug "***** toC *****\n";
-  let toC_program = ToC.toC_program alt in
+  let toC_program = ToC.toC_program ~alt:alt ~bench:0 in
   let c_code = asprintf "%a" toC_program p in
   print_debug "%s\n" c_code;
   c_code
@@ -194,7 +194,7 @@ let rec read_compile lexbuf tyenv kfunenvs =
       let oc = open_out "result_C/stdout.c" in
       Printf.fprintf oc "%s" c_code;
       close_out oc;
-      let _ = Sys.command "gcc result_C/stdout.c lib/cast.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -O2 -g3" in
+      let _ = Sys.command "gcc result_C/stdout.c lib/cast.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -g3" (* TODO: -O2 *) in
       let _ = Sys.command "result/stdout.out" in
       print_debug "\n";
       read_compile lexbuf tyenv kfunenvs

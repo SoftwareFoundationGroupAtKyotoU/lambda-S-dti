@@ -46,16 +46,16 @@ typedef struct crc crc;
 
 typedef struct crc {
 	enum crckind {
-		INJ,
-		PROJ,
-		INJ_TV,
-		PROJ_TV,
-		PROJ_INJ_TV,
-		FUN,
-		LIST,
-		ID,
-		SEQ,
-		BOT
+		INJ, //0
+		PROJ, //1
+		INJ_TV, //2
+		PROJ_TV, //3
+		PROJ_INJ_TV, //4
+		FUN, //5
+		LIST, //6
+		ID, //7
+		SEQ, //8
+		BOT //9
 	} crckind;
 	union crcdat {
 		ground_ty g;

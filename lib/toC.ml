@@ -628,15 +628,13 @@ let rec toC_exp ppf f = match f with
       (List.length ftv + n)
       toC_ftas (n, x, ftv)
       toC_exp f
-  | SetTy ((_, { contents = _ }), f) -> toC_exp ppf f
-    (* raise @@ raise @@ ToC_bug "SetTy need?" *)
-    (* begin match opu with (*ここはtoC_tycontentを参照*)
+  | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
     | None ->
         fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
           i
           i
           toC_exp f
-    | Some TyFun (u1, u2) -> 
+    | Some (TyFun (u1, u2)) -> 
       fprintf ppf "ty *_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.left = %s;\n_tyfun%d->tydat.tyfun.right = %s;\n%a"
         i
         i
@@ -647,8 +645,16 @@ let rec toC_exp ppf f = match f with
         i
         (c_of_ty u2)
         toC_exp f
-    | Some _ -> raise @@ ToC_bug "not tyfun is in tyvar option"
-    end *)
+    | Some (TyList u) -> 
+      fprintf ppf "ty *_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;\n%a"
+        i
+        i
+        i
+        i
+        (c_of_ty u)
+        toC_exp f
+    | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
+    end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その式自体をreturnする．
     例はmain関数でないとき*)
@@ -864,12 +870,13 @@ let toC_tycontents ppf l =
     toC_list l
 
 (*型定義全体を記述*)
-let toC_tys ppf l =
+let toC_tys ppf (l, bench) =
   if l = [] then fprintf ppf ""
+  (*Cではset_tys()関数内で型の定義を行う．main関数で最初に呼び出す*)
   else 
     fprintf ppf "%a%s%a%s"
       toC_tydecls l
-      "int set_tys() {\n" (*Cではset_tys()関数内で型の定義を行う．main関数で最初に呼び出す*)
+      (if bench = 0 then "int set_tys() {\n" else Format.asprintf "int set_tys%d() {\n" bench)
       toC_tycontents l
       "return 0;\n}\n\n"
 
@@ -956,8 +963,10 @@ let toC_label ppf fundef = match fundef with
 
 (*関数本体の定義
   やはり4通りの場合分けが発生*)
-let toC_funv ppf (l, num, num') =
-  if not !is_alt then
+let toC_funv ppf (exists_fun, l, num, num') =
+  if not exists_fun then
+    fprintf ppf ""
+  else if not !is_alt then
     if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n"
         l
@@ -1041,7 +1050,7 @@ let toC_fundef ppf fundef = match fundef with
       l
       x
       y
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
     fprintf ppf "value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
@@ -1049,7 +1058,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       y
       num'
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
@@ -1058,7 +1067,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       y
       num
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
@@ -1068,7 +1077,7 @@ let toC_fundef ppf fundef = match fundef with
       y
       num
       num'
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
@@ -1079,14 +1088,14 @@ let toC_fundef ppf fundef = match fundef with
     fprintf ppf "value fun_alt_%s(value %s) {\n%a%a}"
       l
       x
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
     fprintf ppf "value fun_alt_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
       l
       x
       num'
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
@@ -1094,7 +1103,7 @@ let toC_fundef ppf fundef = match fundef with
       l
       x
       num
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
@@ -1103,7 +1112,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       num
       num'
-      toC_funv (l, num, num')
+      toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
@@ -1123,15 +1132,17 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program alt ppf (Prog (tvset, toplevel, f)) = 
+let toC_program ?(bench=0) ~alt ppf (Prog (tvset, toplevel, f)) = 
   is_main := false;
   is_alt := alt;
   fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    "#include <gc.h>\n#include \"../lib/cast.h\"\n#include \"../lib/stdlib.h\"\n"
-    toC_tys (TV.elements tvset)
+    (Format.asprintf "#include <gc.h>\n#include \"../%slib/cast.h\"\n#include \"../%slib/stdlib.h\"\n" 
+      (if bench = 0 then "" else "../../")
+      (if bench = 0 then "" else "../../"))
+    toC_tys (TV.elements tvset, bench)
     toC_fundefs toplevel
-    "int main() {\n"
+    (if bench = 0 then "int main() {\n" else Format.asprintf "int mutant%d() {\n" bench)
     (if !is_alt then "stdlib_alt();\n" else "stdlib();\n")
-    (if TV.is_empty tvset then "" else "set_tys();\n")
+    (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else Format.asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"
