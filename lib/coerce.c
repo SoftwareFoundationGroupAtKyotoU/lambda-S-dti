@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h> //for abort
-#include "cast.h"
+#include "coerce.h"
 #include "gc.h"
 
 ty tydyn = { .tykind = DYN };

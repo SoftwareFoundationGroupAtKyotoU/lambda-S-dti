@@ -6,6 +6,13 @@ open Utils.Error
 exception ToC_bug of string
 exception ToC_error of string
 
+(*main関数かどうかを判定*)
+let is_main = ref false
+
+let is_alt = ref false
+
+let is_B = ref false
+
 (*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
@@ -43,8 +50,6 @@ let toC_ran_pol ppf (y, r, p) =
 (*自由変数をクロージャに代入するプログラムを記述する関数*)
 (*自由変数の個数をカウントする変数*)
 let cnt_v = ref 0
-
-let is_alt = ref false
 
 let toC_v x is_poly ppf v =
   fprintf ppf "%s.f->fundat.%sclosure%s.fvs[%d] = %s;"
@@ -196,10 +201,6 @@ let rec toC_crc ppf (c, x) = match c with
   | CInj _ | CProj _ -> raise @@ ToC_bug "CInj or CProj should not appear directly"
 
 (* ======================================== *)
-
-(*main関数かどうかを判定*)
-let is_main = ref false
-
 let rec toC_mf ppf (x, mf) = match mf with
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit does not appear in toC"
   | MatchILit i -> 
@@ -294,33 +295,33 @@ let rec toC_exp ppf f = match f with
         x
         toC_exp (Insert (x, f1))
         toC_exp f2
-    | AppDir (y, (z1, z2)) ->
+    | AppDDir (y, (z1, z2)) ->
       fprintf ppf "value %s = fun_%s(%s, %s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
         x
         y
         z1
         z2
         toC_exp f2
-    | AppCls (y, (z1, z2)) ->
+    | AppDCls (y, (z1, z2)) ->
       fprintf ppf "value %s = app(%s, %s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
         y
         z1
         z2
         toC_exp f2
-    | AppDir_alt (y, z) -> 
+    | AppMDir (y, z) -> 
       fprintf ppf "value %s = fun_alt_%s(%s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
         x
         y
         z
         toC_exp f2
-    | AppCls_alt (y, z) ->
+    | AppMCls (y, z) ->
       fprintf ppf "value %s = app_alt(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
         y
         z
         toC_exp f2
-    (* | Cast (y, u1, u2, r, p) -> 
+    | Cast (y, u1, u2, (r, p)) ->
       (*
       let x = y:u1=>^(r, p)u2 in ... 
       ~>
@@ -339,7 +340,7 @@ let rec toC_exp ppf f = match f with
         c1
         c2
         y
-        toC_exp f2 *)
+        toC_exp f2
     | AppTy (y, n, tas) -> 
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a\n%a" (* TODO *)
         x
@@ -367,7 +368,6 @@ let rec toC_exp ppf f = match f with
         toC_exp f2
     | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Let (x, f, f2))) (* 型定義を先にやる．Letのuはここで受け継ぐためだけにある*)
     | MakeLabel _ | MakeCls _ | MakePolyLabel _ | MakePolyCls _
-    | MakeLabel_alt _ | MakeCls_alt _ | MakePolyLabel_alt _ | MakePolyCls_alt _
     | Let _ -> raise @@ ToC_bug "Let or LetRec appears in f1 on let in toC_exp; maybe closure dose not success"
     | Insert _ -> raise @@ ToC_bug "Insert appear in f1 on let in toC_exp"
     (*let x = let rec ~~ in ~ in f2やlet x = Insert(y, f) in f2などの形にはなり得ない
@@ -383,9 +383,6 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "%s.i_b_u = %d;\n" (* Insert(x, i) ~> x.i_b_u = i; *)
         x
         i
-    (* | Unit -> 
-      fprintf ppf "%s.i_b_u = 0;\n" (* Insert(x, ()) ~> x.i_b_u = 0; *)
-        x *)
     | Nil -> 
       fprintf ppf "%s.l = (lst*)NULL;\n" (* Insert(x, []) ~> x.l = (lst* )NULL; ...*)
         x
@@ -432,24 +429,24 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "%s = tl(*%s.l);\n"
         x
         y
-    | AppDir (y, (z1, z2)) ->
+    | AppDDir (y, (z1, z2)) ->
       fprintf ppf "%s = fun_%s(%s, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
         y
         z1
         z2
-    | AppCls (y, (z1, z2)) ->
+    | AppDCls (y, (z1, z2)) ->
       fprintf ppf "%s = app(%s, %s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
         z1
         z2
-    | AppDir_alt (y, z) ->
+    | AppMDir (y, z) ->
       fprintf ppf "%s = fun_alt_%s(%s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
         y
         z
-    | AppCls_alt (y, z) -> 
+    | AppMCls (y, z) -> 
       fprintf ppf "%s = app_alt(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
@@ -460,7 +457,7 @@ let rec toC_exp ppf f = match f with
         x
         y        
         toC_tas (y, n, x, tas)    
-    (* | Cast (y, u1, u2, r, p) -> (* Letのときと同じ要領でcastを処理する．最後はx = cast(~,~,~,~); *)
+    | Cast (y, u1, u2, (r, p)) -> (* Letのときと同じ要領でcastを処理する．最後はx = cast(~,~,~,~); *)
       let c1, c2 = c_of_ty u1, c_of_ty u2 in
       fprintf ppf "%a%s = cast(%s, %s, %s, %s_r_p);\n"
         toC_ran_pol (y, r, p)
@@ -468,7 +465,7 @@ let rec toC_exp ppf f = match f with
         y
         c1
         c2
-        y *)
+        y
     | CApp (y, z) ->
       fprintf ppf "%s = coerce(%s, %s.s);\n"
         x
@@ -492,10 +489,6 @@ let rec toC_exp ppf f = match f with
     | MakeCls (y, c, f) -> toC_exp ppf (MakeCls (y, c, Insert (x, f)))
     | MakePolyLabel (y, l, tvs, f) -> toC_exp ppf (MakePolyLabel (y, l, tvs, Insert (x, f)))
     | MakePolyCls (y, c, tvs, f) -> toC_exp ppf (MakePolyCls (y, c, tvs, Insert (x, f)))
-    | MakeLabel_alt (y, l, f) -> toC_exp ppf (MakeLabel_alt (y, l, Insert (x, f)))
-    | MakeCls_alt (y, c, f) -> toC_exp ppf (MakeCls_alt (y, c, Insert (x, f)))
-    | MakePolyLabel_alt (y, l, tvs, f) -> toC_exp ppf (MakePolyLabel_alt (y, l, tvs, Insert (x, f)))
-    | MakePolyCls_alt (y, c, tvs, f) -> toC_exp ppf (MakePolyCls_alt (y, c, tvs, Insert (x, f)))
     | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Insert (x, f)))
     (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
     | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
@@ -533,101 +526,105 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "{\ndid_not_match();\n}\n"
     end
   | MakeLabel (_, l, f) -> (* TODO *)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n%a"
-      l
-      l
-      l
-      l
-      l
-      toC_exp f
+    if !is_alt then
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL_alt;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n%a"
+        l
+        l
+        l
+        l
+        l
+        l
+        l
+        toC_exp f
+    else 
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n%a"
+        l
+        l
+        l
+        l
+        l
+        toC_exp f
   | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-      l
-      l
-      l
-      l
-      l
-      l
-      (List.length ftv + n)
-      toC_ftas (n, l, ftv)
-      toC_exp f
+    if !is_alt then
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL_alt;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+        l
+        l
+        l
+        l
+        l
+        l
+        l
+        l
+        (List.length ftv + n)
+        toC_ftas (n, l, ftv)
+        toC_exp f
+    else
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+        l
+        l
+        l
+        l
+        l
+        l
+        (List.length ftv + n)
+        toC_ftas (n, l, ftv)
+        toC_exp f
   | MakeCls (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
-      x
-      x
-      x
-      x
-      x
-      x
-      (List.length vs)
-      toC_vs (x, false, vs)
-      toC_exp f
+    if !is_alt then
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE_alt;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
+        x
+        x
+        x
+        x
+        x
+        x
+        x
+        x
+        (List.length vs)
+        toC_vs (x, false, vs)
+        toC_exp f
+    else
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
+        x
+        x
+        x
+        x
+        x
+        x
+        (List.length vs)
+        toC_vs (x, false, vs)
+        toC_exp f
   | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-      x
-      x
-      x
-      x
-      x
-      x
-      (List.length vs)
-      toC_vs (x, true, vs)
-      x
-      (List.length ftv + n)
-      toC_ftas (n, x, ftv)
-      toC_exp f
-  | MakeLabel_alt (_, l, f) ->
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL_alt;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n%a"
-      l
-      l
-      l
-      l
-      l
-      l
-      l
-      toC_exp f
-  | MakePolyLabel_alt (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL_alt;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-      l
-      l
-      l
-      l
-      l
-      l
-      l
-      l
-      (List.length ftv + n)
-      toC_ftas (n, l, ftv)
-      toC_exp f
-  | MakeCls_alt (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE_alt;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
-      x
-      x
-      x
-      x
-      x
-      x
-      x
-      x
-      (List.length vs)
-      toC_vs (x, false, vs)
-      toC_exp f
-  | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-      x
-      x
-      x
-      x
-      x
-      x
-      x
-      x
-      (List.length vs)
-      toC_vs (x, true, vs)
-      x
-      (List.length ftv + n)
-      toC_ftas (n, x, ftv)
-      toC_exp f
+    if !is_alt then 
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+        x
+        x
+        x
+        x
+        x
+        x
+        x
+        x
+        (List.length vs)
+        toC_vs (x, true, vs)
+        x
+        (List.length ftv + n)
+        toC_ftas (n, x, ftv)
+        toC_exp f
+    else
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+        x
+        x
+        x
+        x
+        x
+        x
+        (List.length vs)
+        toC_vs (x, true, vs)
+        x
+        (List.length ftv + n)
+        toC_ftas (n, x, ftv)
+        toC_exp f  
   | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
     | None ->
         fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
@@ -668,11 +665,6 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "value retint = { .i_b_u = %d };\nreturn 0;\n" i
     else 
       fprintf ppf "value retint = { .i_b_u = %d };\nreturn retint;\n" i
-  (* | Unit -> () ~> value retint = { .i_b_u = 0 }; return retint;
-    if !is_main then 
-      fprintf ppf "value retint = { .i_b_u = 0 };\nreturn 0;\n"
-    else 
-      fprintf ppf "value retint = { .i_b_u = 0 };\nreturn retint;\n" *)
   | Nil ->  (* [] ~> value retlist = { .l = (lst* )NULL}; return retlist; *)
     if !is_main then
       fprintf ppf "value retlist = { .l = (lst*)NULL };\nreturn 0;\n"
@@ -722,7 +714,7 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "value retv = tl(%s);\nreturn 0;\n" x
     else 
       fprintf ppf "value retv = tl(%s);\nreturn retv;\n" x
-  | AppDir (x, (y1, y2)) -> (* x y ~> return fun_x(y); *) (*xが直接適用できる関数の場合*)
+  | AppDDir (x, (y1, y2)) -> (* x y ~> return fun_x(y); *) (*xが直接適用できる関数の場合*)
     if !is_main then 
       fprintf ppf "fun_%s(%s, %s);\nreturn 0;\n"
         x
@@ -733,7 +725,7 @@ let rec toC_exp ppf f = match f with
         x
         y1
         y2
-  | AppCls (x, (y1, y2)) -> (* x y ~> return app(x, y); *) (*xがクロージャを利用して適用する関数の場合*)
+  | AppDCls (x, (y1, y2)) -> (* x y ~> return app(x, y); *) (*xがクロージャを利用して適用する関数の場合*)
     if !is_main then 
       fprintf ppf "app(%s, %s, %s);\nreturn 0;\n"
         x
@@ -744,7 +736,7 @@ let rec toC_exp ppf f = match f with
         x
         y1
         y2
-  | AppDir_alt (x, y) ->
+  | AppMDir (x, y) ->
     if !is_main then 
       fprintf ppf "fun_alt_%s(%s);\nreturn 0;\n"
         x
@@ -753,7 +745,7 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "return fun_alt_%s(%s);\n"
         x
         y
-  | AppCls_alt (x, y) -> 
+  | AppMCls (x, y) -> 
     if !is_main then 
       fprintf ppf "app_alt(%s, %s);\nreturn 0;\n"
         x
@@ -762,7 +754,7 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "return app_alt(%s, %s);\n"
         x
         y
-  (* | Cast (x, u1, u2, r, p) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
+  | Cast (x, u1, u2, (r, p)) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
     let c1, c2 = c_of_ty u1, c_of_ty u2 in
     if !is_main then 
       fprintf ppf "%acast(%s, %s, %s, %s_r_p);\nreturn 0;\n"
@@ -777,7 +769,7 @@ let rec toC_exp ppf f = match f with
         x
         c1
         c2
-        x *)
+        x
   | AppTy (x, n, tas) -> 
     if !is_main then
       fprintf ppf "value retval;\nretval.f = (fun*)GC_MALLOC(sizeof(fun));\n*retval.f = *%s.f;\n%a\nreturn 0;" (* TODO *)
@@ -930,7 +922,7 @@ let toC_tvs ppf (tvl, n) =
   ここで定義する内容はfun型の関数自体の定義 (*いらない：と，関数が格納されたvalue型の値の二つ*)
   fundef内のfvl(自由変数のリスト)とtvs(型変数のリスト)に要素が入っているかどうかで関数の型が異なるので，四通りの場合分けが発生する*)
 let toC_label ppf fundef = match fundef with
-| Fundef { name = l; tvs = (tvs, _); arg = (_, _); formal_fv = fvl; body = _ } ->
+| FundefD { name = l; tvs = (tvs, _); arg = (_, _); formal_fv = fvl; body = _ } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
@@ -945,7 +937,7 @@ let toC_label ppf fundef = match fundef with
   else
     fprintf ppf "value fun_%s(value, value, value*, ty**);"
       l
-| Fundef_alt { name = l; tvs = (tvs, _); arg = _; formal_fv = fvl; body = _ } ->
+| FundefM { name = l; tvs = (tvs, _); arg = _; formal_fv = fvl; body = _ } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
@@ -1042,7 +1034,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
 
 let toC_fundef ppf fundef = match fundef with
-| Fundef { name = l; tvs = (tvs, n); arg = (x, y); formal_fv = fvl; body = f } ->
+| FundefD { name = l; tvs = (tvs, n); arg = (x, y); formal_fv = fvl; body = f } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
@@ -1081,7 +1073,7 @@ let toC_fundef ppf fundef = match fundef with
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
-| Fundef_alt { name = l; tvs = (tvs, n); arg = x; formal_fv = fvl; body = f } ->
+| FundefM { name = l; tvs = (tvs, n); arg = x; formal_fv = fvl; body = f } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
@@ -1136,7 +1128,7 @@ let toC_program ?(bench=0) ~alt ppf (Prog (tvset, toplevel, f)) =
   is_main := false;
   is_alt := alt;
   fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    (Format.asprintf "#include <gc.h>\n#include \"../%slib/cast.h\"\n#include \"../%slib/stdlib.h\"\n" 
+    (Format.asprintf "#include <gc.h>\n#include \"../%slib/coerce.h\"\n#include \"../%slib/stdlib.h\"\n" 
       (if bench = 0 then "" else "../../")
       (if bench = 0 then "" else "../../"))
     toC_tys (TV.elements tvset, bench)

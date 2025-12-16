@@ -1,7 +1,7 @@
 #ifndef STDLIB_H
 #define STDLIB_H
 
-#include "cast.h"
+#include "coerce.h"
 
 extern value fun_print_int(value, value);
 extern value fun_print_bool(value, value);

@@ -5,7 +5,7 @@ open OUnit2
 open Lambda_S1_dti
 open Syntax
 
-let test_cases = List.map (fun l -> List.map (fun (a, _, _, d) -> (a, d)) l) Test_cases.tests
+let test_cases = List.map (fun l -> List.map (fun (a, _, _, _, _, f) -> (a, f)) l) Testcases.tests
 
 let id x = x
 
@@ -14,19 +14,19 @@ let run tyenv kfunenvs kenv program =
   let e = parse @@ program ^ ";;" in
   let e, u = Typing.ITGL.type_of_program tyenv e in
   let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-  let new_tyenv, f, u' = Translate.ITGL.translate tyenv e in
+  let new_tyenv, f, u' = Translate.ITGL.translate ~intoB:false tyenv e in
   assert (Typing.is_equal u u');
-  let u'' = Typing.LS.type_of_program tyenv f in
+  let u'' = Typing.CC.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
-  let f(*, u'''*) = Translate.LS.translate tyenv f in
+  let f(*, u'''*) = Translate.CC.translate tyenv f in
   (* assert (Typing.is_equal u u''');*)
-  let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
+  let kf, kfunenvs = KNormal.kNorm_funs_LS kfunenvs f in
   try
     let kenv, _, kv = Eval.KNorm.eval_program kenv kf in
     new_tyenv, kfunenvs, kenv, asprintf "%a" Pp.KNorm.pp_value2 kv
   with
-  | KNorm.KBlame (_, Pos) -> tyenv, kfunenvs, kenv, "blame+"
-  | KNorm.KBlame (_, Neg) -> tyenv, kfunenvs, kenv, "blame-"
+  | Blame (_, Pos) -> tyenv, kfunenvs, kenv, "blame+"
+  | Blame (_, Neg) -> tyenv, kfunenvs, kenv, "blame-"
 
 let test_examples =
   let test i cases =
@@ -37,7 +37,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_kvalue actual_kvalue;
            tyenv, kfunenvs, kenv
         )
-        (let _, tyenv, kfunenvs, kenv = Stdlib.pervasives ~alt:false ~debug:false ~compile:false in tyenv, kfunenvs, kenv)
+        (let _, tyenv, kfunenvs, kenv = Stdlib.pervasives_LS ~alt:false ~debug:false ~compile:false in tyenv, kfunenvs, kenv)
         cases
   in
   List.mapi test test_cases

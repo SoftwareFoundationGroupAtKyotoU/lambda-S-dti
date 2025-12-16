@@ -7,7 +7,7 @@ open Lambda_S1_dti
 (* open Translate *)
 (* open Pp *)
 
-type mode = I | C | I_alt | A
+type mode = I | C | I_alt | C_alt
 let string_of_mode = function
   | I -> "I"
   | C -> "C"
@@ -130,7 +130,7 @@ module Fast_alloc = struct
     (* Blame 等は事前検出してスキップ *)
     let ok =
       try thunk (); true with
-      | Syntax.LS1.Blame _ ->
+      | Syntax.Blame _ ->
           log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (C)@."; false
       (* | LambdaCSPolyMP.EvalS.Blame _ ->
           log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (S)@."; false *)
@@ -198,7 +198,7 @@ module CB = struct
     (* プレフライトで例外検出してスキップ *)
     let ok =
       try thunk (); true with
-      | Syntax.LS1.Blame _ ->
+      | Syntax.Blame _ ->
           log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (C)@."; false
       (* | LambdaCSPolyMP.EvalS.Blame _ ->
           log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (S)@."; false *)
@@ -330,7 +330,7 @@ let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
       (* Fast_alloc を呼びなおして値を作る（ログは emit_text_log のときだけ） *)
       let ok =
         try thunk (); true with
-        | Syntax.LS1.Blame _ -> false
+        | Syntax.Blame _ -> false
         (* | LambdaCSPolyMP.EvalS.Blame _ -> false *)
         | _ -> false
       in
@@ -504,7 +504,7 @@ let rec tv_renew_mf mf env = let open Syntax in match mf with
     let u, env = tv_renew_ty u env in
     MatchWild u, env
 
-let rec tv_renew_exp e env = let open Syntax.LS in match e with
+let rec tv_renew_exp e env = let open Syntax.CC in match e with
   | Var (x, us) ->
     let env = List.fold_left us ~f:(fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) ~init:env in
     let us = List.map us (fun u -> match u with Ty u -> Syntax.Ty (fst @@ (tv_renew_ty u env)) | TyNu -> TyNu) in
@@ -536,6 +536,11 @@ let rec tv_renew_exp e env = let open Syntax.LS in match e with
     let e, env = tv_renew_exp e env in
     let c, env = tv_renew_coercion c env in
     CAppExp (e, c), env
+  | CastExp (e, u1, u2, r_p) -> 
+    let e, env = tv_renew_exp e env in
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    CastExp (e, u1, u2, r_p), env
   | MatchExp (e, ms) ->
     let e, env = tv_renew_exp e env in
     let ms, env = tv_renew_ms ms env in
@@ -561,7 +566,7 @@ let rec tv_renew_exp e env = let open Syntax.LS in match e with
   | [] -> [], env
 
 
-let tv_renew p = let open Syntax.LS in match p with
+let tv_renew p = let open Syntax.CC in match p with
   | Exp e -> 
     let e, _ = tv_renew_exp e Syntax.Environment.empty in 
     Exp e
@@ -573,22 +578,22 @@ let tv_renew p = let open Syntax.LS in match p with
 let bench mode fmt itr decl =
   let tyenv = Syntax.Environment.empty
   and env = Syntax.Environment.empty in
-  let u = Typing.LS.type_of_program tyenv decl in
+  let u = Typing.CC.type_of_program tyenv decl in
   Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u;
   match mode with
   | I ->
-    let translated = Translate.LS.translate tyenv (tv_renew decl) in
+    let translated = Translate.CC.translate tyenv (tv_renew decl) in
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
     let _id, _vs, lst_elapsed_time =
       match decl with
-      | Syntax.LS.Exp _ ->
+      | Syntax.CC.Exp _ ->
           let vs, ts =
             measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
             |> split_pairs
           in ("-", vs, ts)
-      | Syntax.LS.LetDecl (id, _, _) ->
+      | Syntax.CC.LetDecl (id, _, _) ->
           let vs, ts =
             measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
             |> split_pairs
@@ -596,18 +601,18 @@ let bench mode fmt itr decl =
     in
     lst_elapsed_time
   | I_alt ->
-    let translated = Translate.LS.translate_alt tyenv (tv_renew decl) in
+    let translated = Translate.CC.translate_alt tyenv (tv_renew decl) in
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
     let _id, _vs, lst_elapsed_time =
       match decl with
-      | Syntax.LS.Exp _ ->
+      | Syntax.CC.Exp _ ->
           let vs, ts =
             measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
             |> split_pairs
           in ("-", vs, ts)
-      | Syntax.LS.LetDecl (id, _, _) ->
+      | Syntax.CC.LetDecl (id, _, _) ->
           let vs, ts =
             measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
             |> split_pairs
@@ -713,9 +718,9 @@ let bench_file_mode
       );
 
       (* Coercion insertion *)
-      let _, decl, _ = Translate.ITGL.translate tyenv p in
+      let _, decl, _ = Translate.ITGL.translate ~intoB:false tyenv p in
       log_section fmt "after Insertion (λC∀mp)";
-      Format.fprintf fmt "%a@." Pp.LS.pp_program decl;
+      Format.fprintf fmt "%a@." Pp.CC.pp_program decl;
       Format.pp_print_flush fmt ();
 
       (* Benchmarking *)
@@ -724,12 +729,12 @@ let bench_file_mode
           match mode with
           | I | I_alt -> bench mode fmt itr decl
           | C -> 
-            let translated = Translate.LS.translate tyenv (tv_renew decl) in
+            let translated = Translate.CC.translate tyenv (tv_renew decl) in
             log_section fmt "after Translation (λS∀mp)";
             Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
             Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives false false true in
-            let kf, _ = KNormal.kNorm_funs kfunenvs translated in
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LS false false true in
+            let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
             let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
             let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~bench:idx) p in
             let oc = Out_channel.create (Format.asprintf "%s/C/%s%d.c" log_dir file idx) in
@@ -737,12 +742,12 @@ let bench_file_mode
             close_out oc;
             []
           | C_alt -> 
-            let translated = Translate.LS.translate tyenv (tv_renew decl) in
+            let translated = Translate.CC.translate tyenv (tv_renew decl) in
             log_section fmt "after Translation (λS∀mp)";
             Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
             Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives true false true in
-            let kf, _ = KNormal.kNorm_funs kfunenvs translated in
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LS true false true in
+            let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
             let p = Closure.toCls_program kf Stdlib.venv ~alt:true in
             let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:true ~bench:idx) p in
             let oc = Out_channel.create (Format.asprintf "%s/C_alt/%s%d.c" log_dir file idx) in
@@ -751,7 +756,7 @@ let bench_file_mode
             []
         with
         (* | LambdaCSPolyMP.EvalC.Blame _ *)
-        | Syntax.LS1.Blame _ -> Format.fprintf fmt "blame"; []
+        | Syntax.Blame _ -> Format.fprintf fmt "blame"; []
         | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
         | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
         | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
@@ -771,19 +776,19 @@ let bench_file_mode
 
       (* JSON 出力用に各種文字列へ（※テキストログを出さないモードでも生成できる） *)
       let after_mutate_str    = Format.asprintf "%a" Pp.ITGL.pp_program p in
-      let after_insertion_str = Format.asprintf "%a" Pp.LS.pp_program decl in
+      let after_insertion_str = Format.asprintf "%a" Pp.CC.pp_program decl in
       let after_translation_str =
         match mode with
         | I ->
-            let translated = Translate.LS.translate tyenv decl
+            let translated = Translate.CC.translate tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
         | I_alt ->
-            let translated = Translate.LS.translate_alt tyenv decl
+            let translated = Translate.CC.translate_alt tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
         | C | C_alt -> 
-          let translated = Translate.LS.translate tyenv decl
+          let translated = Translate.CC.translate tyenv decl
             in
             Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
       in
@@ -799,7 +804,7 @@ let bench_file_mode
         match mode with
         | I ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.LS.translate tyenv (tv_renew decl)
+            let translated = Translate.CC.translate tyenv (tv_renew decl)
             in
             let run () = 
               (* let open Eval in  *)
@@ -807,16 +812,16 @@ let bench_file_mode
             measure_mem_to_json ~label run
         | I_alt ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.LS.translate_alt tyenv (tv_renew decl)
+            let translated = Translate.CC.translate_alt tyenv (tv_renew decl)
             in
             let run () = 
               (* let open Eval in  *)
               ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
             measure_mem_to_json ~label run
         | C | C_alt -> 
-          (* let translated = Translate.LS.translate tyenv (tv_renew decl) in
-          let _, _, kfunenvs, _ = Stdlib.pervasives in
-          let kf, _ = KNormal.kNorm_funs kfunenvs translated in
+          (* let translated = Translate.CC.translate tyenv (tv_renew decl) in
+          let _, _, kfunenvs, _ = Stdlib.pervasives_LS in
+          let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
           let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
           let p = Closure.KNorm.toCls_program p in
           let c_code = Format.asprintf "%a" ToC.toC_program p in
@@ -869,7 +874,7 @@ let bench_file_mode
           (Pp.print_coercion_type tyenv_e) cty2; *)
     | Failure message -> Format.fprintf fmt "Failure: %s\n" message
     | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
-    | Syntax.LS1.Blame _ -> Format.fprintf fmt "evaluation blame \n"
+    | Syntax.Blame _ -> Format.fprintf fmt "evaluation blame \n"
     | Eval.Eval_bug _ -> Format.fprintf fmt "evaluation bug!! \n"
     | _ -> Format.fprintf fmt "some error was happened\n"
   );

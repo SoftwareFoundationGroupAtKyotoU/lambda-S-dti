@@ -225,6 +225,221 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     end
   | _ -> raise @@ Eval_bug "cannot compose coercions"
 
+module CC = struct
+  open Syntax.CC
+
+  let rec subst_exp s = function
+    | Var (x, ys) ->
+      let subst_type = function
+        | Ty u -> Ty (subst_type s u)
+        | TyNu -> TyNu
+      in
+      Var (x, List.map subst_type ys)
+    | IConst _
+    | BConst _
+    | UConst as f -> f
+    | BinOp (op, f1, f2) -> BinOp (op, subst_exp s f1, subst_exp s f2)
+    | IfExp (f1, f2, f3) -> IfExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
+    | FunExp (x1, u1, f) -> FunExp (x1, subst_type s u1, subst_exp s f)
+    | FixExp (x, y, u1, u2, f) ->
+      FixExp (x, y, subst_type s u1, subst_type s u2, subst_exp s f)
+    | NilExp u -> NilExp (subst_type s u)
+    | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
+    | AppExp (f1, f2) -> AppExp (subst_exp s f1, subst_exp s f2)
+    | CastExp (f, u1, u2, r_p) -> CastExp (subst_exp s f, subst_type s u1, subst_type s u2, r_p)
+    | MatchExp (f, ms) -> 
+      MatchExp (subst_exp s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
+    | LetExp (y, ys, f1, f2) ->
+      (* Remove substitutions captured by let exp s *)
+      let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
+      LetExp (y, ys, subst_exp s f1, subst_exp s f2)
+    | CAppExp _ -> raise @@ Eval_bug "CC.subst_type CAppExp"
+
+  let eval_binop op v1 v2 =
+    begin match op, v1, v2 with
+      | Plus, IntV i1, IntV i2 -> IntV (i1 + i2)
+      | Minus, IntV i1, IntV i2 -> IntV (i1 - i2)
+      | Mult, IntV i1, IntV i2 -> IntV (i1 * i2)
+      | Div, IntV i1, IntV i2 -> IntV (i1 / i2)
+      | Mod, IntV i1, IntV i2 -> IntV (i1 mod i2)
+      | Eq, IntV i1, IntV i2 -> BoolV (i1 = i2)
+      | Neq, IntV i1, IntV i2 -> BoolV (i1 <> i2)
+      | Lt, IntV i1, IntV i2 -> BoolV (i1 < i2)
+      | Lte, IntV i1, IntV i2 -> BoolV (i1 <= i2)
+      | Gt, IntV i1, IntV i2 -> BoolV (i1 > i2)
+      | Gte, IntV i1, IntV i2 -> BoolV (i1 >= i2)
+      | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
+    end
+
+  let rec eval ?(debug=false) (env: (tyvar list * value) Environment.t) f =
+    if debug then fprintf err_formatter "eval <-- %a\n" Pp.CC.pp_exp f;
+    let eval = eval ~debug:debug in
+    match f with
+    | Var (x, us) ->
+      let xs, v = Environment.find x env in
+      let us = List.map nu_to_fresh us in
+      begin match v with
+        | FunV proc -> FunV (fun _ -> proc (xs, us))
+        | _ -> v
+      end
+    | IConst i -> IntV i
+    | BConst b -> BoolV b
+    | UConst -> UnitV
+    | BinOp (op, f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      eval_binop op v1 v2
+    | FunExp (x, _, f') ->
+      FunV (
+        fun (xs, ys) -> fun v ->
+          eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'
+      )
+    | FixExp (x, y, _, _, f') ->
+      let f (xs, ys) v =
+        let f' = subst_exp (Utils.List.zip xs ys) f' in
+        let rec f _ v =
+          let env = Environment.add x (xs, FunV f) env in
+          let env = Environment.add y ([], v) env in
+          eval env f'
+        in f ([], []) v
+      in FunV f
+    | AppExp (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      begin match v1 with
+        | FunV proc -> proc ([], []) v2
+        | _ -> raise @@ Eval_bug "app: application of non procedure value"
+      end
+    | IfExp (f1, f2, f3) ->
+      let v1 = eval env f1 in
+      begin match v1 with
+        | BoolV true -> eval env f2
+        | BoolV false -> eval env f3
+        | _ -> raise @@ Eval_bug "if: non boolean value"
+      end
+    | LetExp (x, xs, f1, f2) ->
+      let v1 = eval env f1 in
+      eval (Environment.add x (xs, v1) env) f2
+    | MatchExp (f, ms) ->
+      let v = eval env f in
+      eval_next ~debug:debug env v ms
+    | NilExp _ -> NilV
+    | ConsExp (f1, f2) ->
+      let v2 = eval env f2 in
+      let v1 = eval env f1 in
+      ConsV (v1, v2)
+    | CastExp (f, u1, u2, r_p) ->
+      let v = eval env f in
+      cast ~debug:debug v u1 u2 r_p
+    | CAppExp _ -> raise @@ Eval_bug "CC.subst_type CAppExp"
+  and match_mf ?(debug=false) env v mf = match v, mf with
+    | _, MatchVar (id, _) ->
+      let env = Environment.add id ([], v) env in
+      true, env
+    | ConsV (v1, v2), MatchCons (mf1, mf2) ->
+      let b1, env = match_mf ~debug:debug env v1 mf1 in
+      let b2, env = match_mf ~debug:debug env v2 mf2 in
+      b1&&b2, env 
+    | NilV, MatchNil _ -> true, env
+    | IntV i1, MatchILit i2 -> if i1 = i2 then (true, env) else (false, env)
+    | BoolV b1, MatchBLit b2 -> if b1 = b2 then (true, env) else (false, env)
+    | UnitV, MatchULit -> true, env
+    (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
+    | _, MatchWild _ -> true, env
+    (* | (ConsV (v1, v2), CList s), MatchCons _ -> 
+      match_mf ~debug:debug env (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf lazy *)
+    | _ -> false, env 
+  and eval_next ?(debug=false) env v ms = match ms with
+    | (mf, f) :: ms ->
+      let b, env' = match_mf ~debug:debug env v mf in
+      if b then eval ~debug:debug env' f
+      else eval_next ~debug:debug env v ms
+    | [] -> raise @@ Eval_bug "Didn't match"
+  and cast ?(debug=false) v u1 u2 (r, p) =
+    let print_debug f = Utils.Format.make_print_debug debug f in
+    print_debug "cast <-- %a: %a => %a\n" Pp.CC.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
+    let cast = cast ~debug:debug in
+    match u1, u2 with
+    (* When type variables are instantiated *)
+    | TyVar (_, { contents = Some u1 }), u2
+    | u1, TyVar (_, { contents = Some u2 }) ->
+      cast v u1 u2 (r, p)
+    (* IdBase *)
+    | TyBool, TyBool
+    | TyInt, TyInt
+    | TyUnit, TyUnit -> v
+    (* IdStar *)
+    | TyDyn, TyDyn -> v
+    (* Succeed / Fail *)
+    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) as u2) -> begin
+        match v, u2 with
+        | Tagged (B, v), TyBool -> v
+        | Tagged (I, v), TyInt -> v
+        | Tagged (U, v), TyUnit -> v
+        | Tagged (Ar, v), TyFun (TyDyn, TyDyn) -> v
+        | Tagged _, _ -> raise @@ Blame (r, p)
+        | _ -> raise @@ Eval_bug "untagged value"
+      end
+    (* AppCast *)
+    | TyFun (u11, u12), TyFun (u21, u22) -> begin
+        match v with
+        | FunV proc ->
+          FunV (
+            fun (xs, ys) x ->
+              let subst = subst_type @@ Utils.List.zip xs ys in
+              let arg = cast x (subst u21) (subst u11) (r, neg p) in
+              let res = proc (xs, ys) arg in
+              cast res (subst u12) (subst u22) (r, p)
+          )
+        | _ -> raise @@ Eval_bug "non procedural value"
+      end
+    (* Tagged *)
+    | TyBool, TyDyn -> Tagged (B, v)
+    | TyInt, TyDyn -> Tagged (I, v)
+    | TyUnit, TyDyn -> Tagged (U, v)
+    | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
+    (* Ground *)
+    | TyFun _, TyDyn ->
+      let dfun = TyFun (TyDyn, TyDyn) in
+      let v = cast v u1 dfun (r, p) in
+      cast v dfun TyDyn (r, p)
+    (* Expand *)
+    | TyDyn, TyFun _ ->
+      let dfun = TyFun (TyDyn, TyDyn) in
+      let v = cast v TyDyn dfun (r, p) in
+      cast v dfun u2 (r, p)
+    (* InstBase / InstArrow *)
+    | TyDyn, (TyVar (_, ({ contents = None } as x)) as x') -> begin
+        match v with
+        | Tagged (B | I | U as t, v) ->
+          let u = type_of_tag t in
+          print_debug "DTI: %a is instantiated to %a\n"
+            Pp.pp_ty x'
+            Pp.pp_ty u;
+          x := Some u;
+          v
+        | Tagged (Ar, v) ->
+          let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
+          print_debug "DTI: %a is instantiated to %a\n"
+            Pp.pp_ty x'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyFun (TyDyn, TyDyn)) u (r, p)
+        | _ -> raise @@ Eval_bug "cannot instantiate"
+      end
+    | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)
+
+  let eval_program ?(debug=false) env p =
+    match p with
+    | Exp f ->
+      let v = eval env f ~debug:debug in
+      env, "-", v
+    | LetDecl (x, xs, f) ->
+      let v = eval env f ~debug:debug in
+      let env = Environment.add x (xs, v) env in
+      env, x, v
+end
+
 module LS1 = struct
   open Syntax.LS1
 
@@ -240,10 +455,10 @@ module LS1 = struct
     | UConst as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, subst_exp s f1, subst_exp s f2)
     | IfExp (f1, f2, f3) -> IfExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
-    | FunExp ((x1, u1), k, f) -> FunExp ((x1, subst_type s u1), k, subst_exp s f)
-    | FixExp ((x, y, u1, u2), k, f) ->
-      FixExp ((x, y, subst_type s u1, subst_type s u2), k, subst_exp s f)
-    | AppExp (f1, f2, f3) -> AppExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
+    | FunSExp ((x1, u1), k, f) -> FunSExp ((x1, subst_type s u1), k, subst_exp s f)
+    | FixSExp ((x, y, u1, u2), k, f) ->
+      FixSExp ((x, y, subst_type s u1, subst_type s u2), k, subst_exp s f)
+    | AppDExp (f1, f2, f3) -> AppDExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
     | CAppExp (f1, f2) -> CAppExp (subst_exp s f1, subst_exp s f2)
     | CSeqExp (f1, f2) -> CSeqExp (subst_exp s f1, subst_exp s f2)
     | MatchExp (f, ms) -> 
@@ -255,10 +470,10 @@ module LS1 = struct
     | CoercionExp c -> CoercionExp (subst_coercion s c)
     | NilExp u -> NilExp (subst_type s u)
     | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
-    | FunExp_alt ((x1, u1), k, (f1, f2)) -> FunExp_alt ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
-    | FixExp_alt ((x, y, u1, u2), k, (f1, f2)) ->
-      FixExp_alt ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
-    | AppExp_alt (f1, f2) -> AppExp_alt (subst_exp s f1, subst_exp s f2)
+    | FunAExp ((x1, u1), k, (f1, f2)) -> FunAExp ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
+    | FixAExp ((x, y, u1, u2), k, (f1, f2)) ->
+      FixAExp ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
+    | AppMExp (f1, f2) -> AppMExp (subst_exp s f1, subst_exp s f2)
 
   let eval_binop op v1 v2 =
     begin match op, v1, v2 with
@@ -284,8 +499,8 @@ module LS1 = struct
       let xs, v = Environment.find x env in
       let us = List.map nu_to_fresh us in
       begin match v with
-        | FunV proc -> FunV (fun _ -> proc (xs, us))
-        | FunV_alt proc -> FunV_alt (fun _ -> proc (xs, us))
+        | FunSV proc -> FunSV (fun _ -> proc (xs, us))
+        | FunAV proc -> FunAV (fun _ -> proc (xs, us))
         | _ -> v
       end
     | IConst i -> IntV i
@@ -295,22 +510,22 @@ module LS1 = struct
       let v1 = eval env f1 in
       let v2 = eval env f2 in
       eval_binop op v1 v2
-    | FunExp ((x, _), k, f') ->
-      FunV (
+    | FunSExp ((x, _), k, f') ->
+      FunSV (
         fun (xs, ys) -> fun (v, w) ->
           eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'
       )
-    | FixExp ((x, y, _, _), k, f') ->
+    | FixSExp ((x, y, _, _), k, f') ->
       let f (xs, ys) (v, w) =
         let f' = subst_exp (Utils.List.zip xs ys) f' in
         let rec f _ (v, w) =
-          let env = Environment.add x (xs, FunV f) env in
+          let env = Environment.add x (xs, FunSV f) env in
           let env = Environment.add y ([], v) env in
           let env = Environment.add k ([], w) env in
           eval env f'
         in f ([], []) (v, w)
-      in FunV f
-    | AppExp (f1, f2, f3) ->
+      in FunSV f
+    | AppDExp (f1, f2, f3) ->
       let v1 = eval env f1 in
       let v2 = eval env f2 in
       let v3 = eval env f3 in
@@ -348,31 +563,31 @@ module LS1 = struct
       let v2 = eval env f2 in
       let v1 = eval env f1 in
       ConsV (v1, v2)
-    | AppExp_alt (f1, f2) ->
+    | AppMExp (f1, f2) ->
       let v1 = eval env f1 in
       let v2 = eval env f2 in
       eval_app_val_alt env v1 v2 ~debug:debug
-    | FunExp_alt ((x, _), k, (f', f'')) ->
-      FunV_alt (
+    | FunAExp ((x, _), k, (f', f'')) ->
+      FunAV (
         fun (xs, ys) -> 
           (fun v -> eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'),
           (fun (v, w) -> eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'')
       )
-    | FixExp_alt ((x, y, _, _), k, (f', f'')) ->
+    | FixAExp ((x, y, _, _), k, (f', f'')) ->
       let f (xs, ys) =
         let f' = subst_exp (Utils.List.zip xs ys) f' in
         let f'' = subst_exp (Utils.List.zip xs ys) f'' in
         let rec f1' v =
-          let env = Environment.add x (xs, FunV_alt (fun _ -> (f1', f2'))) env in
+          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
           let env = Environment.add y ([], v) env in
           eval env f'
         and f2' (v, w) =
-          let env = Environment.add x (xs, FunV_alt (fun _ -> (f1', f2'))) env in
+          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
           let env = Environment.add y ([], v) env in
           let env = Environment.add k ([], w) env in
           eval env f''
         in (f1', f2')
-      in FunV_alt f
+      in FunAV f
   and match_mf ?(debug=false) env v mf = match v, mf with
     | _, MatchVar (id, _) ->
       let env = Environment.add id ([], v) env in
@@ -409,8 +624,8 @@ module LS1 = struct
       | c when is_d c -> CoerceV (v, c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
   and eval_app_val ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
-    | FunV proc -> proc ([], []) (v2, v3) 
-    | FunV_alt proc -> snd (proc ([], [])) (v2, v3)
+    | FunSV proc -> proc ([], []) (v2, v3) 
+    | FunAV proc -> snd (proc ([], [])) (v2, v3)
     | CoerceV (v1, CFun (s, t)) -> 
       begin match v3 with
         | CoercionV c -> 
@@ -420,7 +635,7 @@ module LS1 = struct
       end
     | _ -> raise @@ Eval_bug "app: application of non procedure value"
   and eval_app_val_alt ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
-    | FunV_alt proc -> fst (proc ([], [])) v2
+    | FunAV proc -> fst (proc ([], [])) v2
     | CoerceV (v1, CFun (s, t)) -> eval_app_val env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
     | _ -> raise @@ Eval_bug (asprintf "app: application of non procedure value: %a" Pp.LS1.pp_value v1)
 
@@ -448,17 +663,18 @@ module KNorm = struct
     | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp s f1, subst_exp s f2)
     | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp s f1, subst_exp s f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
-    | AppExp _ | CAppExp _ | CSeqExp _ as f -> f
+    | AppDExp _ | AppMExp _ | CAppExp _ | CSeqExp _ as f -> f
     | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_type_k s) tas)
-    (* | CastExp (r, x, u1, u2, p) -> CastExp (r, x, subst_type s u1, subst_type s u2, p) *)
+    | CastExp (x, u1, u2, r_p) -> CastExp (x, subst_type s u1, subst_type s u2, r_p)
+    | CoercionExp c -> CoercionExp (subst_coercion s c)
     | LetExp (x, f1, f2) ->
       LetExp (x, subst_exp s f1, subst_exp s f2)
-    | LetRecExp (x, tvs, arg, f1, f2) ->
-      LetRecExp (x, tvs, arg, subst_exp s f1, subst_exp s f2)
-    | CoercionExp c -> CoercionExp (subst_coercion s c)
-    | AppExp_alt _ as f -> f
-    | LetRecExp_alt (x, tvs, arg, (f1, f1'), f2) ->
-      LetRecExp_alt (x, tvs, arg, (subst_exp s f1, subst_exp s f1'), subst_exp s f2)
+    | LetRecSExp (x, tvs, arg, f1, f2) ->
+      LetRecSExp (x, tvs, arg, subst_exp s f1, subst_exp s f2)
+    | LetRecAExp (x, tvs, arg, (f1, f1'), f2) ->
+      LetRecAExp (x, tvs, arg, (subst_exp s f1, subst_exp s f1'), subst_exp s f2)
+    | LetRecBExp (x, tvs, arg, f1, f2) ->
+      LetRecBExp (x, tvs, arg, subst_exp s f1, subst_exp s f2)
 
   let rec eval_exp ?(debug=false) kenv f = 
     if debug then fprintf err_formatter "keval <-- %a\n" Pp.KNorm.pp_exp f;
@@ -467,7 +683,6 @@ module KNorm = struct
     | Var x -> 
       Environment.find x kenv
     | IConst i -> IntV i
-    (* | UConst -> UnitV *)
     | Nil -> NilV
     | Add (x1, x2) ->
       let v1 = Environment.find x1 kenv in
@@ -539,11 +754,15 @@ module KNorm = struct
     | MatchExp (x, ms) ->
       let v = Environment.find x kenv in
       eval_next ~debug:debug kenv v ms
-    | AppExp (x1, (x2, x3)) -> 
+    | AppMExp (x, y) -> 
+      let v1 = Environment.find x kenv in
+      let v2 = Environment.find y kenv in
+      eval_app_valM kenv v1 v2 ~debug:debug
+    | AppDExp (x1, (x2, x3)) -> 
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
       let v3 = Environment.find x3 kenv in
-      eval_app_val kenv v1 v2 v3 ~debug:debug
+      eval_app_valD kenv v1 v2 v3 ~debug:debug
     | CAppExp (x1, x2) ->
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
@@ -562,49 +781,131 @@ module KNorm = struct
       let v1 = Environment.find x kenv in
       let us = List.map nu_to_fresh tas in
       begin match v1 with
-        | FunV proc -> FunV (fun _ -> proc (tvs, us))
-        | FunV_alt proc -> FunV_alt (fun _ -> proc (tvs, us))
+        | FunSV proc -> FunSV (fun _ -> proc (tvs, us))
+        | FunAV proc -> FunAV (fun _ -> proc (tvs, us))
+        | FunBV proc -> FunBV (fun _ -> proc (tvs, us))
         | _ -> raise @@ Eval_bug "AppTy: not fun value"
       end
+    | CastExp (x, u1, u2, r_p) ->
+      let v = Environment.find x kenv in
+      cast ~debug:debug v u1 u2 r_p
+    | CoercionExp c -> CoercionV c
     | LetExp (x, f1, f2) -> 
       let v1 = eval_exp kenv f1 in
       eval_exp (Environment.add x v1 kenv) f2
-    | LetRecExp (x, _, (y, k), f1, f2) -> 
+    | LetRecSExp (x, _, (y, k), f1, f2) -> 
       let v1 = 
-        FunV (
+        FunSV (
           fun (tvs, us) -> fun (v1, v2) ->
           let f1 = subst_exp (Utils.List.zip tvs us) f1 in
           let rec f _ (v1, v2) =
-            let kenv = Environment.add x (FunV f) kenv in
+            let kenv = Environment.add x (FunSV f) kenv in
             let kenv = Environment.add y v1 kenv in
             let kenv = Environment.add k v2 kenv in
             eval_exp kenv f1
           in f ([], []) (v1, v2)
         )
       in eval_exp (Environment.add x v1 kenv) f2
-    | CoercionExp c -> CoercionV c
-    | AppExp_alt (x, y) -> 
-      let v1 = Environment.find x kenv in
-      let v2 = Environment.find y kenv in
-      eval_app_val_alt kenv v1 v2 ~debug:debug
-    | LetRecExp_alt (x, _, (y, k), (f1, f1'), f2) -> 
+    | LetRecAExp (x, _, (y, k), (f1, f1'), f2) -> 
       let v1 = 
-        FunV_alt (
+        FunAV (
           fun (xs, ys) -> 
           let f1 = subst_exp (Utils.List.zip xs ys) f1 in
           let f1' = subst_exp (Utils.List.zip xs ys) f1' in
           let rec f1_ v =
-            let kenv = Environment.add x (FunV_alt (fun _ -> (f1_, f1'_))) kenv in
+            let kenv = Environment.add x (FunAV (fun _ -> (f1_, f1'_))) kenv in
             let kenv = Environment.add y v kenv in
             eval_exp kenv f1
           and f1'_ (v, w) =
-            let kenv = Environment.add x (FunV_alt (fun _ -> (f1_, f1'_))) kenv in
+            let kenv = Environment.add x (FunAV (fun _ -> (f1_, f1'_))) kenv in
             let kenv = Environment.add y v kenv in
             let kenv = Environment.add k w kenv in
             eval_exp kenv f1'
           in (f1_, f1'_)
         )
       in eval_exp (Environment.add x v1 kenv) f2
+    | LetRecBExp (x, _, y, f1, f2) ->
+      let v1 = 
+        FunBV (
+          fun (tvs, us) -> fun v ->
+          let f1 = subst_exp (Utils.List.zip tvs us) f1 in
+          let rec f _ v =
+            let kenv = Environment.add x (FunBV f) kenv in
+            let kenv = Environment.add y v kenv in
+            eval_exp kenv f1
+          in f ([], []) v
+        )
+      in eval_exp (Environment.add x v1 kenv) f2
+  and cast ?(debug=false) v u1 u2 (r, p) = 
+    let print_debug f = Utils.Format.make_print_debug debug f in
+    print_debug "cast <-- %a: %a => %a\n" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
+    let cast = cast ~debug:debug in
+    match u1, u2 with
+    (* When tyvars are instantiated *)
+    | TyVar (_, {contents = Some u1}), u2 | u1, TyVar (_, {contents = Some u2}) ->
+      cast v u1 u2 (r, p)
+    (* IdBase: iota => iota ... ok*)
+    | TyBool, TyBool | TyInt, TyInt | TyUnit, TyUnit -> v
+    (* IdStar: ? => ? ... ok*)
+    | TyDyn, TyDyn -> v
+    (* Succeed / Fail: ? => U *)
+    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) as u2) -> 
+      begin match v, u2 with
+        | Tagged (B, v), TyBool -> v (* bool => ? => bool ... ok *)
+        | Tagged (I, v), TyInt -> v (* int => ? => int ... ok *)
+        | Tagged (U, v), TyUnit -> v (* unit => ? => unit ... ok *)
+        | Tagged (Ar, v), TyFun (TyDyn, TyDyn) -> v (* ?->? => ? => ?->? ... ok *)
+        | Tagged _, _ -> raise @@ Blame (r, p)
+        | _ -> raise @@ Eval_bug "untagged value"
+      end
+    (* AppCast *)
+    | TyFun (u11, u12), TyFun (u21, u22) ->
+      begin match v with
+        | FunBV proc -> 
+          FunBV (
+            fun (tvs, ts) -> fun x ->
+              let subst = subst_type @@ Utils.List.zip tvs ts in
+              let arg = cast x (subst u21) (subst u11) (r, (neg p)) in
+              let res = proc (tvs, ts) arg in
+              cast res (subst u12) (subst u22) (r, p)
+          )
+        | _ -> raise @@ Eval_bug "non procedual value"
+      end
+    (* Tagged *)
+    | TyBool, TyDyn -> Tagged (B, v)
+    | TyInt, TyDyn -> Tagged (I, v)
+    | TyUnit, TyDyn -> Tagged (U, v)
+    | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
+    (* Ground *)
+    | (TyFun _ as u1), (TyDyn as u2) ->
+      let dfun = TyFun (TyDyn, TyDyn) in
+      let v = cast v u1 dfun (r, p) in
+      cast v dfun u2 (r, p)
+    (* Expand *)
+    | (TyDyn as u1), (TyFun _ as u2) ->
+      let dfun = TyFun (TyDyn, TyDyn) in
+      let v = cast v u1 dfun (r, p) in 
+      cast v dfun u2 (r, p)
+    (* InstBase / InstArrow *)
+    | TyDyn, (TyVar (_, ({contents = None} as x)) as u') ->
+      begin match v with
+        | Tagged ((B | I | U as t), v) ->
+          let u = type_of_tag t in
+          print_debug "DTI: %a is instantiated to %a\n"
+            Pp.pp_ty u'
+            Pp.pp_ty u;
+          x := Some u;
+          v
+        | Tagged (Ar, v) -> 
+          let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
+          print_debug "DTI: %a is instantiated to %a\n"
+            Pp.pp_ty u'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyFun (TyDyn, TyDyn)) u (r, p)
+        | _ -> raise @@ Eval_bug "cannot instamtiate"
+      end
+    | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a: %a => %a" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2)
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
     print_debug "coerce <-- %a<%a>\n" Pp.KNorm.pp_value v Pp.pp_coercion c;
@@ -613,7 +914,7 @@ module KNorm = struct
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
     | v -> match normalize_coercion c with
       | CId _ -> v
-      | CFail (_, (r, p), _) -> raise @@ KBlame (r, p)
+      | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
       | c when is_d c -> CoerceV (v, (*Typing.ITGL.normalize_coercion*) c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a" Pp.KNorm.pp_value v)
   and match_mf ?(debug=false) kenv v mf = match v, mf with
@@ -640,20 +941,25 @@ module KNorm = struct
       if b then eval_exp ~debug:debug kenv' f
       else eval_next ~debug:debug kenv v ms
     | [] -> raise @@ Eval_bug "Didn't match"
-  and eval_app_val ?(debug=false) kenv v1 v2 v3 = match v1 with
-    | FunV proc -> proc ([], []) (v2, v3)
-    | FunV_alt proc -> snd (proc ([], [])) (v2, v3)
+  and eval_app_valD ?(debug=false) kenv v1 v2 v3 = match v1 with
+    | FunSV proc -> proc ([], []) (v2, v3)
+    | FunAV proc -> 
+      begin match v3 with
+      | CoercionV (CId _) -> fst (proc ([], [])) v2
+      | _ -> snd (proc ([], [])) (v2, v3)
+      end
     | CoerceV (v1, CFun (s, t)) -> 
       begin match v3 with
         | CoercionV c -> 
           let k = CoercionV (compose t c ~debug:debug) in
-          eval_app_val kenv v1 (coerce v2 s ~debug:debug) k
+          eval_app_valD kenv v1 (coerce v2 s ~debug:debug) k
         | _ -> raise @@ Eval_bug "app: application of non coercion value"
       end
     | _ -> raise @@ Eval_bug "app: application of non procedure value"
-  and eval_app_val_alt ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
-    | FunV_alt proc -> fst (proc ([], [])) v2
-    | CoerceV (v1, CFun (s, t)) -> eval_app_val env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
+  and eval_app_valM ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+    | FunAV proc -> fst (proc ([], [])) v2
+    | FunBV proc -> proc ([], []) v2
+    | CoerceV (v1, CFun (s, t)) -> eval_app_valD env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
     | _ -> raise @@ Eval_bug "app: application of non procedure value"
 
   let eval_program ?(debug=false) kenv = function
@@ -662,13 +968,13 @@ module KNorm = struct
       let v = eval_exp kenv f ~debug:debug in
       let kenv = Environment.add x v kenv in
       kenv, x, v
-    | LetRecDecl (x, _, (y, k), f') -> 
+    | LetRecSDecl (x, _, (y, k), f') -> 
       let v = 
-        FunV (
+        FunSV (
           fun (tvs, us) -> fun (v1, v2) ->
           let f' = subst_exp (Utils.List.zip tvs us) f' in
           let rec f _ (v1, v2) =
-            let kenv = Environment.add x (FunV f) kenv in
+            let kenv = Environment.add x (FunSV f) kenv in
             let kenv = Environment.add y v1 kenv in
             let kenv = Environment.add k v2 kenv in
             eval_exp kenv f'
@@ -676,22 +982,35 @@ module KNorm = struct
         )
       in let kenv = Environment.add x v kenv in
       kenv, x, v
-    | LetRecDecl_alt (x, _, (y, k), (f1, f1')) -> 
+    | LetRecADecl (x, _, (y, k), (f1, f1')) -> 
       let v = 
-        FunV_alt (
+        FunAV (
           fun (xs, ys) -> 
           let f1 = subst_exp (Utils.List.zip xs ys) f1 in
           let f1' = subst_exp (Utils.List.zip xs ys) f1' in
           let rec f1_ v =
-            let kenv = Environment.add x (FunV_alt (fun _ -> (f1_, f1'_))) kenv in
+            let kenv = Environment.add x (FunAV (fun _ -> (f1_, f1'_))) kenv in
             let kenv = Environment.add y v kenv in
             eval_exp kenv f1
           and f1'_ (v, w) =
-            let kenv = Environment.add x (FunV_alt (fun _ -> (f1_, f1'_))) kenv in
+            let kenv = Environment.add x (FunAV (fun _ -> (f1_, f1'_))) kenv in
             let kenv = Environment.add y v kenv in
             let kenv = Environment.add k w kenv in
             eval_exp kenv f1'
           in (f1_, f1'_)
+        )
+      in let kenv = Environment.add x v kenv in
+      kenv, x, v
+    | LetRecBDecl (x, _, y, f') -> 
+      let v = 
+        FunBV (
+          fun (tvs, us) -> fun v ->
+          let f' = subst_exp (Utils.List.zip tvs us) f' in
+          let rec f _ v =
+            let kenv = Environment.add x (FunBV f) kenv in
+            let kenv = Environment.add y v kenv in
+            eval_exp kenv f'
+          in f ([], []) v
         )
       in let kenv = Environment.add x v kenv in
       kenv, x, v

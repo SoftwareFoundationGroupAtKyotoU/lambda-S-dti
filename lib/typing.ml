@@ -223,7 +223,9 @@ module ITGL = struct
     | FunEExp _
     | FunIExp _
     | FixEExp _
-    | FixIExp _ -> true
+    | FixIExp _ 
+    | NilExp _ -> true
+    | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2
     | AscExp (_, e, (TyInt | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
     | AscExp (_, e, TyList _) -> is_list_value env e
@@ -464,8 +466,8 @@ let rec type_of_coercion = function
     else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
   | CFail _ -> assert false (* TODO *)
 
-module LS = struct
-  open Syntax.LS
+module CC = struct
+  open Syntax.CC
 
   let rec type_of_matchform env mf = match mf with
     | MatchILit _ -> TyInt, env
@@ -543,14 +545,10 @@ module LS = struct
           raise @@ Type_bug "not consistent"
       else
         raise @@ Type_bug "invalid source type"
-    | MatchExp (f, ms) ->
-      let u_match = type_of_exp env f in 
-      let u = type_of_ms env u_match ms in
-      u
-    (*| CastExp (r, f, TyVar (_, { contents = Some u1 }), u2, p)
-    | CastExp (r, f, u1, TyVar (_, { contents = Some u2 }), p) ->
-      type_of_exp env @@ CastExp (r, f, u1, u2, p)
-    | CastExp (_, f, u1, u2, _) ->
+    | CastExp (f, TyVar (_, { contents = Some u1 }), u2, r_p)
+    | CastExp (f, u1, TyVar (_, { contents = Some u2 }), r_p) ->
+      type_of_exp env @@ CastExp (f, u1, u2, r_p)
+    | CastExp (f, u1, u2, _) ->
       let u = type_of_exp env f in
       if u = u1 then
         if is_consistent u1 u2 then
@@ -558,7 +556,11 @@ module LS = struct
         else
           raise @@ Type_bug "not consistent"
       else
-        raise @@ Type_bug "invalid source type"*)
+        raise @@ Type_bug "invalid source type"
+    | MatchExp (f, ms) ->
+      let u_match = type_of_exp env f in 
+      let u = type_of_ms env u_match ms in
+      u
     | LetExp (x, xs, f1, f2) (*when is_value f1*) ->
       let u1 = type_of_exp env f1 in
       let us1 = TyScheme (xs, u1) in

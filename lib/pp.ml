@@ -333,11 +333,12 @@ module ITGL = struct
         pp_exp e
 end
 
-module LS = struct
-  open Syntax.LS
+module CC = struct
+  open Syntax.CC
 
   let gt_exp f1 f2 = match f1, f2 with
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | AppExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _), (LetExp _ | FunExp _ | FixExp _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | AppExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _ | CastExp _), (LetExp _ | FunExp _ | FixExp _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | AppExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _), CastExp _ -> true
     | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | AppExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _), MatchExp _ -> true
     | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | AppExp _ | CAppExp _ | BinOp _ | ConsExp _), IfExp _ -> true
     | BinOp (op1, _, _), BinOp (op2, _, _) -> gt_binop op1 op2
@@ -401,6 +402,20 @@ module LS = struct
         fprintf ppf "%a<%a>"
           (with_paren (gt_exp f f1) pp_exp) f1
           pp_coercion c
+    | CastExp (f1, u1, u2, _) as f ->
+      begin match f1 with
+      | CastExp (_, _, u1', _) when u1 = u1' ->
+        fprintf ppf "%a => %a"
+          (with_paren (gt_exp f f1) pp_exp) f1
+          pp_ty u2
+      | CastExp _ ->
+        raise Syntax_error
+      | _ ->
+        fprintf ppf "%a: %a => %a"
+          (with_paren (gt_exp f f1) pp_exp) f1
+          pp_ty u1
+          pp_ty u2
+      end
     | MatchExp (e1, ms) as e ->
       fprintf ppf "match %a with %a"
         (with_paren (gte_exp e e1) pp_exp) e1
@@ -434,41 +449,74 @@ module LS = struct
 
   (*let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t*)
 
-  (* let rec pp_value ppf = function
+  let gt_value v1 v2 = match v1, v2 with
+    | (BoolV _ | IntV _ | UnitV | FunV _ | Tagged _), (NilV | ConsV _) -> true
+    | (BoolV _ | IntV _ | UnitV | FunV _), Tagged _ -> true
+    | _ -> false
+
+  let gte_value v1 v2 = match v1, v2 with
+    | FunV _, FunV _ -> true
+    | Tagged _, Tagged _ -> true
+    | ConsV _, ConsV _ -> true
+    | _ -> gt_value v1 v2
+
+  let rec pp_value ppf = function
     | BoolV b -> pp_print_bool ppf b
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
     | FunV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v, c) ->
+    (* | CoerceV (v, c) ->
       fprintf ppf "%a<<%a>>"
         pp_value v
-        pp_coercion c
-    | ListV l ->
-      let pp_sep ppf () = fprintf ppf ";" in
-      let pp_list ppf elms = pp_print_list pp_value ppf elms ~pp_sep:pp_sep in
-      fprintf ppf "[%a]"
-        pp_list l *)
+        pp_coercion c *)
+    | NilV -> pp_print_string ppf "[]"
+    | ConsV (v1, v2) as v ->
+      fprintf ppf "%a :: %a"
+        (with_paren (gte_value v v1) pp_value) v1
+        (with_paren (gt_value v v2) pp_value) v2
+    | Tagged (t, v) ->
+      fprintf ppf "%a: %a => ?"
+        pp_value v
+        pp_tag t
 
+  let rec pp_value2 ppf = function
+    | BoolV b -> pp_print_bool ppf b
+    | IntV i -> pp_print_int ppf i
+    | UnitV -> pp_print_string ppf "()"
+    | FunV _ -> pp_print_string ppf "<fun>"
+    (* | CoerceV (v, c) ->
+      fprintf ppf "%a<<%a>>"
+        pp_value2 v
+        pp_coercion2 c *)
+    | NilV -> pp_print_string ppf "[]"
+    | ConsV (v1, v2) as v ->
+      fprintf ppf "%a :: %a"
+        (with_paren (gte_value v v1) pp_value2) v1
+        (with_paren (gt_value v v2) pp_value2) v2
+    | Tagged (t, v) ->
+      fprintf ppf "%a: %a => ?"
+        pp_value2 v
+        pp_tag t
 end
 
 module LS1 = struct
   open Syntax.LS1
 
   let gt_exp f1 f2 = match f1, f2 with
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _), (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _) -> true
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _), MatchExp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | CAppExp _ | BinOp _ | ConsExp _), IfExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppDExp _ | AppMExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _), (LetExp _ | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppDExp _ | AppMExp _ | CAppExp _ | BinOp _ | ConsExp _ | IfExp _), MatchExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppDExp _ | AppMExp _ | CAppExp _ | BinOp _ | ConsExp _), IfExp _ -> true
     | BinOp (op1, _, _), BinOp (op2, _, _) -> gt_binop op1 op2
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _ | CAppExp _), (BinOp _ | ConsExp _) -> true
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppExp _ | AppExp_alt _), CAppExp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _), (AppExp _ | AppExp_alt _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppDExp _ | AppMExp _ | CAppExp _), (BinOp _ | ConsExp _) -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _ | AppDExp _ | AppMExp _), CAppExp _ -> true
+    | (Var _ | IConst _ | BConst _ | UConst | NilExp _ | CSeqExp _ | CoercionExp _), (AppDExp _ | AppMExp _) -> true
     | _ -> false
 
   let gte_exp f1 f2 = match f1, f2 with
-    | (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _), (LetExp _ | FunExp _ | FixExp _ | FunExp_alt _ | FixExp_alt _) -> true
+    | (LetExp _ | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _), (LetExp _ | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _) -> true
     | IfExp _, IfExp _ -> true
     | BinOp (op1, _, _), BinOp (op2, _, _) when op1 = op2 -> true
-    | (AppExp _ | AppExp_alt _), (AppExp _ | AppExp_alt _) -> true
+    | (AppDExp _ | AppMExp _), (AppDExp _ | AppMExp _) -> true
     | CAppExp _, CAppExp _ -> true
     | CSeqExp _, CSeqExp _ -> true
     | MatchExp _, MatchExp _ -> true
@@ -500,13 +548,13 @@ module LS1 = struct
         (with_paren (gt_exp f f1) pp_exp) f1
         (with_paren (gt_exp f f2) pp_exp) f2
         (with_paren (gt_exp f f3) pp_exp) f3
-    | FunExp ((x1, u1), c, f) ->
+    | FunSExp ((x1, u1), c, f) ->
       fprintf ppf "fun ((%s: %a), %s) -> %a"
         x1
         pp_ty u1
         c
         pp_exp f
-    | FixExp ((x, y, u1, u2), c, f) ->
+    | FixSExp ((x, y, u1, u2), c, f) ->
       fprintf ppf "fix %s ((%s: %a), %s): %a = %a"
         x
         y
@@ -514,7 +562,7 @@ module LS1 = struct
         c
         pp_ty u2
         pp_exp f
-    | AppExp (f1, f2, f3) as f ->
+    | AppDExp (f1, f2, f3) as f ->
       fprintf ppf "%a (%a, %a)"
         (with_paren (gt_exp f f1) pp_exp) f1
         pp_exp f2
@@ -545,14 +593,14 @@ module LS1 = struct
       fprintf ppf "%a :: %a"
         (with_paren (gte_exp f f1) pp_exp) f1
         (with_paren (gt_exp f f2) pp_exp) f2
-    | FunExp_alt ((x1, u1), c, (f1, f2)) ->
+    | FunAExp ((x1, u1), c, (f1, f2)) ->
       fprintf ppf "fun ((%s: %a), %s) -> (%a | %a)"
         x1
         pp_ty u1
         c
         pp_exp f1
         pp_exp f2
-    | FixExp_alt ((x, y, u1, u2), c, (f1, f2)) ->
+    | FixAExp ((x, y, u1, u2), c, (f1, f2)) ->
       fprintf ppf "fix %s ((%s: %a), %s): %a = (%a | %a)"
         x
         y
@@ -561,7 +609,7 @@ module LS1 = struct
         pp_ty u2
         pp_exp f1
         pp_exp f2
-    | AppExp_alt (f1, f2) as f ->
+    | AppMExp (f1, f2) as f ->
       fprintf ppf "%a %a"
         (with_paren (gt_exp f f1) pp_exp) f1
         (with_paren (gte_exp f f2) pp_exp) f2
@@ -584,12 +632,12 @@ module LS1 = struct
   (*let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t*)
 
   let gt_value v1 v2 = match v1, v2 with
-    | (BoolV _ | IntV _ | UnitV | FunV _ | FunV_alt _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
-    | (BoolV _ | IntV _ | UnitV | FunV _ | FunV_alt _ | CoercionV _), CoerceV _ -> true
+    | (BoolV _ | IntV _ | UnitV | FunSV _ | FunAV _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
+    | (BoolV _ | IntV _ | UnitV | FunSV _ | FunAV _ | CoercionV _), CoerceV _ -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
-    | (FunV _ | FunV_alt _), (FunV _ | FunV_alt _) -> true
+    | (FunSV _ | FunAV _), (FunSV _ | FunAV _) -> true
     | CoerceV _, CoerceV _ -> true
     | ConsV _, ConsV _ -> true
     | _ -> gt_value v1 v2
@@ -598,7 +646,7 @@ module LS1 = struct
     | BoolV b -> pp_print_bool ppf b
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
-    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | FunSV _ | FunAV _ -> pp_print_string ppf "<fun>"
     | CoerceV (v1, c) as v ->
       fprintf ppf "%a<<%a>>"
         (with_paren (gt_value v v1) pp_value) v1
@@ -616,7 +664,7 @@ module LS1 = struct
     | BoolV b -> pp_print_bool ppf b
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
-    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | FunSV _ | FunAV _ -> pp_print_string ppf "<fun>"
     | CoerceV (v1, c) as v ->
       fprintf ppf "%a<<%a>>"
         (with_paren (gt_value v v1) pp_value2) v1
@@ -636,13 +684,14 @@ module KNorm = struct
 
   let gt_exp e e1 = match e, e1 with
     | (Var _ | IConst _ | Nil), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)
-    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | AppExp _ | AppTy _ | AppExp_alt _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
-    | (IfEqExp _ | IfLteExp _ | MatchExp _), (LetExp _ | LetRecExp _) -> true
+    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | AppDExp _ | AppTy _ | AppMExp _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
+    | (IfEqExp _ | IfLteExp _ | MatchExp _), (LetExp _ | LetRecSExp _ | LetRecAExp _ | LetRecBExp _) -> true
     | _ -> false
   
   let gte_exp e e1 = match e, e1 with
-    | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ | Cons _, Cons _ -> true
-    | AppTy _, AppTy _ | AppExp _, AppExp _ | AppExp_alt _, AppExp_alt _ | (LetExp _ | LetRecExp _ | LetRecExp_alt _) , (LetExp _ | LetRecExp _ | LetRecExp_alt _) -> true
+    (* | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ | Cons _, Cons _ -> true *)
+    (* | AppTy _, AppTy _ | AppDExp _, AppDExp _ | AppMExp _, AppMExp _ -> true *)
+    | (LetExp _ | LetRecSExp _ | LetRecAExp _ | LetRecBExp _) , (LetExp _ | LetRecSExp _ | LetRecAExp _ | LetRecBExp _) -> true
     | (IfEqExp _ | IfLteExp _), (IfEqExp _ | IfLteExp _) -> true
     | MatchExp _, MatchExp _ -> true
     | _ -> gt_exp e e1
@@ -650,7 +699,6 @@ module KNorm = struct
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | IConst i -> pp_print_int ppf i
-    (* | UConst -> pp_print_string ppf "()" *)
     | Nil -> pp_print_string ppf "[]"
     | Add (x, y) -> fprintf ppf "%s + %s" x y
     | Sub (x, y) -> fprintf ppf "%s - %s" x y
@@ -676,7 +724,9 @@ module KNorm = struct
       fprintf ppf "match %s with %a"
         x        
         pp_match (ms, e)
-    | AppExp (x, (y, z)) -> 
+    | AppMExp (x, y) ->
+      fprintf ppf "%s %s" x y
+    | AppDExp (x, (y, z)) -> 
       fprintf ppf "%s (%s, %s)" x y z
     | AppTy (x, _, tas) ->
       fprintf ppf "%s[%a]"
@@ -684,6 +734,11 @@ module KNorm = struct
         pp_print_tas tas
     | CAppExp (x, y) ->
       fprintf ppf "%s<%s>" x y
+    | CastExp (x, u1, u2, _) ->
+      fprintf ppf "%s: %a => %a"
+        x
+        pp_ty u1
+        pp_ty u2
     | CSeqExp (x, y) -> 
       fprintf ppf "%s;;%s" x y
     | LetExp (x, e1, e2) as e ->
@@ -691,7 +746,9 @@ module KNorm = struct
         x
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gte_exp e e2) pp_exp) e2
-    | LetRecExp (x, tvs, (y, k), e1, e2) as e ->
+    | CoercionExp c ->
+      pp_coercion ppf c
+    | LetRecSExp (x, tvs, (y, k), e1, e2) as e ->
       fprintf ppf "let %s = %afun (%s, %s) -> %a in %a"
         x
         pp_let_tyabses tvs
@@ -699,11 +756,7 @@ module KNorm = struct
         k
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gte_exp e e2) pp_exp) e2
-    | CoercionExp c ->
-      pp_coercion ppf c
-    | AppExp_alt (x, y) ->
-      fprintf ppf "%s %s" x y
-    | LetRecExp_alt (x, tvs, (y, k), (e1, e2), e3) as e ->
+    | LetRecAExp (x, tvs, (y, k), (e1, e2), e3) as e ->
       fprintf ppf "let %s = %afun (%s, %s) -> (%a | %a) in %a"
         x
         pp_let_tyabses tvs
@@ -712,6 +765,13 @@ module KNorm = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
         (with_paren (gte_exp e e3) pp_exp) e3
+    | LetRecBExp (x, tvs, y, e1, e2) as e ->
+      fprintf ppf "let %s = %afun %s -> %a in %a"
+        x
+        pp_let_tyabses tvs
+        y
+        (with_paren (gt_exp e e1) pp_exp) e1
+        (with_paren (gte_exp e e2) pp_exp) e2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf "| %a -> %a %a"
@@ -726,14 +786,14 @@ module KNorm = struct
       fprintf ppf "let %s = %a"
         x
         pp_exp e
-    | LetRecDecl (x, tvs, (y, k), e) ->
+    | LetRecSDecl (x, tvs, (y, k), e) ->
         fprintf ppf "let %s = %afun (%s, %s) -> %a"
           x
           pp_let_tyabses tvs
           y
           k
           pp_exp e
-    | LetRecDecl_alt (x, tvs, (y, k), (e1, e2)) ->
+    | LetRecADecl (x, tvs, (y, k), (e1, e2)) ->
         fprintf ppf "let %s = %afun (%s, %s) -> (%a | %a)"
           x
           pp_let_tyabses tvs
@@ -741,14 +801,20 @@ module KNorm = struct
           k
           pp_exp e1
           pp_exp e2
+    | LetRecBDecl (x, tvs, y, e) ->
+        fprintf ppf "let %s = %afun %s -> %a"
+          x
+          pp_let_tyabses tvs
+          y
+          pp_exp e
 
   let gt_value v1 v2 = match v1, v2 with
-    | (IntV _ | FunV _ | FunV_alt _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
-    | (IntV _ | FunV _ | FunV_alt _ | CoercionV _), CoerceV _ -> true
+    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
+    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | CoercionV _), CoerceV _ -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
-    | (FunV _ | FunV_alt _), (FunV _ | FunV_alt _) -> true
+    | (FunSV _ | FunAV _ | FunBV _), (FunSV _ | FunAV _ | FunBV _) -> true
     | CoerceV _, CoerceV _ -> true
     | ConsV _, ConsV _ -> true
     | _ -> gt_value v1 v2
@@ -760,11 +826,15 @@ module KNorm = struct
       fprintf ppf "%a :: %a"
         (with_paren (gte_value v v1) pp_value) v1
         (with_paren (gt_value v v2) pp_value) v2
-    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | FunSV _ | FunAV _ | FunBV _ -> pp_print_string ppf "<fun>"
     | CoerceV (v1, c) as v -> 
       fprintf ppf "%a<<%a>>"
         (with_paren (gt_value v v1) pp_value) v1
         pp_coercion c
+    | Tagged (t, v) ->
+      fprintf ppf "%a: %a => ?"
+        pp_value v
+        pp_tag t
     | CoercionV c -> pp_coercion ppf c
 
   let rec pp_value2 ppf = function
@@ -774,11 +844,15 @@ module KNorm = struct
       fprintf ppf "%a :: %a"
         (with_paren (gte_value v v1) pp_value2) v1
         (with_paren (gt_value v v2) pp_value2) v2
-    | FunV _ | FunV_alt _ -> pp_print_string ppf "<fun>"
+    | FunSV _ | FunAV _ | FunBV _ -> pp_print_string ppf "<fun>"
     | CoerceV (v1, c) as v -> 
       fprintf ppf "%a<<%a>>"
         (with_paren (gt_value v v1) pp_value2) v1
         pp_coercion2 c
+    | Tagged (t, v) ->
+      fprintf ppf "%a: %a => ?"
+        pp_value2 v
+        pp_tag t
     | CoercionV c -> pp_coercion2 ppf c
 end
 
@@ -805,7 +879,6 @@ module Cls = struct
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | Int i -> pp_print_int ppf i
-    (* | Unit -> pp_print_string ppf "()" *)
     | Nil -> pp_print_string ppf "[]"
     | Add (x, y) -> fprintf ppf "%s + %s" x y
     | Sub (x, y) -> fprintf ppf "%s - %s" x y
@@ -831,10 +904,10 @@ module Cls = struct
       fprintf ppf "match %s with %a"
         x        
         pp_match ms
-    | AppCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
-    | AppDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
-    | AppCls_alt (x, y) -> fprintf ppf "%s:cls_alt %s" x y
-    | AppDir_alt (l, y) -> fprintf ppf "%s:label_alt %s" l y
+    | AppDCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
+    | AppDDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
+    | AppMCls (x, y) -> fprintf ppf "%s:cls_alt %s" x y
+    | AppMDir (l, y) -> fprintf ppf "%s:label_alt %s" l y
     | AppTy (x, _, tas) ->
       fprintf ppf "%s[%a]"
         x
@@ -850,11 +923,11 @@ module Cls = struct
         pp_ty u2
         pp_exp f
     | SetTy _ -> raise @@ Syntax_error
-    (* | Cast (x, u1, u2, _, _) ->
+    | Cast (x, u1, u2, _) ->
         fprintf ppf "%s: %a => %a"
           x
           pp_ty u1
-          pp_ty u2 *)
+          pp_ty u2
     | CApp (x, y) ->
       fprintf ppf "%s<%s>" x y
     | CSeq (x, y) ->
@@ -879,26 +952,6 @@ module Cls = struct
         pp_exp f
     | MakePolyCls (x, cls, _, f) ->
       fprintf ppf "pcls %s = %a in %a"
-        x
-        pp_print_cls cls
-        pp_exp f
-    | MakeLabel_alt (x, l, f) ->
-      fprintf ppf "lbl_a %s = %s in %a"
-        x
-        l
-        pp_exp f
-    | MakePolyLabel_alt (x, l, _, f) ->
-      fprintf ppf "plbl_a %s = %s in %a"
-        x
-        l
-        pp_exp f
-    | MakeCls_alt (x, cls, f) ->
-      fprintf ppf "cls_a %s = %a in %a"
-        x
-        pp_print_cls cls
-        pp_exp f
-    | MakePolyCls_alt (x, cls, _, f) ->
-      fprintf ppf "pcls_a %s = %a in %a"
         x
         pp_print_cls cls
         pp_exp f
@@ -927,7 +980,7 @@ module Cls = struct
       pp_list fvl
 
   let pp_fundef ppf fundef = match fundef with
-  | Fundef { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} ->
+  | FundefD { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} ->
     if List.length fvl = 0 then
       fprintf ppf "let rec %s %a(%s, %s) = %a"
         l
@@ -943,7 +996,7 @@ module Cls = struct
         z
         pp_exp f
         pp_print_fv fvl
-  | Fundef_alt { name = l; tvs = (tvs, _); arg = y; formal_fv = fvl; body = f} -> 
+  | FundefM { name = l; tvs = (tvs, _); arg = y; formal_fv = fvl; body = f} -> 
     if List.length fvl = 0 then
       fprintf ppf "let rec %s %a%s = %a"
         l

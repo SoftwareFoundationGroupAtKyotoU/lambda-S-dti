@@ -63,9 +63,9 @@ module ITGL = struct
   ]
 end
 
-module LS = struct
-  open Pp.LS
-  open Syntax.LS
+module CC = struct
+  open Pp.CC
+  open Syntax.CC
 
   let r = Utils.Error.dummy_range
 
@@ -99,5 +99,5 @@ let suite = [
   "test_pp_ty">::: test_pp_ty;
   "test_pp_ty2">::: test_pp_ty2;
   "test_ITGL">::: ITGL.suite;
-  "test_LS">::: LS.suite;
+  "test_CC">::: CC.suite;
 ]

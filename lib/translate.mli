@@ -4,11 +4,11 @@ exception Translation_bug of string
 
 module ITGL : sig
 	open Syntax.ITGL
-	val translate : tysc Environment.t -> program -> (tysc Environment.t * LS.program * ty)
+	val translate : intoB:bool -> tysc Environment.t -> program -> (tysc Environment.t * CC.program * ty)
 end
 
-module LS : sig
-	open Syntax.LS
+module CC : sig
+	open Syntax.CC
 
 	val translate : tysc Environment.t -> program -> LS1.program
 	val translate_alt : tysc Environment.t -> program -> LS1.program

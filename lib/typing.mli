@@ -38,8 +38,8 @@ end
 
 val type_of_coercion : coercion -> ty * ty
 
-module LS : sig
-  open Syntax.LS
+module CC : sig
+  open Syntax.CC
 
   val type_of_program : tysc Environment.t -> program -> ty
 end

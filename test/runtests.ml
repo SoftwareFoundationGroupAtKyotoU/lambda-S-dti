@@ -1,10 +1,12 @@
 open OUnit2
 
 let suite = "test">:::[
-    "test_examples">::: Test_examples.suite;
-    "text_alternative">::: Test_alternative.suite;
-    "test_kNormal">::: Test_kNormal.suite;
-    "test_alternative_k">::: Test_alternative_k.suite;
+    "test_S">::: Test_S.suite;
+    "text_A">::: Test_A.suite;
+    "text_B">::: Test_B.suite;    
+    "test_S_k">::: Test_S_k.suite;
+    "test_A_k">::: Test_A_k.suite;
+    "test_B_k">::: Test_B_k.suite;
     "test_pp">::: Test_pp.suite;
     "test_typing">::: Test_typing.suite;
   ]

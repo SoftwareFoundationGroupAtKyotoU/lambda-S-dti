@@ -6,6 +6,12 @@ val compose : ?debug:bool -> coercion -> coercion -> coercion
 
 val tag_of_ty : ty -> tag
 
+module CC : sig
+  open Syntax.CC
+  
+  val eval_program : ?debug:bool -> (tyvar list * value) Environment.t -> program -> (tyvar list * value) Environment.t * id * value
+end 
+
 module LS1 : sig
   open Syntax.LS1
   

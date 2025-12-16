@@ -161,6 +161,8 @@ let rec tag_of_ty = function
   | _ -> assert false
   (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
 
+exception Blame of range * polarity
+
 (** Syntax of the surface language, the ITGL with extensions. *)
 module ITGL = struct
   (* for typing *)
@@ -247,7 +249,7 @@ module ITGL = struct
 end
 
 (** Syntax of the blame calculus with dynamic type inference. *)
-module LS = struct
+module CC = struct
   type exp =
     | Var of id * tyarg list
     | IConst of int
@@ -259,6 +261,7 @@ module LS = struct
     | FixExp of id * id * ty * ty * exp
     | AppExp of exp * exp
     | CAppExp of exp * coercion
+    | CastExp of exp * ty * ty * (range * polarity)
     | MatchExp of exp * (matchform * exp) list
     | LetExp of id * tyvar list * exp * exp
     | NilExp of ty
@@ -271,10 +274,11 @@ module LS = struct
     | UConst
     | FunExp _
     | FixExp _ 
-    | NilExp -> true
-    | 
-    (*| CoercionExp (_, v, TyFun _, TyFun _, _) when is_value v -> true
-    | CoercionExp (_, v, g, TyDyn, _) when is_value v && is_ground g -> true*)
+    | NilExp _ -> true
+    | CastExp (_, v, TyFun _, TyFun _, _) -> is_value v
+    | CastExp (_, v, TyList _, TyList _, _) -> is_value v
+    | CastExp (_, v, g, TyDyn, _) -> is_value v && is_ground g
+    | ConsExp (v1, v2) -> is_value v1 && is_value v2
     | _ -> false  *)
 
   let ftv_tyarg = function
@@ -292,8 +296,8 @@ module LS = struct
     | FunExp (_, u, e) -> TV.union (ftv_ty u) (ftv_exp e)
     | FixExp (_, _, u1, _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
     | AppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | CAppExp (f, c) ->
-      TV.union (ftv_exp f) (ftv_coercion c)
+    | CAppExp (f, c) -> TV.union (ftv_exp f) (ftv_coercion c)
+    | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | MatchExp (f, ms) ->
       TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | LetExp (_, xs, f1, f2) ->
@@ -305,14 +309,14 @@ module LS = struct
     | Exp of exp
     | LetDecl of id * tyvar list * exp
   
-  (* type value =
+  type value =
     | IntV of int
     | BoolV of bool
     | UnitV
     | FunV of ((tyvar list * ty list) -> value -> value)
-    | CoerceV of value * coercion
+    | Tagged of tag * value
     | NilV
-    | ConsV of value * value *)
+    | ConsV of value * value
 end
 
 module LS1 = struct
@@ -323,9 +327,9 @@ module LS1 = struct
     | UConst
     | BinOp of binop * exp * exp
     | IfExp of exp * exp * exp
-    | FunExp of (id * ty) * id * exp
-    | FixExp of (id * id * ty * ty) * id * exp
-    | AppExp of exp * exp * exp
+    | FunSExp of (id * ty) * id * exp
+    | FixSExp of (id * id * ty * ty) * id * exp
+    | AppDExp of exp * exp * exp
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
     | MatchExp of exp * (matchform * exp) list
@@ -333,9 +337,9 @@ module LS1 = struct
     | CoercionExp of coercion
     | NilExp of ty
     | ConsExp of exp * exp
-    | FunExp_alt of (id * ty) * id * (exp * exp)
-    | FixExp_alt of (id * id * ty * ty) * id * (exp * exp)
-    | AppExp_alt of exp * exp
+    | FunAExp of (id * ty) * id * (exp * exp)
+    | FixAExp of (id * id * ty * ty) * id * (exp * exp)
+    | AppMExp of exp * exp
 
   (* let rec is_value = function
     | Var _
@@ -363,9 +367,9 @@ module LS1 = struct
     | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | IfExp (f1, f2, f3) ->
       List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
-    | FunExp ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)
-    | FixExp ((_, _, u1, _), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
-    | AppExp (f1, f2, f3) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
+    | FunSExp ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)
+    | FixSExp ((_, _, u1, _), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
+    | AppDExp (f1, f2, f3) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | MatchExp (f, ms) ->
@@ -375,9 +379,9 @@ module LS1 = struct
     | CoercionExp c -> ftv_coercion c
     | NilExp _ -> TV.empty
     | ConsExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | FunExp_alt ((_, u), _, (f1, f2)) -> TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)
-    | FixExp_alt ((_, _, u1, _), _, (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_exp f1) (ftv_exp f2)
-    | AppExp_alt (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | FunAExp ((_, u), _, (f1, f2)) -> TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+    | FixAExp ((_, _, u1, _), _, (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+    | AppMExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
 
   type program =
     | Exp of exp
@@ -387,21 +391,18 @@ module LS1 = struct
     | IntV of int
     | BoolV of bool
     | UnitV
-    | FunV of ((tyvar list * ty list) -> (value * value) -> value)
+    | FunSV of ((tyvar list * ty list) -> (value * value) -> value)
     | CoerceV of value * coercion
     | CoercionV of coercion
     | NilV
     | ConsV of value * value
-    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
-  
-  exception Blame of range * polarity
+    | FunAV of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
 end
 
 module KNorm = struct
   type exp =
     | Var of id
     | IConst of int
-    (* | UConst *)
     | Add of id * id
     | Sub of id * id
     | Mul of id * id
@@ -413,34 +414,36 @@ module KNorm = struct
     | Tl of id
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
-    | AppExp of id * (id * id)
+    | AppMExp of id * id
+    | AppDExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
     | CAppExp of id * id
+    | CastExp of id * ty * ty * (range * polarity)
     | CSeqExp of id * id
     | MatchExp of id * (matchform * exp) list
-    | LetExp of id * exp * exp
-    | LetRecExp of id * tyvar list * (id * id) * exp * exp
     | CoercionExp of coercion
-    | AppExp_alt of id * id
-    | LetRecExp_alt of id * tyvar list * (id * id) * (exp * exp) * exp
+    | LetExp of id * exp * exp
+    | LetRecSExp of id * tyvar list * (id * id) * exp * exp
+    | LetRecAExp of id * tyvar list * (id * id) * (exp * exp) * exp
+    | LetRecBExp of id * tyvar list * id * exp * exp
 
   type program =
     | Exp of exp
     | LetDecl of id * exp
-    | LetRecDecl of id * tyvar list * (id * id) * exp
-    | LetRecDecl_alt of id * tyvar list * (id * id) * (exp * exp)
+    | LetRecSDecl of id * tyvar list * (id * id) * exp
+    | LetRecADecl of id * tyvar list * (id * id) * (exp * exp)
+    | LetRecBDecl of id * tyvar list * id * exp
 
   type value =
     | IntV of int
-    (* | UnitV *)
     | NilV
     | ConsV of value * value
-    | FunV of ((tyvar list * ty list) -> (value * value) -> value)
+    | Tagged of tag * value
     | CoerceV of value * coercion
     | CoercionV of coercion
-    | FunV_alt of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
-
-  exception KBlame of range * polarity
+    | FunSV of ((tyvar list * ty list) -> (value * value) -> value)
+    | FunAV of ((tyvar list * ty list) -> ((value -> value) * ((value * value) -> value)))
+    | FunBV of ((tyvar list * ty list) -> value -> value)
 end
 
 module Cls = struct
@@ -459,7 +462,6 @@ module Cls = struct
   type exp =
     | Var of id
     | Int of int
-    (* | Unit *)
     | Nil
     | Add of id * id
     | Sub of id * id
@@ -473,11 +475,11 @@ module Cls = struct
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list
     | AppTy of id * int * tyarg list
-    | AppCls of id * (id * id)
-    | AppDir of label * (id * id)
-    | AppCls_alt of id * id
-    | AppDir_alt of label * id
-    (* | Cast of id * ty * ty * range * polarity *)
+    | AppDCls of id * (id * id)
+    | AppDDir of label * (id * id)
+    | AppMCls of id * id
+    | AppMDir of label * id
+    | Cast of id * ty * ty * (range * polarity)
     | CApp of id * id
     | CSeq of id * id
     | Coercion of coercion
@@ -486,16 +488,16 @@ module Cls = struct
     | MakeLabel of id * label * exp
     | MakePolyLabel of id * label * ftv * exp
     | MakePolyCls of id * closure * ftv * exp
-    | MakeCls_alt of id * closure * exp
+    (* | MakeCls_alt of id * closure * exp
     | MakeLabel_alt of id * label * exp
     | MakePolyLabel_alt of id * label * ftv * exp
-    | MakePolyCls_alt of id * closure * ftv * exp
+    | MakePolyCls_alt of id * closure * ftv * exp *)
     | SetTy of tyvar * exp
     | Insert of id * exp
 
   type fundef = 
-    | Fundef of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
-    | Fundef_alt of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
+    | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
+    | FundefM of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
     
   module V = struct
     include Set.Make (
@@ -521,11 +523,11 @@ module Cls = struct
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_mf mf) (fv f)) ms)
     | AppTy (x, _, _) -> V.singleton x
     | SetTy (_, f) -> fv f
-    | AppDir (_, (y, z)) -> V.of_list [y; z]
-    | AppCls (x, (y, z)) -> V.of_list [x; y; z]
-    | AppDir_alt (_, y) -> V.singleton y
-    | AppCls_alt (x, y) -> V.of_list [x; y]
-    (* | Cast (x, _, _, _, _) -> V.singleton x *)
+    | AppDDir (_, (y, z)) -> V.of_list [y; z]
+    | AppDCls (x, (y, z)) -> V.of_list [x; y; z]
+    | AppMDir (_, y) -> V.singleton y
+    | AppMCls (x, y) -> V.of_list [x; y]
+    | Cast (x, _, _, _) -> V.singleton x
     | CApp (x, y) -> V.of_list [x; y]
     | CSeq (x, y) -> V.of_list [x; y]
     | Coercion _ -> V.empty
@@ -533,10 +535,10 @@ module Cls = struct
     | MakePolyLabel (x, _, _, f) -> V.remove x (fv f)
     | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
     | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | MakeLabel_alt (x, _, f) -> V.remove x (fv f)
+    (* | MakeLabel_alt (x, _, f) -> V.remove x (fv f)
     | MakePolyLabel_alt (x, _, _, f) -> V.remove x (fv f)
     | MakeCls_alt (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
+    | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f)) *)
     | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
     | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
 
