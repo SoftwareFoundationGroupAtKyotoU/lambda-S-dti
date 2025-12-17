@@ -922,6 +922,11 @@ module Cls = struct
         pp_ty u1
         pp_ty u2
         pp_exp f
+    | SetTy ((i, { contents = Some (TyList u) }), f) -> 
+      fprintf ppf "set _tylist%d = TYLIST(%a) in %a"
+        i
+        pp_ty u
+        pp_exp f
     | SetTy _ -> raise @@ Syntax_error
     | Cast (x, u1, u2, _) ->
         fprintf ppf "%s: %a => %a"

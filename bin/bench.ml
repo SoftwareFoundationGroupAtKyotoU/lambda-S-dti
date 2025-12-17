@@ -7,39 +7,43 @@ open Lambda_S1_dti
 (* open Translate *)
 (* open Pp *)
 
-type mode = I | C | I_alt | C_alt
+type mode = SC | SI | AC | AI | BC | BI
 let string_of_mode = function
-  | I -> "I"
-  | C -> "C"
-  | I_alt -> "I_alt"
-  | C_alt -> "C_alt"
+  | SC -> "SC"
+  | SI -> "SI"
+  | AC -> "AC"
+  | AI -> "AI"
+  | BC -> "BC"
+  | BI -> "BI"
 
 (* ------------------ *)
 (* Benchmark settings *)
 let itr = 100
 let files = [
-  (* "church_small"; OK *)
-  (* "church"; OK *)
+  (* "church_small"; *)
+  (* "church"; *)
   (* "church_big"; OK, 9791.4s *)
-  (* "tak"; OK *)
+  (* "tak"; *)
   (* "easy"; *)
-  "fib";
+  (* "fib"; *)
   (* "evenodd"; *)
-  (* "loop"; OK *)
+  (* "loop"; *)
   (* "loop_poly"; same as loop *)
-  (* "mklist"; OK *)
-  (* "map"; OK *)
-  (* "fold"; OK *)
-  (* "zipwith"; *)
+  (* "mklist"; *)
+  "map";
+  "fold";
+  "zipwith";
   (* "polypoly"; NG *)
 ]
 let modes = [
-  (* I; *)
-  C; 
-  (* I_alt; *)
-  C_alt;
+  (* SC; *)
+  (* SI; *)
+  (* AC; *)
+  (* AI; *)
+  BC;
+  (* BI; *)
   ]   
-  (* [I; C] : I と C を実行 *)
+  (* [SC; SI] : SC と SI を実行 *)
 let log_base_dir = "logs"
 
 (* Measurement options (source-controlled) *)
@@ -307,13 +311,13 @@ let measure_execution_time f itr mode =
     (List.range 0 itr)
     (fun _ ->
       match mode with
-      | I | I_alt -> 
+      | SI | AI | BI -> 
         let start_time = gettimeofday () in
         let v = f () in
         let end_time = gettimeofday () in
         let elapsed_time = end_time -. start_time in
         result := (v, elapsed_time) :: !result
-      | C | C_alt -> 
+      | SC | AC | BC -> 
         let v = f () in
         let filename = "logs/bench_time.json" in
         let json_data = Yojson.Basic.from_file filename in
@@ -427,8 +431,7 @@ let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
               obj [("minor", float_opt gc_minor); ("major", float_opt gc_major); ("compactions", float_opt gc_comp)]);
           ])
 
-          (* --tvをrenewする-- *)
-
+(* --tvをrenewする-- *)
 let pick_tv u = let open Syntax in match u with
   | TyVar tv -> tv
   | _ -> raise @@ Failure "not_tv"
@@ -576,12 +579,12 @@ let tv_renew p = let open Syntax.CC in match p with
     LetDecl (id, tvs, e)
 
 let bench mode fmt itr decl =
-  let tyenv = Syntax.Environment.empty
-  and env = Syntax.Environment.empty in
+  let tyenv = Syntax.Environment.empty in
   let u = Typing.CC.type_of_program tyenv decl in
   Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u;
   match mode with
-  | I ->
+  | SI ->
+    let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate tyenv (tv_renew decl) in
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
@@ -590,17 +593,18 @@ let bench mode fmt itr decl =
       match decl with
       | Syntax.CC.Exp _ ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr SI
             |> split_pairs
           in ("-", vs, ts)
       | Syntax.CC.LetDecl (id, _, _) ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr SI
             |> split_pairs
           in (id, vs, ts)
     in
     lst_elapsed_time
-  | I_alt ->
+  | AI ->
+    let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate_alt tyenv (tv_renew decl) in
     log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
@@ -609,17 +613,37 @@ let bench mode fmt itr decl =
       match decl with
       | Syntax.CC.Exp _ ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr AI
             |> split_pairs
           in ("-", vs, ts)
       | Syntax.CC.LetDecl (id, _, _) ->
           let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr I_alt
+            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr AI
             |> split_pairs
           in (id, vs, ts)
     in
     lst_elapsed_time
-  | C | C_alt -> raise @@ Failure "bench C, or C_alt"
+  | BI -> 
+    let env = Syntax.Environment.empty in
+    let translated = tv_renew decl in
+    log_section fmt "after Translation (λS∀mp)";
+    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
+    Format.pp_print_flush fmt ();
+    let _id, _vs, lst_elapsed_time =
+      match decl with
+      | Syntax.CC.Exp _ ->
+          let vs, ts =
+            measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr BI
+            |> split_pairs
+          in ("-", vs, ts)
+      | Syntax.CC.LetDecl (id, _, _) ->
+          let vs, ts =
+            measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr BI
+            |> split_pairs
+          in (id, vs, ts)
+    in
+    lst_elapsed_time
+  | SC | AC | BC -> raise @@ Failure "bench Compiler"
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
@@ -689,13 +713,10 @@ let bench_file_mode
   in
 
   let () = match mode with
-  | I | I_alt -> ()
-  | C -> 
-    let c_dir = Printf.sprintf "%s/C" log_dir in
+  | SI | AI | BI -> ()
+  | SC | AC | BC -> 
+    let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
     if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir
-  | C_alt -> 
-    let c_alt_dir = Printf.sprintf "%s/C_alt" log_dir in
-    if not (Sys_unix.file_exists_exn c_alt_dir) then Core_unix.mkdir c_alt_dir;
   in
 
   let counter = ref 0 in
@@ -718,7 +739,10 @@ let bench_file_mode
       );
 
       (* Coercion insertion *)
-      let _, decl, _ = Translate.ITGL.translate ~intoB:false tyenv p in
+      let _, decl, _ = match mode with
+      | BI | BC -> Translate.ITGL.translate ~intoB:true tyenv p 
+      | _ -> Translate.ITGL.translate ~intoB:false tyenv p 
+      in
       log_section fmt "after Insertion (λC∀mp)";
       Format.fprintf fmt "%a@." Pp.CC.pp_program decl;
       Format.pp_print_flush fmt ();
@@ -727,30 +751,43 @@ let bench_file_mode
       let lst_elapsed_time =
         try 
           match mode with
-          | I | I_alt -> bench mode fmt itr decl
-          | C -> 
+          | SI | AI | BI -> bench mode fmt itr decl
+          | SC -> 
             let translated = Translate.CC.translate tyenv (tv_renew decl) in
             log_section fmt "after Translation (λS∀mp)";
             Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
             Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LS false false true in
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:false ~debug:false ~compile:true in
             let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
             let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
-            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~bench:idx) p in
-            let oc = Out_channel.create (Format.asprintf "%s/C/%s%d.c" log_dir file idx) in
+            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~intoB:false ~bench:idx) p in
+            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
             Printf.fprintf oc "%s" c_code;
             close_out oc;
             []
-          | C_alt -> 
+          | AC -> 
             let translated = Translate.CC.translate tyenv (tv_renew decl) in
             log_section fmt "after Translation (λS∀mp)";
             Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
             Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LS true false true in
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:true ~debug:false ~compile:true in
             let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
             let p = Closure.toCls_program kf Stdlib.venv ~alt:true in
-            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:true ~bench:idx) p in
-            let oc = Out_channel.create (Format.asprintf "%s/C_alt/%s%d.c" log_dir file idx) in
+            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:true ~intoB:false ~bench:idx) p in
+            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
+            Printf.fprintf oc "%s" c_code;
+            close_out oc;
+            []
+          | BC -> 
+            let translated = tv_renew decl in
+            log_section fmt "after Translation (λS∀mp)";
+            Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
+            Format.pp_print_flush fmt ();
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
+            let kf, _ = KNormal.kNorm_funs_LB kfunenvs translated in
+            let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
+            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~intoB:true ~bench:idx) p in
+            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
             Printf.fprintf oc "%s" c_code;
             close_out oc;
             []
@@ -779,18 +816,19 @@ let bench_file_mode
       let after_insertion_str = Format.asprintf "%a" Pp.CC.pp_program decl in
       let after_translation_str =
         match mode with
-        | I ->
-            let translated = Translate.CC.translate tyenv decl
-            in
-            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | I_alt ->
-            let translated = Translate.CC.translate_alt tyenv decl
-            in
-            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | C | C_alt -> 
-          let translated = Translate.CC.translate tyenv decl
-            in
-            Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | SI ->
+          let translated = Translate.CC.translate tyenv decl in
+          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | AI ->
+          let translated = Translate.CC.translate_alt tyenv decl in
+          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | BI ->
+          Some (Format.asprintf "%a" Pp.CC.pp_program decl)
+        | SC | AC -> 
+          let translated = Translate.CC.translate tyenv decl in
+          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
+        | BC ->
+          Some (Format.asprintf "%a" Pp.CC.pp_program decl)
       in
 
       (* 実行時間（従来の itr 回計測）を JSON に *)
@@ -802,23 +840,25 @@ let bench_file_mode
       let mem_json =
         let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
         match mode with
-        | I ->
+        | SI ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.CC.translate tyenv (tv_renew decl)
-            in
+            let translated = Translate.CC.translate tyenv (tv_renew decl) in
             let run () = 
-              (* let open Eval in  *)
               ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
             measure_mem_to_json ~label run
-        | I_alt ->
+        | AI ->
             (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.CC.translate_alt tyenv (tv_renew decl)
-            in
+            let translated = Translate.CC.translate_alt tyenv (tv_renew decl) in
             let run () = 
-              (* let open Eval in  *)
               ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
             measure_mem_to_json ~label run
-        | C | C_alt -> 
+        | BI ->
+            (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
+            let translated = tv_renew decl in
+            let run () = 
+              ignore (Eval.CC.eval_program Syntax.Environment.empty translated) in
+            measure_mem_to_json ~label run
+        | SC | AC | BC -> 
           (* let translated = Translate.CC.translate tyenv (tv_renew decl) in
           let _, _, kfunenvs, _ = Stdlib.pervasives_LS in
           let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
@@ -889,11 +929,11 @@ let bench_file_mode
     | Some _, Text -> raise @@ Failure "yet");
 
   let () = match mode with
-  | I | I_alt -> ()
-  | C -> 
+  | SI | AI | BI -> ()
+  | SC -> 
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
     if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_mutants.h" log_dir file) in
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
     let rec print_itr n =
       if n = List.length mutants + 1 then ()
@@ -901,32 +941,35 @@ let bench_file_mode
     in print_itr 1;
     Printf.fprintf oc "#endif";
     close_out oc;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s.c" log_dir file) in
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s_mutants.h\"\n" file)
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
       (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
       "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
     let rec print_itr n =
       if n = List.length mutants + 1 then ()
       else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
     in print_itr 1;
-    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/C_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir file;
+    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
     close_out oc;
-    (* gcc map.c ../../../lib/cast.c ../../../lib/stdlib.c ../C/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
+    (* gcc map.c ../../../lib/coerce.c ../../../lib/stdlib.c ../SC/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
     let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s.c lib/cast.c lib/stdlib.c lib/bench_json.c %s/C/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s.out -O2"
+      Format.asprintf "gcc %s/%s%s.c lib/coerce.c lib/stdlibS.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
         bench_dir
         file
+        (string_of_mode mode) 
         log_dir
+        (string_of_mode mode) 
         file
         bench_dir
         file
+        (string_of_mode mode) 
     in
-    ignore (Core_unix.system @@ Format.asprintf "%s/%s.out" bench_dir file)
-  | C_alt ->
+    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
+  | AC ->
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
     if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_alt_mutants.h" log_dir file) in
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
     let rec print_itr n =
       if n = List.length mutants + 1 then ()
@@ -934,27 +977,66 @@ let bench_file_mode
     in print_itr 1;
     Printf.fprintf oc "#endif";
     close_out oc;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s_alt.c" log_dir file) in
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s_alt_mutants.h\"\n" file)
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
       (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
       "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
     let rec print_itr n =
       if n = List.length mutants + 1 then ()
       else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
     in print_itr 1;
-    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/C_alt_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir file;
+    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
     close_out oc;
     let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s_alt.c lib/cast.c lib/stdlib.c lib/bench_json.c %s/C_alt/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s_alt.out -O2"
+      Format.asprintf "gcc %s/%s%s.c lib/coerce.c lib/stdlibA.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
         bench_dir
         file
+        (string_of_mode mode) 
         log_dir
+        (string_of_mode mode) 
         file
         bench_dir
         file
+        (string_of_mode mode) 
     in
-    ignore (Core_unix.system @@ Format.asprintf "%s/%s_alt.out" bench_dir file)
+    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
+  | BC -> 
+    let bench_dir = Printf.sprintf "%s/bench" log_dir in
+    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
+    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "#endif";
+    close_out oc;
+    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
+    Printf.fprintf oc "%s\n%s\n%s"
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
+      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
+      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
+    let rec print_itr n =
+      if n = List.length mutants + 1 then ()
+      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
+    in print_itr 1;
+    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
+    close_out oc;
+    (* gcc church_smallBC.c ../../../lib/cast.c ../../../lib/stdlibB.c ../../../lib/bench_json.c ../BC/church_small*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
+    let _ = Core_unix.system @@ 
+      Format.asprintf "gcc %s/%s%s.c lib/cast.c lib/stdlibB.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
+        bench_dir
+        file
+        (string_of_mode mode) 
+        log_dir
+        (string_of_mode mode) 
+        file
+        bench_dir
+        file
+        (string_of_mode mode) 
+    in
+    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
   in
   (* ターゲットの進捗バーを確定（改行しない） *)
   Target_progress.print ~final:false prog

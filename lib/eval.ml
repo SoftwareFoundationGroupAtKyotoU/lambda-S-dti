@@ -371,43 +371,57 @@ module CC = struct
     (* IdStar *)
     | TyDyn, TyDyn -> v
     (* Succeed / Fail *)
-    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) as u2) -> begin
+    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) | TyList TyDyn as u2) -> begin
         match v, u2 with
         | Tagged (B, v), TyBool -> v
         | Tagged (I, v), TyInt -> v
         | Tagged (U, v), TyUnit -> v
         | Tagged (Ar, v), TyFun (TyDyn, TyDyn) -> v
+        | Tagged (Li, v), TyList TyDyn -> v
         | Tagged _, _ -> raise @@ Blame (r, p)
         | _ -> raise @@ Eval_bug "untagged value"
       end
     (* AppCast *)
-    | TyFun (u11, u12), TyFun (u21, u22) -> begin
-        match v with
-        | FunV proc ->
-          FunV (
-            fun (xs, ys) x ->
-              let subst = subst_type @@ Utils.List.zip xs ys in
-              let arg = cast x (subst u21) (subst u11) (r, neg p) in
-              let res = proc (xs, ys) arg in
-              cast res (subst u12) (subst u22) (r, p)
-          )
-        | _ -> raise @@ Eval_bug "non procedural value"
+    | TyFun (u11, u12), TyFun (u21, u22) -> begin match v with
+      | FunV proc ->
+        FunV (
+          fun (xs, ys) x ->
+            let subst = subst_type @@ Utils.List.zip xs ys in
+            let arg = cast x (subst u21) (subst u11) (r, neg p) in
+            let res = proc (xs, ys) arg in
+            cast res (subst u12) (subst u22) (r, p)
+        )
+      | _ -> raise @@ Eval_bug "non procedural value"
+      end
+    | TyList u1, TyList u2 -> begin match v with
+      | NilV -> NilV
+      | ConsV (h, t) -> ConsV (cast h u1 u2 (r, p), cast t (TyList u1) (TyList u2) (r, p))
+      | _ -> raise @@ Eval_bug "non list value"
       end
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
+    | TyList TyDyn, TyDyn -> Tagged (Li, v)
     (* Ground *)
     | TyFun _, TyDyn ->
       let dfun = TyFun (TyDyn, TyDyn) in
       let v = cast v u1 dfun (r, p) in
       cast v dfun TyDyn (r, p)
+    | TyList _, TyDyn ->
+      let dlist = TyList TyDyn in
+      let v = cast v u1 dlist (r, p) in
+      cast v dlist TyDyn (r, p)
     (* Expand *)
     | TyDyn, TyFun _ ->
       let dfun = TyFun (TyDyn, TyDyn) in
       let v = cast v TyDyn dfun (r, p) in
       cast v dfun u2 (r, p)
+    | TyDyn, TyList _ ->
+      let dlist = TyList TyDyn in
+      let v = cast v TyDyn dlist (r, p) in
+      cast v dlist u2 (r, p)
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({ contents = None } as x)) as x') -> begin
         match v with
@@ -425,6 +439,13 @@ module CC = struct
             Pp.pp_ty u;
           x := Some u;
           cast v (TyFun (TyDyn, TyDyn)) u (r, p)
+        | Tagged (Li, v) ->
+          let u = TyList (Typing.fresh_tyvar ()) in
+          print_debug "DTI: %a is instantiated to %a\n"
+            Pp.pp_ty x'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyList TyDyn) u (r, p)
         | _ -> raise @@ Eval_bug "cannot instantiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)

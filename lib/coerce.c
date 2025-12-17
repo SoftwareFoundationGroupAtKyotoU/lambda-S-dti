@@ -813,6 +813,16 @@ value app_alt(value f, value v) {									// reduction of f(v)
 	return retx;
 }
 
+int is_NULL(lst *l) {
+	if (l==NULL) { 
+		return 1;
+	} else if (l->lstkind == WRAPPED_LIST) {
+		return is_NULL(l->lstdat.wrap_l.w);
+	} else {
+		return 0;
+	}
+}
+
 value hd(lst l) {
 	if (l.lstkind == WRAPPED_LIST) {
 		return coerce(*l.lstdat.wrap_l.w->lstdat.unwrap_l.h, l.lstdat.wrap_l.c);

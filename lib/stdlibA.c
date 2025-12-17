@@ -248,9 +248,7 @@ value max;
 value abs_ml;
 value ignore;
 
-
-
-int stdlib() {
+int stdlibS() {
 	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
 	print_int.f->fundat.label = fun_print_int;
 	print_int.f->funkind = LABEL;
@@ -284,7 +282,7 @@ int stdlib() {
 	return 0;
 }
 
-int stdlib_alt() {
+int stdlibA() {
 	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
 	print_int.f->fundat.label_alt.l = fun_print_int;
 	print_int.f->fundat.label_alt.l_a = fun_alt_print_int;

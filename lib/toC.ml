@@ -208,10 +208,10 @@ let rec toC_mf ppf (x, mf) = match mf with
       x
       i
   | MatchNil _ -> 
-    fprintf ppf "%s.l == NULL"
+    fprintf ppf "is_NULL(%s.l)"
       x
   | MatchCons (mf1, mf2) ->
-    fprintf ppf "%s.l != NULL && %a && %a"
+    fprintf ppf "!(is_NULL(%s.l)) && %a && %a"
       x
       toC_mf (asprintf "hd(*%s.l)" x, mf1)
       toC_mf (asprintf "tl(*%s.l)" x, mf2)
@@ -310,14 +310,16 @@ let rec toC_exp ppf f = match f with
         z2
         toC_exp f2
     | AppMDir (y, z) -> 
-      fprintf ppf "value %s = fun_alt_%s(%s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
+      fprintf ppf "value %s = fun%s_%s(%s);\n%a" (* let x = y z in ... ~> value x = fun_y(z); ...*) (*yが直接適用できる関数のとき*) (*fun_をyにつける*)
         x
+        (if !is_alt then "_alt" else "")
         y
         z
         toC_exp f2
     | AppMCls (y, z) ->
-      fprintf ppf "value %s = app_alt(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
+      fprintf ppf "value %s = app%s(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
+        (if !is_alt then "_alt" else "")
         y
         z
         toC_exp f2
@@ -325,21 +327,22 @@ let rec toC_exp ppf f = match f with
       (*
       let x = y:u1=>^(r, p)u2 in ... 
       ~>
-      ran_pol y_r_p = { .filename = ~~, .startline = ~~, .startchr = ~~, .endline = ~~, .endchr = ~~, .polarity = ~~};
-      value x = cast(y, u1, u2, y_p_r);
+      ran_pol x_r_p = { .filename = ~~, .startline = ~~, .startchr = ~~, .endline = ~~, .endchr = ~~, .polarity = ~~};
+      value x = cast(y, u1, u2, x_p_r);
       ...
       *)
       (*filenameやrangeの出力形式はUtilsを参照*)
       (*castの処理にはcast関数を用いる*)
       (*型の出力形式は関数c_of_tyによる TODO *)
+      (* 名前の被りを防ぐために，Letとinsertはran_polにyではなくxを使う *)
       let c1, c2 = c_of_ty u1, c_of_ty u2 in
       fprintf ppf "%avalue %s = cast(%s, %s, %s, %s_r_p);\n%a"
-        toC_ran_pol (y, r, p)
+        toC_ran_pol (x, r, p)
         x
         y
         c1
         c2
-        y
+        x
         toC_exp f2
     | AppTy (y, n, tas) -> 
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a\n%a" (* TODO *)
@@ -442,13 +445,15 @@ let rec toC_exp ppf f = match f with
         z1
         z2
     | AppMDir (y, z) ->
-      fprintf ppf "%s = fun_alt_%s(%s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
+      fprintf ppf "%s = fun%s_%s(%s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
+        (if !is_alt then "_alt" else "")
         y
         z
     | AppMCls (y, z) -> 
-      fprintf ppf "%s = app_alt(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = app%s(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
+        (if !is_alt then "_alt" else "")
         y
         z
     | AppTy (y, n, tas) ->
@@ -460,12 +465,12 @@ let rec toC_exp ppf f = match f with
     | Cast (y, u1, u2, (r, p)) -> (* Letのときと同じ要領でcastを処理する．最後はx = cast(~,~,~,~); *)
       let c1, c2 = c_of_ty u1, c_of_ty u2 in
       fprintf ppf "%a%s = cast(%s, %s, %s, %s_r_p);\n"
-        toC_ran_pol (y, r, p)
+        toC_ran_pol (x, r, p)
         x
         y
         c1
         c2
-        y
+        x
     | CApp (y, z) ->
       fprintf ppf "%s = coerce(%s, %s.s);\n"
         x
@@ -738,20 +743,24 @@ let rec toC_exp ppf f = match f with
         y2
   | AppMDir (x, y) ->
     if !is_main then 
-      fprintf ppf "fun_alt_%s(%s);\nreturn 0;\n"
+      fprintf ppf "fun%s_%s(%s);\nreturn 0;\n"
+        (if !is_alt then "_alt" else "")
         x
         y
     else
-      fprintf ppf "return fun_alt_%s(%s);\n"
+      fprintf ppf "return fun%s_%s(%s);\n"
+        (if !is_alt then "_alt" else "")
         x
         y
   | AppMCls (x, y) -> 
     if !is_main then 
-      fprintf ppf "app_alt(%s, %s);\nreturn 0;\n"
+      fprintf ppf "app%s(%s, %s);\nreturn 0;\n"
+        (if !is_alt then "_alt" else "")
         x
         y
     else
-      fprintf ppf "return app_alt(%s, %s);\n"
+      fprintf ppf "return app%s(%s, %s);\n"
+        (if !is_alt then "_alt" else "")
         x
         y
   | Cast (x, u1, u2, (r, p)) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
@@ -941,16 +950,20 @@ let toC_label ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun_alt_%s(value);"
+    fprintf ppf "value fun%s_%s(value);"
+      (if !is_alt then "_alt" else "")
       l
   else if num = 0 then
-    fprintf ppf "value fun_alt_%s(value, ty**);"
+    fprintf ppf "value fun%s_%s(value, ty**);"
+      (if !is_alt then "_alt" else "")
       l
   else if num'= 0 then
-    fprintf ppf "value fun_alt_%s(value, value*);"
+    fprintf ppf "value fun%s_%s(value, value*);"
+      (if !is_alt then "_alt" else "")
       l
   else
-    fprintf ppf "value fun_alt_%s(value, value*, ty**);"
+    fprintf ppf "value fun%s_%s(value, value*, ty**);"
+      (if !is_alt then "_alt" else "")
       l
 
 (*関数本体の定義
@@ -958,40 +971,7 @@ let toC_label ppf fundef = match fundef with
 let toC_funv ppf (exists_fun, l, num, num') =
   if not exists_fun then
     fprintf ppf ""
-  else if not !is_alt then
-    if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n"
-        l
-        l
-        l
-        l
-        l
-    else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-    else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = zs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-    else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = zs;\n%s.f->tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-  else
+  else if !is_alt then
     if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL_alt;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n"
         l
@@ -1025,6 +1005,39 @@ let toC_funv ppf (exists_fun, l, num, num') =
       fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = zs;\n%s.f->tas = tvs;\n"
         l
         l
+        l
+        l
+        l
+        l
+        l
+        l
+        l
+  else
+    if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n"
+        l
+        l
+        l
+        l
+        l
+    else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = tvs;\n"
+        l
+        l
+        l
+        l
+        l
+        l
+    else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = zs;\n"
+        l
+        l
+        l
+        l
+        l
+        l
+    else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = zs;\n%s.f->tas = tvs;\n"
         l
         l
         l
@@ -1077,13 +1090,15 @@ let toC_fundef ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun_alt_%s(value %s) {\n%a%a}"
+    fprintf ppf "value fun%s_%s(value %s) {\n%a%a}"
+      (if !is_alt then "_alt" else "")
       l
       x
       toC_funv (V.mem (to_id l) (fv f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_alt_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
+      (if !is_alt then "_alt" else "")
       l
       x
       num'
@@ -1091,7 +1106,8 @@ let toC_fundef ppf fundef = match fundef with
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_alt_%s(value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
+      (if !is_alt then "_alt" else "")
       l
       x
       num
@@ -1099,7 +1115,8 @@ let toC_fundef ppf fundef = match fundef with
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_alt_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+      (if !is_alt then "_alt" else "")
       l
       x
       num
@@ -1124,17 +1141,20 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program ?(bench=0) ~alt ppf (Prog (tvset, toplevel, f)) = 
+let toC_program ?(bench=0) ~alt ~intoB ppf (Prog (tvset, toplevel, f)) = 
   is_main := false;
   is_alt := alt;
+  is_B := intoB;
   fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    (Format.asprintf "#include <gc.h>\n#include \"../%slib/coerce.h\"\n#include \"../%slib/stdlib.h\"\n" 
+    (Format.asprintf "#include <gc.h>\n#include \"../%slib/%s.h\"\n#include \"../%slib/stdlib%s.h\"\n"
       (if bench = 0 then "" else "../../")
-      (if bench = 0 then "" else "../../"))
+      (if !is_B then "cast" else "coerce")
+      (if bench = 0 then "" else "../../")
+      (if !is_B then "B" else if !is_alt then "A" else "S"))
     toC_tys (TV.elements tvset, bench)
     toC_fundefs toplevel
     (if bench = 0 then "int main() {\n" else Format.asprintf "int mutant%d() {\n" bench)
-    (if !is_alt then "stdlib_alt();\n" else "stdlib();\n")
+    (if !is_B then "stdlibB();\n" else if !is_alt then "stdlibA();\n" else "stdlibS();\n")
     (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else Format.asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

@@ -125,9 +125,9 @@ let closure_print ~alt kf venv =
   print_debug "%a\n" Pp.Cls.pp_program p;
   p
 
-let toC_print ~alt p = 
+let toC_print ~alt ~intoB p = 
   print_debug "***** toC *****\n";
-  let toC_program = ToC.toC_program ~alt:alt ~bench:0 in
+  let toC_program = ToC.toC_program ~alt:alt ~intoB:intoB ~bench:0 in
   let c_code = asprintf "%a" toC_program p in
   print_debug "%s\n" c_code;
   c_code
@@ -267,7 +267,7 @@ let compile_process progs tyenv kfunenvs =
     in
     (* Closure-conversion *)
     let p = closure_print ~alt:!alt kf Stdlib.venv in
-    let c_code = toC_print ~alt:!alt p in
+    let c_code = toC_print ~alt:!alt ~intoB:!intoB p in
     c_code
   with
   | Failure message -> raise @@ Failure message
@@ -288,7 +288,12 @@ let rec read_compile lexbuf tyenv kfunenvs =
       let oc = open_out "result_C/stdout.c" in
       Printf.fprintf oc "%s" c_code;
       close_out oc;
-      let _ = Sys.command "gcc result_C/stdout.c lib/coerce.c lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -g3" (* TODO: -O2 *) in
+      let _ = 
+        Sys.command @@ 
+        Format.asprintf "gcc result_C/stdout.c lib/%s.c lib/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -g3" (* TODO: -O2 *) 
+          (if !intoB then "cast" else "coerce")
+          (if !intoB then "B" else if !alt then "A" else "S")
+      in
       let _ = Sys.command "result/stdout.out" in
       print_debug "\n";
       read_compile lexbuf tyenv kfunenvs
@@ -298,7 +303,14 @@ let rec read_compile lexbuf tyenv kfunenvs =
       let oc = open_out ("../result_C/"^f^"_out.c") in
       Printf.fprintf oc "%s" c_code;
       close_out oc;
-      let _ = Sys.command ("gcc ../result_C/"^f^"_out.c ../lib/coerce.c ../lib/stdlib.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/"^f^".out -O2") in
+      let _ = 
+        Sys.command @@
+        Format.asprintf "gcc ../result_C/%s_out.c ../lib/%s.c ../lib/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/%s.out -O2" 
+          f
+          (if !intoB then "cast" else "coerce")
+          (if !intoB then "B" else if !alt then "A" else "S")
+          f
+      in
       let _ = Sys.command ("../result/"^f^".out") in
       ()
     | _, None -> read_compile lexbuf tyenv kfunenvs

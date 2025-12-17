@@ -488,10 +488,6 @@ module Cls = struct
     | MakeLabel of id * label * exp
     | MakePolyLabel of id * label * ftv * exp
     | MakePolyCls of id * closure * ftv * exp
-    (* | MakeCls_alt of id * closure * exp
-    | MakeLabel_alt of id * label * exp
-    | MakePolyLabel_alt of id * label * ftv * exp
-    | MakePolyCls_alt of id * closure * ftv * exp *)
     | SetTy of tyvar * exp
     | Insert of id * exp
 

@@ -84,10 +84,6 @@ typedef struct fun {
 		CLOSURE_alt,
 		POLY_CLOSURE_alt,
 		WRAPPED,
-		// LABEL_WRAP,
-		// POLY_LABEL_WRAP,
-		// CLOSURE_WRAP,
-		// POLY_CLOSURE_WRAP,
 	} funkind;
 	union fundat {
 		value (*label)(value, value);
@@ -126,11 +122,6 @@ typedef struct fun {
 			fun *w;
 			crc *c_arg;
 			crc *c_res;
-		// 	ty *u1;
-		// 	ty *u2;
-		// 	ty *u3;
-		// 	ty *u4;
-		// 	ran_pol r_p;
 		} wrap;
 	} fundat;
 	ty **tas;
@@ -168,8 +159,6 @@ typedef union value {
 	crc *s;
 } value;
 
-// value cast(value, ty*, ty*, ran_pol);
-
 value coerce(value, crc*);
 
 crc *compose(crc*, crc*);
@@ -181,6 +170,8 @@ value app_alt(value, value);
 value hd(lst);
 
 value tl(lst);
+
+int is_NULL(lst*);
 
 int did_not_match();
 
