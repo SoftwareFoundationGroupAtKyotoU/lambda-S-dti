@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h> //for abort
 #include "coerce.h"
+#include "coerceA.h"
 #include "limits.h"
 #include "gc.h"
 
@@ -247,40 +248,6 @@ value min;
 value max;
 value abs_ml;
 value ignore;
-
-int stdlibS() {
-	print_int.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_int.f->fundat.label = fun_print_int;
-	print_int.f->funkind = LABEL;
-	print_bool.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_bool.f->fundat.label = fun_print_bool;
-	print_bool.f->funkind = LABEL;
-	print_newline.f = (fun*)GC_MALLOC(sizeof(fun));
-	print_newline.f->fundat.label = fun_print_newline;
-	print_newline.f->funkind = LABEL;
-	not.f = (fun*)GC_MALLOC(sizeof(fun));
-	not.f->fundat.label = fun_not;
-	not.f->funkind = LABEL;
-	succ.f = (fun*)GC_MALLOC(sizeof(fun));
-	succ.f->fundat.label = fun_succ;
-	succ.f->funkind = LABEL;
-	prec.f = (fun*)GC_MALLOC(sizeof(fun));
-	prec.f->fundat.label = fun_prec;
-	prec.f->funkind = LABEL;
-	min.f = (fun*)GC_MALLOC(sizeof(fun));
-	min.f->fundat.label = fun_min;
-	min.f->funkind = LABEL;
-	max.f = (fun*)GC_MALLOC(sizeof(fun));
-	max.f->fundat.label = fun_max;
-	max.f->funkind = LABEL;
-	abs_ml.f = (fun*)GC_MALLOC(sizeof(fun));
-	abs_ml.f->fundat.label = fun_abs_ml;
-	abs_ml.f->funkind = LABEL;
-	ignore.f = (fun*)GC_MALLOC(sizeof(fun));
-	ignore.f->fundat.poly_label = fun_ignore;
-	ignore.f->funkind = POLY_LABEL;
-	return 0;
-}
 
 int stdlibA() {
 	print_int.f = (fun*)GC_MALLOC(sizeof(fun));

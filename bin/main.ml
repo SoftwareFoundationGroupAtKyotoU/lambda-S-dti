@@ -290,8 +290,9 @@ let rec read_compile lexbuf tyenv kfunenvs =
       close_out oc;
       let _ = 
         Sys.command @@ 
-        Format.asprintf "gcc result_C/stdout.c lib/%s.c lib/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -g3" (* TODO: -O2 *) 
+        Format.asprintf "gcc result_C/stdout.c libC/%s.c %slibC/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o result/stdout.out -g3" (* TODO: -O2 *) 
           (if !intoB then "cast" else "coerce")
+          (if !intoB then "" else if !alt then "libC/coerceA.c " else "libC/coerceS.c ")
           (if !intoB then "B" else if !alt then "A" else "S")
       in
       let _ = Sys.command "result/stdout.out" in
@@ -305,9 +306,10 @@ let rec read_compile lexbuf tyenv kfunenvs =
       close_out oc;
       let _ = 
         Sys.command @@
-        Format.asprintf "gcc ../result_C/%s_out.c ../lib/%s.c ../lib/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/%s.out -O2" 
+        Format.asprintf "gcc ../result_C/%s_out.c ../libC/%s.c %s../libC/stdlib%s.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o ../result/%s.out -O2" 
           f
           (if !intoB then "cast" else "coerce")
+          (if !intoB then "" else if !alt then "../libC/coerceA.c " else "../libC/coerceS.c ")
           (if !intoB then "B" else if !alt then "A" else "S")
           f
       in

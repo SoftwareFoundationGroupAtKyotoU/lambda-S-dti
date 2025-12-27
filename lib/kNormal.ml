@@ -381,9 +381,9 @@ module LS1 = struct
     | CoercionExp c -> KNorm.CoercionExp c
     | NilExp _ -> KNorm.Nil
     | ConsExp (f1, f2) -> 
-      let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in
-      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Cons (x, y)
+      let f1 = k_normalize_exp tvsenv f1 in
+      insert_let f2 @@ fun y -> insert_let f1 @@ fun x -> KNorm.Cons (x, y)
     | AppMExp (f1, f2) ->
       let f1 = k_normalize_exp tvsenv f1 in 
       let f2 = k_normalize_exp tvsenv f2 in

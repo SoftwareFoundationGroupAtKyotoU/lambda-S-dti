@@ -2,6 +2,7 @@
 #define STDLIB_H
 
 #include "coerce.h"
+#include "coerceS.h"
 
 extern value fun_print_int(value, value);
 extern value fun_print_bool(value, value);

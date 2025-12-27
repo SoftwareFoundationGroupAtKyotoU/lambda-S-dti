@@ -317,11 +317,11 @@ let rec toC_exp ppf f = match f with
         z
         toC_exp f2
     | AppMCls (y, z) ->
-      fprintf ppf "value %s = app%s(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
+      fprintf ppf "value %s = app(%s, %s%s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
-        (if !is_alt then "_alt" else "")
         y
         z
+        (if !is_alt then ", crc_id_value" else "")
         toC_exp f2
     | Cast (y, u1, u2, (r, p)) ->
       (*
@@ -451,11 +451,11 @@ let rec toC_exp ppf f = match f with
         y
         z
     | AppMCls (y, z) -> 
-      fprintf ppf "%s = app%s(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = app(%s, %s%s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
-        (if !is_alt then "_alt" else "")
         y
         z
+        (if !is_alt then ", crc_id_value" else "")
     | AppTy (y, n, tas) ->
       fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a" (* TODO *)
         x
@@ -754,31 +754,31 @@ let rec toC_exp ppf f = match f with
         y
   | AppMCls (x, y) -> 
     if !is_main then 
-      fprintf ppf "app%s(%s, %s);\nreturn 0;\n"
-        (if !is_alt then "_alt" else "")
+      fprintf ppf "app(%s, %s%s);\nreturn 0;\n"
         x
         y
+        (if !is_alt then ", crc_id_value" else "")
     else
-      fprintf ppf "return app%s(%s, %s);\n"
-        (if !is_alt then "_alt" else "")
+      fprintf ppf "return app(%s, %s%s);\n"
         x
         y
+        (if !is_alt then ", crc_id_value" else "")
   | Cast (x, u1, u2, (r, p)) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
     let c1, c2 = c_of_ty u1, c_of_ty u2 in
     if !is_main then 
       fprintf ppf "%acast(%s, %s, %s, %s_r_p);\nreturn 0;\n"
-        toC_ran_pol (x, r, p)
+        toC_ran_pol ("", r, p)
         x
         c1
         c2
-        x
+        ""
     else
       fprintf ppf "%areturn cast(%s, %s, %s, %s_r_p);\n"
-        toC_ran_pol (x, r, p)
+        toC_ran_pol ("", r, p)
         x
         c1
         c2
-        x
+        ""
   | AppTy (x, n, tas) -> 
     if !is_main then
       fprintf ppf "value retval;\nretval.f = (fun*)GC_MALLOC(sizeof(fun));\n*retval.f = *%s.f;\n%a\nreturn 0;" (* TODO *)
@@ -1146,9 +1146,10 @@ let toC_program ?(bench=0) ~alt ~intoB ppf (Prog (tvset, toplevel, f)) =
   is_alt := alt;
   is_B := intoB;
   fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    (Format.asprintf "#include <gc.h>\n#include \"../%slib/%s.h\"\n#include \"../%slib/stdlib%s.h\"\n"
+    (Format.asprintf "#include <gc.h>\n#include \"../%slibC/%s.h\"\n%s#include \"../%slibC/stdlib%s.h\"\n"
       (if bench = 0 then "" else "../../")
       (if !is_B then "cast" else "coerce")
+      (if !is_B then "" else asprintf "#include \"../%slibC/coerce%s.h\"\n" (if bench = 0 then "" else "../../") (if !is_alt then "A" else "S"))
       (if bench = 0 then "" else "../../")
       (if !is_B then "B" else if !is_alt then "A" else "S"))
     toC_tys (TV.elements tvset, bench)

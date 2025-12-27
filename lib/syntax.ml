@@ -531,10 +531,6 @@ module Cls = struct
     | MakePolyLabel (x, _, _, f) -> V.remove x (fv f)
     | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
     | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    (* | MakeLabel_alt (x, _, f) -> V.remove x (fv f)
-    | MakePolyLabel_alt (x, _, _, f) -> V.remove x (fv f)
-    | MakeCls_alt (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | MakePolyCls_alt (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f)) *)
     | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
     | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
 

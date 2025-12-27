@@ -55,8 +55,30 @@ ground_ty to_ground(ty t) {
 	}
 }
 
+int ty_equal (ty *t1, ty *t2) {
+	if (t1->tykind == t2->tykind) {
+		if (t1->tykind == DYN) {
+			return 1;
+		} else if (t1->tykind == BASE_INT || t1->tykind == BASE_BOOL || t1->tykind == BASE_UNIT) {
+			return 1;
+		} else if (t1->tykind == TYFUN) {
+			return ty_equal(t1->tydat.tyfun.left, t2->tydat.tyfun.left) && ty_equal(t1->tydat.tyfun.right, t2->tydat.tyfun.right);
+		} else if (t1->tykind == TYLIST) {
+			return ty_equal(t1->tydat.tylist, t2->tydat.tylist);
+		} else {
+			return 0;
+		}
+	} else {
+		return 0;
+	}
+}
+
 value cast(value x, ty *t1, ty *t2, ran_pol r_p) {			// input = x:t1=>t2
 	value retx;
+
+	if (ty_equal(t1, t2)) {
+		return x;
+	}
 
 	if (t1->tykind == TYFUN && t2->tykind == TYFUN) { 				// when t1 and t2 are function type
 		// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function

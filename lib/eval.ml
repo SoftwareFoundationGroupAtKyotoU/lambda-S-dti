@@ -382,7 +382,9 @@ module CC = struct
         | _ -> raise @@ Eval_bug "untagged value"
       end
     (* AppCast *)
-    | TyFun (u11, u12), TyFun (u21, u22) -> begin match v with
+    | TyFun (u11, u12), TyFun (u21, u22) -> 
+      if u11 = u21 && u12 = u22 then v 
+      else begin match v with
       | FunV proc ->
         FunV (
           fun (xs, ys) x ->
@@ -393,7 +395,9 @@ module CC = struct
         )
       | _ -> raise @@ Eval_bug "non procedural value"
       end
-    | TyList u1, TyList u2 -> begin match v with
+    | TyList u1, TyList u2 -> 
+      if u1 = u2 then v 
+      else begin match v with
       | NilV -> NilV
       | ConsV (h, t) -> ConsV (cast h u1 u2 (r, p), cast t (TyList u1) (TyList u2) (r, p))
       | _ -> raise @@ Eval_bug "non list value"

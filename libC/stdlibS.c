@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h> //for abort
 #include "coerce.h"
+#include "coerceS.h"
 #include "limits.h"
 #include "gc.h"
 

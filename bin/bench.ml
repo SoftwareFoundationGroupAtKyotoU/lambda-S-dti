@@ -18,11 +18,12 @@ let string_of_mode = function
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 100
+let itr = 500
 let files = [
   (* "church_small"; *)
   (* "church"; *)
-  (* "church_big"; OK, 9791.4s *)
+  (* "church_big";  *)
+  (* OK, 9791.4s   *)
   (* "tak"; *)
   (* "easy"; *)
   (* "fib"; *)
@@ -31,16 +32,16 @@ let files = [
   (* "loop_poly"; same as loop *)
   (* "mklist"; *)
   "map";
-  "fold";
-  "zipwith";
+  (* "fold"; *)
+  (* "zipwith"; *)
   (* "polypoly"; NG *)
 ]
 let modes = [
-  (* SC; *)
+  SC;
   (* SI; *)
-  (* AC; *)
+  AC;
   (* AI; *)
-  BC;
+  (* BC; *)
   (* BI; *)
   ]   
   (* [SC; SI] : SC と SI を実行 *)
@@ -943,7 +944,7 @@ let bench_file_mode
     close_out oc;
     let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
       (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
       "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
     let rec print_itr n =
@@ -952,9 +953,9 @@ let bench_file_mode
     in print_itr 1;
     Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
     close_out oc;
-    (* gcc map.c ../../../lib/coerce.c ../../../lib/stdlib.c ../SC/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
+    (* gcc map.c ../../../libC/coerce.c ../../../libC/stdlib.c ../SC/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
     let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c lib/coerce.c lib/stdlibS.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
+      Format.asprintf "gcc %s/%s%s.c libC/coerce.c libC/coerceS.c libC/stdlibS.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
         bench_dir
         file
         (string_of_mode mode) 
@@ -979,7 +980,7 @@ let bench_file_mode
     close_out oc;
     let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
       (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
       "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
     let rec print_itr n =
@@ -989,7 +990,7 @@ let bench_file_mode
     Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
     close_out oc;
     let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c lib/coerce.c lib/stdlibA.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
+      Format.asprintf "gcc %s/%s%s.c libC/coerce.c libC/coerceA.c libC/stdlibA.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
         bench_dir
         file
         (string_of_mode mode) 
@@ -1014,7 +1015,7 @@ let bench_file_mode
     close_out oc;
     let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
     Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../lib/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
+      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
       (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
       "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
     let rec print_itr n =
@@ -1025,7 +1026,7 @@ let bench_file_mode
     close_out oc;
     (* gcc church_smallBC.c ../../../lib/cast.c ../../../lib/stdlibB.c ../../../lib/bench_json.c ../BC/church_small*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
     let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c lib/cast.c lib/stdlibB.c lib/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
+      Format.asprintf "gcc %s/%s%s.c libC/cast.c libC/stdlibB.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
         bench_dir
         file
         (string_of_mode mode) 
