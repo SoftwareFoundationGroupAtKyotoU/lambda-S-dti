@@ -303,7 +303,7 @@ let rec toC_exp ppf f = match f with
         z2
         toC_exp f2
     | AppDCls (y, (z1, z2)) ->
-      fprintf ppf "value %s = app(%s, %s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
+      fprintf ppf "value %s = appD(%s, %s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
         y
         z1
@@ -317,11 +317,11 @@ let rec toC_exp ppf f = match f with
         z
         toC_exp f2
     | AppMCls (y, z) ->
-      fprintf ppf "value %s = app(%s, %s%s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
+      fprintf ppf "value %s = appM(%s, %s);\n%a" (* let x = y z in ... ~> value x = app(y, z); ...*) (*yがクロージャを用いて適用する関数のとき*) (*app関数にyとzを渡す*) (*yにfunはつけない*)
         x
         y
         z
-        (if !is_alt then ", crc_id_value" else "")
+        (* (if !is_alt then ", crc_id_value" else "") *)
         toC_exp f2
     | Cast (y, u1, u2, (r, p)) ->
       (*
@@ -439,7 +439,7 @@ let rec toC_exp ppf f = match f with
         z1
         z2
     | AppDCls (y, (z1, z2)) ->
-      fprintf ppf "%s = app(%s, %s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = appD(%s, %s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
         z1
@@ -451,11 +451,11 @@ let rec toC_exp ppf f = match f with
         y
         z
     | AppMCls (y, z) -> 
-      fprintf ppf "%s = app(%s, %s%s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = appM(%s, %s);\n" (* Insert(x, y z) ~> x = app(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
         z
-        (if !is_alt then ", crc_id_value" else "")
+        (* (if !is_alt then ", crc_id_value" else "") *)
     | AppTy (y, n, tas) ->
       fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a" (* TODO *)
         x
@@ -532,7 +532,7 @@ let rec toC_exp ppf f = match f with
     end
   | MakeLabel (_, l, f) -> (* TODO *)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL_alt;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n%a"
         l
         l
         l
@@ -551,7 +551,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL_alt;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         l
         l
         l
@@ -576,7 +576,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakeCls (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE_alt;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
         x
         x
         x
@@ -601,7 +601,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then 
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         x
         x
         x
@@ -732,12 +732,12 @@ let rec toC_exp ppf f = match f with
         y2
   | AppDCls (x, (y1, y2)) -> (* x y ~> return app(x, y); *) (*xがクロージャを利用して適用する関数の場合*)
     if !is_main then 
-      fprintf ppf "app(%s, %s, %s);\nreturn 0;\n"
+      fprintf ppf "appD(%s, %s, %s);\nreturn 0;\n"
         x
         y1
         y2
     else
-      fprintf ppf "return app(%s, %s, %s);\n"
+      fprintf ppf "return appD(%s, %s, %s);\n"
         x
         y1
         y2
@@ -754,15 +754,15 @@ let rec toC_exp ppf f = match f with
         y
   | AppMCls (x, y) -> 
     if !is_main then 
-      fprintf ppf "app(%s, %s%s);\nreturn 0;\n"
+      fprintf ppf "appM(%s, %s);\nreturn 0;\n"
         x
         y
-        (if !is_alt then ", crc_id_value" else "")
+        (* (if !is_alt then ", crc_id_value" else "") *)
     else
-      fprintf ppf "return app(%s, %s%s);\n"
+      fprintf ppf "return appM(%s, %s);\n"
         x
         y
-        (if !is_alt then ", crc_id_value" else "")
+        (* (if !is_alt then ", crc_id_value" else "") *)
   | Cast (x, u1, u2, (r, p)) -> (*letのときと同じように出力．cast関数の返り値をそのまま返す*)
     let c1, c2 = c_of_ty u1, c_of_ty u2 in
     if !is_main then 
@@ -973,7 +973,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
     fprintf ppf ""
   else if !is_alt then
     if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL_alt;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n"
         l
         l
         l
@@ -982,7 +982,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
         l
     else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL_alt;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = tvs;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = tvs;\n"
         l
         l
         l
@@ -992,7 +992,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
         l
     else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE_alt;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = zs;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = zs;\n"
         l
         l
         l
@@ -1002,7 +1002,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
         l
     else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE_alt;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = zs;\n%s.f->tas = tvs;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = zs;\n%s.f->tas = tvs;\n"
         l
         l
         l
@@ -1146,16 +1146,12 @@ let toC_program ?(bench=0) ~alt ~intoB ppf (Prog (tvset, toplevel, f)) =
   is_alt := alt;
   is_B := intoB;
   fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    (Format.asprintf "#include <gc.h>\n#include \"../%slibC/%s.h\"\n%s#include \"../%slibC/stdlib%s.h\"\n"
-      (if bench = 0 then "" else "../../")
-      (if !is_B then "cast" else "coerce")
-      (if !is_B then "" else asprintf "#include \"../%slibC/coerce%s.h\"\n" (if bench = 0 then "" else "../../") (if !is_alt then "A" else "S"))
-      (if bench = 0 then "" else "../../")
-      (if !is_B then "B" else if !is_alt then "A" else "S"))
+    (Format.asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
+      (if bench = 0 then "" else "../../"))
     toC_tys (TV.elements tvset, bench)
     toC_fundefs toplevel
     (if bench = 0 then "int main() {\n" else Format.asprintf "int mutant%d() {\n" bench)
-    (if !is_B then "stdlibB();\n" else if !is_alt then "stdlibA();\n" else "stdlibS();\n")
+    "stdlib();\n"
     (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else Format.asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

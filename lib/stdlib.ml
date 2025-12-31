@@ -340,8 +340,10 @@ let pervasives_LB ~debug:debug ~compile:compile =
   in
   let kfunenvs = 
     if compile then
-      let kfunenvs = List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [] t, Environment.add x x a, Environment.add x x b) kfunenvs ["not"; "succ"; "prec"; "min"; "max"] in
-      let kfunenvs = List.fold_left (fun (t, a, b) -> fun (x, y) -> Environment.add y [] t, Environment.add x y a, Environment.add y y b) kfunenvs ["abs", "abs_ml"] in
+      let kfunenvs = List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [] t, Environment.add x x a, Environment.add x x b) kfunenvs ["succ"; "prec"; "min"; "max"] in
+      (* C言語で既に定義されている関数 *)
+      let kfunenvs = List.fold_left (fun (t, a, b) -> fun (x, y) -> Environment.add y [] t, Environment.add x y a, Environment.add y y b) kfunenvs ["abs", "abs_ml"; "not", "not_ml"] in
+      (* 多相性のある関数 *)
       List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [0, ref None] t, Environment.add x x a, Environment.add x x b) kfunenvs ["ignore"]
     else 
       kfunenvs'

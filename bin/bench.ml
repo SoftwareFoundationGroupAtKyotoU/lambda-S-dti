@@ -18,7 +18,7 @@ let string_of_mode = function
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 500
+let itr = 1000
 let files = [
   (* "church_small"; *)
   (* "church"; *)

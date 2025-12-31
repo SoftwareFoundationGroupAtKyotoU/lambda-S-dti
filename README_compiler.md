@@ -1,6 +1,6 @@
 # lambda-dti-compiler
 ## Source
-https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-dti-compiler.git
+https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti.git
 
 ## Requirements
 - opam 2.0.0+
@@ -11,20 +11,37 @@ https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-dti-compiler.git
 - OUnit 2 (optional for running unit tests)
 
 ## Installing Bohem GC
-Download gc-(version).tar.gz from https://www.hboehm.info/gc/.
+To compile and run this project, you need **GCC** and **Boehm GC** installed on your system.
 
-Unpack gc-(version).tar.gz and enter the newly created directory.
-
-Install Boehm GC with the following commands:
+### Option 1: Install via Package Manager
+**For Ubuntu / Debian / WSL:**
 ```console
-./configure --prefix=/mnt/c/gc
+sudo apt update
+sudo apt install build-essential libgc-dev
+```
+For macOS (Homebrew):
+```console
+brew install bdw-gc
+```
+
+### Option 2: Build from Source
+If you cannot use a package manager or need a specific version, you can build from source.
+- Download the latest source code (gc-x.x.x.tar.gz) from https://www.hboehm.info/gc/ or GitHub Releases from https://github.com/bdwgc/bdwgc.
+- Unpack the archive and enter the directory.
+- Build and install to the standard system path:
+```console
+./configure
 make
 make check
-make install
+sudo make install
+```
+Note: After installing from source on Linux, you may need to update the shared library cache:
+```console
+sudo ldconfig
 ```
 
 ## Getting started
-In the "/lambda-dti-compiler" directory:
+In the "/lambda-S-dti" directory:
 ```console
 eval $(opam env)
 dune build
