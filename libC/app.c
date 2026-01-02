@@ -73,10 +73,35 @@ value appM(value f, value v) {									// reduction of f(v)
 		s.s = f.f->fundat.wrap.c_res;
 		arg = coerce(v, f.f->fundat.wrap.c_arg);
 		g = f.f->fundat.wrap.w;
-		// if (s.s->crckind != ID) {
-		value f_ = { .f = g };
-		return appD(f_, arg, s); //TODO: 最適化可能？
-		// }
+		if (s.s->crckind != ID) {
+			switch(g->funkind) {
+				case(LABEL): {												// if f is "label" function
+					value (*l)(value, value);
+					l = g->fundat.label_alt.l;							// R_BETA : return f(v)
+					return l(arg, s);
+				}
+			
+				case(POLY_LABEL): {
+					value (*pl)(value, value, ty**);
+					pl = g->fundat.poly_label_alt.pl;
+					return pl(arg, s, g->tas);
+				}
+			
+				case(CLOSURE): {												// if f is closure
+					value (*c)(value, value, value*);
+					c = g->fundat.closure_alt.cls_alt.c;				// R_BETA : return f(v, fvs)
+					//printf("Heap size = %d\n", (int)GC_get_heap_size());
+					return c(arg, s, g->fundat.closure_alt.fvs);
+				}
+			
+				case(POLY_CLOSURE):	{											// if f is closure
+					value (*pc)(value, value, value*, ty**);
+					pc = g->fundat.poly_closure_alt.pcls_alt.pc;				// R_BETA : return f(v, fvs)
+					//printf("Heap size = %d\n", (int)GC_get_heap_size());
+					return pc(arg, s, g->fundat.poly_closure_alt.fvs, g->tas);
+				}
+			}
+		}
 	} else {
 		arg = v;
 		g = f.f;
@@ -101,8 +126,6 @@ value appM(value f, value v) {									// reduction of f(v)
 			c_a = g->fundat.closure_alt.cls_alt.c_a;				// R_BETA : return f(v, fvs)
 			//printf("Heap size = %d\n", (int)GC_get_heap_size());
 			return c_a(arg, g->fundat.closure_alt.fvs);
-			//printf("Heap size = %d\n", (int)GC_get_heap_size());
-			break;
 		}
 
 		case(POLY_CLOSURE):	{											// if f is closure

@@ -19,8 +19,8 @@ try:
 except Exception:
     stats = None
 
-base = "SC"
-comp = "AC"
+base = "SLC"
+comp = "ALC"
 
 # =========================
 # 設定まわり

@@ -162,6 +162,7 @@ crc* normalize_crc(crc *c) {
 					crc *cli = make_crc_inj_li(clist);
 					return make_crc_proj(G_LI, c->r_p, cli);
 				}
+				default: return c;
 			}
 		}
 	}

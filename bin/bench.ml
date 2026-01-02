@@ -1,20 +1,11 @@
 open Unix
+open Core
 (* open Lambda_S1_dti.Utils *)
 open Lambda_S1_dti
 
-(* open Utils.Error *)
-(* open Format *)
-(* open Translate *)
-(* open Pp *)
-
-type mode = SC | SI | AC | AI | BC | BI
-let string_of_mode = function
-  | SC -> "SC"
-  | SI -> "SI"
-  | AC -> "AC"
-  | AI -> "AI"
-  | BC -> "BC"
-  | BI -> "BI"
+type mode = 
+| SEI | SEC | AEI | AEC | BEI | BEC
+| SLI | SLC | ALI | ALC | BLI | BLC
 
 (* ------------------ *)
 (* Benchmark settings *)
@@ -37,614 +28,105 @@ let files = [
   (* "polypoly"; NG *)
 ]
 let modes = [
-  SC;
-  (* SI; *)
-  AC;
-  (* AI; *)
-  (* BC; *)
-  (* BI; *)
+  (* SEI; *)
+  SEC;
+  (* AEI; *)
+  AEC;
+  (* BEI; *)
+  (* BEC; *)
+  (* SLI; *)
+  (* SLC; *)
+  (* ALI; *)
+  (* ALC; *)
+  (* BLI; *)
+  (* BLC; *)
   ]   
-  (* [SC; SI] : SC と SI を実行 *)
+  (* [SEC; SLI] : SEC と SLI を実行 *)
+
+  
+let string_of_mode = function
+  | SEI -> "SEI"
+  | SEC -> "SEC"
+  | AEI -> "AEI"
+  | AEC -> "AEC"
+  | BEI -> "BEI"
+  | BEC -> "BEC"
+  | SLI -> "SLI"
+  | SLC -> "SLC"
+  | ALI -> "ALI"
+  | ALC -> "ALC"
+  | BLI -> "BLI"
+  | BLC -> "BLC"
+  
 let log_base_dir = "logs"
 
-(* Measurement options (source-controlled) *)
-type mem_mode = Off | Fast | Corebench
-let mem_mode : mem_mode = Off          (* Off | Fast | Corebench *)
-let fast_runs = 10                      (* Fast モードの1ミュータントあたりの実行回数 *)
-let cb_quota_sec = 0.15                 (* Corebench モード: 1 テストあたりの時間上限(秒) *)
-let cb_stabilize_gc_between_runs = false
-let cb_silence_stdout = true            (* Core_benchの標準出力(推定時間など)を抑止 *)
-let show_progress = true                (* 進捗バーを標準出力に出すか *)
-
-(* 出力フォーマット：Text（従来）, Json（1ファイルに配列）, JsonLines（NDJSON） *)
-type out_mode = Text | Json | JsonLines
-let out_mode : out_mode = JsonLines  (* 推奨: NDJSON。1行=1ミュータント *)
-
-(* 追加: Text ログを作るか？ *)
-let text_log_enabled =
-  match out_mode with Text -> true | Json | JsonLines -> false
 (* ------------------ *)
 
 let split_pairs lst =
   List.fold_right
-    (fun (a, b) (as_list, bs_list) -> (a :: as_list, b :: bs_list))
-    lst ([], [])
-
-
-(* ログの見出し用ヘルパ *)
-let log_section (fmt:Format.formatter) (title:string) =
-  Format.fprintf fmt "@.@[<v>--- %s ---@]@." title
-
-module J = struct
-  (* open Yojson.Safe *)
-
-  let strf fmt = Format.asprintf fmt
-
-  let opt f = function None -> `Null | Some x -> f x
-  let float_opt = opt (fun x -> `Float x)
-  let float x = `Float x
-  let int x = `Int x
-  let bool b = `Bool b
-  let str s = `String s
-  let list xs = `List xs
-  let obj xs = `Assoc xs
-
-  let to_channel_ln oc (j:Yojson.Safe.t) =
-    Yojson.Safe.to_channel oc j; output_char oc '\n'
-end
-
-
-
-(* === Core_bench を使った alloc/gc/time 抽出 === *)
-open Core
-module Bench = Core_bench.Bench
-module AR   = Bench.Analysis_result
-module Reg  = AR.Regression
-module Coef = AR.Coefficient
-module Var  = Bench.Variable
-
-(* core_bench が出す標準出力を一時的に /dev/null へ退避 *)
-let with_silenced_stdout (f : unit -> 'a) : 'a =
-  if not cb_silence_stdout then f ()
-  else begin
-    Out_channel.flush stdout; Out_channel.flush stderr;
-    let saved   = Core_unix.dup Core_unix.stdout in
-    let devnull = Core_unix.openfile "/dev/null" ~mode:[Core_unix.O_WRONLY] ~perm:0o666 in
-    Core_unix.dup2 ~src:devnull ~dst:Core_unix.stdout ();
-    Core_unix.close devnull;
-    match f () with
-    | v ->
-        Out_channel.flush stdout;
-        Core_unix.dup2 ~src:saved ~dst:Core_unix.stdout ();
-        Core_unix.close saved;
-        v
-    | exception exn ->
-        Out_channel.flush stdout;
-        Core_unix.dup2 ~src:saved ~dst:Core_unix.stdout ();
-        Core_unix.close saved;
-        raise exn
-  end
-
-module Fast_alloc = struct
-  let bytes_per_word =
-    match Core.Word_size.word_size with
-    | Core.Word_size.W32 -> 4
-    | Core.Word_size.W64 -> 8
-
-  let measure_and_log ~fmt ~label ~runs (thunk: unit -> unit) =
-    (* Blame 等は事前検出してスキップ *)
-    let ok =
-      try thunk (); true with
-      | Syntax.Blame _ ->
-          log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (C)@."; false
-      (* | LambdaCSPolyMP.EvalS.Blame _ ->
-          log_section fmt "mem(fast) skipped"; Format.fprintf fmt "reason: Blame (S)@."; false *)
-      | exn ->
-          log_section fmt "mem(fast) skipped";
-          Format.fprintf fmt "reason: exception = %s@." (Core.Exn.to_string exn);
-          false
-    in
-    if not ok then () else begin
-      Gc.full_major ();
-      let t0 = Core.Time_ns.now () in
-      let s0 = Gc.quick_stat () in
-      for _i = 1 to runs do thunk () done;
-      Gc.full_major ();
-      let s1 = Gc.quick_stat () in
-      let dt_ns = Core.Time_ns.Span.to_ns (Core.Time_ns.diff (Core.Time_ns.now ()) t0) in
-      let runs_f = Float.of_int runs in
-      let per_run_ns = dt_ns /. runs_f in
-      let fsub a b = a -. b in
-      let words_minor = fsub s1.minor_words s0.minor_words /. runs_f in
-      let words_major = fsub s1.major_words s0.major_words /. runs_f in
-      let words_prom  = fsub s1.promoted_words s0.promoted_words /. runs_f in
-      let gc_minor = float (s1.minor_collections - s0.minor_collections) /. runs_f in
-      let gc_major = float (s1.major_collections - s0.major_collections) /. runs_f in
-      let gc_comp  = float (s1.compactions        - s0.compactions)        /. runs_f in
-
-      log_section fmt (Printf.sprintf "mem(fast) per run; runs=%d" runs);
-      Format.fprintf fmt
-        "@[<v2>%s@,\
-         time:  %.0f ns/Run@,\
-         alloc: minor=%.0f words/Run  major=%.0f words/Run  promoted=%.0f words/Run@,\
-         alloc(bytes): minor=%.0f B/Run  major=%.0f B/Run  promoted=%.0f B/Run@,\
-         gc:   minor=%.3f /Run  major=%.3f /Run  compactions=%.3f /Run@]@."
-        label
-        per_run_ns
-        words_minor words_major words_prom
-        (words_minor *. float bytes_per_word)
-        (words_major *. float bytes_per_word)
-        (words_prom  *. float bytes_per_word)
-        gc_minor gc_major gc_comp
-    end
-end
-
-
-module CB = struct
-  let bytes_per_word =
-    match Core.Word_size.word_size with
-    | Core.Word_size.W32 -> 4
-    | Core.Word_size.W64 -> 8
-
-  let run_config =
-    Bench.Run_config.create
-      ~quota:(Bench.Quota.Span (Core.Time.Span.of_sec cb_quota_sec))
-      ~stabilize_gc_between_runs:cb_stabilize_gc_between_runs
-      ()
-
-  let coef_per_run (reg : Reg.t) : float option =
-    Array.find_map (AR.Regression.coefficients reg) ~f:(fun (c : Coef.t) ->
-      match Coef.predictor c with
-      | `Runs -> Some (Coef.estimate c)
-      | _ -> None
-    )
-
-  let bench_one_and_log ~fmt ~(cb_label:string) (thunk: unit -> unit) =
-    (* プレフライトで例外検出してスキップ *)
-    let ok =
-      try thunk (); true with
-      | Syntax.Blame _ ->
-          log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (C)@."; false
-      (* | LambdaCSPolyMP.EvalS.Blame _ ->
-          log_section fmt "core_bench (skipped)"; Format.fprintf fmt "reason: Blame (S)@."; false *)
-      | exn ->
-          log_section fmt "core_bench (skipped)";
-          Format.fprintf fmt "reason: exception = %s@." (Core.Exn.to_string exn);
-          false
-    in
-    if not ok then () else begin
-      let test = Bench.Test.create ~name:cb_label (fun () -> thunk ()) in
-      let do_measure () =
-        let ms = Bench.measure ~run_config [test] in
-        match ms with
-        | [m] -> Bench.analyze ~analysis_configs:Bench.Analysis_config.default m
-        | _   -> Error (Error.of_string "measurement failed")
-      in
-      let analyzed =
-        if cb_silence_stdout then with_silenced_stdout do_measure else do_measure ()
-      in
-      match analyzed with
-      | Ok res ->
-          let regs = AR.regressions res in
-          let pick (resp : Var.t) : float option =
-            Array.find_map regs ~f:(fun r ->
-              if Core.Poly.(Reg.responder r = resp)
-              then coef_per_run r
-              else None)
-          in
-          let nanos    = pick `Nanos in
-          let a_minor  = pick `Minor_allocated in
-          let a_major  = pick `Major_allocated in
-          let a_prom   = pick `Promoted in
-          let gc_minor = pick `Minor_collections in
-          let gc_major = pick `Major_collections in
-          let gc_comp  = pick `Compactions in
-          let w2b = Option.map ~f:(fun w -> w *. float_of_int bytes_per_word) in
-
-          log_section fmt (Printf.sprintf "core_bench (per run; quota=%.2fs; stabilize=%b)"
-                             cb_quota_sec cb_stabilize_gc_between_runs);
-          Format.fprintf fmt
-            "@[<v2>%s@,\
-             time:  %s ns/Run@,\
-             alloc: minor=%s words/Run  major=%s words/Run  promoted=%s words/Run@,\
-             alloc(bytes): minor=%s B/Run  major=%s B/Run  promoted=%s B/Run@,\
-             gc:   minor=%s /Run  major=%s /Run  compactions=%s /Run@]@."
-            cb_label
-            (Option.value_map nanos    ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map a_minor  ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map a_major  ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map a_prom   ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map (w2b a_minor) ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map (w2b a_major) ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map (w2b a_prom ) ~default:"-" ~f:(Printf.sprintf "%.0f"))
-            (Option.value_map gc_minor ~default:"-" ~f:(Printf.sprintf "%.3f"))
-            (Option.value_map gc_major ~default:"-" ~f:(Printf.sprintf "%.3f"))
-            (Option.value_map gc_comp  ~default:"-" ~f:(Printf.sprintf "%.3f"))
-      | Error _ ->
-          log_section fmt "core_bench (analysis failed)";
-          Format.fprintf fmt "n/a@."
-    end
-end
-
-
-(* -------- Progress UI -------------------------------------------------- *)
-(* -------- Target Progress UI (per file x mode) ------------------------- *)
-module Target_progress = struct
-  type t = {
-    label : string;
-    total : int;
-    mutable done_ : int;
-    start_t : float;
-    width : int;
-  }
-
-  let create ~label ~total ~ordinal ~total_targets =
-    (* 見出しを出してからバーを開始 *)
-    Printf.printf "\n==> [%d/%d] %s (%d mutants)\n%!"
-      ordinal total_targets label total;
-    { label; total; done_ = 0; start_t = gettimeofday (); width = 28 }
-
-  let print ?(final=false) (p:t) =
-    if show_progress then begin
-      let now     = gettimeofday () in
-      let done_i  = p.done_ in
-      let total_i = max 1 p.total in
-      let frac    = Float.of_int done_i /. Float.of_int total_i in
-      let elapsed = now -. p.start_t in
-      let eta     = if Float.(frac > 0.0) then elapsed *. (1.0 -. frac) /. frac else Float.nan in
-      let filled  = Int.of_float (Float.min 1.0 frac *. Float.of_int p.width) in
-      let bar     = (String.make filled '#') ^ (String.make (p.width - filled) '-') in
-      Printf.printf "\r%-16s [%s] %d/%d (%.1f%%)  t=%.1fs  ETA:%s%!"
-        p.label bar done_i total_i (100. *. frac) elapsed
-        (if Float.is_nan eta then " ?" else Printf.sprintf " %.1fs" eta);
-      if final then Printf.printf "\n%!";
-    end
-
-  let tick (p:t) =
-    p.done_ <- p.done_ + 1;
-    print p
-end
-
-(* -------- Measurement -------------------------------------------------- *)
-let measure_execution_time f itr mode =
-  let result = ref [] in
-  List.iter
-    (List.range 0 itr)
-    (fun _ ->
-      match mode with
-      | SI | AI | BI -> 
-        let start_time = gettimeofday () in
-        let v = f () in
-        let end_time = gettimeofday () in
-        let elapsed_time = end_time -. start_time in
-        result := (v, elapsed_time) :: !result
-      | SC | AC | BC -> 
-        let v = f () in
-        let filename = "logs/bench_time.json" in
-        let json_data = Yojson.Basic.from_file filename in
-        let elapsed_time_ns_str = Yojson.Basic.Util.to_string (Yojson.Basic.Util.member "counter-value" json_data) in
-        let elapsed_time = float_of_string (elapsed_time_ns_str) *. 0.001 *. 0.001 *. 0.001 in
-        result := (v, elapsed_time) :: !result
-      );
-  !result
-
-let measure_mem_to_json ~label (thunk: unit -> unit) : Yojson.Safe.t option =
-  match mem_mode with
-  | Off -> None
-  | Fast ->
-      (* Fast_alloc を呼びなおして値を作る（ログは emit_text_log のときだけ） *)
-      let ok =
-        try thunk (); true with
-        | Syntax.Blame _ -> false
-        (* | LambdaCSPolyMP.EvalS.Blame _ -> false *)
-        | _ -> false
-      in
-      if not ok then None else begin
-        Gc.full_major ();
-        let t0 = Core.Time_ns.now () in
-        let s0 = Gc.quick_stat () in
-        for _i = 1 to fast_runs do thunk () done;
-        Gc.full_major ();
-        let s1 = Gc.quick_stat () in
-        let dt_ns = Core.Time_ns.Span.to_ns (Core.Time_ns.diff (Core.Time_ns.now ()) t0) in
-        let runs_f = float fast_runs in
-        let per_run_ns = dt_ns /. runs_f in
-        let fsub a b = a -. b in
-        let words_minor = fsub s1.minor_words s0.minor_words /. runs_f in
-        let words_major = fsub s1.major_words s0.major_words /. runs_f in
-        let words_prom  = fsub s1.promoted_words s0.promoted_words /. runs_f in
-        let gc_minor = float (s1.minor_collections - s0.minor_collections) /. runs_f in
-        let gc_major = float (s1.major_collections - s0.major_collections) /. runs_f in
-        let gc_comp  = float (s1.compactions        - s0.compactions)        /. runs_f in
-        let bytes_per_word =
-          match Core.Word_size.word_size with
-          | Core.Word_size.W32 -> 4
-          | Core.Word_size.W64 -> 8
-        in
-        let open J in
-        Some (obj [
-          ("mode", str "fast");
-          ("runs", int fast_runs);
-          ("time_ns_per_run", float per_run_ns);
-          ("alloc_words_per_run",
-            obj [("minor", float words_minor); ("major", float words_major); ("promoted", float words_prom)]);
-          ("alloc_bytes_per_run",
-            obj [("minor", float (words_minor *. float_of_int bytes_per_word));
-                 ("major", float (words_major *. float_of_int bytes_per_word));
-                 ("promoted", float (words_prom  *. float_of_int bytes_per_word))]);
-          ("gc_per_run",
-            obj [("minor", float gc_minor); ("major", float gc_major); ("compactions", float gc_comp)]);
-        ])
-      end
-  | Corebench ->
-      let open Core in
-      let open Bench in
-      let open J in
-      let test = Test.create ~name:label (fun () -> thunk ()) in
-      let do_measure () =
-        let ms = Bench.measure ~run_config:CB.run_config [test] in
-        match ms with
-        | [m] -> Bench.analyze ~analysis_configs:Bench.Analysis_config.default m
-        | _   -> Error (Error.of_string "measurement failed")
-      in
-      let analyzed =
-        if cb_silence_stdout then with_silenced_stdout do_measure else do_measure ()
-      in
-      match analyzed with
-      | Error _ -> None
-      | Ok res ->
-          let regs = AR.regressions res in
-          let coef_per_run (reg : Reg.t) : float option =
-            Array.find_map (AR.Regression.coefficients reg) ~f:(fun (c : Coef.t) ->
-              match Coef.predictor c with
-              | `Runs -> Some (Coef.estimate c)
-              | _ -> None)
-          in
-          let pick (resp : Var.t) : float option =
-            Array.find_map regs ~f:(fun r ->
-              if Core.Poly.(Reg.responder r = resp) then coef_per_run r else None)
-          in
-          let nanos    = pick `Nanos in
-          let a_minor  = pick `Minor_allocated in
-          let a_major  = pick `Major_allocated in
-          let a_prom   = pick `Promoted in
-          let gc_minor = pick `Minor_collections in
-          let gc_major = pick `Major_collections in
-          let gc_comp  = pick `Compactions in
-          let bytes_per_word =
-            match Core.Word_size.word_size with
-            | Core.Word_size.W32 -> 4
-            | Core.Word_size.W64 -> 8
-          in
-          let w2b = Option.map ~f:(fun w -> w *. float_of_int bytes_per_word) in
-          Some (obj [
-            ("mode", str "corebench");
-            ("quota_sec", J.float cb_quota_sec);
-            ("stabilize_gc_between_runs", J.bool cb_stabilize_gc_between_runs);
-            ("time_ns_per_run", float_opt nanos);
-            ("alloc_words_per_run",
-              obj [("minor", float_opt a_minor); ("major", float_opt a_major); ("promoted", float_opt a_prom)]);
-            ("alloc_bytes_per_run",
-              obj [("minor", float_opt (w2b a_minor));
-                   ("major", float_opt (w2b a_major));
-                   ("promoted", float_opt (w2b a_prom))]);
-            ("gc_per_run",
-              obj [("minor", float_opt gc_minor); ("major", float_opt gc_major); ("compactions", float_opt gc_comp)]);
-          ])
-
-(* --tvをrenewする-- *)
-let pick_tv u = let open Syntax in match u with
-  | TyVar tv -> tv
-  | _ -> raise @@ Failure "not_tv"
-
-let rec tv_renew_ty u env = let open Syntax in match u with
-  | TyVar (i, _) -> 
-    begin 
-    try TyVar (Environment.find (string_of_int i) env), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
-    let env = Environment.add (string_of_int i) tv env in
-    TyVar tv, env
-    end
-  | TyDyn | TyInt | TyBool | TyUnit -> u, env
-  | TyFun (u1, u2) -> 
-    let u1, env = tv_renew_ty u1 env in
-    let u2, env = tv_renew_ty u2 env in
-    TyFun (u1, u2), env
-  | TyList u -> 
-    let u, env = tv_renew_ty u env in
-    TyList u, env
-
-let rec tv_renew_coercion c env = let open Syntax in match c with
-  | CInj _ | CProj _ | CFail _ -> c, env
-  | CTvInj (i, _) -> 
-    begin
-    try CTvInj (Environment.find (string_of_int i) env), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ())in
-    let env = Environment.add (string_of_int i) tv env in
-    CTvInj tv, env
-    end
-  | CTvProj ((i, _), p) -> 
-    begin
-    try CTvProj ((Environment.find (string_of_int i) env), p), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
-    let env = Environment.add (string_of_int i) tv env in
-    CTvProj (tv, p), env
-    end
-  | CTvProjInj ((i, _), p) -> 
-    begin
-    try CTvProjInj ((Environment.find (string_of_int i) env), p), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
-    let env = Environment.add (string_of_int i) tv env in
-    CTvProjInj (tv, p), env
-    end
-  | CId u ->
-    let u, env = tv_renew_ty u env in
-    CId u, env
-  | CFun (c1, c2) ->
-    let c1, env = tv_renew_coercion c1 env in
-    let c2, env = tv_renew_coercion c2 env in
-    CFun (c1, c2), env 
-  | CList c ->
-    let c, env = tv_renew_coercion c env in
-    CList c, env
-  | CSeq (c1, c2) ->
-    let c1, env = tv_renew_coercion c1 env in
-    let c2, env = tv_renew_coercion c2 env in
-    CSeq (c1, c2), env 
-
-let rec tv_renew_mf mf env = let open Syntax in match mf with
-  | MatchILit _ | MatchBLit _ | MatchULit -> mf, env
-  | MatchVar (x, u) -> 
-    let u, env = tv_renew_ty u env in
-    MatchVar (x, u), env
-  | MatchNil u -> 
-    let u, env = tv_renew_ty u env in
-    MatchNil u, env
-  | MatchCons (mf1, mf2) ->
-    let mf1, env = tv_renew_mf mf1 env in
-    let mf2, env = tv_renew_mf mf2 env in
-    MatchCons (mf1, mf2), env
-  | MatchWild u -> 
-    let u, env = tv_renew_ty u env in
-    MatchWild u, env
-
-let rec tv_renew_exp e env = let open Syntax.CC in match e with
-  | Var (x, us) ->
-    let env = List.fold_left us ~f:(fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) ~init:env in
-    let us = List.map us (fun u -> match u with Ty u -> Syntax.Ty (fst @@ (tv_renew_ty u env)) | TyNu -> TyNu) in
-    Var (x, us), env
-  | IConst _ | BConst _ | UConst -> e, env
-  | BinOp (op, e1, e2) -> 
-    let e1, env = tv_renew_exp e1 env in
-    let e2, env = tv_renew_exp e2 env in
-    BinOp (op, e1, e2), env
-  | IfExp (e1, e2, e3) ->
-    let e1, env = tv_renew_exp e1 env in
-    let e2, env = tv_renew_exp e2 env in
-    let e3, env = tv_renew_exp e3 env in
-    IfExp (e1, e2, e3), env
-  | FunExp (x, u, e) ->
-    let u, env = tv_renew_ty u env in
-    let e, env = tv_renew_exp e env in
-    FunExp (x, u, e), env
-  | FixExp (x, y, u1, u2, e) ->
-    let u1, env = tv_renew_ty u1 env in
-    let u2, env = tv_renew_ty u2 env in
-    let e, env = tv_renew_exp e env in
-    FixExp (x, y, u1, u2, e), env
-  | AppExp (e1, e2) ->
-    let e1, env = tv_renew_exp e1 env in
-    let e2, env = tv_renew_exp e2 env in
-    AppExp (e1, e2), env
-  | CAppExp (e, c) ->
-    let e, env = tv_renew_exp e env in
-    let c, env = tv_renew_coercion c env in
-    CAppExp (e, c), env
-  | CastExp (e, u1, u2, r_p) -> 
-    let e, env = tv_renew_exp e env in
-    let u1, env = tv_renew_ty u1 env in
-    let u2, env = tv_renew_ty u2 env in
-    CastExp (e, u1, u2, r_p), env
-  | MatchExp (e, ms) ->
-    let e, env = tv_renew_exp e env in
-    let ms, env = tv_renew_ms ms env in
-    MatchExp (e, ms), env
-  | LetExp (x, tvs, e1, e2) ->
-    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:env in
-    let e1, env = tv_renew_exp e1 env in
-    let e2, env = tv_renew_exp e2 env in
-    LetExp (x, tvs, e1, e2), env
-  | NilExp u -> 
-    let u, env = tv_renew_ty u env in
-    NilExp u, env
-  | ConsExp (e1, e2) ->
-    let e1, env = tv_renew_exp e1 env in
-    let e2, env = tv_renew_exp e2 env in
-    ConsExp (e1, e2), env
-  and tv_renew_ms ms env = match ms with
-  | (mf, e) :: ms ->
-    let mf, env = tv_renew_mf mf env in
-    let e, env = tv_renew_exp e env in
-    let ms, env = tv_renew_ms ms env in
-    (mf, e) :: ms, env
-  | [] -> [], env
-
-
-let tv_renew p = let open Syntax.CC in match p with
-  | Exp e -> 
-    let e, _ = tv_renew_exp e Syntax.Environment.empty in 
-    Exp e
-  | LetDecl (id, tvs, e) -> 
-    let env = List.fold_left tvs ~f:(fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) ~init:Syntax.Environment.empty in
-    let e, _ = tv_renew_exp e env in
-    LetDecl (id, tvs, e)
+    ~f:(fun (a, b) (as_list, bs_list) -> (a :: as_list, b :: bs_list))
+    lst ~init:([], [])
 
 let bench mode fmt itr decl =
   let tyenv = Syntax.Environment.empty in
-  let u = Typing.CC.type_of_program tyenv decl in
-  Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u;
+  let _ = Typing.CC.type_of_program tyenv decl in
+  (* Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u; *)
   match mode with
-  | SI ->
+  | SLI ->
     let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate tyenv (tv_renew decl) in
-    log_section fmt "after Translation (λS∀mp)";
+    let translated = Translate.CC.translate tyenv (Pipeline.CC.tv_renew decl) in
+    Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
-    let _id, _vs, lst_elapsed_time =
-      match decl with
-      | Syntax.CC.Exp _ ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr SI
-            |> split_pairs
-          in ("-", vs, ts)
-      | Syntax.CC.LetDecl (id, _, _) ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr SI
-            |> split_pairs
-          in (id, vs, ts)
-    in
-    lst_elapsed_time
-  | AI ->
+    Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+    |> split_pairs
+    |> snd
+  | ALI ->
     let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate_alt tyenv (tv_renew decl) in
-    log_section fmt "after Translation (λS∀mp)";
+    let translated = Translate.CC.translate_alt tyenv (Pipeline.CC.tv_renew decl) in
+    Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
-    let _id, _vs, lst_elapsed_time =
-      match decl with
-      | Syntax.CC.Exp _ ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr AI
-            |> split_pairs
-          in ("-", vs, ts)
-      | Syntax.CC.LetDecl (id, _, _) ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr AI
-            |> split_pairs
-          in (id, vs, ts)
-    in
-    lst_elapsed_time
-  | BI -> 
+    Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+    |> split_pairs
+    |> snd
+  | BEI -> 
     let env = Syntax.Environment.empty in
-    let translated = tv_renew decl in
-    log_section fmt "after Translation (λS∀mp)";
+    let translated = Pipeline.CC.tv_renew decl in
+    Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
     Format.pp_print_flush fmt ();
-    let _id, _vs, lst_elapsed_time =
-      match decl with
-      | Syntax.CC.Exp _ ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr BI
-            |> split_pairs
-          in ("-", vs, ts)
-      | Syntax.CC.LetDecl (id, _, _) ->
-          let vs, ts =
-            measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr BI
-            |> split_pairs
-          in (id, vs, ts)
-    in
-    lst_elapsed_time
-  | SC | AC | BC -> raise @@ Failure "bench Compiler"
+    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
+    |> split_pairs
+    |> snd
+  | SEI | AEI | BLI -> raise @@ Failure "yet"
+  | SEC | AEC | BEC | SLC | ALC | BLC -> raise @@ Failure "bench Compiler"
+
+(* メモリ計測（設定に応じて）を JSON に *)
+let mem_json mode file idx ~compile =
+  let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
+  if compile then     
+    let run () = ignore (Core_unix.system "logs/bench.out") in
+    Bench_utils.measure_mem_to_json ~label run
+  else raise @@ Failure "yet" 
+  (* match mode with
+  | SI ->
+      let translated = Translate.CC.translate tyenv (Pipeline.CC.tv_renew decl) in
+      let run () = 
+        ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+      Bench_utils.measure_mem_to_json ~label run
+  | AI ->
+      let translated = Translate.CC.translate_alt tyenv (Pipeline.CC.tv_renew decl) in
+      let run () = 
+        ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+      Bench_utils.measure_mem_to_json ~label run
+  | BI ->
+      let translated = Pipeline.CC.tv_renew decl in
+      let run () = 
+        ignore (Eval.CC.eval_program Syntax.Environment.empty translated) in
+      Bench_utils.measure_mem_to_json ~label run *)
+  (* | SC | AC | BC ->  *)
+
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
@@ -666,73 +148,72 @@ let bench_file_mode
     ~(mode:mode)
     ~(mutants:Syntax.ITGL.program list)
   =
-  let tyenv = Syntax.Environment.empty in
-  Printf.fprintf stdout "debug: text_log_enebled? %b\n" text_log_enabled;
-  let oc_opt, fmt =
-    if text_log_enabled then
-      let file_path =
-        Printf.sprintf "%s/%s" log_dir (string_of_mode mode ^ "_" ^ file ^ ".log")
-      in
-      let oc = Out_channel.create file_path in
-      (Some oc, Format.formatter_of_out_channel oc)
-    else
-      let null_fmt =
-        Format.make_formatter (fun _buf _pos _len -> ()) (fun () -> ())
-      in
-      (None, null_fmt)
+  (* modeに応じたconfigの生成 *)
+  let config = match mode with
+  | SEI -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:false ()
+  | SEC -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:true ()
+  | AEI -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:false ()
+  | AEC -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:true ()
+  | BEI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ()
+  | BEC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ()
+  | SLI -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:false ()
+  | SLC -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:true ()
+  | ALI -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:false ()
+  | ALC -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:true ()
+  | BLI -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:false ()
+  | BLC -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:true ()
   in
 
-  let json_path =
-    match out_mode with
-    | Text -> None
-    | JsonLines -> Some (Printf.sprintf "%s/%s_%s.jsonl" log_dir (string_of_mode mode) file)
-    | Json -> Some (Printf.sprintf "%s/%s_%s.json"  log_dir (string_of_mode mode) file)
+  Printf.fprintf stdout "debug: bench_file_mode\n" ;
+  (* text用，json用のocとfmtを取得 *)
+  let oc_opt, fmt, json_oc, json_first = 
+    let null_fmt = Format.make_formatter (fun _buf _pos _len -> ()) (fun () -> ()) in
+    match Bench_utils.out_mode with
+    | Text -> 
+      let file_path = Printf.sprintf "%s/%s" log_dir (string_of_mode mode ^ "_" ^ file ^ ".log") in
+      let oc = Out_channel.create file_path in
+      Some oc, Format.formatter_of_out_channel oc, None, ref true
+    | JsonLines ->
+      let json_path = Printf.sprintf "%s/%s_%s.jsonl" log_dir (string_of_mode mode) file in
+      let oc = Out_channel.create json_path in
+      None, null_fmt, Some oc, ref true
+    | Json -> 
+      let json_path = Printf.sprintf "%s/%s_%s.json"  log_dir (string_of_mode mode) file in
+      let oc = Out_channel.create json_path in
+      Out_channel.output_string oc "{ \"file\": \""; Out_channel.output_string oc file; Out_channel.output_string oc "\", ";
+      Out_channel.output_string oc "\"mode\": \""; Out_channel.output_string oc (string_of_mode mode); Out_channel.output_string oc "\", ";
+      Out_channel.output_string oc "\"settings\": {\"mem_mode\": \""; 
+      Out_channel.output_string oc (match Bench_utils.mem_mode with Off->"off" | Fast->"fast" | Corebench->"corebench");
+      Out_channel.output_string oc "\", \"fast_runs\": "; Out_channel.output_string oc (string_of_int Bench_utils.fast_runs);
+      Out_channel.output_string oc "}, \"mutants\": [\n";
+      None, null_fmt, Some oc, ref true
   in
-  let json_oc, json_first =
-    match json_path, out_mode with
-    | None, _ -> (None, ref true)
-    | Some path, JsonLines ->
-        let oc = Out_channel.create path in
-        (Some oc, ref true)
-    | Some path, Json ->
-        let oc = Out_channel.create path in
-        Out_channel.output_string oc "{ \"file\": \""; Out_channel.output_string oc file; Out_channel.output_string oc "\", ";
-        Out_channel.output_string oc "\"mode\": \""; Out_channel.output_string oc (string_of_mode mode); Out_channel.output_string oc "\", ";
-        Out_channel.output_string oc "\"settings\": {\"mem_mode\": \""; 
-        Out_channel.output_string oc (match mem_mode with Off->"off" | Fast->"fast" | Corebench->"corebench");
-        Out_channel.output_string oc "\", \"fast_runs\": "; Out_channel.output_string oc (string_of_int fast_runs);
-        Out_channel.output_string oc "}, \"mutants\": [\n";
-        (Some oc, ref true)
-    | Some _, Text -> raise @@ Failure "yet"
-  in
+
+  let tyenv = Syntax.Environment.empty in
+  let ppf = Utils.Format.empty_formatter in
 
   (* ターゲット用 Progress を開始 *)
   let label = Printf.sprintf "%s_%s" (string_of_mode mode) file in
-  let prog = Target_progress.create
+  let prog = Bench_utils.Target_progress.create
                ~label ~total:(List.length mutants)
                ~ordinal ~total_targets
   in
 
-  let () = match mode with
-  | SI | AI | BI -> ()
-  | SC | AC | BC -> 
+  if config.compile then
     let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
-    if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir
-  in
-
+    if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir;
+    let bench_dir = Printf.sprintf "%s/bench" log_dir in
+    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
+  
   let counter = ref 0 in
   List.iteri mutants (fun i p ->
     try( 
+      (* Printf.fprintf stdout "debug: iter is %d\n" i; *)
       let idx = i + 1 in
       (* ---- Mutant 見出し ---- *)
       Option.iter oc_opt (fun oc ->
         Printf.fprintf oc "\n(*** Mutant %d ***)\n%!" idx
       );
-
-      (* 1) 変異直後（λC∀mp：mutate 後） *)
-      log_section fmt "after Mutate (λC∀mp)";
-      Format.fprintf fmt "%a@." Pp.ITGL.pp_program p;
-      Format.pp_print_flush fmt ();
 
       Option.iter oc_opt (fun oc ->
         incr counter;
@@ -740,68 +221,34 @@ let bench_file_mode
       );
 
       (* Coercion insertion *)
-      let _, decl, _ = match mode with
-      | BI | BC -> Translate.ITGL.translate ~intoB:true tyenv p 
-      | _ -> Translate.ITGL.translate ~intoB:false tyenv p 
-      in
-      log_section fmt "after Insertion (λC∀mp)";
-      Format.fprintf fmt "%a@." Pp.CC.pp_program decl;
-      Format.pp_print_flush fmt ();
+      let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~intoB:config.intoB ~bench_ppf:fmt in
 
       (* Benchmarking *)
       let lst_elapsed_time =
         try 
-          match mode with
-          | SI | AI | BI -> bench mode fmt itr decl
-          | SC -> 
-            let translated = Translate.CC.translate tyenv (tv_renew decl) in
-            log_section fmt "after Translation (λS∀mp)";
-            Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
-            Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:false ~debug:false ~compile:true in
-            let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
-            let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
-            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~intoB:false ~bench:idx) p in
-            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
-            Printf.fprintf oc "%s" c_code;
-            close_out oc;
-            []
-          | AC -> 
-            let translated = Translate.CC.translate tyenv (tv_renew decl) in
-            log_section fmt "after Translation (λS∀mp)";
-            Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
-            Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:true ~debug:false ~compile:true in
-            let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
-            let p = Closure.toCls_program kf Stdlib.venv ~alt:true in
-            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:true ~intoB:false ~bench:idx) p in
-            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
-            Printf.fprintf oc "%s" c_code;
-            close_out oc;
-            []
-          | BC -> 
-            let translated = tv_renew decl in
-            log_section fmt "after Translation (λS∀mp)";
-            Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
-            Format.pp_print_flush fmt ();
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
-            let kf, _ = KNormal.kNorm_funs_LB kfunenvs translated in
-            let p = Closure.toCls_program kf Stdlib.venv ~alt:false in
-            let c_code = Format.asprintf "%a" (ToC.toC_program ~alt:false ~intoB:true ~bench:idx) p in
+          if not config.compile then bench mode fmt itr decl
+          else
+            let decl = Pipeline.CC.tv_renew decl in
+            let c_code = 
+              if config.intoB then 
+                let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
+                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~bench_ppf:fmt ~bench:idx
+              else
+                let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:config.alt ~debug:false ~compile:true in
+                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~bench_ppf:fmt ~bench:idx
+            in
             let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
             Printf.fprintf oc "%s" c_code;
             close_out oc;
             []
         with
-        (* | LambdaCSPolyMP.EvalC.Blame _ *)
         | Syntax.Blame _ -> Format.fprintf fmt "blame"; []
         | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
         | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
         | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
         | KNormal.KNormal_error str -> Format.fprintf fmt "knorm_error %s in bench\n" str; []
         | KNormal.KNormal_bug str -> Format.fprintf fmt "knorm_bug %s in bench\n" str; []
-        | ToC.ToC_error str -> Format.fprintf fmt "knorm_error %s in bench\n" str; []
-        | ToC.ToC_bug str -> Format.fprintf fmt "knorm_bug %s in bench\n" str; []
+        | ToC.ToC_bug str -> Format.fprintf fmt "toc_bug %s in bench\n" str; []
         | _ -> Format.fprintf fmt "some error happened in bench\n"; []
       in
 
@@ -816,83 +263,35 @@ let bench_file_mode
       let after_mutate_str    = Format.asprintf "%a" Pp.ITGL.pp_program p in
       let after_insertion_str = Format.asprintf "%a" Pp.CC.pp_program decl in
       let after_translation_str =
-        match mode with
-        | SI ->
-          let translated = Translate.CC.translate tyenv decl in
-          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | AI ->
-          let translated = Translate.CC.translate_alt tyenv decl in
-          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | BI ->
-          Some (Format.asprintf "%a" Pp.CC.pp_program decl)
-        | SC | AC -> 
-          let translated = Translate.CC.translate tyenv decl in
-          Some (Format.asprintf "%a" Pp.LS1.pp_program translated)
-        | BC ->
-          Some (Format.asprintf "%a" Pp.CC.pp_program decl)
+        if config.intoB then 
+          Format.asprintf "%a" Pp.CC.pp_program decl
+        else
+          let translated = Pipeline.translate_to_LS1 ppf tyenv decl ~alt:(config.alt && not config.compile) in
+          Format.asprintf "%a" Pp.LS1.pp_program translated
       in
 
       (* 実行時間（従来の itr 回計測）を JSON に *)
-      let times_sec_json =
-        J.list (List.map lst_elapsed_time (fun t -> J.float t))
-      in
+      let times_sec_json = Bench_utils.J.list (List.map lst_elapsed_time (fun t -> Bench_utils.J.float t)) in
 
-      (* メモリ計測（設定に応じて）を JSON に *)
-      let mem_json =
-        let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
-        match mode with
-        | SI ->
-            (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.CC.translate tyenv (tv_renew decl) in
-            let run () = 
-              ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
-            measure_mem_to_json ~label run
-        | AI ->
-            (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = Translate.CC.translate_alt tyenv (tv_renew decl) in
-            let run () = 
-              ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
-            measure_mem_to_json ~label run
-        | BI ->
-            (* 翻訳は上で生成済み after_translation_str 用に2度目の trans を避けたいならキャッシュ可 *)
-            let translated = tv_renew decl in
-            let run () = 
-              ignore (Eval.CC.eval_program Syntax.Environment.empty translated) in
-            measure_mem_to_json ~label run
-        | SC | AC | BC -> 
-          (* let translated = Translate.CC.translate tyenv (tv_renew decl) in
-          let _, _, kfunenvs, _ = Stdlib.pervasives_LS in
-          let kf, _ = KNormal.kNorm_funs_LS kfunenvs translated in
-          let p = match kf with Syntax.KNorm.Exp e -> e | _ -> raise @@ Failure "kf is not exp" in
-          let p = Closure.KNorm.toCls_program p in
-          let c_code = Format.asprintf "%a" ToC.toC_program p in
-          let oc = Out_channel.create "logs/bench.c" in
-          Printf.fprintf oc "%s" c_code;
-          close_out oc;
-          let _ = Core_unix.system "gcc logs/bench.c lib/cast.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -o logs/bench.out -O2 -g3" in *)
-          let run () = 
-              (* let open Eval in  *)
-              ignore (Core_unix.system "logs/bench.out") in
-            measure_mem_to_json ~label run
-      in
+      let mem = mem_json mode file idx ~compile:config.compile in
 
       (* 1ミュータントの JSON オブジェクト *)
       let mutant_json =
-        J.obj [
-          ("mutant_index", J.int idx);
-          ("after_mutate", J.str after_mutate_str);
-          ("after_insertion", J.str after_insertion_str);
-          ("after_translation", (match after_translation_str with None -> `Null | Some s -> J.str s));
+        Bench_utils.J.obj [
+          ("mutant_index", Bench_utils.J.int idx);
+          ("after_mutate", Bench_utils.J.str after_mutate_str);
+          ("after_insertion", Bench_utils.J.str after_insertion_str);
+          ("after_translation", Bench_utils.J.str after_translation_str);
           ("times_sec", times_sec_json);
-          ("mem", (match mem_json with None -> `Null | Some j -> j));
+          ("mem", (match mem with None -> `Null | Some j -> j));
         ]
       in
 
       (* ファイルへ書き出し *)
-      begin match json_oc, out_mode with
+      begin match json_oc, Bench_utils.out_mode with
       | None, _ -> ()
       | Some oc, JsonLines ->
-          J.to_channel_ln oc mutant_json
+          Bench_utils.J.to_channel_ln oc mutant_json
       | Some oc, Json ->
           if not !json_first then Out_channel.output_string oc ",\n";
           Yojson.Safe.to_channel oc mutant_json;
@@ -900,19 +299,10 @@ let bench_file_mode
       | Some _, Text -> raise @@ Failure "yet"
       end;
 
-
       Option.iter oc_opt Out_channel.flush;
-      Target_progress.tick prog;  (* ← 変異1件完了ごとに更新 *)
+      Bench_utils.Target_progress.tick prog;  (* ← 変異1件完了ごとに更新 *)
     )
     with
-    (* | Insertion.TypeError (p, s, tyenv_e, ty) ->
-        pr std_formatter ("\n[Type error]\n%a@." ^^ s) print_pos p (Pp.print_type tyenv_e) ty;
-    | Insertion.TypeError2 (p, s, _, ty1, ty2) ->
-        pr std_formatter ("\n[Type error]\n%a@." ^^ s) print_pos p (Pp.print_rawtype) ty1 (Pp.print_rawtype) ty2;
-    | Insertion.CoercionTypeError (p, s, tyenv_e, cty1, cty2) ->
-        pr std_formatter ("\n[Type error]\n%a@." ^^ s)
-          print_pos p (Pp.print_coercion_type tyenv_e) cty1
-          (Pp.print_coercion_type tyenv_e) cty2; *)
     | Failure message -> Format.fprintf fmt "Failure: %s\n" message
     | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
     | Syntax.Blame _ -> Format.fprintf fmt "evaluation blame \n"
@@ -922,125 +312,17 @@ let bench_file_mode
 
   Option.iter oc_opt Out_channel.close;
 
-  (match json_oc, out_mode with
+  (match json_oc, Bench_utils.out_mode with
     | None, _ -> ()
     | Some oc, JsonLines -> Out_channel.close oc
     | Some oc, Json ->
        Out_channel.output_string oc "\n]}\n"; Out_channel.close oc
     | Some _, Text -> raise @@ Failure "yet");
 
-  let () = match mode with
-  | SI | AI | BI -> ()
-  | SC -> 
-    let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "#endif";
-    close_out oc;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
-      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
-      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
-    close_out oc;
-    (* gcc map.c ../../../libC/coerce.c ../../../libC/stdlib.c ../SC/map*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
-    let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c libC/coerce.c libC/coerceS.c libC/stdlibS.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
-        bench_dir
-        file
-        (string_of_mode mode) 
-        log_dir
-        (string_of_mode mode) 
-        file
-        bench_dir
-        file
-        (string_of_mode mode) 
-    in
-    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
-  | AC ->
-    let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "#endif";
-    close_out oc;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
-      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
-      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
-    close_out oc;
-    let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c libC/coerce.c libC/coerceA.c libC/stdlibA.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
-        bench_dir
-        file
-        (string_of_mode mode) 
-        log_dir
-        (string_of_mode mode) 
-        file
-        bench_dir
-        file
-        (string_of_mode mode) 
-    in
-    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
-  | BC -> 
-    let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s_mutants.h" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "#endif";
-    close_out oc;
-    let oc = Out_channel.create (Format.asprintf "%s/bench/%s%s.c" log_dir file (string_of_mode mode)) in
-    Printf.fprintf oc "%s\n%s\n%s"
-      (Format.asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../libC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file (string_of_mode mode))
-      (Format.asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" (List.length mutants) itr)
-      "int main(){\nint i;\nclock_t start_clock, end_clock;\ndouble times[MUTANTS_LENGTH][ITR];\n";
-    let rec print_itr n =
-      if n = List.length mutants + 1 then ()
-      else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done\\n\");\n" n (n - 1) n; print_itr (n + 1))
-    in print_itr 1;
-    Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir (string_of_mode mode) file;
-    close_out oc;
-    (* gcc church_smallBC.c ../../../lib/cast.c ../../../lib/stdlibB.c ../../../lib/bench_json.c ../BC/church_small*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o ../../../result/stdout.out -g3 *)
-    let _ = Core_unix.system @@ 
-      Format.asprintf "gcc %s/%s%s.c libC/cast.c libC/stdlibB.c libC/bench_json.c %s/%s/%s*.c -I/mnt/c/gc/include /mnt/c/gc/lib/libgc.so -I/mnt/c/cJSON/include /mnt/c/cJSON/lib/libcjson.so -o %s/%s%s.out -O2"
-        bench_dir
-        file
-        (string_of_mode mode) 
-        log_dir
-        (string_of_mode mode) 
-        file
-        bench_dir
-        file
-        (string_of_mode mode) 
-    in
-    ignore (Core_unix.system @@ Format.asprintf "%s/%s%s.out" bench_dir file (string_of_mode mode))
-  in
+  if config.compile then Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~intoB:config.intoB ~alt:config.alt ~eager:config.eager;
+
   (* ターゲットの進捗バーを確定（改行しない） *)
-  Target_progress.print ~final:false prog
+  Bench_utils.Target_progress.print ~final:false prog
 
 let () =
   (* 1. 前処理: 全ファイルを parse→mutate *)
@@ -1049,7 +331,6 @@ let () =
     List.map files (fun file -> (file, parse_and_mutate file))
   in
     Printf.fprintf stdout "debug: parse->mutate done\n";
-
 
   (* モード展開してターゲット配列を作る *)
   Printf.fprintf stdout "debug: making targets lists\n";
@@ -1063,7 +344,6 @@ let () =
   Printf.fprintf stdout "debug: first target's mutants number is %d\n" (match targets with (_, _, h) :: _ -> List.length h | _ -> 0);
   let total_targets = List.length targets in
 
-
   (* 2. ログディレクトリ準備 *)
   let tm = localtime (time ()) in
   let timestamp =
@@ -1076,13 +356,13 @@ let () =
 
   Printf.fprintf stdout "debug: main iteration\n";
   (* 3. 実行: 各ターゲットを順番に *)
-  List.iteri targets ~f:(fun i (file, m, mutants) ->
+  List.iteri targets ~f:(fun i (file, mode, mutants) ->
     bench_file_mode
       ~log_dir
       ~ordinal:(i + 1)
       ~total_targets
       ~file
-      ~mode:m
+      ~mode
       ~mutants
   );
   Printf.printf "\n";

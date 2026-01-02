@@ -7,37 +7,31 @@ https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti.git
 - OCaml 4.03.0+
 - Dune 2.0.0+ (formerly known as Jbuilder)
 - Menhir
-- Boehm GC (show below)
 - OUnit 2 (optional for running unit tests)
+- Boehm GC (see below)
+- cJSON (see below)
 
-## Installing Bohem GC
+## Installing Dependencies
+### Boehm GC
 To compile and run this project, you need **GCC** and **Boehm GC** installed on your system.
-
-### Option 1: Install via Package Manager
 **For Ubuntu / Debian / WSL:**
 ```console
 sudo apt update
 sudo apt install build-essential libgc-dev
 ```
-For macOS (Homebrew):
+**For macOS (Homebrew):**
 ```console
 brew install bdw-gc
 ```
-
-### Option 2: Build from Source
-If you cannot use a package manager or need a specific version, you can build from source.
-- Download the latest source code (gc-x.x.x.tar.gz) from https://www.hboehm.info/gc/ or GitHub Releases from https://github.com/bdwgc/bdwgc.
-- Unpack the archive and enter the directory.
-- Build and install to the standard system path:
+### cJSON
+To get benchmarks, you need to install the cJSON library.
+**For Ubuntu / Debian / WSL:**
 ```console
-./configure
-make
-make check
-sudo make install
+sudo apt install libcjson-dev
 ```
-Note: After installing from source on Linux, you may need to update the shared library cache:
+**For macOS (Homebrew):**
 ```console
-sudo ldconfig
+brew install cjson
 ```
 
 ## Getting started

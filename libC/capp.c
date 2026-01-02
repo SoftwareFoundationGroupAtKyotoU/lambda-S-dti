@@ -123,35 +123,39 @@ value cast(value x, ty *t1, ty *t2, ran_pol r_p) {			// input = x:t1=>t2
 		}
 		case TYLIST: {
 			switch(tk2) {
-				case TYLIST: 
-				#ifdef EAGER
-				if (x.l == NULL) {
-					return x;
-				} else {
-					value retx;
-					retx.l = (lst*)GC_MALLOC(sizeof(lst));
-					retx.l->h = (value*)GC_MALLOC(sizeof(value));
-					*retx.l->h = cast(*x.l->h, t1->tydat.tylist, t2->tydat.tylist, r_p);
-					retx.l->t = (value*)GC_MALLOC(sizeof(value));
-					*retx.l->t = cast(*x.l->t, t1, t2, r_p); // TODO: さらに最適化
-					return retx;
-				} 
-				#else
-				{
+				case TYLIST: {
+					#ifdef EAGER
+					value retv = { .l = NULL };
+    				value *dest = &retv;
+    				value curr_src = x;
+					ty *tylist1 = t1->tydat.tylist;
+					ty *tylist2 = t2->tydat.tylist;
+    				while (curr_src.l != NULL) {
+    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
+    				    dest->l = new_lst;
+    				    new_lst->h = (value*)GC_MALLOC(sizeof(value));
+    				    new_lst->t = (value*)GC_MALLOC(sizeof(value));
+    				    *new_lst->h = cast(*curr_src.l->h, tylist1, tylist2, r_p);
+    				    dest = new_lst->t;
+    				    curr_src = *curr_src.l->t;
+    				}
+    				dest->l = NULL;
+    				return retv;
+					#else
 					value retx;
 					// printf("defined as a wrapped list\n");						// define x:[U1]=>[U2] as wrapped list
 					retx.l = (lst*)GC_MALLOC(sizeof(lst));
 					retx.l->lstdat.wrap_l.w = (lst*)GC_MALLOC(sizeof(lst));
 					retx.l->lstdat.wrap_l.w = x.l;
-					retx.l->lstdat.wrap_l.u1 = t1->tydat.tylist;
-					retx.l->lstdat.wrap_l.u2 = t2->tydat.tylist;
+					retx.l->lstdat.wrap_l.u1 = t1;
+					retx.l->lstdat.wrap_l.u2 = t2;
 					retx.l->lstdat.wrap_l.r_p = r_p;
 					retx.l->lstkind = WRAPPED_LIST;
 					return retx;
+					#endif
 				}
-				#endif
 				case DYN: {
-					if (t1->tydat.tylist == DYN) {
+					if (t1->tydat.tylist->tykind == DYN) {
 						value retx;
 						// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
 						retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
@@ -313,20 +317,24 @@ value coerce(value v, crc *s) {
 		}
 		case LIST: { // v<[s']>
 			#ifdef EAGER
-			if (v.l == NULL) {
-				return v;
-			} else {
-				value retv;
-				retv.l = (lst*)GC_MALLOC(sizeof(lst));
-				retv.l->h = (value*)GC_MALLOC(sizeof(value));
-				retv.l->t = (value*)GC_MALLOC(sizeof(value));
-				*retv.l->h = coerce(*v.l->h, s->crcdat.one_crc);
-				*retv.l->t = coerce(*v.l->t, s); //TODO: さらに最適化
-				return retv;
-			}
+			value retv = { .l = NULL };
+    		value *dest = &retv;
+    		value curr_src = v;
+			crc *clist = s->crcdat.one_crc;
+    		while (curr_src.l != NULL) {
+    		    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
+    		    dest->l = new_lst;
+    		    new_lst->h = (value*)GC_MALLOC(sizeof(value));
+    		    new_lst->t = (value*)GC_MALLOC(sizeof(value));
+    		    *new_lst->h = coerce(*curr_src.l->h, clist);
+    		    dest = new_lst->t;
+    		    curr_src = *curr_src.l->t;
+    		}
+    		dest->l = NULL;
+    		return retv;
 			#else
 			if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
-				crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.one_crc);
+				crc *c = compose(v.l->lstdat.wrap_l.c, s);
 				if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
 					return (value){ .l = v.l->lstdat.wrap_l.w };
 				} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
@@ -345,7 +353,7 @@ value coerce(value v, crc *s) {
 				retv.l = (lst*)GC_MALLOC(sizeof(lst));
 				retv.l->lstkind = WRAPPED_LIST;
 				retv.l->lstdat.wrap_l.w = v.l;
-				retv.l->lstdat.wrap_l.c = s->crcdat.one_crc;
+				retv.l->lstdat.wrap_l.c = s;
 				return retv;
 			}
 			#endif
@@ -391,20 +399,13 @@ value coerce(value v, crc *s) {
 					return retv;
 					#else
 					if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {                                      // u<<[s]>><[s'];G!>
-						crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.two_crc.c1->crcdat.one_crc);
+						crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.two_crc.c1);
 						retv.d->v->l = v.l->lstdat.wrap_l.w;
 						retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
 						retv.d->d->crckind = SEQ;
+						retv.d->d->crcdat.two_crc.c1 = c;
 						retv.d->d->crcdat.two_crc.c2 = s->crcdat.two_crc.c2;
-						if (c->crckind == ID) { // u<<[s]>><[s'];G!> -> u<id;G!> -> u<<id;G!>>
-							retv.d->d->crcdat.two_crc.c1 = c;
-							return retv;
-						} else { 									// u<<[s]>><[s'];G!> -> u<[s;;s'];G!> -> u<<[s;;s'];G!>>
-							retv.d->d->crcdat.two_crc.c1 = (crc*)GC_MALLOC(sizeof(crc));
-							retv.d->d->crcdat.two_crc.c1->crckind = LIST;
-							retv.d->d->crcdat.two_crc.c1->crcdat.one_crc = c;
-							return retv;
-						}
+						return retv;
 					} else { // u<[s'];G!> -> u<<[s'];G!>>
 						retv.d->v->l = v.l;
 						retv.d->d = s;
@@ -443,26 +444,31 @@ value coerce(value v, crc *s) {
 				}
 				case LIST: {        // u<<d>><s> -> u<[s]> -> u<<[s]>>
 					#ifdef EAGER
-					if (v.l == NULL) {
-						return *v.d->v;
-					} else {
-						value retv;
-						retv.l = (lst*)GC_MALLOC(sizeof(lst));
-						retv.l->h = (value*)GC_MALLOC(sizeof(value));
-						retv.l->t = (value*)GC_MALLOC(sizeof(value));
-						*retv.l->h = coerce(*v.d->v->l->h, s->crcdat.one_crc);
-						*retv.l->t = coerce(*v.d->v->l->t, s); //TODO: さらに最適化
-						return retv;
-					}
+					value retv = { .l = NULL };
+    				value *dest = &retv;
+    				value curr_src = *v.d->v;
+					crc *clist = c1->crcdat.one_crc;
+    				while (curr_src.l != NULL) {
+    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
+    				    dest->l = new_lst;
+    				    new_lst->h = (value*)GC_MALLOC(sizeof(value));
+    				    new_lst->t = (value*)GC_MALLOC(sizeof(value));
+    				    *new_lst->h = coerce(*curr_src.l->h, clist);
+    				    dest = new_lst->t;
+    				    curr_src = *curr_src.l->t;
+    				}
+    				dest->l = NULL;
+    				return retv;
 					#else
 					value retv;
 					retv.l = (lst*)GC_MALLOC(sizeof(lst));
 					retv.l->lstkind = WRAPPED_LIST;
 					retv.l->lstdat.wrap_l.w = v.d->v->l;
-					retv.l->lstdat.wrap_l.c = c1->crcdat.one_crc;
+					retv.l->lstdat.wrap_l.c = c1;
 					return retv;
 					#endif
 				}
+
 				default: {                                 // u<<d>><s> -> u<d> -> u<<d>>
 					value retv;
 					retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
@@ -476,7 +482,7 @@ value coerce(value v, crc *s) {
 }		
 #endif	
 
-int blame(ran_pol r_p){
+int blame(ran_pol r_p) {
 	if(r_p.polarity==1) {
 		printf("Blame on the expression side:\n");
 	} else {
