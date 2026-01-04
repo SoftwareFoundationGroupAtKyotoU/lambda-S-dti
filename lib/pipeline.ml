@@ -246,7 +246,7 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       filename
   | None -> 
     (* gcc result_C/stdin.c -D EAGER libC/*.c -o result/stdin.out -lgc -g3 -O2 *)
-    asprintf "gcc result_C/stdin.c %s%slibC/*.c -o result/stdin.out -lgc -g3" (* TODO: -O2 *)
+    asprintf "gcc result_C/stdin.c %s%slibC/*.c -o result/stdin.out -lgc -g3 -pg" (* TODO: -O2 *)
       mode_var
       lst_var
 

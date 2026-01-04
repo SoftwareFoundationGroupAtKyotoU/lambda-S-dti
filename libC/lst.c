@@ -25,27 +25,27 @@ int is_NULL(lst *l) {
 	}
 }
 
-value hd(lst l) {
-	if (l.lstkind == WRAPPED_LIST) {
+value hd(lst *l) {
+	if (l->lstkind == WRAPPED_LIST) {
 		#ifdef CAST
-		return cast(hd(*l.lstdat.wrap_l.w), l.lstdat.wrap_l.u1->tydat.tylist, l.lstdat.wrap_l.u2->tydat.tylist, l.lstdat.wrap_l.r_p);
+		return cast(hd(l->lstdat.wrap_l.w), l->lstdat.wrap_l.u1->tydat.tylist, l->lstdat.wrap_l.u2->tydat.tylist, l->lstdat.wrap_l.r_p);
 		#else
-		return coerce(*l.lstdat.wrap_l.w->lstdat.unwrap_l.h, l.lstdat.wrap_l.c->crcdat.one_crc);
+		return coerce(*l->lstdat.wrap_l.w->lstdat.unwrap_l.h, l->lstdat.wrap_l.c->crcdat.one_crc);
 		#endif
 	} else {
-		return *l.lstdat.unwrap_l.h;
+		return *l->lstdat.unwrap_l.h;
 	}
 }
 
-value tl(lst l) {
-	if (l.lstkind == WRAPPED_LIST) {
+value tl(lst *l) {
+	if (l->lstkind == WRAPPED_LIST) {
 		#ifdef CAST
-		return cast(tl(*l.lstdat.wrap_l.w), l.lstdat.wrap_l.u1, l.lstdat.wrap_l.u2, l.lstdat.wrap_l.r_p);
+		return cast(tl(l->lstdat.wrap_l.w), l->lstdat.wrap_l.u1, l->lstdat.wrap_l.u2, l->lstdat.wrap_l.r_p);
 		#else
-		return coerce(*l.lstdat.wrap_l.w->lstdat.unwrap_l.t, l.lstdat.wrap_l.c);
+		return coerce(*l->lstdat.wrap_l.w->lstdat.unwrap_l.t, l->lstdat.wrap_l.c);
 		#endif
 	} else {
-		return *l.lstdat.unwrap_l.t;
+		return *l->lstdat.unwrap_l.t;
 	}
 }
 

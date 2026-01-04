@@ -226,8 +226,8 @@ let rec toC_mf ppf (x, mf) = match mf with
     else
       fprintf ppf "!(is_NULL(%sl)) && %a && %a"
         x
-        toC_mf (asprintf "hd(*%sl)." x, mf1)
-        toC_mf (asprintf "tl(*%sl)." x, mf2)
+        toC_mf (asprintf "hd(%sl)." x, mf1)
+        toC_mf (asprintf "tl(%sl)." x, mf2)
   | MatchWild _ -> 
     fprintf ppf "1"
 
@@ -300,7 +300,7 @@ let rec toC_exp ppf f = match f with
           x
           y
       else
-        fprintf ppf "%s = hd(*%s.l);\n"
+        fprintf ppf "%s = hd(%s.l);\n"
           x
           y
     | Tl y -> (* TODO *)
@@ -309,7 +309,7 @@ let rec toC_exp ppf f = match f with
           x
           y
       else
-        fprintf ppf "%s = tl(*%s.l);\n"
+        fprintf ppf "%s = tl(%s.l);\n"
           x
           y
     | AppDDir (y, (z1, z2)) ->

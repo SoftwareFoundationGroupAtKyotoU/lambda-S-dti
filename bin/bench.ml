@@ -22,22 +22,25 @@ let files = [
   (* "loop"; *)
   (* "loop_poly"; same as loop *)
   (* "mklist"; *)
-  "map";
-  (* "fold"; *)
+  (* "map"; *)
+  (* "map_mono"; *)
+  "fold";
+  (* "fold_mono"; *)
   (* "zipwith"; *)
+  (* "zipwith_mono"; *)
   (* "polypoly"; NG *)
 ]
 let modes = [
   (* SEI; *)
-  SEC;
+  (* SEC; *)
   (* AEI; *)
-  AEC;
+  (* AEC; *)
   (* BEI; *)
   (* BEC; *)
   (* SLI; *)
-  (* SLC; *)
+  SLC;
   (* ALI; *)
-  (* ALC; *)
+  ALC;
   (* BLI; *)
   (* BLC; *)
   ]   

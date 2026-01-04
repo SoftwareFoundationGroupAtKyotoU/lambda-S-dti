@@ -34,9 +34,9 @@ typedef struct lst {
 int did_not_match();
 
 #ifndef EAGER
-value hd(lst);
+value hd(lst*);
 
-value tl(lst);
+value tl(lst*);
 
 int is_NULL(lst*);
 #endif
