@@ -84,7 +84,7 @@ let toC_tas ppf (y, n, x, tas) =
   cnt_ta := 0;
   let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:toC_sep in
-  let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else toC_list ppf ta in
+  let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else fprintf ppf "\n%a" toC_list ta in
   fprintf ppf "%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);%a\n"
     x
     n

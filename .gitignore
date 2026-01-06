@@ -41,4 +41,4 @@ parser.mli
 
 .vscode/
 logs/
-scripts/__pycache__
+scripts/__pycache__/*

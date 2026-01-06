@@ -19,7 +19,7 @@ try:
 except Exception:
     stats = None
 
-base = "SLC"
+base = "AEC"
 comp = "ALC"
 
 # =========================
@@ -31,6 +31,7 @@ _DEFAULT_CONFIG = {
     "target_benchmarks": [
         "church_big", "church_small", "church",
         "evenodd", "fib", "tak", "loop", "fold", "map",
+        "mklist", "zipwith", 
     ],
     # 相対グラフ
     "relative": {
