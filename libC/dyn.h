@@ -2,12 +2,14 @@
 #define DYN_H
 
 #include "types.h"
+#include "value.h"
 
 typedef struct dyn {
-	value *v;
+	value v;
 	#ifdef CAST
+	uint32_t rid;
 	ground_ty g;
-	ran_pol r_p;
+	uint8_t polarity;
 	#else
 	crc *d;
 	#endif

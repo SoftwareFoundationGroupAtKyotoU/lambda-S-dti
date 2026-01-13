@@ -245,8 +245,8 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       lst_var
       filename
   | None -> 
-    (* gcc result_C/stdin.c -D EAGER libC/*.c -o result/stdin.out -lgc -g3 -O2 *)
-    asprintf "gcc result_C/stdin.c %s%slibC/*.c -o result/stdin.out -lgc -g3 -pg" (* TODO: -O2 *)
+    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -O2 *)
+    asprintf "gcc result_C/stdin.c %s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O2 *)
       mode_var
       lst_var
 
@@ -258,7 +258,7 @@ let build_run c_code opt_file ~intoB ~alt ~eager = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "Generated C file: %s (Execution delegated)@." out_path *)
-    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~bench:true) in
+    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~bench:false) in
     let _ = Sys.command ("../result/" ^ filename ^ ".out") in
     ()
   | None ->
@@ -318,12 +318,12 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~intoB ~alt ~e
   (* .c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
   Printf.fprintf oc "%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <time.h>\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
+    (asprintf "#include <stdio.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
-    "int main(){\nint i;\nclock_t start_clock, end_clock;\nstatic double times[MUTANTS_LENGTH][ITR];\n";
+    "range *range_list;\nint main(){\nint i;\nstruct rusage start_usage, end_usage;\nstatic double times[MUTANTS_LENGTH][ITR];\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
-    else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\nstart_clock = clock();\nmutant%d();\nend_clock = clock();\ntimes[%d][i] = (double)(end_clock - start_clock) / CLOCKS_PER_SEC;\n}\nprintf(\"mutant%d done. \");fflush(stdout);\n" n (n - 1) n; print_itr (n + 1))
+    else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\n}\nprintf(\"mutant%d done. \");fflush(stdout);\n" n (n - 1) n; print_itr (n + 1))
   in print_itr 1;
   Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir mode_str file;
   close_out oc;

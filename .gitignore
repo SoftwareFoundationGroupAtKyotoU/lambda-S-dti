@@ -42,3 +42,5 @@ parser.mli
 .vscode/
 logs/
 scripts/__pycache__/*
+
+gmon.out

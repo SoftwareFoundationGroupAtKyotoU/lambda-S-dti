@@ -12,21 +12,21 @@ type mode =
 let itr = 1000
 let files = [
   (* "church_small"; *)
-  (* "church"; *)
+  "church";
   (* "church_big";  *)
   (* OK, 9791.4s   *)
-  (* "tak"; *)
+  "tak";
   (* "easy"; *)
-  (* "fib"; *)
-  (* "evenodd"; *)
-  (* "loop"; *)
+  "fib";
+  "evenodd";
+  "loop";
   (* "loop_poly"; same as loop *)
-  (* "mklist"; *)
-  (* "map"; *)
+  "mklist";
+  "map";
   (* "map_mono"; *)
   "fold";
   (* "fold_mono"; *)
-  (* "zipwith"; *)
+  "zipwith";
   (* "zipwith_mono"; *)
   (* "polypoly"; NG *)
 ]
@@ -40,7 +40,7 @@ let modes = [
   (* SLI; *)
   SLC;
   (* ALI; *)
-  ALC;
+  (* ALC; *)
   (* BLI; *)
   (* BLC; *)
   ]   

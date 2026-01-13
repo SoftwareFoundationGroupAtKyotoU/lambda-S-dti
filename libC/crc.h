@@ -2,31 +2,44 @@
 #define CRC_H
 
 #ifndef CAST
+#include <stdint.h>
 #include "types.h"
 
 typedef struct crc {
-	enum crckind {
-		INJ, //0
-		PROJ, //1
-		INJ_TV, //2
-		PROJ_TV, //3
-		PROJ_INJ_TV, //4
-		FUN, //5
-		LIST, //6
-		ID, //7
-		SEQ, //8
-		BOT //9
+	// header: 4byte
+	enum crckind : uint8_t {
+		ID, // 0
+		BOT, // 1
+		SEQ_INJ, //2
+		SEQ_PROJ, //3
+		SEQ_PROJ_INJ, //4
+		TV_INJ, //5
+		TV_PROJ, //6
+		TV_PROJ_INJ, //7
+		FUN, //8
+		LIST, //9
 	} crckind;
+	ground_ty g_inj;
+	ground_ty g_proj;
+	uint8_t polarity;
+	// (padding: 4byte)
+
+	// payload: 16byte
 	union crcdat {
-		ground_ty g;
-		ty *tv;
-		struct two_crc {
+		uint32_t rid; // for BOT
+		struct seq_tv { // for SEQ_, TV_
+			uint32_t rid;
+			union ptr {
+				crc *s; // for SEQ_
+				ty *tv; // for TV_
+			} ptr;
+		} seq_tv;
+		struct two_crc { // for FUN
 			crc *c1;
 			crc *c2;
 		} two_crc;
-		crc *one_crc;
+		crc *one_crc; // for LIST
 	} crcdat;
-	ran_pol r_p;
 } crc;
 
 crc *compose(crc*, crc*);
@@ -37,15 +50,7 @@ extern crc crc_id;
 extern crc crc_inj_INT;
 extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
-extern crc inj_AR;
-extern crc inj_LI;
-extern value crc_id_value;
 
-crc *make_crc_inj_ar(crc*);
-crc *make_crc_inj_li(crc*);
-crc *make_crc_proj(ground_ty, ran_pol, crc*);
-crc *make_crc_fun(crc*, crc*);
-crc *make_crc_list(crc*);
 #endif
 
 #endif

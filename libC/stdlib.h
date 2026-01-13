@@ -70,6 +70,4 @@ extern value prec;
 extern value succ;
 extern value not_ml;
 
-int stdlib();
-
 #endif

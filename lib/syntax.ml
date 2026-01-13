@@ -459,6 +459,18 @@ module Cls = struct
 
   type ftv = { ftvs : tyarg list; offset : int }
 
+  type coercion =
+  | Id
+  | Fail of int * polarity
+  | SeqInj of coercion * tag
+  | SeqProj of tag * (int * polarity) * coercion
+  | SeqProjInj of tag * (int * polarity) * coercion * tag
+  | TvInj of tyvar
+  | TvProj of tyvar * (int * polarity)
+  | TvProjInj of tyvar * (int * polarity)
+  | Fun of coercion * coercion
+  | List of coercion
+
   type exp =
     | Var of id
     | Int of int
@@ -479,7 +491,7 @@ module Cls = struct
     | AppDDir of label * (id * id)
     | AppMCls of id * id
     | AppMDir of label * id
-    | Cast of id * ty * ty * (range * polarity)
+    | Cast of id * ty * ty * (int * polarity)
     | CApp of id * id
     | CSeq of id * id
     | Coercion of coercion
@@ -534,6 +546,6 @@ module Cls = struct
     | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
     | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
 
-  type program = Prog of TV.t * fundef list * exp
+  type program = Prog of TV.t * range list * fundef list * exp
 
 end

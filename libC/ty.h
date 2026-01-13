@@ -4,7 +4,7 @@
 #include "types.h"
 
 typedef struct ty {
-	enum tykind {
+	enum tykind : uint8_t {
 		DYN, //0
 		BASE_INT, //1
 		BASE_BOOL, //2

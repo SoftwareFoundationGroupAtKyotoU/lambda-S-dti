@@ -859,6 +859,18 @@ end
 module Cls = struct
   open Syntax.Cls
 
+  let rec pp_coercion ppf = function
+  | Id -> fprintf ppf "id"
+  | Fail _ -> fprintf ppf "⊥"
+  | SeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
+  | SeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
+  | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2
+  | TvInj tv -> fprintf ppf "%a!" pp_ty (TyVar tv)
+  | TvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
+  | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv)
+  | Fun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
+  | List c -> fprintf ppf "[%a]" pp_coercion c
+
   let pp_let_tyabses ppf tyvars =
     if List.length tyvars = 0 then
       fprintf ppf ""
@@ -1023,7 +1035,7 @@ module Cls = struct
       pp_list toplevel
 
   let pp_program ppf = function
-    | Prog (_, toplevel, cf) ->
+    | Prog (_, _, toplevel, cf) ->
       if List.length toplevel = 0 
         then 
           fprintf ppf "exp:\n%a"

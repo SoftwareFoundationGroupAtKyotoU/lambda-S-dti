@@ -1,25 +1,24 @@
 #include "runtime.h"
-#include "limits.h"
 #include "stdlib.h"
 
 #ifdef ALT
 value fun_print_int(value v, value w) {
 	value retv;
-	printf("%d", v.i_b_u);
+	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return coerce(retv, w.s);
 }
 
 value fun_alt_print_int(value v) {
 	value retv;
-	printf("%d", v.i_b_u);
+	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return retv;
 }
 
 value fun_print_bool(value v, value w) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -34,7 +33,7 @@ value fun_print_bool(value v, value w) {
 
 value fun_alt_print_bool(value v) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -49,7 +48,7 @@ value fun_alt_print_bool(value v) {
 
 value fun_print_newline(value v, value w) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 0) {
 		printf("\n");
 	} else {
@@ -62,7 +61,7 @@ value fun_print_newline(value v, value w) {
 
 value fun_alt_print_newline(value v) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 0) {
 		printf("\n");
 	} else {
@@ -233,17 +232,18 @@ value fun_alt_ignore(value x, ty* tvs[1]) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
+
 #elif defined(CAST)
 value fun_print_int(value v) {
 	value retv;
-	printf("%d", v.i_b_u);
+	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return retv;
 }
 
 value fun_print_bool(value v) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -258,7 +258,7 @@ value fun_print_bool(value v) {
 
 value fun_print_newline(value v) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 0) {
 		printf("\n");
 	} else {
@@ -340,17 +340,18 @@ value fun_ignore(value x, ty* tvs[1]) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
+
 #else
 value fun_print_int(value v, value w) {
 	value retv;
-	printf("%d", v.i_b_u);
+	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return coerce(retv, w.s);
 }
 
 value fun_print_bool(value v, value w) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -365,7 +366,7 @@ value fun_print_bool(value v, value w) {
 
 value fun_print_newline(value v, value w) {
 	value retv;
-	int i = v.i_b_u;
+	int64_t i = v.i_b_u;
 	if (i == 0) {
 		printf("\n");
 	} else {
@@ -462,76 +463,65 @@ value fun_ignore(value x, value k, ty* tvs[1]) {
 }
 #endif
 
-value max_int = { .i_b_u = INT_MAX };
-value min_int = { .i_b_u = INT_MIN };
-value print_int;
-value print_bool;
-value print_newline;
-value not_ml;
-value succ;
-value prec;
-value min;
-value max;
-value abs_ml;
-value ignore;
+#ifdef ALT
+#define INIT_LABEL(func, func_alt) \
+    { .funkind = LABEL, \
+      .fundat = { .label_alt = { .l = (func), .l_a = (func_alt) } } }
+#define INIT_POLY_LABEL(func, func_alt) \
+    { .funkind = POLY_LABEL, \
+      .fundat = { .poly = { .f = { .poly_label_alt = { .pl = (func), .pl_a = (func_alt) } } } } }
 
-int stdlib() {
-	fun *funs = (fun*)GC_MALLOC(sizeof(fun) * 10);
-	print_int.f = &funs[0];
-	print_int.f->funkind = LABEL;
-	print_bool.f = &funs[1];
-	print_bool.f->funkind = LABEL;
-	print_newline.f = &funs[2];
-	print_newline.f->funkind = LABEL;
-	not_ml.f = &funs[3];
-	not_ml.f->funkind = LABEL;
-	succ.f = &funs[4];
-	succ.f->funkind = LABEL;
-	prec.f = &funs[5];
-	prec.f->funkind = LABEL;
-	min.f = &funs[6];
-	min.f->funkind = LABEL;
-	max.f = &funs[7];
-	max.f->funkind = LABEL;
-	abs_ml.f = &funs[8];
-	abs_ml.f->funkind = LABEL;
-	ignore.f = &funs[9];
-	ignore.f->funkind = POLY_LABEL;
-	#ifdef ALT
-	print_int.f->fundat.label_alt.l = fun_print_int;
-	print_int.f->fundat.label_alt.l_a = fun_alt_print_int;
-	print_bool.f->fundat.label_alt.l = fun_print_bool;
-	print_bool.f->fundat.label_alt.l_a = fun_alt_print_bool;
-	print_newline.f->fundat.label_alt.l = fun_print_newline;
-	print_newline.f->fundat.label_alt.l_a = fun_alt_print_newline;
-	not_ml.f->fundat.label_alt.l = fun_not_ml;
-	not_ml.f->fundat.label_alt.l_a = fun_alt_not_ml;
-	succ.f->fundat.label_alt.l = fun_succ;
-	succ.f->fundat.label_alt.l_a = fun_alt_succ;
-	prec.f->fundat.label_alt.l = fun_prec;
-	prec.f->fundat.label_alt.l_a = fun_alt_prec;
-	min.f->fundat.label_alt.l = fun_min;
-	min.f->fundat.label_alt.l_a = fun_alt_min;
-	max.f->fundat.label_alt.l = fun_max;
-	max.f->fundat.label_alt.l_a = fun_alt_max;
-	abs_ml.f->fundat.label_alt.l = fun_abs_ml;
-	abs_ml.f->fundat.label_alt.l_a = fun_alt_abs_ml;
-	ignore.f->fundat.poly_label_alt.pl = fun_ignore;
-	ignore.f->fundat.poly_label_alt.pl_a = fun_alt_ignore;
-	#else
-	print_int.f->fundat.label = fun_print_int;
-	print_bool.f->fundat.label = fun_print_bool;
-	print_newline.f->fundat.label = fun_print_newline;
-	not_ml.f->fundat.label = fun_not_ml;
-	succ.f->fundat.label = fun_succ;
-	prec.f->fundat.label = fun_prec;
-	min.f->fundat.label = fun_min;
-	max.f->fundat.label = fun_max;
-	abs_ml.f->fundat.label = fun_abs_ml;
-	ignore.f->fundat.poly_label = fun_ignore;
-	#endif
+#elif defined(CAST)
+#define INIT_LABEL(func) \
+    { .funkind = LABEL, \
+      .fundat = { .label = (func) } }
+#define INIT_POLY_LABEL(func) \
+    { .funkind = POLY_LABEL, \
+      .fundat = { .poly = { .f = { .poly_label = (func) } } } }
 
-	return 0;
-}
+#else 
+#define INIT_LABEL(func) \
+    { .funkind = LABEL, \
+      .fundat = { .label = (func) } }
+#define INIT_POLY_LABEL(func) \
+    { .funkind = POLY_LABEL, \
+      .fundat = { .poly = { .f = { .poly_label = (func) } } } }
 
-//value print_newline_ = { .f = { .fundat = { .label = fun_print_newline }, .funkind = LABEL } };
+#endif
+
+#ifdef ALT
+static fun f_print_int     = INIT_LABEL(fun_print_int,     fun_alt_print_int);
+static fun f_print_bool    = INIT_LABEL(fun_print_bool,    fun_alt_print_bool);
+static fun f_print_newline = INIT_LABEL(fun_print_newline, fun_alt_print_newline);
+static fun f_not_ml        = INIT_LABEL(fun_not_ml,        fun_alt_not_ml);
+static fun f_succ          = INIT_LABEL(fun_succ,          fun_alt_succ);
+static fun f_prec          = INIT_LABEL(fun_prec,          fun_alt_prec);
+static fun f_min           = INIT_LABEL(fun_min,           fun_alt_min);
+static fun f_max           = INIT_LABEL(fun_max,           fun_alt_max);
+static fun f_abs_ml        = INIT_LABEL(fun_abs_ml,        fun_alt_abs_ml);
+static fun f_ignore        = INIT_POLY_LABEL(fun_ignore,   fun_alt_ignore);
+#else
+static fun f_print_int     = INIT_LABEL(fun_print_int);
+static fun f_print_bool    = INIT_LABEL(fun_print_bool);
+static fun f_print_newline = INIT_LABEL(fun_print_newline);
+static fun f_not_ml        = INIT_LABEL(fun_not_ml);
+static fun f_succ          = INIT_LABEL(fun_succ);
+static fun f_prec          = INIT_LABEL(fun_prec);
+static fun f_min           = INIT_LABEL(fun_min);
+static fun f_max           = INIT_LABEL(fun_max);
+static fun f_abs_ml        = INIT_LABEL(fun_abs_ml);
+static fun f_ignore        = INIT_POLY_LABEL(fun_ignore);
+#endif
+
+value max_int = { .i_b_u = INT64_MAX };
+value min_int = { .i_b_u = INT64_MIN };
+value print_int = { .f = &f_print_int };
+value print_bool = { .f = &f_print_bool };
+value print_newline = { .f = &f_print_newline };
+value not_ml = { .f = &f_not_ml };
+value succ = { .f = &f_succ };
+value prec = { .f = &f_prec };
+value min = { .f = &f_min };
+value max = { .f = &f_max };
+value abs_ml = { .f = &f_abs_ml };
+value ignore = { .f = &f_ignore };

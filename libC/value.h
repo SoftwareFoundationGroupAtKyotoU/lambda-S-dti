@@ -4,7 +4,7 @@
 #include "types.h"
 
 typedef union value {
-	int i_b_u;
+	int64_t i_b_u;
 	dyn *d;
 	fun *f;
 	lst *l;
