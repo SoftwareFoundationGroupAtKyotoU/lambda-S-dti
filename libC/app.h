@@ -3,11 +3,11 @@
 
 #include "types.h"
 
-#if defined(CAST) || defined(ALT)
+#if defined(CAST) || defined(ALT) || defined(STATIC)
 value appM(value, value);
 #endif
 
-#ifndef CAST
+#if !defined(CAST) && !defined(STATIC)
 value appD(value, value, value);
 #endif
 

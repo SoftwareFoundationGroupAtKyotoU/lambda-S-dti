@@ -15,6 +15,8 @@ let is_B = ref false
 
 let is_eager = ref false
 
+let is_static = ref false
+
 (*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
@@ -125,25 +127,25 @@ let rec toC_crc ppf (c, x) = match c with
       toC_crc (c1, x ^ "_clist")
       x x x x x
   | SeqProj (t, (r, p), Id) ->
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_%a;\n%s.s->polarity = %d;\n%s.s->crcdat.seq_tv.rid = %d;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_%a;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
       x x x
       toC_tag t
       x (match p with Pos -> 1 | Neg -> 0) x r x
   | SeqProj (Ar, (r, p), (Fun _ as c2)) ->
-    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_AR;\n%s.s->polarity = %d;\n%s.s->crcdat.seq_tv.rid = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
+    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_AR;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
       x
       toC_crc (c2, x ^ "_cfun")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
   | SeqProj (Li, (r, p), (List _ as c2)) ->
-    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_LI;\n%s.s->polarity = %d;\n%s.s->crcdat.seq_tv.rid = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
+    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_LI;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
       x
       toC_crc (c2, x ^ "_clist")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
-  | TvInj (i, _) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
-      x x x i
+  | TvInj ((i, _), (r, p)) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x i
   | TvProj ((i, _), (r, p)) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->polarity = %d;\n%s.s->crcdat.seq_tv.rid = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x i
   | Fun (c1, c2) -> 
     fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = FUN;\n%s.s->crcdat.two_crc.c1 = %s_c1.s;\n%s.s->crcdat.two_crc.c2 = %s_c2.s;"
@@ -157,10 +159,10 @@ let rec toC_crc ppf (c, x) = match c with
       x
       toC_crc (c, x ^ "_c")
       x x x x
-  | Fail (*r, p*)_ 
+  (* | Fail (*r, p*)_ 
     (* -> "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = BOT;\n%s.s->polarity = %d;\n%s.s->crcdat.rid = %d;"
     x x x (match p with Pos -> 1 | Neg -> 0) x r  *)
-  | SeqProj (_, _, Fail _) | SeqProjInj _ | TvProjInj _ -> raise @@ ToC_bug "not implemented" 
+  | SeqProj (_, _, Fail _) | SeqProjInj _ | TvProjInj _ -> raise @@ ToC_bug "not implemented"  *)
   | _ -> raise @@ ToC_bug "bad coercion" 
 
 (* ======================================== *)
@@ -635,7 +637,8 @@ let toC_range ppf r =
 let toC_ranges ppf ranges =
   let toC_sep ppf () = fprintf ppf ",\n" in
   let toC_list ppf range = pp_print_list toC_range ppf range ~pp_sep:toC_sep in
-  if List.length ranges = 0 then fprintf ppf "static range local_range_list[] = { 0 };\n\n"
+  if List.length ranges = 0 then 
+    fprintf ppf "#ifndef STATIC\nstatic range local_range_list[] = { 0 };\n#endif\n\n"
   else
   fprintf ppf "static range local_range_list[] = {\n%a\n};\n\n"
     toC_list ranges
@@ -860,14 +863,15 @@ let toC_program ?(bench=0) ~alt ~intoB ~eager ppf (Prog (tvset, ranges, toplevel
   is_alt := alt;
   is_B := intoB;
   is_eager := eager;
+  (* is_static := static; *)
   fprintf ppf "%s\n%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
     toC_tys (TV.elements tvset, bench)
     toC_ranges ranges
     toC_fundefs toplevel
-    (if bench = 0 then "range *range_list;\n\nint main() {\n" else asprintf "int mutant%d() {\n" bench)
-    "range_list = local_range_list;\n"
+    (if bench = 0 then "#ifndef STATIC\nrange *range_list;\n#endif\n\nint main() {\n" else asprintf "int mutant%d() {\n" bench)
+    "#ifndef STATIC\nrange_list = local_range_list;\n#endif\n"
     (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

@@ -29,29 +29,29 @@ let rec normalize_coercion c = match c with
     normalize_coercion (CSeq (CProj (tag_of_ty u, p), CId u))
   | CTvProj ((_, {contents = Some (TyVar tv)}), p) ->
     normalize_coercion (CTvProj (tv, p))
-  | CTvProj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), p) ->
-    normalize_coercion (CSeq (CProj (Ar, p), CFun (CTvInj tv1, CTvProj (tv2, p))))
+  | CTvProj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), (r, p)) ->
+    normalize_coercion (CSeq (CProj (Ar, (r, p)), CFun (CTvInj (tv1, (r, neg p)), CTvProj (tv2, (r, p)))))
   | CTvProj ((_, {contents = Some (TyList (TyVar tv))}), p) ->
     normalize_coercion (CSeq (CProj (Li, p), CList (CTvProj (tv, p))))
   | CTvProj ((_, {contents = None}), _) -> c
-  | CTvInj (_, {contents = Some u }) when is_base_type u ->
+  | CTvInj ((_, {contents = Some u }), _) when is_base_type u ->
     normalize_coercion (CSeq (CId u, CInj (tag_of_ty u)))
-  | CTvInj (_, {contents = Some (TyVar tv)}) ->
-    normalize_coercion (CTvInj tv)
-  | CTvInj (_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}) ->
-    normalize_coercion (CSeq (CFun (CTvProj (tv1, (Utils.Error.dummy_range, Pos)), CTvInj tv2), CInj Ar))
-  | CTvInj (_, {contents = Some (TyList (TyVar tv))}) ->
-    normalize_coercion (CSeq (CList (CTvInj tv), CInj Li))
-  | CTvInj (_, {contents = None}) -> c
-  | CTvProjInj ((_, {contents = Some u}), p) when is_base_type u ->
+  | CTvInj ((_, {contents = Some (TyVar tv)}), p) ->
+    normalize_coercion (CTvInj (tv, p))
+  | CTvInj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), (r, p)) ->
+    normalize_coercion (CSeq (CFun (CTvProj (tv1, (r, neg p)), CTvInj (tv2, (r, p))), CInj Ar))
+  | CTvInj ((_, {contents = Some (TyList (TyVar tv))}), p) ->
+    normalize_coercion (CSeq (CList (CTvInj (tv, p)), CInj Li))
+  | CTvInj ((_, {contents = None}), _) -> c
+  | CTvProjInj ((_, {contents = Some u}), p, _) when is_base_type u ->
     normalize_coercion (CSeq (CProj (tag_of_ty u, p), CSeq (CId u, CInj (tag_of_ty u))))
-  | CTvProjInj ((_, {contents = Some (TyVar tv)}), p) ->
-    normalize_coercion (CTvProjInj (tv, p))
-  | CTvProjInj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), p) ->
-    normalize_coercion (CSeq (CProj (Ar, p), CSeq (CFun (CTvProjInj (tv1, (Utils.Error.dummy_range, Pos)), CTvProjInj (tv2, p)), CInj Ar)))
-  | CTvProjInj ((_, {contents = Some (TyList (TyVar tv))}), p) ->
-    normalize_coercion (CSeq (CProj (Li, p), CSeq (CList (CTvProjInj (tv, p)), CInj Li)))
-  | CTvProjInj ((_, {contents = None}), _) -> c
+  | CTvProjInj ((_, {contents = Some (TyVar tv)}), p, q) ->
+    normalize_coercion (CTvProjInj (tv, p, q))
+  | CTvProjInj ((_, {contents = Some (TyFun (TyVar tv1, TyVar tv2))}), (r1, p), (r2, q)) ->
+    normalize_coercion (CSeq (CProj (Ar, (r1, p)), CSeq (CFun (CTvProjInj (tv1, (r2, neg q), (r1, neg p)), CTvProjInj (tv2, (r1, p), (r2, q))), CInj Ar)))
+  | CTvProjInj ((_, {contents = Some (TyList (TyVar tv))}), p, q) ->
+    normalize_coercion (CSeq (CProj (Li, p), CSeq (CList (CTvProjInj (tv, p, q)), CInj Li)))
+  | CTvProjInj ((_, {contents = None}), _, _) -> c
   | CSeq (c1, (CInj _ as c2)) -> CSeq (normalize_coercion c1, c2)
   | CFail _ as c -> c
   | CId (TyVar (_, {contents = Some u})) -> normalize_coercion (CId u)
@@ -69,25 +69,31 @@ let rec normalize_coercion c = match c with
       | CId u -> CId (TyList u)
       | _ -> CList s'
     end
-  | CTvProj ((i, {contents = Some (TyFun (u1, u2))}), p) -> 
-    normalize_coercion (CSeq (CProj (Ar, p), CFun (CTvInj (i, ref (Some u1)), CTvProj ((i, ref (Some u2)), p))))
-  | CTvInj (i, {contents = Some (TyFun (u1, u2))}) -> 
-    normalize_coercion (CSeq (CFun (CTvProj ((i, ref (Some u1)), (Utils.Error.dummy_range, Pos)), CTvInj (i, ref (Some u2))), CInj Ar))
-  | CTvProjInj ((i, {contents = Some (TyFun (u1, u2))}), p) ->
-    normalize_coercion (CSeq (CProj (Ar, p), CSeq (CFun (CTvProjInj ((i, ref (Some u1)), (Utils.Error.dummy_range, Pos)), CTvProjInj ((i, ref (Some u2)), p)), CInj Ar)))
+  | CTvProj ((i, {contents = Some (TyFun (u1, u2))}), (r, p)) -> 
+    normalize_coercion (CSeq (CProj (Ar, (r, p)), CFun (CTvInj ((i, ref (Some u1)), (r, neg p)), CTvProj ((i, ref (Some u2)), (r, p)))))
+  | CTvInj ((i, {contents = Some (TyFun (u1, u2))}), (r, p)) ->
+    normalize_coercion (CSeq (CFun (CTvProj ((i, ref (Some u1)), (r, neg p)), CTvInj ((i, ref (Some u2)), (r, p))), CInj Ar))
+  | CTvProjInj ((i, {contents = Some (TyFun (u1, u2))}), (r, p), (r', q)) ->
+    normalize_coercion (CSeq (CProj (Ar, (r, p)), CSeq (CFun (CTvProjInj ((i, ref (Some u1)), (r', neg q), (r, neg p)), CTvProjInj ((i, ref (Some u2)), (r, p), (r, q))), CInj Ar)))
+  | CTvProj ((i, {contents = Some (TyList u)}), p) -> 
+    normalize_coercion (CSeq (CProj (Li, p), CList (CTvProj ((i, ref (Some u)), p))))
+  | CTvInj ((i, {contents = Some (TyList u)}), p) ->
+    normalize_coercion (CSeq (CList (CTvInj ((i, ref (Some u)), p)), CInj Li))
+  | CTvProjInj ((i, {contents = Some (TyList u)}), p, q) ->
+    normalize_coercion (CSeq (CProj (Li, p), CSeq (CList (CTvProjInj ((i, ref (Some u)), p, q)), CInj Li)))
   | c -> raise @@ Eval_bug (Format.asprintf "cannot normalize coercion: %a" Pp.pp_coercion c)
 
 let rec subst_coercion s = function
 | CInj _ | CProj _ as c -> c
-| CTvInj (a, _ as tv) -> 
+| CTvInj ((a, _ as tv), p) -> 
   let u = subst_type s (TyVar tv) in
-  normalize_coercion (CTvInj (a, {contents = Some u}))
+  normalize_coercion (CTvInj ((a, {contents = Some u}), p))
 | CTvProj ((a, _ as tv), p) ->
   let u = subst_type s (TyVar tv) in
   normalize_coercion (CTvProj ((a, {contents = Some u}), p))
-| CTvProjInj ((a, _ as tv), p) -> 
+| CTvProjInj ((a, _ as tv), p, q) -> 
   let u = subst_type s (TyVar tv) in
-  normalize_coercion (CTvProjInj ((a, {contents = Some u}), p))
+  normalize_coercion (CTvProjInj ((a, {contents = Some u}), p, q))
 | CFun (c1, c2) -> CFun (subst_coercion s c1, subst_coercion s c2)
 | CList c -> CList (subst_coercion s c)
 | CId u -> CId (subst_type s u)
@@ -104,46 +110,46 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
   | CSeq (CProj (t, p), c1), c2 -> CSeq (CProj (t, p), compose c1 c2)
   (* X?p ;;; t *)
   | CTvProj ((a1, _ as tv), p), CId (TyVar (a2, _)) when a1 = a2 -> CTvProj (tv, p)
-  | CTvProj ((a1, _ as tv), p), CTvInj (a2, _) when a1 = a2 -> CTvProjInj (tv, p)
+  | CTvProj ((a1, _ as tv), p), CTvInj ((a2, _), q) when a1 = a2 -> CTvProjInj (tv, p, q)
   (* X! ;;; t *)
-  | CTvInj tv, CId TyDyn -> CTvInj tv
-  | CTvInj (_, uref as tv), CSeq (CProj (Ar, (r, p)), c2) ->
+  | CTvInj (tv, p), CId TyDyn -> CTvInj (tv, p)
+  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Ar, _), c2) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
-        compose (CFun (CTvProj (tv1, (r, neg p)), (CTvInj tv2))) c2
+        compose (CFun (CTvProj (tv1, (r, neg p)), (CTvInj (tv2, (r, p))))) c2
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
-  | CTvInj (_, uref as tv), CSeq (CProj (Li, _), c2) ->
+  | CTvInj ((_, uref as tv), p), CSeq (CProj (Li, _), c2) ->
     let x1 = fresh_tyvar () in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
     uref := Some (TyList x1);
     begin match x1 with
       | TyVar tv1 ->
-        compose (CList (CTvInj tv1)) c2
+        compose (CList (CTvInj (tv1, p))) c2
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
-  | CTvInj (_, uref as tv), CSeq (CProj (t, _), c2) -> 
+  | CTvInj ((_, uref as tv), _), CSeq (CProj (t, _), c2) -> 
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
     uref := Some u;
     compose (CId u) c2
-  | CTvInj (a1, uref as tv1), CTvProj ((a2, _ as tv2), _) -> 
+  | CTvInj ((a1, uref as tv1), _), CTvProj ((a2, _ as tv2), _) -> 
     if a1 = a2 then CId (TyVar tv1)
     else begin 
       if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv1) Pp.pp_ty (TyVar tv2);
       uref := Some (TyVar tv2); 
       CId (TyVar tv2)
     end
-  | CTvInj tv1, CTvProjInj (tv2, p) ->
-    compose (compose (CTvInj tv1) (CTvProj (tv2, p))) (CTvInj tv2)
+  | CTvInj (tv1, p), CTvProjInj (tv2, q, r) ->
+    compose (compose (CTvInj (tv1, p)) (CTvProj (tv2, q))) (CTvInj (tv2, r))
     (* if a1 = a2 then CTvInj tv1
     else (uref := Some (TyVar tv2); CTvInj tv2) *)
   (* ?pX! ;;; t *)
-  | CTvProjInj (tv, p), c2 ->
-    compose (CTvProj (tv, p)) (compose (CTvInj tv) c2)
+  | CTvProjInj (tv, p, q), c2 ->
+    compose (CTvProj (tv, p)) (compose (CTvInj (tv, q)) c2)
   (* | CTvProjInj (tv, p), CId TyDyn -> CTvProjInj (tv, p)
   | CTvProjInj ((_, uref), p), CSeq (CProj (Ar, (r', q)), c2) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
@@ -167,13 +173,13 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
   | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
     if t = t' then compose c1 c2 
     else CFail (t, p, t')
-  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), p) ->
+  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), (r, p)) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
-        compose c1 (CFun (CTvInj tv1, CTvProj (tv2, p)))
+        compose c1 (CFun (CTvInj (tv1, (r, neg p)), CTvProj (tv2, (r, p))))
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
   | CSeq (c1, CInj Li), CTvProj ((_, uref as tv), p) ->
@@ -190,8 +196,8 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
     uref := Some u;
     compose c1 (CId u)
-  | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p) ->
-    compose (compose c1 (CTvProj (tv, p))) (CTvInj tv)
+  | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p, q) ->
+    compose (compose c1 (CTvProj (tv, p))) (CTvInj (tv, q))
   (* | CSeq (c1, CInj Ar), CTvProjInj ((_, uref), (r, p)) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     uref := Some (TyFun (x1, x2));
@@ -645,7 +651,6 @@ module LS1 = struct
     | v -> match normalize_coercion c with
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
-      (* | CTvInj (_, {contents=None}) -> raise @@ Eval_bug "coerce: coercion with uninstantiated type variable" *)
       | c when is_d c -> CoerceV (v, c)
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
   and eval_app_val ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)

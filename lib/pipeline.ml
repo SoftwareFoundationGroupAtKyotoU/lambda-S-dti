@@ -85,10 +85,10 @@ let kNorm_funs ppf (tvsenv, alphaenv, betaenv) f ~alpha_fn ~norm_fn ~pp =
   fprintf ppf "kf: %a@." Pp.KNorm.pp_program kf;
   kf, kfunenvs
 
-let kNormal_LB ppf envs f = 
+let kNormal_LB ppf envs f ~static = 
   kNorm_funs ppf envs f
     ~alpha_fn:KNormal.CC.alpha_program
-    ~norm_fn:KNormal.CC.k_normalize_program
+    ~norm_fn:(KNormal.CC.k_normalize_program ~static)
     ~pp:Pp.CC.pp_program
 
 let kNormal_LS ppf envs f = 
@@ -181,7 +181,7 @@ let read_eval_LB ppf lexbuf env tyenv kfunenvs kenv ~kNorm ~debug ~res_ppf =
   read_eval ppf lexbuf env tyenv kfunenvs kenv ~intoB:true ~kNorm ~debug ~res_ppf
     ~eval_fn: (eval_LB ~debug ~res_ppf)
     ~translation_fn: (fun _ _ f -> f)
-    ~kNormal_fn: kNormal_LB
+    ~kNormal_fn: (kNormal_LB ~static:false)
   
 let read_eval_LS ppf lexbuf env tyenv kfunenvs kenv ~kNorm ~debug ~alt ~res_ppf =
   read_eval ppf lexbuf env tyenv kfunenvs kenv ~intoB:false ~kNorm ~debug ~res_ppf
@@ -189,7 +189,7 @@ let read_eval_LS ppf lexbuf env tyenv kfunenvs kenv ~kNorm ~debug ~alt ~res_ppf 
     ~translation_fn: (translate_to_LS1 ~alt)
     ~kNormal_fn: kNormal_LS
 
-let cc_compile ppf programs tyenv kfunenvs ~intoB ~alt ~eager ~bench_ppf ~bench =
+let cc_compile ppf programs tyenv kfunenvs ~intoB ~alt ~eager ~static ~bench_ppf ~bench =
   let bundle_programs progs =
     let rec to_exp ps = match ps with
       | Syntax.CC.Exp e :: [] -> e
@@ -208,7 +208,7 @@ let cc_compile ppf programs tyenv kfunenvs ~intoB ~alt ~eager ~bench_ppf ~bench 
     if intoB then 
       (* k-Normalization *)
       let _ = fprintf bench_ppf "%a@." Pp.CC.pp_program f in
-      kNormal_LB ppf kfunenvs f
+      kNormal_LB ppf kfunenvs f ~static
     else 
       (* CPS-translation *)
       (* NOTE: when generating C, alternative translation is done in closure conversion *)
@@ -223,34 +223,38 @@ let cc_compile ppf programs tyenv kfunenvs ~intoB ~alt ~eager ~bench_ppf ~bench 
   c_code
 
 let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
-  opt_file ~intoB ~alt ~eager ~bench =
-  let mode_var = (if intoB then "-D CAST " else if alt then "-D ALT " else "") in
-  let lst_var = (if eager then "-D EAGER " else "") in
+  opt_file ~intoB ~alt ~eager ~static ~bench =
+  let mode_var = (if intoB && not static then "-D CAST " else if alt && not static then "-D ALT " else "") in
+  let lst_var = (if eager && not static then "-D EAGER " else "") in
+  let static_var = (if static then "-D STATIC " else "") in
   if bench then 
-    asprintf "gcc %s/bench/%s%s.c %s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s.out -lgc -lcjson -O2"
+    asprintf "gcc %s/bench/%s%s.c %s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s.out -lgc -lcjson -O2"
       log_dir 
       file 
       mode_str
       mode_var
       lst_var
+      static_var
       src_files
       log_dir 
       file 
       mode_str
   else match opt_file with
   | Some filename -> 
-    asprintf "gcc ../result_C/%s_out.c %s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O2"
+    asprintf "gcc ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O2"
       filename
       mode_var
       lst_var
+      static_var
       filename
   | None -> 
-    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -O2 *)
-    asprintf "gcc result_C/stdin.c %s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O2 *)
+    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O2 *)
+    asprintf "gcc result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O2 *)
       mode_var
       lst_var
+      static_var
 
-let build_run c_code opt_file ~intoB ~alt ~eager = match opt_file with
+let build_run c_code opt_file ~intoB ~alt ~eager ~static = match opt_file with
   | Some filename ->
     (* ファイル入力モード *)
     let out_path = "../result_C/" ^ filename ^ "_out.c" in
@@ -258,7 +262,7 @@ let build_run c_code opt_file ~intoB ~alt ~eager = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "Generated C file: %s (Execution delegated)@." out_path *)
-    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~bench:false) in
+    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~static ~bench:false) in
     let _ = Sys.command ("../result/" ^ filename ^ ".out") in
     ()
   | None ->
@@ -268,12 +272,12 @@ let build_run c_code opt_file ~intoB ~alt ~eager = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "%s" (Compiler.build_cmd_for_stdin ()); *)
-    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~bench:false) in
+    let _ = Sys.command (build_gcc_cmd opt_file ~intoB ~alt ~eager ~static ~bench:false) in
     let _ = Sys.command "result/stdin.out" in
     ()
 
-let rec read_compile ppf lexbuf tyenv kfunenvs opt_file ~intoB ~alt ~eager =
-  let read_compile = read_compile ~intoB ~alt ~eager in
+let rec read_compile ppf lexbuf tyenv kfunenvs opt_file ~intoB ~alt ~eager ~static =
+  let read_compile = read_compile ~intoB ~alt ~eager ~static in
   let initial_tyenv = tyenv in
   let initial_kfunenvs = kfunenvs in 
   let rec loop ppf lexbuf tyenv kfunenvs programs ~intoB ~alt ~eager = 
@@ -286,8 +290,8 @@ let rec read_compile ppf lexbuf tyenv kfunenvs opt_file ~intoB ~alt ~eager =
       let programs = e :: programs in
       match e with
       | Syntax.CC.Exp _ -> 
-        let c_code = cc_compile ppf programs new_tyenv kfunenvs ~intoB ~alt ~eager ~bench_ppf:Utils.Format.empty_formatter ~bench:0 in
-        build_run c_code opt_file ~intoB ~alt ~eager;
+        let c_code = cc_compile ppf programs new_tyenv kfunenvs ~intoB ~alt ~eager ~static ~bench_ppf:Utils.Format.empty_formatter ~bench:0 in
+        build_run c_code opt_file ~intoB ~alt ~eager ~static;
         fprintf ppf "@.";
         read_compile ppf lexbuf initial_tyenv initial_kfunenvs opt_file
       (* TODO: ファイルモードのとき，プログラムがきちんと書れていなくてもコンパイルが通ることがある (ex: bad.ml) *)
@@ -304,7 +308,7 @@ let rec read_compile ppf lexbuf tyenv kfunenvs opt_file ~intoB ~alt ~eager =
   in
   loop ppf lexbuf initial_tyenv initial_kfunenvs [] ~intoB ~alt ~eager
 
-let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~intoB ~alt ~eager =
+let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~intoB ~alt ~eager ~static =
   let src_files = asprintf "%s/%s/%s*.c" log_dir mode_str file in
   (* .h 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s_mutants.h" log_dir file mode_str) in
@@ -317,17 +321,22 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~intoB ~alt ~e
   close_out oc;
   (* .c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
-  Printf.fprintf oc "%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
+  Printf.fprintf oc "%s\n%s\n%s\n%s"
+    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
-    "range *range_list;\nint main(){\nint i;\nstruct rusage start_usage, end_usage;\nstatic double times[MUTANTS_LENGTH][ITR];\n";
+    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nstatic int gc_counts[MUTANTS_LENGTH];\nint i;\nstruct rusage start_usage, end_usage;\nint gc_num, gc_tmp;\n"
+    "int main(){\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
-    else (Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\n}\nprintf(\"mutant%d done. \");fflush(stdout);\n" n (n - 1) n; print_itr (n + 1))
+    else begin 
+      Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\n}\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;printf(\"mutant%d done. \");fflush(stdout);\n"
+       n (n - 1) (n - 1) n; 
+      print_itr (n + 1)
+    end
   in print_itr 1;
-  Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, MUTANTS_LENGTH, ITR);\n}" log_dir mode_str file;
+  Printf.fprintf oc "return update_jsonl_file_dynamic_size(\"%s/%s_%s.jsonl\",*times, gc_counts, MUTANTS_LENGTH, ITR);\n}" log_dir mode_str file;
   close_out oc;
-  let cmd = build_gcc_cmd None ~intoB ~alt ~eager ~bench:true ~log_dir ~file ~mode_str ~src_files in
+  let cmd = build_gcc_cmd None ~intoB ~alt ~eager ~static ~bench:true ~log_dir ~file ~mode_str ~src_files in
   fprintf std_formatter "@.%s@."cmd;
   let _ = Sys.command cmd in
   let cmd = asprintf "%s/bench/%s%s.out" log_dir file mode_str in
@@ -359,12 +368,12 @@ let rec tv_renew_ty u env = match u with
 
 let rec tv_renew_coercion c env = match c with
   | CInj _ | CProj _ | CFail _ -> c, env
-  | CTvInj (i, _) -> 
+  | CTvInj ((i, _), p) -> 
     begin
-    try CTvInj (Environment.find (string_of_int i) env), env with
+    try CTvInj ((Environment.find (string_of_int i) env), p), env with
     Not_found -> let tv = pick_tv (Typing.fresh_tyvar ())in
     let env = Environment.add (string_of_int i) tv env in
-    CTvInj tv, env
+    CTvInj (tv, p), env
     end
   | CTvProj ((i, _), p) -> 
     begin
@@ -373,12 +382,12 @@ let rec tv_renew_coercion c env = match c with
     let env = Environment.add (string_of_int i) tv env in
     CTvProj (tv, p), env
     end
-  | CTvProjInj ((i, _), p) -> 
+  | CTvProjInj ((i, _), p, q) -> 
     begin
-    try CTvProjInj ((Environment.find (string_of_int i) env), p), env with
+    try CTvProjInj ((Environment.find (string_of_int i) env), p, q), env with
     Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
     let env = Environment.add (string_of_int i) tv env in
-    CTvProjInj (tv, p), env
+    CTvProjInj (tv, p, q), env
     end
   | CId u ->
     let u, env = tv_renew_ty u env in

@@ -233,7 +233,7 @@ value fun_alt_ignore(value x, ty* tvs[1]) {
 	return retv;
 }
 
-#elif defined(CAST)
+#elif defined(CAST) || defined(STATIC)
 value fun_print_int(value v) {
 	value retv;
 	printf("%ld", v.i_b_u);
@@ -336,10 +336,17 @@ value fun_abs_ml(value x) {
 	}
 }
 
+#ifdef STATIC
+value fun_ignore(value x) {
+	value retv = { .i_b_u = 0 };
+	return retv;
+}
+#elif
 value fun_ignore(value x, ty* tvs[1]) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
+#endif
 
 #else
 value fun_print_int(value v, value w) {
@@ -470,23 +477,15 @@ value fun_ignore(value x, value k, ty* tvs[1]) {
 #define INIT_POLY_LABEL(func, func_alt) \
     { .funkind = POLY_LABEL, \
       .fundat = { .poly = { .f = { .poly_label_alt = { .pl = (func), .pl_a = (func_alt) } } } } }
-
-#elif defined(CAST)
-#define INIT_LABEL(func) \
-    { .funkind = LABEL, \
-      .fundat = { .label = (func) } }
-#define INIT_POLY_LABEL(func) \
-    { .funkind = POLY_LABEL, \
-      .fundat = { .poly = { .f = { .poly_label = (func) } } } }
-
 #else 
 #define INIT_LABEL(func) \
     { .funkind = LABEL, \
       .fundat = { .label = (func) } }
+#ifndef STATIC
 #define INIT_POLY_LABEL(func) \
     { .funkind = POLY_LABEL, \
       .fundat = { .poly = { .f = { .poly_label = (func) } } } }
-
+#endif
 #endif
 
 #ifdef ALT
@@ -510,7 +509,11 @@ static fun f_prec          = INIT_LABEL(fun_prec);
 static fun f_min           = INIT_LABEL(fun_min);
 static fun f_max           = INIT_LABEL(fun_max);
 static fun f_abs_ml        = INIT_LABEL(fun_abs_ml);
+#ifdef STATIC
+static fun f_ignore        = INIT_LABEL(fun_ignore);
+#elif
 static fun f_ignore        = INIT_POLY_LABEL(fun_ignore);
+#endif
 #endif
 
 value max_int = { .i_b_u = INT64_MAX };

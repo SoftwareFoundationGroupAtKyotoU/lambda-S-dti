@@ -1,6 +1,7 @@
 #ifndef DYN_H
 #define DYN_H
 
+#ifndef STATIC
 #include "types.h"
 #include "value.h"
 
@@ -14,5 +15,6 @@ typedef struct dyn {
 	crc *d;
 	#endif
 } dyn;
+#endif
 
 #endif

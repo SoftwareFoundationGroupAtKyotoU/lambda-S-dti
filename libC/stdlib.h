@@ -29,11 +29,15 @@ value fun_alt_min_x(value, value*);
 value fun_alt_prec(value);
 value fun_alt_succ(value);
 value fun_alt_not_ml(value);
-#elif defined(CAST)
+#elif defined(CAST) || defined(STATIC)
 value fun_print_int(value);
 value fun_print_bool(value);
 value fun_print_newline(value);
+#ifdef STATIC
+value fun_ignore(value);
+#elif
 value fun_ignore(value, ty**);
+#endif
 value fun_abs_ml(value);
 value fun_max(value);
 value fun_max_x(value, value*);

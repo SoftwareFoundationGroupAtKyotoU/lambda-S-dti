@@ -6,8 +6,10 @@
 // CAST : λBのとき
 // EAGER : lstのcoercionをeagerに
 // ALT : λSのid特化バージョン
+// STATIC: fully static 決め打ちバージョン
 // CASTとALTが同時に定義されることはない
 
+#ifndef STATIC
 typedef struct range {
 	char *filename;
 	uint32_t startline;
@@ -27,18 +29,21 @@ typedef enum ground_ty : uint8_t {
 
 typedef struct ty ty;
 
+typedef struct dyn dyn;
+#endif
+
 typedef union value value;
 
 typedef struct fun fun;
 
 typedef struct lst lst;
 
-typedef struct dyn dyn;
-
-#ifndef CAST
+#if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;
 #endif
 
+#ifndef STATIC
 extern range *range_list;
+#endif
 
 #endif

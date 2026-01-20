@@ -448,7 +448,7 @@ let rec meet u1 u2 = match u1, u2 with
 let rec type_of_coercion = function
   | CInj t -> (type_of_tag t, TyDyn)
   | CProj (t, _) -> (TyDyn, type_of_tag t)
-  | CTvInj tv -> (TyVar tv, TyDyn)
+  | CTvInj (tv, _) -> (TyVar tv, TyDyn)
   | CTvProj (tv, _) -> (TyDyn, TyVar tv)
   | CTvProjInj _ -> (TyDyn, TyDyn)
   | CFun (c1, c2) -> 

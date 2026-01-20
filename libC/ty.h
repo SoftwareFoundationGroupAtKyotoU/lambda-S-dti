@@ -1,11 +1,14 @@
 #ifndef TY_H
 #define TY_H
 
+#ifndef STATIC
 #include "types.h"
 
 typedef struct ty {
 	enum tykind : uint8_t {
+		#ifndef STATIC
 		DYN, //0
+		#endif
 		BASE_INT, //1
 		BASE_BOOL, //2
 		BASE_UNIT, //3
@@ -26,7 +29,9 @@ typedef struct ty {
 	} tydat;
 } ty;
 
+#ifndef STATIC
 extern ty tydyn;
+#endif
 extern ty tyint;
 extern ty tybool;
 extern ty tyunit;
@@ -37,6 +42,8 @@ ty *(newty)();
 
 #ifndef CAST
 ty *(ty_find)(ty*);
+#endif
+
 #endif
 
 #endif

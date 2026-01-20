@@ -1,3 +1,5 @@
+#ifndef STATIC
+
 #include <gc.h>
 #include "ty.h"
 
@@ -30,4 +32,6 @@ ty *ty_find(ty *t) {
 
     return root;
 }
+#endif
+
 #endif

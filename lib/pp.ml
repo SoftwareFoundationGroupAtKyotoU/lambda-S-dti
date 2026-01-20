@@ -150,22 +150,22 @@ let rec pp_coercion ppf = function
   | CProj (t, _) ->
     fprintf ppf "%a?p"
       pp_tag t
-  | CTvInj (_, {contents = None} as tv) ->
-    fprintf ppf "%a!"
+  | CTvInj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "%a!p"
       pp_ty (TyVar tv)
   | CTvProj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a?p"
       pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "?p%a!"
+  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
+    fprintf ppf "?p%a!q"
       pp_ty (TyVar tv)
-  | CTvInj tv ->
+  | CTvInj (tv, _) ->
     fprintf ppf "|%a|!"
       pp_ty (TyVar tv)
   | CTvProj (tv, _) ->
     fprintf ppf "|%a|?"
       pp_ty (TyVar tv)
-  | CTvProjInj (tv, _) ->
+  | CTvProjInj (tv, _, _) ->
     fprintf ppf "?|%a|!"
       pp_ty (TyVar tv)
   | CFun (c1, c2) as c ->
@@ -196,22 +196,22 @@ let pp_coercion2 ppf c =
   | CProj (t, _) ->
     fprintf ppf "%a?p"
       pp_tag t
-  | CTvInj (_, {contents = None} as tv) ->
+  | CTvInj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a!"
       pp_ty (TyVar tv)
   | CTvProj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a?p"
       pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _) ->
+  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
     fprintf ppf "?p%a!"
       pp_ty (TyVar tv)
-  | CTvInj tv ->
+  | CTvInj (tv, _) ->
     fprintf ppf "|%a|!"
       pp_ty (TyVar tv)
   | CTvProj (tv, _) ->
     fprintf ppf "|%a|?"
       pp_ty (TyVar tv)
-  | CTvProjInj (tv, _) ->
+  | CTvProjInj (tv, _, _) ->
     fprintf ppf "?|%a|!"
       pp_ty (TyVar tv)
   | CFun (c1, c2) as c ->
@@ -861,13 +861,13 @@ module Cls = struct
 
   let rec pp_coercion ppf = function
   | Id -> fprintf ppf "id"
-  | Fail _ -> fprintf ppf "⊥"
+  (* | Fail _ -> fprintf ppf "⊥" *)
   | SeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
   | SeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
-  | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2
-  | TvInj tv -> fprintf ppf "%a!" pp_ty (TyVar tv)
+  (* | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2 *)
+  | TvInj (tv, _) -> fprintf ppf "%a!" pp_ty (TyVar tv)
   | TvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
-  | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv)
+  (* | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv) *)
   | Fun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
   | List c -> fprintf ppf "[%a]" pp_coercion c
 

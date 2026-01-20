@@ -29,6 +29,7 @@ cJSON *create_time_array_dynamic(
 int update_jsonl_file_dynamic_size(
     const char *input_filename, 
     const double *times_data, 
+    const int *counts_data,
     int num_entries, 
     int num_times
 ) {
@@ -103,6 +104,10 @@ int update_jsonl_file_dynamic_size(
                 cJSON *new_times_array = create_time_array_dynamic(times_row_ptr, num_times);
                 if (new_times_array) {
                     cJSON_ReplaceItemInObject(root, "times_sec", new_times_array);
+                }
+                cJSON *new_mem_item = cJSON_CreateNumber(counts_data[array_index]);
+                if (new_mem_item) {
+                    cJSON_ReplaceItemInObject(root, "mem", new_mem_item);
                 }
             }
             

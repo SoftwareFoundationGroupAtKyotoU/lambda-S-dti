@@ -9,6 +9,12 @@ let start file =
   (* NOTE: when compiling, -k does not need *)
   if config.compile && config.kNorm then config.kNorm <- false;
   if not (config.compile) && config.eager then failwith "-e interpreter is yet";
+  if config.static then begin
+    if not config.compile then failwith "-s interpreter is yet";
+    config.alt <- false;
+    config.intoB <- true;
+    config.eager <- true;
+  end;
   let ppf = if config.debug then err_formatter else Utils.Format.empty_formatter in
   Pipeline.print_title ppf "Lexer";
   let channel, lexbuf = match file with
@@ -25,11 +31,11 @@ let start file =
   try
     if config.intoB then 
       let env, tyenv, kfunenvs, kenv = Stdlib.pervasives_LB ~debug:config.debug ~compile:config.compile in
-      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~intoB:config.intoB ~alt:config.alt ~eager:config.eager
+      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static
       else Pipeline.read_eval_LB ppf lexbuf env tyenv kfunenvs kenv ~kNorm:config.kNorm ~debug:config.debug ~res_ppf:std_formatter
     else 
       let env, tyenv, kfunenvs, kenv = Stdlib.pervasives_LS ~alt:config.alt ~debug:config.debug ~compile:config.compile in
-      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~intoB:config.intoB ~alt:config.alt ~eager:config.eager
+      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static
       else Pipeline.read_eval_LS ppf lexbuf env tyenv kfunenvs kenv ~kNorm:config.kNorm ~debug:config.debug ~alt:config.alt ~res_ppf:std_formatter
   with
     | Lexer.Eof ->
@@ -59,7 +65,8 @@ let () =
       ("-a", Arg.Unit (fun () -> config.alt <- true), " Use alternative translation");
       ("-c", Arg.Unit (fun () -> config.compile <- true), " Compile the program to C code");
       ("-b", Arg.Unit (fun () -> config.intoB <- true), " Translate into LB");
-      ("-e", Arg.Unit (fun () -> config.eager <- true), " Eager list coercion-/cast-composition")
+      ("-e", Arg.Unit (fun () -> config.eager <- true), " Eager list coercion-/cast-composition");
+      ("--static", Arg.Unit (fun () -> config.static <- true), " Evaluate or compile only fully statically program")
     ]
   in
   let parse_argv arg = match !file with

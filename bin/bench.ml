@@ -9,14 +9,14 @@ type mode =
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 1000
+let itr = 1
 let files = [
   (* "church_small"; *)
-  "church";
-  (* "church_big";  *)
+  (* "church"; *)
+  "church_big"; 
   (* OK, 9791.4s   *)
   "tak";
-  (* "easy"; *)
+  "easy";
   "fib";
   "evenodd";
   "loop";
@@ -235,10 +235,10 @@ let bench_file_mode
             let c_code = 
               if config.intoB then 
                 let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
-                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~bench_ppf:fmt ~bench:idx
+                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
               else
                 let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:config.alt ~debug:false ~compile:true in
-                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~bench_ppf:fmt ~bench:idx
+                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
             in
             let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
             Printf.fprintf oc "%s" c_code;
@@ -322,7 +322,7 @@ let bench_file_mode
        Out_channel.output_string oc "\n]}\n"; Out_channel.close oc
     | Some _, Text -> raise @@ Failure "yet");
 
-  if config.compile then Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~intoB:config.intoB ~alt:config.alt ~eager:config.eager;
+  if config.compile then Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static;
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Bench_utils.Target_progress.print ~final:false prog

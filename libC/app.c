@@ -11,12 +11,13 @@
 #include "app.h"
 #include "ty.h"
 
-#ifdef CAST
+#if defined(CAST) || defined(STATIC)
 value appM(value f, value v) {									// reduction of f(v)
 	switch(f.f->funkind) {
 		case(LABEL): return f.f->fundat.label(v);	// if f is "label" function R_BETA : return f(v)
-		case(POLY_LABEL): return f.f->fundat.poly.f.poly_label(v, f.f->fundat.poly.tas);
 		case(CLOSURE): return f.f->fundat.closure.cls(v, f.f->fundat.closure.fvs); // if f is closure R_BETA : return f(v, fvs)
+		#ifndef STATIC
+		case(POLY_LABEL): return f.f->fundat.poly.f.poly_label(v, f.f->fundat.poly.tas);
 		case(POLY_CLOSURE):	return f.f->fundat.poly.f.poly_closure.pcls(v, f.f->fundat.poly.f.poly_closure.fvs, f.f->fundat.poly.tas); // if f is closure R_BETA : return f(v, fvs)
 		case(WRAPPED): {												// if f is wrapped function (f = w:U1->U2=>U3->U4)
 			uint8_t pos_pol = f.f->polarity;
@@ -33,6 +34,7 @@ value appM(value f, value v) {									// reduction of f(v)
 			//printf("Heap size = %d\n", (int)GC_get_heap_size());
 			return cast(v__, u1->tydat.tyfun.right, u2->tydat.tyfun.right, rid, pos_pol);
 		}
+		#endif
 	}
 }
 #endif
@@ -75,7 +77,7 @@ value appM(value f, value v) {									// reduction of f(v)
 }
 #endif
 
-#ifndef CAST
+#if !defined(CAST) && !defined(STATIC)
 value appD(value f, value v, value w) {									// reduction of f(v)
 	value s;
 	value arg;

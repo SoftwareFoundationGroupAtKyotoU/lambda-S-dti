@@ -6,22 +6,25 @@
 typedef struct fun {
 	enum funkind : uint8_t {
 		LABEL,
-		POLY_LABEL,
 		CLOSURE,
+		#ifndef STATIC
+		POLY_LABEL,
 		POLY_CLOSURE,
 		WRAPPED,
+		#endif
 	} funkind;
 	#ifdef CAST
 	uint8_t polarity;
 	uint32_t rid;
 	#endif
 	union fundat {
-		#ifdef CAST
+		#if defined(CAST) || defined(STATIC)
 		value (*label)(value);
 		struct closure {
 			value (*cls)(value, value*);
 			value *fvs;
 		} closure;
+		#ifndef STATIC
 		struct poly {
 			ty **tas;
 			union f {
@@ -37,6 +40,7 @@ typedef struct fun {
 			ty *u1;
 			ty *u2;
 		} wrap;
+		#endif
 		#elif defined(ALT)
 		struct label_alt {
 			value (*l)(value, value);

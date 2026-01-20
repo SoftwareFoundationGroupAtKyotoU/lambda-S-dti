@@ -1,7 +1,7 @@
 #ifndef CRC_H
 #define CRC_H
 
-#ifndef CAST
+#if !defined(CAST) && !defined(STATIC)
 #include <stdint.h>
 #include "types.h"
 
@@ -10,25 +10,29 @@ typedef struct crc {
 	enum crckind : uint8_t {
 		ID, // 0
 		BOT, // 1
-		SEQ_INJ, //2
-		SEQ_PROJ, //3
-		SEQ_PROJ_INJ, //4
-		TV_INJ, //5
-		TV_PROJ, //6
-		TV_PROJ_INJ, //7
-		FUN, //8
-		LIST, //9
+		// OCCUR, //2
+		SEQ_INJ, //3
+		SEQ_PROJ, //4
+		SEQ_PROJ_INJ, //5
+		SEQ_PROJ_BOT, //6
+		TV_INJ, //7
+		TV_PROJ, //8
+		TV_PROJ_INJ, //9
+		// TV_PROJ_OCCUR, //10
+		FUN, //11
+		LIST, //12
 	} crckind;
-	ground_ty g_inj;
 	ground_ty g_proj;
-	uint8_t polarity;
-	// (padding: 4byte)
+	ground_ty g_inj;
+	uint8_t p_proj;
+	uint8_t p_inj;
+	// padding: 3byte
 
 	// payload: 16byte
 	union crcdat {
-		uint32_t rid; // for BOT
-		struct seq_tv { // for SEQ_, TV_
-			uint32_t rid;
+		struct seq_tv { // for SEQ_, TV_, BOT
+			uint32_t rid_proj;
+			uint32_t rid_inj;
 			union ptr {
 				crc *s; // for SEQ_
 				ty *tv; // for TV_
@@ -44,7 +48,7 @@ typedef struct crc {
 
 crc *compose(crc*, crc*);
 
-crc *normalize_crc(crc*);
+void normalize_crc(crc*);
 
 extern crc crc_id;
 extern crc crc_inj_INT;

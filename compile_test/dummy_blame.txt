@@ -1,0 +1,66 @@
+***** Lexer *****
+Reading from stdin
+# let f (x:?) = x in
+let g (y:'a) = f y in
+g ((fun z -> z + 1):?) (true:?);;
+***** Parser *****
+e: let f = fun (x: ?) -> x in let g = fun (y: 'x10) -> f y in g ((fun (z: 'x11) -> z + 1) : ?) (true : ?)
+***** Typing *****
+e: let f = fun (x: ?) -> x in let g = fun (y: 'x10) -> f y in g ((fun (z: int) -> z + 1) : ?) (true : ?)
+U: ?
+***** Coercion-insertion *****
+f: let f = fun (x: ?) -> x in let g = fun (y: 'x10) -> f (y<'x10!>) in (g ((fun (z: int) -> z + 1)<(int?p;id{int})->(id{int};int!);(? -> ?)!><'x10?p>)<(? -> ?)?p;id{? -> ?}>) (true<id{bool};bool!>)
+U: ?
+***** CPS-translation *****
+f: let f = fun ((x: ?), k13) -> x<k13> in let g = fun ((y: 'x10), k12) -> f (y<'x10!>, k12) in g (let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>, (? -> ?)?p;id{? -> ?}) (true<id{bool};bool!>, id{?})
+***** Eval *****
+eval <-- let f = fun ((x: ?), k13) -> x<k13> in let g = fun ((y: 'x10), k12) -> f (y<'x10!>, k12) in g (let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>, (? -> ?)?p;id{? -> ?}) (true<id{bool};bool!>, id{?})
+eval <-- fun ((x: ?), k13) -> x<k13>
+eval <-- let g = fun ((y: 'x10), k12) -> f (y<'x10!>, k12) in g (let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>, (? -> ?)?p;id{? -> ?}) (true<id{bool};bool!>, id{?})
+eval <-- fun ((y: 'x10), k12) -> f (y<'x10!>, k12)
+eval <-- g (let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>, (? -> ?)?p;id{? -> ?}) (true<id{bool};bool!>, id{?})
+eval <-- g (let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>, (? -> ?)?p;id{? -> ?})
+eval <-- g
+eval <-- let k10 = (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p in (fun ((z: int), k11) -> (z + 1)<k11>)<k10>
+eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!;;'x10?p
+eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!
+eval <-- 'x10?p
+compose <-- (int?p;id{int})->(id{int};int!);(? -> ?)!；'x10?p
+DTI: 'x10 is instantiated to 'x13 -> 'x12
+compose <-- (int?p;id{int})->(id{int};int!)；'x13!->'x12?p
+compose <-- 'x13!；int?p;id{int}
+DTI: 'x13 is instantiated to int
+compose <-- id{int}；id{int}
+compose <-- id{int};int!；'x12?p
+DTI: 'x12 is instantiated to int
+compose <-- id{int}；id{int}
+eval <-- (fun ((z: int), k11) -> (z + 1)<k11>)<k10>
+eval <-- fun ((z: int), k11) -> (z + 1)<k11>
+eval <-- k10
+coerce <-- <fun><id{int -> int}>
+eval <-- (? -> ?)?p;id{? -> ?}
+eval <-- f (y<(int?p;id{int})->(id{int};int!);(? -> ?)!>, k12)
+eval <-- f
+eval <-- y<(int?p;id{int})->(id{int};int!);(? -> ?)!>
+eval <-- y
+eval <-- (int?p;id{int})->(id{int};int!);(? -> ?)!
+coerce <-- <fun><(int?p;id{int})->(id{int};int!);(? -> ?)!>
+eval <-- k12
+eval <-- x<k13>
+eval <-- x
+eval <-- k13
+coerce <-- <fun><<(int?p;id{int})->(id{int};int!);(? -> ?)!>><(? -> ?)?p;id{? -> ?}>
+compose <-- (int?p;id{int})->(id{int};int!);(? -> ?)!；(? -> ?)?p;id{? -> ?}
+compose <-- (int?p;id{int})->(id{int};int!)；id{? -> ?}
+coerce <-- <fun><(int?p;id{int})->(id{int};int!)>
+eval <-- true<id{bool};bool!>
+eval <-- true
+eval <-- id{bool};bool!
+coerce <-- true<id{bool};bool!>
+eval <-- id{?}
+compose <-- id{int};int!；id{?}
+coerce <-- true<<id{bool};bool!>><int?p;id{int}>
+compose <-- id{bool};bool!；int?p;id{int}
+coerce <-- true<⊥{bool,p,int}>
+Blame on the expression side:
+line 0, character -1 -- line 0, character -1

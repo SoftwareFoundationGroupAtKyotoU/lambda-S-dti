@@ -81,7 +81,7 @@ module ITGL = struct
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
     | TyList _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyList TyDyn), CInj Li)
-    | TyVar tv, TyDyn -> CTvInj tv
+    | TyVar tv, TyDyn -> CTvInj (tv, (r, p))
     | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
     | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
     | TyDyn, (TyList _ as u) -> CSeq (CProj (Li, (r, p)), make_s_coercion (r, p) (TyList TyDyn) u)

@@ -117,9 +117,9 @@ type tag = I | B | U | Ar | Li
 type coercion =
   | CInj of tag
   | CProj of tag * (range * polarity)
-  | CTvInj of tyvar
+  | CTvInj of tyvar * (range * polarity)
   | CTvProj of tyvar * (range * polarity)
-  | CTvProjInj of tyvar * (range * polarity)
+  | CTvProjInj of tyvar * (range * polarity) * (range * polarity)
   | CFun of coercion * coercion
   | CList of coercion
   | CId of ty
@@ -130,14 +130,13 @@ let is_d = function
   | CSeq (CId u, CInj _) when u <> TyDyn -> true
   | CSeq (CFun _, CInj _)
   | CSeq (CList _, CInj _)
-  | CTvInj (_, {contents = None})
   | CFun _ 
   | CList _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
   | _ -> false
 
 let rec ftv_coercion = function
   | CInj _ | CProj _ -> TV.empty
-  | CTvInj tv | CTvProj (tv, _) | CTvProjInj (tv, _) -> TV.singleton tv
+  | CTvInj (tv, _) | CTvProj (tv, _) | CTvProjInj (tv, _, _) -> TV.singleton tv
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CList c -> ftv_coercion c
   | CId u -> ftv_ty u
@@ -461,13 +460,10 @@ module Cls = struct
 
   type coercion =
   | Id
-  | Fail of int * polarity
   | SeqInj of coercion * tag
   | SeqProj of tag * (int * polarity) * coercion
-  | SeqProjInj of tag * (int * polarity) * coercion * tag
-  | TvInj of tyvar
+  | TvInj of tyvar * (int * polarity)
   | TvProj of tyvar * (int * polarity)
-  | TvProjInj of tyvar * (int * polarity)
   | Fun of coercion * coercion
   | List of coercion
 

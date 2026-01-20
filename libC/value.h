@@ -5,10 +5,12 @@
 
 typedef union value {
 	int64_t i_b_u;
+	#ifndef STATIC
 	dyn *d;
+	#endif
 	fun *f;
 	lst *l;
-	#ifndef CAST
+	#if !defined(CAST) && !defined(STATIC)
 	crc *s;
 	#endif
 } value;

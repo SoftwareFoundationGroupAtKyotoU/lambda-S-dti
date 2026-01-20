@@ -6,7 +6,7 @@ int did_not_match() {
 	exit(1);
 }
 
-#ifndef EAGER
+#if !defined(EAGER) && !defined(STATIC)
 #include "lst.h"
 #include "value.h"
 #include "capp.h"

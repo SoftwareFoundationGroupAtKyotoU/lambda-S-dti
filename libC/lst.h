@@ -5,7 +5,7 @@
 #include "value.h"
 
 typedef struct lst {
-	#ifdef EAGER
+	#if defined(EAGER) || defined(STATIC)
 	value h;
 	value t;
 	#else
@@ -37,7 +37,7 @@ typedef struct lst {
 
 int did_not_match();
 
-#ifndef EAGER
+#if !defined(EAGER) && !defined(STATIC)
 value hd(lst*);
 
 value tl(lst*);

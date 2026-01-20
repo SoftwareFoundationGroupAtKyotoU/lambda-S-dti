@@ -57,19 +57,19 @@ module KNorm = struct
 
   let rec toCls_crc tvs = function
     | CId _ -> Cls.Id
-    | CFail (_, (r, p), _) -> Cls.Fail (range_id r, p)
-    | CSeq (CProj (g, (r, p)), CSeq (c, CInj g')) -> Cls.SeqProjInj (g, (range_id r, p), toCls_crc tvs c, g')
+    (* | CFail (_, (r, p), _) -> Cls.Fail (range_id r, p) *)
+    (* | CSeq (CProj (g, (r, p)), CSeq (c, CInj g')) -> Cls.SeqProjInj (g, (range_id r, p), toCls_crc tvs c, g') *)
     | CSeq (CProj (g, (r, p)), c) -> Cls.SeqProj (g, (range_id r, p), toCls_crc tvs c)
     | CSeq (c, CInj g) -> Cls.SeqInj (toCls_crc tvs c, g)
-    | CTvInj tv -> 
+    | CTvInj (tv, (r, p)) -> 
       if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
-      Cls.TvInj tv
+      Cls.TvInj (tv, (range_id r, p))
     | CTvProj (tv, (r, p)) -> 
       if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
       Cls.TvProj (tv, (range_id r, p))
-    | CTvProjInj (tv, (r, p)) ->
+    (* | CTvProjInj (tv, (r, p)) ->
       if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
-      Cls.TvProjInj (tv, (range_id r, p))
+      Cls.TvProjInj (tv, (range_id r, p)) *)
     | CFun (c1, c2) -> Cls.Fun (toCls_crc tvs c1, toCls_crc tvs c2)
     | CList c -> Cls.List (toCls_crc tvs c)
     | _ -> raise @@ Closure_bug "bad coercion"

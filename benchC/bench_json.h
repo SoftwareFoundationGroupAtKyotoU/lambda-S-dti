@@ -19,6 +19,7 @@
 int update_jsonl_file_dynamic_size(
     const char *input_filename, 
     const double *times_data, 
+    const int *counts_data,
     int num_entries, 
     int num_times
 );

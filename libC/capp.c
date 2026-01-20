@@ -1,3 +1,5 @@
+#ifndef STATIC
+
 #include <stdio.h>
 #include <stdlib.h> //for abort
 #include <gc.h>
@@ -286,7 +288,7 @@ value coerce(value v, crc *s) {
 	switch (s->crckind) {
 		case ID: return v; // v<id> -> v
 		case BOT: { // v<bot^p> -> blame p
-			blame(s->crcdat.rid, s->polarity);
+			blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
 			exit(1);
 		}
 		case FUN: { // v<s'=>t'>
@@ -349,7 +351,10 @@ value coerce(value v, crc *s) {
 			}
 			#endif
 		}
-		case TV_INJ: return coerce(v, normalize_crc(s));
+		case TV_INJ: {
+			normalize_crc(s);
+			return coerce(v, s);
+		}
 		case SEQ_INJ: 
 		switch(s->crcdat.seq_tv.ptr.s->crckind) {
 			case FUN: { // v<s'=>t';G!>
@@ -407,7 +412,7 @@ value coerce(value v, crc *s) {
 			switch(c1->crckind) {
 				case ID: return v.d->v;     // u<<d>><s> -> u<id> -> u
 				case BOT: {
-					blame(c1->crcdat.rid, c1->polarity);
+					blame(c1->crcdat.seq_tv.rid_proj, c1->p_proj);
 					exit(1);
 				}
 				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
@@ -466,3 +471,5 @@ int blame(uint32_t rid, uint8_t polarity) {
 	printf("%sline %d, character %d -- line %d, character %d\n", r.filename, r.startline, r.startchr, r.endline, r.endchr);
 	return 0;
 }
+
+#endif
