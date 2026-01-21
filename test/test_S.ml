@@ -2,7 +2,7 @@ open Format
 
 open OUnit2
 
-open Lambda_S1_dti
+open Lambda_S_dti
 open Syntax
 
 let test_cases = List.map (fun l -> List.map (fun (a, b, _, d, _, _) -> (a, b, d)) l) Testcases.tests

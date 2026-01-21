@@ -1,6 +1,6 @@
 (executable
   (name runtests)
-  (libraries ounit2 lambda_S1_dti))
+  (libraries ounit2 lambda_S_dti))
 
 (rule
    (alias runtest)
