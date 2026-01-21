@@ -1,7 +1,7 @@
 open Unix
 open Core
 (* open Lambda_S1_dti.Utils *)
-open Lambda_S1_dti
+open Lambda_S_dti
 
 type mode = 
 | SEI | SEC | AEI | AEC | BEI | BEC

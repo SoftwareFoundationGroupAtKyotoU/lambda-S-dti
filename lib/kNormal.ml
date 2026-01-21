@@ -155,6 +155,7 @@ module CC = struct
       let f2 = k_normalize_exp tvsenv f2 in
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.AppMExp (x, y)
     | CastExp (f, u1, u2, r_p) ->
+      if static then raise @@ KNormal_error "static but Cast appear";
       let f = k_normalize_exp tvsenv f in
       insert_let f @@ fun x -> KNorm.CastExp (x, u1, u2, r_p)
     | MatchExp (f, ms) ->

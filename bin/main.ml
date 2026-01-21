@@ -1,5 +1,5 @@
 open Format
-open Lambda_S1_dti
+open Lambda_S_dti
 
 let config = { Config.default with opt_file = None }
 

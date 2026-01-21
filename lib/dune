@@ -1,6 +1,6 @@
 (library
-  (name lambda_S1_dti)
-  (public_name lambda-S1-dti)
+  (name lambda_S_dti)
+  (public_name lambda-S-dti)
   (libraries yojson core core_bench))
 
 (ocamllex lexer)

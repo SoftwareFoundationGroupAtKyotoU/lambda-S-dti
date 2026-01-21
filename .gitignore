@@ -43,4 +43,4 @@ parser.mli
 logs/
 scripts/__pycache__/*
 
-gmon.out
+*.out

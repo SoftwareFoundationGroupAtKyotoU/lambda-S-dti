@@ -1,32 +1,32 @@
-lS1dti ack.ml -c 
-lS1dti adder.ml -c
-lS1dti adder2.ml -c
-lS1dti cast_coercion_difference.ml -c
-lS1dti cast-abort.ml -c
-lS1dti cls-bug.ml -c
-lS1dti cls-rec.ml -c
-lS1dti even-odd.ml -c
-lS1dti example1_fail.ml -c
-lS1dti example1_success.ml -c
-lS1dti example2.ml -c
-lS1dti example3.ml -c
-lS1dti fib.ml -c
-lS1dti funcomp.ml -c
-lS1dti gcd.ml -c
-lS1dti join-reg.ml -c
-lS1dti join-reg2.ml -c
-lS1dti join-stack.ml -c
-lS1dti join-stack2.ml -c
-lS1dti join-stack3.ml -c
-lS1dti many_coerce.ml -c
-lS1dti non-tail-if.ml -c
-lS1dti print.ml -c
-lS1dti repeat_f_dyn.ml -c
-lS1dti repeat_x_dyn.ml -c
-lS1dti repeat.ml -c
-lS1dti shuffle.ml -c
-lS1dti sum-tail.ml -c
-lS1dti sum.ml -c
+lSdti ack.ml -c 
+lSdti adder.ml -c
+lSdti adder2.ml -c
+lSdti cast_coercion_difference.ml -c
+lSdti cast-abort.ml -c
+lSdti cls-bug.ml -c
+lSdti cls-rec.ml -c
+lSdti even-odd.ml -c
+lSdti example1_fail.ml -c
+lSdti example1_success.ml -c
+lSdti example2.ml -c
+lSdti example3.ml -c
+lSdti fib.ml -c
+lSdti funcomp.ml -c
+lSdti gcd.ml -c
+lSdti join-reg.ml -c
+lSdti join-reg2.ml -c
+lSdti join-stack.ml -c
+lSdti join-stack2.ml -c
+lSdti join-stack3.ml -c
+lSdti many_coerce.ml -c
+lSdti non-tail-if.ml -c
+lSdti print.ml -c
+lSdti repeat_f_dyn.ml -c
+lSdti repeat_x_dyn.ml -c
+lSdti repeat.ml -c
+lSdti shuffle.ml -c
+lSdti sum-tail.ml -c
+lSdti sum.ml -c
 
 # 8189
 # 10
@@ -58,92 +58,92 @@ lS1dti sum.ml -c
 # 50005000
 # 50005000
 
-lS1dti ack.ml -c -a
-lS1dti adder.ml -c -a
-lS1dti adder2.ml -c -a
-lS1dti cast_coercion_difference.ml -c -a
-lS1dti cast-abort.ml -c -a
-lS1dti cls-bug.ml -c -a
-lS1dti cls-rec.ml -c -a
-lS1dti even-odd.ml -c -a
-lS1dti example1_fail.ml -c -a
-lS1dti example1_success.ml -c -a
-lS1dti example2.ml -c -a
-lS1dti example3.ml -c -a
-lS1dti fib.ml -c -a
-lS1dti funcomp.ml -c -a
-lS1dti gcd.ml -c -a
-lS1dti join-reg.ml -c -a
-lS1dti join-reg2.ml -c -a
-lS1dti join-stack.ml -c -a
-lS1dti join-stack2.ml -c -a
-lS1dti join-stack3.ml -c -a
-lS1dti many_coerce.ml -c -a
-lS1dti non-tail-if.ml -c -a
-lS1dti print.ml -c -a
-lS1dti repeat_f_dyn.ml -c -a
-lS1dti repeat_x_dyn.ml -c -a
-lS1dti repeat.ml -c -a
-lS1dti shuffle.ml -c -a
-lS1dti sum-tail.ml -c -a
-lS1dti sum.ml -c -a
+lSdti ack.ml -c -a
+lSdti adder.ml -c -a
+lSdti adder2.ml -c -a
+lSdti cast_coercion_difference.ml -c -a
+lSdti cast-abort.ml -c -a
+lSdti cls-bug.ml -c -a
+lSdti cls-rec.ml -c -a
+lSdti even-odd.ml -c -a
+lSdti example1_fail.ml -c -a
+lSdti example1_success.ml -c -a
+lSdti example2.ml -c -a
+lSdti example3.ml -c -a
+lSdti fib.ml -c -a
+lSdti funcomp.ml -c -a
+lSdti gcd.ml -c -a
+lSdti join-reg.ml -c -a
+lSdti join-reg2.ml -c -a
+lSdti join-stack.ml -c -a
+lSdti join-stack2.ml -c -a
+lSdti join-stack3.ml -c -a
+lSdti many_coerce.ml -c -a
+lSdti non-tail-if.ml -c -a
+lSdti print.ml -c -a
+lSdti repeat_f_dyn.ml -c -a
+lSdti repeat_x_dyn.ml -c -a
+lSdti repeat.ml -c -a
+lSdti shuffle.ml -c -a
+lSdti sum-tail.ml -c -a
+lSdti sum.ml -c -a
 
-lS1dti ack.ml -c -b
-lS1dti adder.ml -c -b
-lS1dti adder2.ml -c -b
-lS1dti cast_coercion_difference.ml -c -b
-lS1dti cast-abort.ml -c -b
-lS1dti cls-bug.ml -c -b
-lS1dti cls-rec.ml -c -b
-lS1dti even-odd.ml -c -b
-lS1dti example1_fail.ml -c -b
-lS1dti example1_success.ml -c -b
-lS1dti example2.ml -c -b
-lS1dti example3.ml -c -b
-lS1dti fib.ml -c -b
-lS1dti funcomp.ml -c -b
-lS1dti gcd.ml -c -b
-lS1dti join-reg.ml -c -b
-lS1dti join-reg2.ml -c -b
-lS1dti join-stack.ml -c -b
-lS1dti join-stack2.ml -c -b
-lS1dti join-stack3.ml -c -b
-lS1dti many_coerce.ml -c -b
-lS1dti non-tail-if.ml -c -b
-lS1dti print.ml -c -b
-lS1dti repeat_f_dyn.ml -c -b
-lS1dti repeat_x_dyn.ml -c -b
-lS1dti repeat.ml -c -b
-lS1dti shuffle.ml -c -b
-lS1dti sum-tail.ml -c -b
-lS1dti sum.ml -c -b
+lSdti ack.ml -c -b
+lSdti adder.ml -c -b
+lSdti adder2.ml -c -b
+lSdti cast_coercion_difference.ml -c -b
+lSdti cast-abort.ml -c -b
+lSdti cls-bug.ml -c -b
+lSdti cls-rec.ml -c -b
+lSdti even-odd.ml -c -b
+lSdti example1_fail.ml -c -b
+lSdti example1_success.ml -c -b
+lSdti example2.ml -c -b
+lSdti example3.ml -c -b
+lSdti fib.ml -c -b
+lSdti funcomp.ml -c -b
+lSdti gcd.ml -c -b
+lSdti join-reg.ml -c -b
+lSdti join-reg2.ml -c -b
+lSdti join-stack.ml -c -b
+lSdti join-stack2.ml -c -b
+lSdti join-stack3.ml -c -b
+lSdti many_coerce.ml -c -b
+lSdti non-tail-if.ml -c -b
+lSdti print.ml -c -b
+lSdti repeat_f_dyn.ml -c -b
+lSdti repeat_x_dyn.ml -c -b
+lSdti repeat.ml -c -b
+lSdti shuffle.ml -c -b
+lSdti sum-tail.ml -c -b
+lSdti sum.ml -c -b
 
-lS1dti ack.ml -c --static
-lS1dti adder.ml -c --static
-lS1dti adder2.ml -c --static
-# lS1dti cast_coercion_difference.ml -c
-# lS1dti cast-abort.ml -c
-lS1dti cls-bug.ml -c --static
-lS1dti cls-rec.ml -c --static
-lS1dti even-odd.ml -c --static
-# lS1dti example1_fail.ml -c
-# lS1dti example1_success.ml -c
-# lS1dti example2.ml -c
-# lS1dti example3.ml -c
-lS1dti fib.ml -c --static
-lS1dti funcomp.ml -c --static
-lS1dti gcd.ml -c --static
-lS1dti join-reg.ml -c --static
-lS1dti join-reg2.ml -c --static
-lS1dti join-stack.ml -c --static
-lS1dti join-stack2.ml -c --static
-lS1dti join-stack3.ml -c --static
-# lS1dti many_coerce.ml -c
-lS1dti non-tail-if.ml -c --static
-lS1dti print.ml -c --static
-# lS1dti repeat_f_dyn.ml -c
-# lS1dti repeat_x_dyn.ml -c
-lS1dti repeat.ml -c --static
-lS1dti shuffle.ml -c --static
-lS1dti sum-tail.ml -c --static
-lS1dti sum.ml -c --static
+lSdti ack.ml -c --static
+lSdti adder.ml -c --static
+lSdti adder2.ml -c --static
+# lSdti cast_coercion_difference.ml -c --static
+# lSdti cast-abort.ml -c --static
+lSdti cls-bug.ml -c --static
+lSdti cls-rec.ml -c --static
+lSdti even-odd.ml -c --static
+# lSdti example1_fail.ml -c --static
+# lSdti example1_success.ml -c --static
+# lSdti example2.ml -c --static
+# lSdti example3.ml -c --static
+lSdti fib.ml -c --static
+lSdti funcomp.ml -c --static
+lSdti gcd.ml -c --static
+lSdti join-reg.ml -c --static
+lSdti join-reg2.ml -c --static
+lSdti join-stack.ml -c --static
+lSdti join-stack2.ml -c --static
+lSdti join-stack3.ml -c --static
+# lSdti many_coerce.ml -c --static
+lSdti non-tail-if.ml -c --static
+lSdti print.ml -c --static
+# lSdti repeat_f_dyn.ml -c --static
+# lSdti repeat_x_dyn.ml -c --static
+lSdti repeat.ml -c --static
+lSdti shuffle.ml -c --static
+lSdti sum-tail.ml -c --static
+lSdti sum.ml -c --static

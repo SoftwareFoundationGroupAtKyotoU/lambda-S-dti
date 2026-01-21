@@ -1,0 +1,24 @@
+opam-version: "2.0"
+version: "2.2"
+synopsis: "Interpreter and compiler of the ITGL with dynamic type inference using space-efficient coercions"
+maintainer: "y.oshima@fos.kuis.kyoto-u.ac.jp"
+authors: [
+  "Yusuke Miyazaki <miyazaki@fos.kuis.kyoto-u.ac.jp>",
+  "Yuki Oshima <y.oshima@fos.kuis.kyoto-u.ac.jp>"
+  ]
+homepage: "https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti"
+bug-reports: "https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti/issues"
+dev-repo: "git+https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti.git"
+license: "MIT"
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+run-test: [
+  ["dune" "runtest" "-p" name "-j" jobs]
+]
+depends: [
+  "ocaml" {>= "4.03"}
+  "dune" {>= "2.0"}
+  "menhir"
+  "ounit2" {with-test & >= "2" & < "3"}
+]
