@@ -29,8 +29,5 @@
   (yojson (>= 2.0))
   
   (ounit2 (and :with-test (>= 2.0)))
-  
-  (conf-libgc (>= 1))
-  (conf-pkg-config (>= 1))
  )
 )
