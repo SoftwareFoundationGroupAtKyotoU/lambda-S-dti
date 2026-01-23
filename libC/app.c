@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h> //for abort
-#include "gc.h"
+#include <gc.h>
 
 #include "crc.h"
 #include "fun.h"

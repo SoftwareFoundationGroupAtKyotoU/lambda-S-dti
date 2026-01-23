@@ -17,11 +17,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # OCaml環境セットアップ (バージョンはDockerfileに合わせて5.2)
+      # OCaml環境セットアップ
       - name: Use OCaml 5.2
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: 5.2.x
+          dune-cache: true
+
+      #  opamの依存関係（Core, Asyncなど）をキャッシュして、
+      #  *.opam ファイルが変わらない限りインストールをスキップさせる
+      - name: Restore opam cache
+        id: cache-opam
+        uses: actions/cache@v4
+        with:
+          path: ~/.opam
+          # OS, コンパイラバージョン, opamファイルの内容 をキーにする
+          key: ${{ runner.os }}-opam-5.2-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-opam-5.2-
 
       # 依存ライブラリのインストール
         # --with-test : テストに必要なライブラリもinstall
