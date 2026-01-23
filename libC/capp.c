@@ -182,7 +182,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
 						return x.d->v;
 					} else {											// when t1's injection ground type dosen't equal t2
-						printf("cast fail. t:%d, t_:%d\n", t, G_INT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+						// printf("cast fail. t:%d, t_:%d\n", t, G_INT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
 						exit(1);
 					}
@@ -192,7 +192,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
 						return x.d->v;
 					} else {											// when t1's injection ground type dosen't equal t2
-						printf("cast fail. t:%d, t_:%d\n", x.d->g, G_BOOL);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_BOOL);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
 						exit(1);
 					}
@@ -202,7 +202,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
 						return x.d->v;
 					} else {											// when t1's injection ground type dosen't equal t2
-						printf("cast fail. t:%d, t_:%d\n", x.d->g, G_UNIT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_UNIT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
 						exit(1);
 					}
@@ -213,7 +213,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
 							return x.d->v;
 						} else {											// when t1's injection ground type dosen't equal t2
-							printf("cast fail. t:%d, t_:%d\n", x.d->g, G_AR);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_AR);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
 							exit(1);
 						}
@@ -229,7 +229,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
 							return x.d->v;
 						} else {											// when t1's injection ground type dosen't equal t2
-							printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
 							exit(1);
 						}

@@ -9,26 +9,20 @@ type mode =
 
 (* ------------------ *)
 (* Benchmark settings *)
-let itr = 1
+let itr = 100
 let files = [
   (* "church_small"; *)
   (* "church"; *)
-  "church_big"; 
-  (* OK, 9791.4s   *)
-  "tak";
-  "easy";
-  "fib";
-  "evenodd";
-  "loop";
-  (* "loop_poly"; same as loop *)
-  "mklist";
+  (* "church_big";  *)
+  (* "tak"; *)
+  (* "easy"; *)
+  (* "fib"; *)
+  (* "evenodd"; *)
+  (* "loop"; *)
+  (* "mklist"; *)
   "map";
-  (* "map_mono"; *)
-  "fold";
-  (* "fold_mono"; *)
-  "zipwith";
-  (* "zipwith_mono"; *)
-  (* "polypoly"; NG *)
+  (* "fold"; *)
+  (* "zipwith"; *)
 ]
 let modes = [
   (* SEI; *)
@@ -40,9 +34,9 @@ let modes = [
   (* SLI; *)
   SLC;
   (* ALI; *)
-  (* ALC; *)
+  ALC;
   (* BLI; *)
-  (* BLC; *)
+  BLC;
   ]   
   (* [SEC; SLI] : SEC と SLI を実行 *)
 

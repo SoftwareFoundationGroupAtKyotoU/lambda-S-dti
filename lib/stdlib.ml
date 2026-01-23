@@ -411,4 +411,4 @@ let pervasives_LS ~alt:alt ~debug:debug ~compile:compile =
   in
   env, tyenv, kfunenvs, kenv
 
-let venv = List.fold_left (fun vs -> fun x -> Cls.V.add x vs) Cls.V.empty ["print_int"; "print_bool"; "print_newline"; "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]
+let venv = List.fold_left (fun vs -> fun x -> V.add x vs) V.empty ["print_int"; "print_bool"; "print_newline"; "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]

@@ -341,7 +341,7 @@ value fun_ignore(value x) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
-#elif
+#else
 value fun_ignore(value x, ty* tvs[1]) {
 	value retv = { .i_b_u = 0 };
 	return retv;
@@ -511,7 +511,7 @@ static fun f_max           = INIT_LABEL(fun_max);
 static fun f_abs_ml        = INIT_LABEL(fun_abs_ml);
 #ifdef STATIC
 static fun f_ignore        = INIT_LABEL(fun_ignore);
-#elif
+#else
 static fun f_ignore        = INIT_POLY_LABEL(fun_ignore);
 #endif
 #endif

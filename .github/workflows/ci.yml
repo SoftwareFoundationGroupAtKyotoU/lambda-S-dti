@@ -13,28 +13,51 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. コードを取得
+      # コードを取得
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. OCaml環境セットアップ (バージョンはDockerfileに合わせて5.2)
+      # OCaml環境セットアップ (バージョンはDockerfileに合わせて5.2)
       - name: Use OCaml 5.2
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: 5.2.x
 
-      # 3. 依存ライブラリのインストール
-      # --with-test をつけることで、テストに必要なライブラリも入ります
+      # 依存ライブラリのインストール
+        # --with-test : テストに必要なライブラリもinstall
       - name: Install dependencies
         run: |
           opam update
           opam install . --deps-only --with-test
 
-      # 4. ビルド実行 (dune build)
+      # 【追加機能 1】 bench.ml のコメントアウトを外す
+      # ビルドする前にソースコードを書き換えます
+          # bin/bench.ml の中の (* "filename" *) という形式のコメントを外す設定です
+          # もし形式が違う場合はここを調整する必要があります
+          # 確認のため、書き換わった中身をログに表示（デバッグ用）
+      # - name: Enable all benchmarks
+      #   run: |
+      #     sed -i 's/(\* "\(.*\)"; \*)/"\1";/' bin/bench.ml || true
+      #     cat bin/bench.ml
+
+      # ビルド実行 (dune build)
       - name: Build
         run: opam exec -- dune build
 
-      # 5. テスト実行 (dune runtest)
-      # テストコードを書いていなくても、とりあえず実行して問題ありません
+      # テスト実行 (dune runtest)
       - name: Test
         run: opam exec -- dune runtest
+
+      # install して dotests.sh を実行 (dune install)
+        # lSdti コマンドをインストール
+        # 実行権限を与えてスクリプトを実行
+      - name: Run Integration Tests
+        run: |
+          opam exec -- dune install  
+          chmod +x compile_test/dotests.sh
+          opam exec -- ./compile_test/dotests.sh
+
+      # 【追加機能 3】 ベンチマークを実行
+      # - name: Run Benchmark
+      #   run: |
+      #     opam exec -- dune exec bin/bench.exe

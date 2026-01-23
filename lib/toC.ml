@@ -772,7 +772,7 @@ let toC_fundef ppf fundef = match fundef with
       l
       x
       y
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
     fprintf ppf "value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
@@ -780,7 +780,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       y
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
@@ -789,7 +789,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       y
       num
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
@@ -799,7 +799,7 @@ let toC_fundef ppf fundef = match fundef with
       y
       num
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
@@ -811,7 +811,7 @@ let toC_fundef ppf fundef = match fundef with
       (if !is_alt then "_alt" else "")
       l
       x
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
     fprintf ppf "value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
@@ -819,7 +819,7 @@ let toC_fundef ppf fundef = match fundef with
       l
       x
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
@@ -828,7 +828,7 @@ let toC_fundef ppf fundef = match fundef with
       l
       x
       num
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
@@ -838,7 +838,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       num
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f

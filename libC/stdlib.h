@@ -35,7 +35,7 @@ value fun_print_bool(value);
 value fun_print_newline(value);
 #ifdef STATIC
 value fun_ignore(value);
-#elif
+#else
 value fun_ignore(value, ty**);
 #endif
 value fun_abs_ml(value);
