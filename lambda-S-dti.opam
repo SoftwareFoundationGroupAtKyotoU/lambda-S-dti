@@ -20,8 +20,6 @@ depends: [
   "core_unix" {>= "v0.17"}
   "yojson" {>= "2.0"}
   "ounit2" {with-test & >= "2.0"}
-  "conf-libgc" {>= "1"}
-  "conf-pkg-config" {>= "1"}
 ]
 build: [
   ["dune" "subst"] {pinned}

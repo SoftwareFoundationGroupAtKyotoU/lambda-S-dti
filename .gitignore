@@ -44,4 +44,3 @@ logs/
 scripts/__pycache__/*
 
 *.out
-*.opam
