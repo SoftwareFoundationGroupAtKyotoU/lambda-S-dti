@@ -6,6 +6,7 @@ open Lambda_S_dti
 type mode = 
 | SEI | SEC | AEI | AEC | BEI | BEC
 | SLI | SLC | ALI | ALC | BLI | BLC
+| STATICI | STATICC
 
 (* Base of Benchmark settings *)
 let itr = 500
@@ -13,14 +14,14 @@ let files = [
   "church_2";
   "church_4";
   "church_65532"; 
-  "tak";
   "easy";
-  "fib";
   "evenodd";
-  "loop";
-  "mklist";
-  "map";
+  "fib";
   "fold";
+  "loop";
+  "map";
+  "mklist";
+  "tak";
   "zipwith";
 ]
 let modes = [
@@ -36,6 +37,8 @@ let modes = [
   ALC;
   BLI;
   BLC;
+  STATICI;
+  STATICC;
   ]   
   (* [SEC; SLI] : SEC と SLI を実行 *)
 
@@ -53,6 +56,8 @@ let string_of_mode = function
   | ALC -> "ALC"
   | BLI -> "BLI"
   | BLC -> "BLC"
+  | STATICI -> "STATICI"
+  | STATICC -> "STATICC"
 
 let mode_of_string = function
   | "SEI" -> SEI
@@ -67,6 +72,8 @@ let mode_of_string = function
   | "ALC" -> ALC
   | "BLI" -> BLI
   | "BLC" -> BLC
+  | "STATICI" -> STATICI
+  | "STATICC" -> STATICC
   | _ -> failwith "mode_of_string"
   
 let split_pairs lst =
@@ -74,7 +81,7 @@ let split_pairs lst =
     ~f:(fun (a, b) (as_list, bs_list) -> (a :: as_list, b :: bs_list))
     lst ~init:([], [])
 
-let bench mode fmt itr decl =
+let bench mode fmt itr decl = (* TODO: configに書き換え *)
   let tyenv = Syntax.Environment.empty in
   let _ = Typing.CC.type_of_program tyenv decl in
   (* Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u; *)
@@ -106,8 +113,8 @@ let bench mode fmt itr decl =
     Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
     |> split_pairs
     |> snd
-  | SEI | AEI | BLI -> raise @@ Failure "yet"
-  | SEC | AEC | BEC | SLC | ALC | BLC -> raise @@ Failure "bench Compiler"
+  | SEI | AEI | BLI | STATICI -> raise @@ Failure "yet"
+  | SEC | AEC | BEC | SLC | ALC | BLC | STATICC -> raise @@ Failure "bench Compiler"
 
 (* メモリ計測（設定に応じて）を JSON に *)
 let mem_json mode file idx ~compile =
@@ -134,16 +141,13 @@ let mem_json mode file idx ~compile =
       Bench_utils.measure_mem_to_json ~label run *)
   (* | SC | AC | BC ->  *)
 
-
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
   let target_path = Printf.sprintf "samples/%s.ml" file in
   let src = In_channel.read_all target_path in
   let lexeme = Lexing.from_string src in
-  (* let tyenv = Syntax.Environment.empty in *)
   let decl  = Parser.toplevel Lexer.main lexeme in
-  let lst_mutated = Mutate.mutate_all (decl (*tyenv*)) in
-  (* src は今は未使用だが、必要なら返す *)
+  let lst_mutated = Mutate.mutate_all decl in
   (lst_mutated : Syntax.ITGL.program list)
 
 (* -------- 1ファイル × 1モード（ターゲット）を実行 ------------------ *)
@@ -158,18 +162,20 @@ let bench_file_mode
   =
   (* modeに応じたconfigの生成 *)
   let config = match mode with
-  | SEI -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:false ()
-  | SEC -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:true ()
-  | AEI -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:false ()
-  | AEC -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:true ()
-  | BEI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ()
-  | BEC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ()
-  | SLI -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:false ()
-  | SLC -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:true ()
-  | ALI -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:false ()
-  | ALC -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:true ()
-  | BLI -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:false ()
-  | BLC -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:true ()
+  | SEI -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
+  | SEC -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
+  | AEI -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
+  | AEC -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
+  | BEI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
+  | BEC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
+  | SLI -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
+  | SLC -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
+  | ALI -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
+  | ALC -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
+  | BLI -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
+  | BLC -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
+  | STATICI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ~static:true ~opt_file:(Some file) ()
+  | STATICC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ~static:true ~opt_file:(Some file) ()
   in
 
   Printf.fprintf stdout "debug: bench_file_mode\n" ;
@@ -200,6 +206,12 @@ let bench_file_mode
   let tyenv = Syntax.Environment.empty in
   let ppf = Utils.Format.empty_formatter in
 
+  (* staticモードなら，mutantの先頭(fully static)以外を削除 *)
+  let mutants = 
+    if config.static then match mutants with h :: _ -> [h] | [] -> failwith "mutants are null"
+    else mutants
+  in
+
   (* ターゲット用 Progress を開始 *)
   let label = Printf.sprintf "%s_%s" (string_of_mode mode) file in
   let prog = Bench_utils.Target_progress.create
@@ -207,6 +219,7 @@ let bench_file_mode
                ~ordinal ~total_targets
   in
 
+  (* compileモードなら，.c用のディレクトリを作成 *)
   if config.compile then
     let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
     if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir;
@@ -222,33 +235,35 @@ let bench_file_mode
       Option.iter oc_opt (fun oc ->
         Printf.fprintf oc "\n(*** Mutant %d ***)\n%!" idx
       );
-
       Option.iter oc_opt (fun oc ->
         incr counter;
         Printf.fprintf oc "\n(%d):\n" !counter
       );
 
-      (* Coercion insertion *)
+      (* Coercion / Cast insertion *)
       let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~intoB:config.intoB ~bench_ppf:fmt in
 
-      (* Benchmarking *)
+      (* compileモードなら，コンパイルして.cに書き込み *)
+      if config.compile then begin
+        let decl = Pipeline.CC.tv_renew decl in
+        let c_code = 
+          if config.intoB then 
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
+            Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
+          else
+            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:config.alt ~debug:false ~compile:true in
+            Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
+        in
+        let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
+        Printf.fprintf oc "%s" c_code;
+        close_out oc 
+      end;
+
+      (* 実行時間のBenchmarking *)
       let lst_elapsed_time =
         try 
           if not config.compile then bench mode fmt itr decl
-          else
-            let decl = Pipeline.CC.tv_renew decl in
-            let c_code = 
-              if config.intoB then 
-                let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~debug:false ~compile:true in
-                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
-              else
-                let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~alt:config.alt ~debug:false ~compile:true in
-                Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static ~bench_ppf:fmt ~bench:idx
-            in
-            let oc = Out_channel.create (Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx) in
-            Printf.fprintf oc "%s" c_code;
-            close_out oc;
-            []
+          else []
         with
         | Syntax.Blame _ -> Format.fprintf fmt "blame"; []
         | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
@@ -267,9 +282,9 @@ let bench_file_mode
         | _  -> List.iter lst_elapsed_time (fun t -> Printf.fprintf oc "%f\n" t)
       );
 
-      (* JSON 出力用に各種文字列へ（※テキストログを出さないモードでも生成できる） *)
-      let after_mutate_str    = Format.asprintf "%a" Pp.ITGL.pp_program p in
-      let after_insertion_str = Format.asprintf "%a" Pp.CC.pp_program decl in
+      (* JSON 出力用に各種文字列へ *)
+      let after_mutate_str      = Format.asprintf "%a" Pp.ITGL.pp_program p in
+      let after_insertion_str   = Format.asprintf "%a" Pp.CC.pp_program decl in
       let after_translation_str =
         if config.intoB then 
           Format.asprintf "%a" Pp.CC.pp_program decl
@@ -327,7 +342,9 @@ let bench_file_mode
        Out_channel.output_string oc "\n]}\n"; Out_channel.close oc
     | Some _, Text -> raise @@ Failure "yet");
 
-  if config.compile then Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static;
+  (* compileモードなら，build_run_benchでbenchmarking *)
+  if config.compile then 
+    Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~intoB:config.intoB ~alt:config.alt ~eager:config.eager ~static:config.static;
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Bench_utils.Target_progress.print ~final:false prog
