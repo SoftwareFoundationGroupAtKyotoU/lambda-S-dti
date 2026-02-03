@@ -1,5 +1,5 @@
 (*
-  Mutate.ml — LambdaCPolyMp の型注釈を TyDyn に置き換えるユーティリティ
+  Mutate.ml — 型注釈を TyDyn に置き換えるユーティリティ
     - Phase 1 (analyze): 1 回の走査でメタ情報を収集
         * Fun の総数 (後行順, body -> self)
         * Fix の総数 (出現順, left-to-right, pre-order)

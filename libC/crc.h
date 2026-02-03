@@ -5,28 +5,30 @@
 #include <stdint.h>
 #include "types.h"
 
+// TODO: ground_tyにNONE,TVを追加し，SEQ_やTV_を消す最適化(?)が考えられる
+  // -> プログラムは読みやすくなるが，計算時間は速くはならなさそう
 typedef struct crc {
 	// header: 4byte
 	enum crckind : uint8_t {
 		ID, // 0
 		BOT, // 1
-		// OCCUR, //2
-		SEQ_INJ, //3
-		SEQ_PROJ, //4
-		SEQ_PROJ_INJ, //5
-		SEQ_PROJ_BOT, //6
-		TV_INJ, //7
-		TV_PROJ, //8
-		TV_PROJ_INJ, //9
-		// TV_PROJ_OCCUR, //10
-		FUN, //11
-		LIST, //12
+		SEQ_INJ, //2
+		SEQ_PROJ, //3
+		SEQ_PROJ_INJ, //4
+		SEQ_PROJ_BOT, //5
+		TV_INJ, //6
+		TV_PROJ, //7
+		TV_PROJ_INJ, //8
+		TV_PROJ_OCCUR, //9
+		FUN, //10
+		LIST, //11
 	} crckind;
 	ground_ty g_proj;
 	ground_ty g_inj;
 	uint8_t p_proj;
 	uint8_t p_inj;
-	// padding: 3byte
+	uint8_t botkind; // 0 for BOT, 1 for OCCUR
+	// padding: 2byte
 
 	// payload: 16byte
 	union crcdat {

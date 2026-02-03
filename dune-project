@@ -1,6 +1,7 @@
 (lang dune 2.0)
 
 (name lambda-S-dti)
+(version 0.1)
 
 (using menhir 2.0)
 (generate_opam_files true)

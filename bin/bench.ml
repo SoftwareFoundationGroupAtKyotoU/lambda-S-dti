@@ -7,40 +7,39 @@ type mode =
 | SEI | SEC | AEI | AEC | BEI | BEC
 | SLI | SLC | ALI | ALC | BLI | BLC
 
-(* ------------------ *)
-(* Benchmark settings *)
-let itr = 100
+(* Base of Benchmark settings *)
+let itr = 500
 let files = [
-  (* "church_small"; *)
-  (* "church"; *)
-  (* "church_big";  *)
-  (* "tak"; *)
-  (* "easy"; *)
-  (* "fib"; *)
-  (* "evenodd"; *)
-  (* "loop"; *)
-  (* "mklist"; *)
+  "church_2";
+  "church_4";
+  "church_65532"; 
+  "tak";
+  "easy";
+  "fib";
+  "evenodd";
+  "loop";
+  "mklist";
   "map";
-  (* "fold"; *)
-  (* "zipwith"; *)
+  "fold";
+  "zipwith";
 ]
 let modes = [
-  (* SEI; *)
-  (* SEC; *)
-  (* AEI; *)
-  (* AEC; *)
-  (* BEI; *)
-  (* BEC; *)
-  (* SLI; *)
+  SEI;
+  SEC;
+  AEI;
+  AEC;
+  BEI;
+  BEC;
+  SLI;
   SLC;
-  (* ALI; *)
+  ALI;
   ALC;
-  (* BLI; *)
+  BLI;
   BLC;
   ]   
   (* [SEC; SLI] : SEC と SLI を実行 *)
 
-  
+(* ------------------ *)
 let string_of_mode = function
   | SEI -> "SEI"
   | SEC -> "SEC"
@@ -54,11 +53,22 @@ let string_of_mode = function
   | ALC -> "ALC"
   | BLI -> "BLI"
   | BLC -> "BLC"
+
+let mode_of_string = function
+  | "SEI" -> SEI
+  | "SEC" -> SEC
+  | "AEI" -> AEI
+  | "AEC" -> AEC
+  | "BEI" -> BEI
+  | "BEC" -> BEC
+  | "SLI" -> SLI
+  | "SLC" -> SLC
+  | "ALI" -> ALI
+  | "ALC" -> ALC
+  | "BLI" -> BLI
+  | "BLC" -> BLC
+  | _ -> failwith "mode_of_string"
   
-let log_base_dir = "logs"
-
-(* ------------------ *)
-
 let split_pairs lst =
   List.fold_right
     ~f:(fun (a, b) (as_list, bs_list) -> (a :: as_list, b :: bs_list))
@@ -139,6 +149,7 @@ let parse_and_mutate (file : string) =
 (* -------- 1ファイル × 1モード（ターゲット）を実行 ------------------ *)
 let bench_file_mode
     ~log_dir
+    ~itr
     ~(ordinal:int)
     ~(total_targets:int)
     ~(file:string)
@@ -322,6 +333,21 @@ let bench_file_mode
   Bench_utils.Target_progress.print ~final:false prog
 
 let () =
+  let files_ref = ref [] in
+  let modes_ref = ref [] in
+  let itr_ref = ref 0 in
+  let specs = [
+    ("-m", Arg.String (fun s -> modes_ref := s :: !modes_ref), " Select mode");
+    ("-i", Arg.Int (fun i -> itr_ref := i), " Specify itration");
+    ]
+  in
+  Arg.parse specs (fun f -> files_ref := f :: !files_ref) " Usage: ./bench [file...] [-m mode]";
+
+  (* 指定がなければ全部、あればそれを対象にする *)
+  let files = if List.is_empty !files_ref then files else !files_ref in
+  let modes = if List.is_empty !modes_ref then modes else List.map !modes_ref mode_of_string in
+  let itr = if !itr_ref = 0 then itr else !itr_ref in
+
   (* 1. 前処理: 全ファイルを parse→mutate *)
   Printf.fprintf stdout "debug: parse->mutate\n";
   let prepared : (string * Syntax.ITGL.program list) list =
@@ -347,6 +373,7 @@ let () =
     Printf.sprintf "%04d%02d%02d-%02d:%02d:%02d"
       (tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday (tm.tm_hour) (tm.tm_min) (tm.tm_sec)
   in
+  let log_base_dir = "logs" in
   let log_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
   if not (Sys_unix.file_exists_exn log_base_dir) then Core_unix.mkdir log_base_dir;
   if not (Sys_unix.file_exists_exn log_dir) then Core_unix.mkdir log_dir;
@@ -356,6 +383,7 @@ let () =
   List.iteri targets ~f:(fun i (file, mode, mutants) ->
     bench_file_mode
       ~log_dir
+      ~itr
       ~ordinal:(i + 1)
       ~total_targets
       ~file
