@@ -7,5 +7,5 @@ let rec foldl f acc xs =
   | [] -> acc
   | x :: xt -> foldl f (f acc x) xt in
 let add a b = a + b in
-let xs = mklist 500 0 [] in
+let xs = mklist 10000 0 [] in
 foldl add 0 xs;;

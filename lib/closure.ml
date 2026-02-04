@@ -183,7 +183,7 @@ module KNorm = struct
 
   let toCls kf known = 
     let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
-    toplevel := []; tvset := TV.empty;
+    toplevel := []; tvset := TV.empty; ranges := [];
     toCls_exp known [] f
 end
 

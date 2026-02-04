@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
     ratio_with_delta_ci, integer_xticks, save_fig, robust_left_outliers_log10,
-    base, comp,
 )
 
 def _get_promoted_bytes(slot, mode):
@@ -32,9 +31,12 @@ def _binomial_boundaries_between(n_total: int):
             mids.append(cum + 0.5)
     return mids
 
-def main():
-    cfg = load_config()
-    latest, date_dir, data = ingest_latest_as_map(cfg)
+def plot_herman(base: str, comp: str, static: bool):
+    fs = ""
+    if static:
+        fs = "_fs"
+    cfg = load_config(base, comp, static)
+    latest, date_dir, data = ingest_latest_as_map(base, comp, cfg)
     hcfg = cfg.get("herman", {})
     outdir = hcfg.get("outdir", "herman")
     k = float(hcfg.get("mad_k", 3.5))
@@ -57,7 +59,7 @@ def main():
             if base_pb is None or comp_pb is None or not np.isfinite(base_pb) or base_pb <= 0:
                 continue
             ns.append(n)
-            ratios_pb.append(float(comp_pb) / floa(base_pb))
+            ratios_pb.append(float(comp_pb) / float(base_pb))
 
         if not ns:
             continue
@@ -106,7 +108,7 @@ def main():
         method = stats.get('method', 'mad')
         ax.set_title(f'{title_prefix}: {bench}  (method={method}, n={stats.get("n","-")})')
         ax.grid(True, axis='y', linestyle='--', alpha=0.35); ax.legend()
-        save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_herman_zigzag.png'))
+        save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_herman_zigzag{fs}.png'))
 
         # (2) 昇順ソート
         bundle = sorted(zip(filt_ns, filt_ratio, filt_ci), key=lambda x: x[1])
@@ -120,9 +122,7 @@ def main():
         ax.set_xlabel(xlabel + " (filtered & sorted)"); ax.set_ylabel(ylabel)
         ax.set_title(f'{title_prefix} (sorted): {bench}')
         ax.legend(); ax.grid(True, axis='y', alpha=0.3)
-        save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_{base}-{comp}_herman_sorted.png'))
+        save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_{base}-{comp}_herman_sorted{fs}.png'))
 
     print(f"Saved robust Herman plots under: {root}")
-
-if __name__ == "__main__":
-    main()
+    print(f"Done: {comp} vs {base}")

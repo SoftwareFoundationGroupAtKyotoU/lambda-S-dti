@@ -12,6 +12,15 @@
 
 #include "capp.h"
 
+#ifdef PROFILE
+static inline void update_longest(int new) {
+	if (new > current_longest) {
+		current_longest = new;
+	}
+	return;
+}
+#endif
+
 #ifdef CAST
 #include "ty.h"
 
@@ -39,6 +48,9 @@ int ty_equal (ty *t1, ty *t2) {
 }
 
 value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input = x:t1=>t2
+	#ifdef PROFILE
+	current_cast++;
+	#endif
 	// when t1 and t2 are same // R_ID (x:U=>U -> x)
 	if (t1 == t2) return x;
 	if (ty_equal(t1, t2)) return x;
@@ -48,50 +60,74 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 	
 	switch(tk1) {
 		case BASE_INT: {			// when t1 is ground and t2 is ?
-			if (tk2 == DYN) {
-				value retx;
-				// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-				retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-				retx.d->v = x;
-				retx.d->g = G_INT;
-				retx.d->rid = rid;
-				retx.d->polarity = polarity;
-				return retx;
-			} else {
-				break;
+			switch(tk2) {
+				case DYN: {
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
+					value retx;
+					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
+					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
+					retx.d->v = x;
+					retx.d->g = G_INT;
+					retx.d->rid = rid;
+					retx.d->polarity = polarity;
+					return retx;
+				}
+				default: break;
 			}
+			break;
 		}
 		case BASE_BOOL: {
-			if (tk2 == DYN) {
-				value retx;
-				// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-				retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-				retx.d->v = x;
-				retx.d->g = G_BOOL;
-				retx.d->rid = rid;
-				retx.d->polarity = polarity;
-				return retx;
-			} else {
-				break;
+			switch(tk2) {
+				case DYN: {
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
+					value retx;
+					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
+					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
+					retx.d->v = x;
+					retx.d->g = G_BOOL;
+					retx.d->rid = rid;
+					retx.d->polarity = polarity;
+					return retx;
+				}
+				default: break;
 			}
+			break;
 		}
 		case BASE_UNIT: {
-			if (tk2 == DYN) {
-				value retx;
-				// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-				retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-				retx.d->v = x;
-				retx.d->g = G_UNIT;
-				retx.d->rid = rid;
-				retx.d->polarity = polarity;
-				return retx;
-			} else {
-				break;
+			switch(tk2) {
+				case DYN: {
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
+					value retx;
+					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
+					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
+					retx.d->v = x;
+					retx.d->g = G_UNIT;
+					retx.d->rid = rid;
+					retx.d->polarity = polarity;
+					return retx;
+				}
+				default: break;
 			}
+			break;
 		}
 		case TYFUN: {
 			switch(tk2) {
 				case TYFUN: { 				// when t1 and t2 are function type
+					#ifdef PROFILE
+					int cur = 1;
+					fun *tmp = x.f;
+					while(tmp->funkind != WRAPPED) {
+						cur++;
+						tmp = tmp->fundat.wrap.w;
+					}
+					update_longest(cur);
+					#endif
 					value retx;
 					// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function
 					retx.f = (fun*)GC_MALLOC(sizeof(fun));
@@ -106,6 +142,15 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case DYN: {
 					if (t1->tydat.tyfun.left->tykind == DYN && t1->tydat.tyfun.right->tykind == DYN) {
+						#ifdef PROFILE
+						int cur = 1;
+						fun *tmp = x.f;
+						while(tmp->funkind != WRAPPED) {
+							cur++;
+							tmp = tmp->fundat.wrap.w;
+						}
+						update_longest(cur);
+						#endif
 						value retx;
 						// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
 						retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
@@ -120,6 +165,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						return cast(x_, &tyar, t2, rid, polarity);
 					}
 				}
+				default: break;
 			}
 			break;
 		}
@@ -132,7 +178,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
     				value curr_src = x;
 					ty *tylist1 = t1->tydat.tylist;
 					ty *tylist2 = t2->tydat.tylist;
-    				while (curr_src.l != NULL) {
+    				while(curr_src.l != NULL) {
     				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
     				    dest->l = new_lst;
     				    new_lst->h = cast(curr_src.l->h, tylist1, tylist2, rid, polarity);
@@ -142,6 +188,15 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
     				dest->l = NULL;
     				return retv;
 					#else
+					#ifdef PROFILE
+					int cur = 1;
+					lst *tmp = x.l;
+					while(tmp->lstkind != WRAPPED_LIST) {
+						cur++;
+						tmp = tmp->lstdat.wrap_l.w;
+					}
+					update_longest(cur);
+					#endif
 					value retx;
 					// printf("defined as a wrapped list\n");						// define x:[U1]=>[U2] as wrapped list
 					retx.l = (lst*)GC_MALLOC(sizeof(lst));
@@ -157,6 +212,19 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case DYN: {
 					if (t1->tydat.tylist->tykind == DYN) {
+						#ifdef PROFILE
+						int cur = 1;
+						#ifdef EAGER
+						update_longest(1);
+						#else
+						lst *tmp = x.l;
+						while(tmp->lstkind != WRAPPED_LIST) {
+							cur++;
+							tmp = tmp->lstdat.wrap_l.w;
+						}
+						update_longest(cur);
+						#endif
+						#endif
 						value retx;
 						// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
 						retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
@@ -171,6 +239,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						return cast(x_, &tyli, t2, rid, polarity);
 					}
 				}
+				default: break;
 			}
 			break;
 		}
@@ -243,21 +312,33 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					switch(x.d->g) {
 						case(G_INT): {											// when t1's injection ground type is int
 							// printf("DTI : int was inferred\n");							// R_INSTBASE (x':int=>?=>X -[X:=int]> x')
+							#ifdef PROFILE
+							current_inference++;
+							#endif
 							*t2 = tyint;
 							return x.d->v;
 						}
 						case(G_BOOL): {												// when t1's injection ground type is bool	
 							// printf("DTI : bool was inferred\n");							// R_INSTBASE (x':bool=>?=>X -[X:=bool]> x')
+							#ifdef PROFILE
+							current_inference++;
+							#endif
 							*t2 = tybool;
 							return x.d->v;
 						}
 						case(G_UNIT): {											// when t1's injection ground type is unit
 							// printf("DTI : unit was inferred\n");							// R_INSTBASE (x':unit=>?=>X -[X:=unit]> x')
+							#ifdef PROFILE
+							current_inference++;
+							#endif
 							*t2 = tyunit;
 							return x.d->v;
 						}
 						case(G_AR):	{												// when t1's injection ground type is ?->?
 							// printf("DTI : arrow was inferenced\n");							// R_INSTARROW (x':?->?=>?=>X -[X:=X_1->X_2]> x':?->?=>X_1->X_2)
+							#ifdef PROFILE
+							current_inference++;
+							#endif
 							t2->tykind = TYFUN;
 							t2->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));
 							t2->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));
@@ -267,6 +348,9 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 						case(G_LI):	{												// when t1's injection ground type is [?]
 							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':[?]=>?=>X -[X:=X_1->X_2]> x':[?]=>[X_1])
+							#ifdef PROFILE
+							current_inference++;
+							#endif
 							t2->tykind = TYLIST;
 							t2->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));
 							t2->tydat.tylist->tykind = TYVAR;
@@ -285,6 +369,9 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 #else
 value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
+	#ifdef PROFILE
+	current_cast++;
+	#endif
 	switch (s->crckind) {
 		case ID: return v; // v<id> -> v
 		case BOT: { // v<bot^p> -> blame p
@@ -305,6 +392,9 @@ value coerce(value v, crc *s) {
 					return retv;
 				}
 			} else {                   // u<s'=>t'> -> u<<s'=>t'>>
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
 				value retv;
 				retv.f = (fun*)GC_MALLOC(sizeof(fun));
 				retv.f->funkind = WRAPPED;
@@ -342,6 +432,9 @@ value coerce(value v, crc *s) {
 					return retv;
 				}
 			} else {                   // u<[s']> -> u<<[s']>>
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
 				value retv;
 				retv.l = (lst*)GC_MALLOC(sizeof(lst));
 				retv.l->lstkind = WRAPPED_LIST;
@@ -353,7 +446,7 @@ value coerce(value v, crc *s) {
 		}
 		case TV_INJ: {
 			normalize_crc(s);
-			return coerce(v, s);
+			// return coerce(v, s);
 		}
 		case SEQ_INJ: 
 		switch(s->crcdat.seq_tv.ptr.s->crckind) {
@@ -369,6 +462,9 @@ value coerce(value v, crc *s) {
 					retv.d->d->crcdat.seq_tv.ptr.s = c;
 					return retv;
 				} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
 					retv.d->v.f = v.f;
 					retv.d->d = s;
 					return retv;
@@ -378,11 +474,14 @@ value coerce(value v, crc *s) {
 				value retv;
 				retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
 				#ifdef EAGER
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
 				retv.d->v.l = v.l;
 				retv.d->d = s;
 				return retv;
 				#else
-				if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {                                      // u<<[s]>><[s'];G!>
+				if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
 					crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.seq_tv.ptr.s);
 					retv.d->v.l = v.l->lstdat.wrap_l.w;
 					retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
@@ -391,6 +490,9 @@ value coerce(value v, crc *s) {
 					retv.d->d->crcdat.seq_tv.ptr.s = c;
 					return retv;
 				} else { // u<[s'];G!> -> u<<[s'];G!>>
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
 					retv.d->v.l = v.l;
 					retv.d->d = s;
 					return retv;
@@ -398,6 +500,9 @@ value coerce(value v, crc *s) {
 				#endif
 			}
 			default: {// v<id;G!> -> v<<id;G!>>
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
 				value retv;
 				retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
 				retv.d->v = v;

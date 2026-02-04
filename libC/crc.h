@@ -8,7 +8,7 @@
 // TODO: ground_tyにNONE,TVを追加し，SEQ_やTV_を消す最適化(?)が考えられる
   // -> プログラムは読みやすくなるが，計算時間は速くはならなさそう
 typedef struct crc {
-	// header: 4byte
+	// header: 6byte
 	enum crckind : uint8_t {
 		ID, // 0
 		BOT, // 1

@@ -46,4 +46,10 @@ typedef struct crc crc;
 extern range *range_list;
 #endif
 
+#ifdef PROFILE
+extern int current_inference;
+extern int current_cast;
+extern int current_longest;
+#endif
+
 #endif

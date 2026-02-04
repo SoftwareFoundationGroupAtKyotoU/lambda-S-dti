@@ -16,12 +16,20 @@
 // @param num_entries データの行数 (JSONLの行数)
 // @param num_times データの一行の要素数 (列数)
 // @return 成功時に 0、失敗時に 1 を返す。
-int update_jsonl_file_dynamic_size(
+int update_jsonl_file(
     const char *input_filename, 
     const double *times_data, 
-    const int *counts_data,
     int num_entries, 
     int num_times
+);
+
+int update_jsonl_file_profile(
+    const char *input_filename, 
+    const int *gc_counts,
+    const int *cast_counts,
+    const int *inference_counts,
+    const int *longest,
+    int num_entries
 );
 
 #endif // JSONL_UPDATER_H

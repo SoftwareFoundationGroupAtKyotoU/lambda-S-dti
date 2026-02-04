@@ -81,9 +81,7 @@ plot: check-python check-uv
 	@uv venv
 	@uv pip install -q -r scripts/requirements.txt
 	@uv run python scripts/check_requirements.py
-	@uv run python scripts/plot_relative.py
-	@uv run python scripts/plot_scattered.py
-	@uv run python scripts/plot_herman.py
+	@uv run python scripts/plot_all.py
 	@echo "✅ Graphs generated."
 
 # レポート生成（uv venv + 依存導入 + 実行）

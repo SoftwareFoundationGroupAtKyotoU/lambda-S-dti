@@ -1,6 +1,7 @@
 open Syntax
 open Syntax.Cls
 open Format
+open Config
 open Utils.Error
 
 exception ToC_bug of string
@@ -638,7 +639,7 @@ let toC_ranges ppf ranges =
   let toC_sep ppf () = fprintf ppf ",\n" in
   let toC_list ppf range = pp_print_list toC_range ppf range ~pp_sep:toC_sep in
   if List.length ranges = 0 then 
-    fprintf ppf "#ifndef STATIC\nstatic range local_range_list[] = { 0 };\n#endif\n\n"
+    fprintf ppf ""(*"#ifndef STATIC\nstatic range local_range_list[] = { 0 };\n#endif\n\n"*)
   else
   fprintf ppf "static range local_range_list[] = {\n%a\n};\n\n"
     toC_list ranges
@@ -652,34 +653,34 @@ let toC_label ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun_%s(value, value);"
+    fprintf ppf "static value fun_%s(value, value);"
       l
   else if num = 0 then
-    fprintf ppf "value fun_%s(value, value, ty**);"
+    fprintf ppf "static value fun_%s(value, value, ty**);"
       l
   else if num'= 0 then
-    fprintf ppf "value fun_%s(value, value, value*);"
+    fprintf ppf "static value fun_%s(value, value, value*);"
       l
   else
-    fprintf ppf "value fun_%s(value, value, value*, ty**);"
+    fprintf ppf "static value fun_%s(value, value, value*, ty**);"
       l
 | FundefM { name = l; tvs = (tvs, _); arg = _; formal_fv = fvl; body = _ } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun%s_%s(value);"
+    fprintf ppf "static value fun%s_%s(value);"
       (if !is_alt then "_alt" else "")
       l
   else if num = 0 then
-    fprintf ppf "value fun%s_%s(value, ty**);"
+    fprintf ppf "static value fun%s_%s(value, ty**);"
       (if !is_alt then "_alt" else "")
       l
   else if num'= 0 then
-    fprintf ppf "value fun%s_%s(value, value*);"
+    fprintf ppf "static value fun%s_%s(value, value*);"
       (if !is_alt then "_alt" else "")
       l
   else
-    fprintf ppf "value fun%s_%s(value, value*, ty**);"
+    fprintf ppf "static value fun%s_%s(value, value*, ty**);"
       (if !is_alt then "_alt" else "")
       l
 
@@ -768,14 +769,14 @@ let toC_fundef ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s) {\n%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s) {\n%a%a}"
       l
       x
       y
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
       l
       x
       y
@@ -784,7 +785,7 @@ let toC_fundef ppf fundef = match fundef with
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
       l
       x
       y
@@ -793,7 +794,7 @@ let toC_fundef ppf fundef = match fundef with
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
       l
       x
       y
@@ -807,14 +808,14 @@ let toC_fundef ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s) {\n%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s) {\n%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
@@ -823,7 +824,7 @@ let toC_fundef ppf fundef = match fundef with
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
@@ -832,7 +833,7 @@ let toC_fundef ppf fundef = match fundef with
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
@@ -858,20 +859,21 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program ?(bench=0) ~alt ~intoB ~eager ppf (Prog (tvset, ranges, toplevel, f)) = 
+let toC_program ?(bench=0) ~config ppf (Prog (tvset, ranges, toplevel, f)) = 
   is_main := false;
-  is_alt := alt;
-  is_B := intoB;
-  is_eager := eager;
-  (* is_static := static; *)
-  fprintf ppf "%s\n%a%a%a%s%s%s%a%s"
+  is_alt := config.alt;
+  is_B := config.intoB;
+  is_eager := config.eager;
+  is_static := config.static;
+  fprintf ppf "%s\n%a%a%a%s%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
     toC_tys (TV.elements tvset, bench)
     toC_ranges ranges
     toC_fundefs toplevel
-    (if bench = 0 then "#ifndef STATIC\nrange *range_list;\n#endif\n\nint main() {\n" else asprintf "int mutant%d() {\n" bench)
-    "#ifndef STATIC\nrange_list = local_range_list;\n#endif\n"
+    (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
+    (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)
+    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

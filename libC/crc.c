@@ -481,6 +481,9 @@ static inline int occur_check(crc* c, const ty *tv) {
 }
 
 static inline void dti(const ground_ty g, ty *tv) {
+	#ifdef PROFILE
+	current_inference++;
+	#endif
 	switch(g) {
 		case G_AR: {
 			// printf("DTI : arrow was inferred\n");
@@ -749,6 +752,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) {   // X!p;;Y?q -> id [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}
@@ -763,6 +769,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) {   // X!p;;?qY!r -> Y!r [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}
@@ -777,6 +786,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) {   // X!p;;?q⊥Yr -> ⊥Yr [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}
@@ -830,6 +842,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) { // ?pX!q;;Y?r -> Y?p [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}
@@ -844,6 +859,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) { // ?pX!q;;?p'Y!q' -> ?pY!q' [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}
@@ -858,6 +876,9 @@ crc* compose(crc *c1, crc *c2) {
 					if (tv1 != tv2) { // ?pX!q;;?p'⊥Yq' -> ?p⊥Yq' [X:=Y]
 						// printf("DTI : tyvar was inferred\n");
 						// printf("%p <- %p\n", c1->crcdat.seq_tv.ptr.tv, c2->crcdat.seq_tv.ptr.tv);
+						#ifdef PROFILE
+						current_inference++;
+						#endif
 						tv1->tykind = SUBSTITUTED;
 						tv1->tydat.tv = tv2;
 					}

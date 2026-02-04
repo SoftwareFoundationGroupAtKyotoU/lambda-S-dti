@@ -4,6 +4,9 @@ open OUnit2
 
 open Lambda_S_dti
 open Syntax
+open Config
+
+let config = create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~opt_file:None ()
 
 let test_cases = List.map (fun l -> List.map (fun (a, b, c, _, _, _) -> (a, b, c)) l) Testcases.tests
 
@@ -35,7 +38,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
            env, tyenv
         )
-        (let env, tyenv, _, _ = Stdlib.pervasives_LB ~debug:false ~compile:false in env, tyenv)
+        (let env, tyenv, _, _ = Stdlib.pervasives_LB ~config in env, tyenv)
         cases
   in
   List.mapi test test_cases

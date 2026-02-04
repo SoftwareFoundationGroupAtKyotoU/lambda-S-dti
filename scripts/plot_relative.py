@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
     ratio_with_delta_ci, integer_xticks, save_fig,
-    base, comp,
 )
 
 def _binomial_boundaries_between(n_total: int):
@@ -27,9 +26,12 @@ def _binomial_boundaries_between(n_total: int):
             mids.append(cum + 0.5)
     return mids
 
-def main():
-    cfg = load_config()
-    latest, date_dir, data = ingest_latest_as_map(cfg)
+def plot_relative(base: str, comp: str, static: bool):
+    fs = ""
+    if static:
+        fs = "_fs"
+    cfg = load_config(base, comp, static)
+    latest, date_dir, data = ingest_latest_as_map(base, comp, cfg)
     rcfg = cfg["relative"]
 
     out_dir = os.path.join(date_dir, rcfg["outdir"])
@@ -70,7 +72,7 @@ def main():
         ax.set_xlabel(rcfg["xlabel"]); ax.set_ylabel(rcfg["ylabel"])
         ax.set_title(f'{rcfg["title_prefix"]}: {bench} ({comp} relative to {base})')
         ax.grid(True, axis='y', linestyle='--', alpha=0.35); ax.legend()
-        save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_relative_zigzag.png'))
+        save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_relative_zigzag{fs}.png'))
 
         # 2) 比の昇順並べ替え
         bundle = sorted(zip(ns, ratios, cis), key=lambda x: x[1])
@@ -86,9 +88,7 @@ def main():
         ax.set_ylabel(rcfg["ylabel"])
         ax.set_title(f'{rcfg["title_prefix"]} (filtered & sorted): {bench}')
         ax.legend(); ax.grid(True, axis='y', alpha=0.3)
-        save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_relative_sorted.png'))
+        save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_relative_sorted{fs}.png'))
 
     print(f"Saved relative plots under: {out_dir}")
-
-if __name__ == "__main__":
-    main()
+    print(f"Done: {comp} vs {base}")

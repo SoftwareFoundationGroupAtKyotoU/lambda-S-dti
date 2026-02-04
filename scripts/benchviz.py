@@ -19,58 +19,69 @@ try:
 except Exception:
     stats = None
 
-base = "AEC"
-comp = "ALC"
+TARGET_PAIRS = [ # (base, comp)
+    ("BLC", "ALC"),
+    ("BLC", "SLC"),
+    ("SLC", "ALC"),
+    ("STATICC", "ALC"),
+]
 
 # =========================
 # 設定まわり
 # =========================
-_DEFAULT_CONFIG = {
-    "log_root": "logs",
-    "json_pattern": fr"({base}|{comp})_(.*?)\.(jsonl|json)$",
-    "target_benchmarks": [
-        "church_big", "church_small", "church",
-        "evenodd", "fib", "tak", "loop", "fold", "map",
-        "mklist", "zipwith", 
-    ],
-    # 相対グラフ
-    "relative": {
-        "outdir": "relative",
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": f"Relative Execution Time ({comp} / {base})",
-        "title_prefix": "Relative Performance",
-        "zigzag_tiers": 10,
-        "zigzag_fontsize": 5
-    },
-    # 散布グラフ
-    "scattered": {
-        "outdir": "scattered",
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": "Execution Time (seconds)",
-        "title_prefix": "Benchmark"
-    },
-    # Herman
-    "herman": {
-        "outdir": "herman",
-        "mad_k": 1,
-        "min_n": 2,
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": f"Relative Execution Time ({comp} / {base})",
-        "title_prefix": "Herman (robust)"
-    },
-    # 極端比レポート
-    "ratio_extremes": {
-        "outdir_high": "ratio_high",
-        "outdir_low": "ratio_low",
-        "ratio_high_min": 1.2,
-        "ratio_low_max": 0.5,
-        "require_ci_excludes_1": True
-    }
-}
+def get_config(base: str, comp: str, static: bool) -> Dict[str, Any]:
+    """baseとcompを受け取って、そのペア専用の設定辞書を返す"""
+    fs = ""
+    if static:
+        fs = "_fs"
 
-def load_config(path: str = "benchviz.config.json") -> Dict[str, Any]:
+    return { 
+        "log_root": "logs",
+        "json_pattern": fr"({base}|{comp})_(.*?){fs}\.(jsonl|json)$",
+        "target_benchmarks": [
+            "church_65532",
+            "evenodd", "fib", "fold", "loop", "map",
+            "mklist", "tak", "zipwith", 
+            "map_mono", "fold_mono", "zipwith_mono"
+        ],
+        # 相対グラフ
+        "relative": {
+            "outdir": "relative",
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": f"Relative Execution Time ({comp} / {base})",
+            "title_prefix": "Relative Performance",
+            "zigzag_tiers": 10,
+            "zigzag_fontsize": 5
+        },
+        # 散布グラフ
+        "scattered": {
+            "outdir": "scattered",
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": "Execution Time (seconds)",
+            "title_prefix": "Benchmark"
+        },
+        # Herman
+        "herman": {
+            "outdir": "herman",
+            "mad_k": 1,
+            "min_n": 2,
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": f"Relative Execution Time ({comp} / {base})",
+            "title_prefix": "Herman (robust)"
+        },
+        # 極端比レポート
+        "ratio_extremes": {
+            "outdir_high": "ratio_high",
+            "outdir_low": "ratio_low",
+            "ratio_high_min": 1.2,
+            "ratio_low_max": 0.5,
+            "require_ci_excludes_1": True
+        }
+    }
+
+def load_config(base: str, comp:str, static: bool, path: str = "benchviz.config.json") -> Dict[str, Any]:
     """外部 JSON を読み込み、デフォルトとマージして返す。読み込んだ有効設定を標準出力に表示する。"""
-    cfg: Dict[str, Any] = dict(_DEFAULT_CONFIG)  # 既定ベース
+    cfg = get_config(base, comp, static)  # 既定ベース
     used_path = None
     user: Dict[str, Any] = {}
 
@@ -98,6 +109,18 @@ def load_config(path: str = "benchviz.config.json") -> Dict[str, Any]:
 
     return cfg
 
+def check_pair_exists(log_dir: str, base: str, comp: str, static: bool) -> bool:
+    """指定されたログディレクトリに base と comp の両方のログが含まれているか確認"""
+    files = os.listdir(log_dir)
+    has_base = False
+    has_comp = False
+    if not static:
+        has_base = any(f.startswith(f"{base}_") and (f.endswith((".json", ".jsonl"))) and not f.endswith(("_fs.json", "_fs.jsonl")) for f in files)
+        has_comp = any(f.startswith(f"{comp}_") and (f.endswith((".json", ".jsonl"))) and not f.endswith(("_fs.json", "_fs.jsonl")) for f in files)
+    else:
+        has_base = any(f.startswith(f"{base}_") and f.endswith(("_fs.json", "_fs.jsonl")) for f in files)
+        has_comp = any(f.startswith(f"{comp}_") and f.endswith(("_fs.json", "_fs.jsonl")) for f in files)
+    return has_base and has_comp
 
 # =========================
 # 共通 I/O
@@ -151,7 +174,7 @@ def _extract_promoted_bytes(mem_obj: Any) -> Optional[float]:
         return None
 
 
-def ingest_latest_as_map(cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
+def ingest_latest_as_map(base: str, comp: str, cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
     """
     最新ログディレクトリから、
       bench -> mutant_index -> {
@@ -299,7 +322,9 @@ def save_fig(fig, path: str, dpi: int = 150, tight: bool = True):
 # Markdown 出力補助
 # =========================
 
-def write_mutants_markdown(md_path: str,
+def write_mutants_markdown(base: str, 
+                           comp: str,
+                           md_path: str,
                            header: str,
                            latest_dirname: str,
                            filter_note: str,

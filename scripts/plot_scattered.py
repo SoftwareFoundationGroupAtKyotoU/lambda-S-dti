@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
-    base, comp,
 )
 
 from matplotlib.ticker import FixedLocator
 
-def main():
-    cfg = load_config()
-    latest, date_dir, data = ingest_latest_as_map(cfg)
+def plot_scattered(base: str, comp: str, static: bool):
+    fs = ""
+    if static:
+        fs = "_fs"
+    cfg = load_config(base, comp, static)
+    latest, date_dir, data = ingest_latest_as_map(base, comp, cfg)
     scfg = cfg["scattered"]
 
     out_dir = os.path.join(date_dir, scfg["outdir"])
@@ -54,10 +56,8 @@ def main():
         ax.set_xticklabels([]); ax.tick_params(axis='x', length=0)
         ax.grid(True, axis='y', linestyle='--', alpha=0.35)
         fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_confidence.png'), dpi=150)
+        fig.savefig(os.path.join(out_dir, f'plot_{bench}_{base}-{comp}_confidence{fs}.png'), dpi=150)
         plt.close(fig)
 
     print(f"Saved scatter plots under: {out_dir}")
-
-if __name__ == "__main__":
-    main()
+    print(f"Done: {comp} vs {base}")

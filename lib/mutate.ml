@@ -423,7 +423,9 @@ let mutate_all (p:program) : program list =
   let t =
     match p with Exp t | LetDecl (_, t) -> t
   in
-  let _, u = Typing.ITGL.type_of_program Environment.empty p in
+  let tyenv = Environment.empty in
+  let p, u = Typing.ITGL.type_of_program tyenv p in
+  let _, p, _ = Typing.ITGL.normalize tyenv p u in 
   Format.fprintf Format.std_formatter "program's type is %a\n" Pp.pp_ty u;
   let a = analyze t in
   let n_total = a.n_fun + 2 * a.n_fix + a.n_tapp in
