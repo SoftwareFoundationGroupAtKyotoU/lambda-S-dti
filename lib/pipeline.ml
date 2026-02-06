@@ -255,7 +255,7 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then 
-    asprintf "gcc %s/bench/%s%s%s.c %s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O2" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "gcc %s/bench/%s%s%s.c %s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir 
       file 
       mode_str
@@ -271,15 +271,15 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       (if profile then "_profile" else "")
   else match opt_file with
   | Some filename -> 
-    asprintf "gcc ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O2"
+    asprintf "gcc ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
       filename
       mode_var
       lst_var
       static_var
       filename
   | None -> 
-    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O2 *)
-    asprintf "gcc result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O2 *)
+    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
+    asprintf "gcc result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
       mode_var
       lst_var
       static_var

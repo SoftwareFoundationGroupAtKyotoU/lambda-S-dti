@@ -43,6 +43,12 @@ module CC = struct
     | UnitV -> print_newline (); UnitV
     | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
     )
+
+  let lib_read_int =
+    FunV (fun _ -> function
+    | UnitV -> let i = read_int () in IntV i
+    | _ -> raise @@ Stdlib_bug "read_int: unexpected value"
+    )
 end
 
 module LS1 = struct 
@@ -146,6 +152,28 @@ module LS1 = struct
       | UnitV, CoercionV c -> 
         print_newline (); 
         Eval.LS1.coerce ~debug:config.debug UnitV c
+      | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
+      )
+
+  let lib_read_int ~config =
+    if config.alt then
+      FunAV (fun _ -> 
+        (function
+        | UnitV -> 
+          let i = read_int () in 
+          IntV i
+        | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"),
+        (function
+        | UnitV, CoercionV c -> 
+          let i = read_int () in
+          Eval.LS1.coerce ~debug:config.debug (IntV i) c
+        | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
+      )
+    else 
+      FunSV (fun _ -> function
+      | UnitV, CoercionV c -> 
+        let i = read_int () in
+        Eval.LS1.coerce ~debug:config.debug (IntV i) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 end
@@ -289,6 +317,33 @@ module KNorm = struct
         Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
+
+  let lib_read_int ~config = 
+    if config.intoB then 
+      FunBV (fun _ -> function
+      | IntV 0 -> let i = read_int () in IntV i
+      | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
+      )
+    else if config.alt then
+      FunAV (fun _ -> 
+        (function
+        | IntV 0 -> 
+          let i = read_int () in
+          IntV i
+        | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"),
+        (function
+        | IntV 0, CoercionV c -> 
+          let i = read_int () in
+          Eval.KNorm.coerce ~debug:config.debug (IntV i) c
+        | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
+      )
+    else 
+      FunSV (fun _ -> function
+      | IntV 0, CoercionV c -> 
+        let i = read_int () in 
+        Eval.KNorm.coerce ~debug:config.debug (IntV i) c
+      | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
+      )
 end
 
 let pervasives_LB ~config = 
@@ -305,6 +360,7 @@ let pervasives_LB ~config =
     "print_bool", [], CC.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool ~config;
     "print_int", [], CC.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int ~config;
     "print_newline", [], CC.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline ~config;
+    "read_int", [], CC.lib_read_int, tysc_of_ty @@ TyFun (TyUnit, TyInt), KNorm.lib_read_int ~config;
   ] in
   let env, tyenv, kfunenvs, kenv =
     List.fold_left
@@ -363,6 +419,7 @@ let pervasives_LS ~config =
     "print_bool", [], LS1.lib_print_bool ~config, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool ~config;
     "print_int", [], LS1.lib_print_int ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int ~config;
     "print_newline", [], LS1.lib_print_newline ~config, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline ~config;
+    "read_int", [], LS1.lib_read_int ~config, tysc_of_ty @@ TyFun (TyUnit, TyInt), KNorm.lib_read_int ~config;
   ] in
   let env, tyenv, kfunenvs, kenv =
     List.fold_left
@@ -408,4 +465,4 @@ let pervasives_LS ~config =
   in
   env, tyenv, kfunenvs, kenv
 
-let venv = List.fold_left (fun vs -> fun x -> V.add x vs) V.empty ["print_int"; "print_bool"; "print_newline"; "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]
+let venv = List.fold_left (fun vs -> fun x -> V.add x vs) V.empty ["print_int"; "print_bool"; "print_newline"; "read_int"; "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]
