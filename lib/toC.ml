@@ -605,23 +605,16 @@ let toC_fvs ppf fvl =
 (*型変数をカウントする変数*)
 let cnt_tv = ref 0
 
-let toC_tv n ppf (i, _) = (* TODO *)
-  if !cnt_tv < n then
-    (fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d = tvs[%d];"
-      i
-      i
-      !cnt_tv;
-    cnt_tv := !cnt_tv + 1)
-  else 
-    (fprintf ppf "ty *_ty%d = tvs[%d];"
-      i
-      !cnt_tv;
-    cnt_tv := !cnt_tv + 1)
+let toC_tv ppf (i, _) = (* TODO *)
+  fprintf ppf "ty *_ty%d = tvs[%d];"
+    i
+    !cnt_tv;
+  cnt_tv := !cnt_tv + 1
 
-let toC_tvs ppf (tvl, n) =
+let toC_tvs ppf tvl =
   cnt_tv := 0;
   let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf tv = pp_print_list (toC_tv n) ppf tv ~pp_sep:toC_sep in
+  let toC_list ppf tv = pp_print_list toC_tv ppf tv ~pp_sep:toC_sep in
   fprintf ppf "%a\n"
     toC_list tvl
 
@@ -765,7 +758,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
 
 let toC_fundef ppf fundef = match fundef with
-| FundefD { name = l; tvs = (tvs, n); arg = (x, y); formal_fv = fvl; body = f } ->
+| FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
@@ -782,7 +775,7 @@ let toC_fundef ppf fundef = match fundef with
       y
       num'
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs (tvs, n)
+      toC_tvs tvs
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
     fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
@@ -801,10 +794,10 @@ let toC_fundef ppf fundef = match fundef with
       num
       num'
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs (tvs, n)
+      toC_tvs tvs
       toC_fvs fvl
       toC_exp f
-| FundefM { name = l; tvs = (tvs, n); arg = x; formal_fv = fvl; body = f } ->
+| FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
@@ -821,7 +814,7 @@ let toC_fundef ppf fundef = match fundef with
       x
       num'
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs (tvs, n)
+      toC_tvs tvs
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
     fprintf ppf "static value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
@@ -840,7 +833,7 @@ let toC_fundef ppf fundef = match fundef with
       num
       num'
       toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs (tvs, n)
+      toC_tvs tvs
       toC_fvs fvl
       toC_exp f
   
