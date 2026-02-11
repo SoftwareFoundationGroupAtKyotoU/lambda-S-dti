@@ -1,0 +1,11 @@
+(define (even [x : Int]) : Bool
+  (if (= x 0)
+      True
+      (if (= (- x 1) 0)
+          False
+          (even (- x 2)))))
+
+(define (benchmark) : Unit
+  (if (even (read-int))
+      (print-bool True)
+      (print-bool False)))

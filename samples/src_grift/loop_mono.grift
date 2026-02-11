@@ -1,0 +1,9 @@
+(define (loop [n : Int] [acc : Int] [f : (Int -> Int)]) : Int
+  (if (= n 0)
+      acc
+      (loop (- n 1) (f acc) f)))
+
+(define (id [x : Int]) : Int x)
+
+(define (benchmark) : Unit
+  (print-int (loop (read-int) 0 id)))
