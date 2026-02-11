@@ -1,0 +1,24 @@
+FROM ubuntu:20.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1. 必要なツールと開発用パッケージ(g++, racket-dev)を一括インストール
+RUN apt-get update && apt-get install -y \
+    racket \
+    llvm-11-dev \
+    clang-11 \
+    make \
+    gcc \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Griftのインストール
+RUN raco pkg install --auto --name grift https://github.com/Gradual-Typing/>
+
+# 3. 環境変数の永続化
+# LLVMの設定ツールを指定
+ENV LLVM_CONFIG=llvm-config-11
+# Griftのパスを自動で計算して .bashrc に追加
+RUN echo "export PATH=\$PATH:\$(racket -e '(require setup/dirs) (displayln >
+
+WORKDIR /workspace
