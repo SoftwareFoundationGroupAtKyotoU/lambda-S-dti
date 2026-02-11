@@ -64,6 +64,7 @@ value appM(value f, value v) {									// reduction of f(v)
 			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl(arg, s, g->fundat.poly.tas);
 			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c(arg, s, g->fundat.closure_alt.fvs);	// if f is closure R_BETA : return f(v, fvs)		
 			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc(arg, s, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);	// if f is closure R_BETA : return f(v, fvs)
+			default: exit(1);
 		}
 	}
 
@@ -73,6 +74,7 @@ value appM(value f, value v) {									// reduction of f(v)
 		case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl_a(arg, g->fundat.poly.tas);
 		case(CLOSURE): return g->fundat.closure_alt.cls_alt.c_a(arg, g->fundat.closure_alt.fvs); // if f is closure R_BETA : return f(v, fvs)
 		case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a(arg, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas); // if f is closure R_BETA : return f(v, fvs)
+		default: exit(1);
 	}
 }
 #endif
@@ -101,6 +103,7 @@ value appD(value f, value v, value w) {									// reduction of f(v)
 			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl_a(arg, g->fundat.poly.tas);
 			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c_a(arg, g->fundat.closure_alt.fvs);
 			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a(arg, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);
+			default: exit(1);
 		}
 	} else {
 		switch(g->funkind) {
@@ -108,6 +111,7 @@ value appD(value f, value v, value w) {									// reduction of f(v)
 			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl(arg, s, g->fundat.poly.tas);
 			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c(arg, s, g->fundat.closure_alt.fvs);
 			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc(arg, s, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);
+			default: exit(1);
 		}
 	}
 	#else
@@ -116,6 +120,7 @@ value appD(value f, value v, value w) {									// reduction of f(v)
 		case(POLY_LABEL): return g->fundat.poly.f.poly_label(arg, s, g->fundat.poly.tas);
 		case(CLOSURE): return g->fundat.closure.cls(arg, s, g->fundat.closure.fvs);
 		case(POLY_CLOSURE): return g->fundat.poly.f.poly_closure.pcls(arg, s, g->fundat.poly.f.poly_closure.fvs, g->fundat.poly.tas);
+		default: exit(1);
 	}
 	#endif
 }

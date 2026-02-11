@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int did_not_match() {
+__attribute__((noreturn)) void did_not_match() {
 	printf("didn't match");
 	exit(1);
 }

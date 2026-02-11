@@ -253,7 +253,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", t, G_INT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
-						exit(1);
 					}
 				}
 				case BASE_BOOL: {
@@ -263,7 +262,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_BOOL);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
-						exit(1);
 					}
 				}
 				case BASE_UNIT: {
@@ -273,7 +271,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_UNIT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
-						exit(1);
 					}
 				}
 				case TYFUN: {
@@ -284,7 +281,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						} else {											// when t1's injection ground type dosen't equal t2
 							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_AR);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
-							exit(1);
 						}
 					} else {			// when t1 is ? and t2 is function type
 						// printf("cast expand\n");
@@ -300,7 +296,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						} else {											// when t1's injection ground type dosen't equal t2
 							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
-							exit(1);
 						}
 					} else {			// when t1 is ? and t2 is function type
 						// printf("cast expand\n");
@@ -358,6 +353,10 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 					}
 				}
+				case DYN: {
+					printf("Dyn and Dyn should be omitted by id");
+					exit(1);
+				}
 			}
 		}
 		default: break;
@@ -376,7 +375,6 @@ value coerce(value v, crc *s) {
 		case ID: return v; // v<id> -> v
 		case BOT: { // v<bot^p> -> blame p
 			blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-			exit(1);
 		}
 		case FUN: { // v<s'=>t'>
 			if (v.f->funkind == WRAPPED) { // u<<s=>t>><s'=>t'>
@@ -518,7 +516,6 @@ value coerce(value v, crc *s) {
 				case ID: return v.d->v;     // u<<d>><s> -> u<id> -> u
 				case BOT: {
 					blame(c1->crcdat.seq_tv.rid_proj, c1->p_proj);
-					exit(1);
 				}
 				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
 					value retv;
@@ -566,7 +563,7 @@ value coerce(value v, crc *s) {
 }		
 #endif	
 
-int blame(uint32_t rid, uint8_t polarity) {
+__attribute__((noreturn)) void blame(uint32_t rid, uint8_t polarity) {
 	if(polarity == 1) {
 		printf("Blame on the expression side:\n");
 	} else {
@@ -574,7 +571,7 @@ int blame(uint32_t rid, uint8_t polarity) {
 	}
 	range r = range_list[rid];
 	printf("%sline %d, character %d -- line %d, character %d\n", r.filename, r.startline, r.startchr, r.endline, r.endchr);
-	return 0;
+	exit(0);
 }
 
 #endif

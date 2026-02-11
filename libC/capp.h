@@ -10,7 +10,7 @@ value cast(value, ty*, ty*, uint32_t, uint8_t);
 value coerce(value, crc*);
 #endif
 
-int blame(uint32_t, uint8_t);
+void blame(uint32_t, uint8_t) __attribute__((noreturn));
 #endif
 
 #endif

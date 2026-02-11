@@ -440,6 +440,9 @@ static inline crc *compose_g(crc *c1, crc *c2) {
 		case ID: return c2;
 		case FUN: return compose_funs(c1, c2);
 		case LIST: return compose_lists(c1, c2);
+		default: 
+			printf("not g is applied to compose_g");
+			exit(1);
 	}
 }
 
@@ -620,6 +623,7 @@ crc* compose(crc *c1, crc *c2) {
 						return c2->crcdat.seq_tv.ptr.s;
 					}
 				}
+				default: goto COMPOSE_BAD;
 			}
 		}
 		case SEQ_PROJ_INJ: 
@@ -693,6 +697,7 @@ crc* compose(crc *c1, crc *c2) {
 						return new_seq_proj_bot(c1, c2->crcdat.seq_tv.ptr.s);
 					}
 				}
+				default: goto COMPOSE_BAD;
 			}
 		}
 		case TV_PROJ: {                                // X?p;;s
@@ -794,6 +799,7 @@ crc* compose(crc *c1, crc *c2) {
 					}
 					return new_bot(c2->p_inj, c2->crcdat.seq_tv.rid_inj, 1); // X!p;;?q⊥Xr -> ⊥r
 				}
+				default: goto COMPOSE_BAD;
 			}
 		}
 		case TV_PROJ_INJ: {				// ?pX!q;;s
@@ -884,6 +890,7 @@ crc* compose(crc *c1, crc *c2) {
 					}
 					return new_tv_proj_occur(c1, c2->p_inj, c2->crcdat.seq_tv.rid_inj); // ?pX!q;;?p'⊥Xq' -> ?p⊥Xq'
 				}
+				default: goto COMPOSE_BAD;
 			}
 		}
 		case FUN: {
@@ -898,6 +905,7 @@ crc* compose(crc *c1, crc *c2) {
 					return new_seq_inj(compose_funs(c1, c2->crcdat.seq_tv.ptr.s), c2);
 				}
 				case FUN: return compose_funs(c1, c2);  // s=>t;;s'=>t' -> s';;s=>t;;t'
+				default: goto COMPOSE_BAD;
 			}
 		}
 		case LIST: {
@@ -912,9 +920,13 @@ crc* compose(crc *c1, crc *c2) {
 					return new_seq_inj(compose_lists(c1, c2->crcdat.seq_tv.ptr.s), c2);
 				}
 				case LIST: return compose_lists(c1, c2);
+				default: goto COMPOSE_BAD;
 			}
 		}
+		default: goto COMPOSE_BAD;
 	}
+
+	COMPOSE_BAD: 
 	printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
 	exit(1);
 }

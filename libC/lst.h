@@ -35,7 +35,7 @@ typedef struct lst {
 	#endif
 } lst;
 
-int did_not_match();
+void did_not_match() __attribute__((noreturn));;
 
 #if !defined(EAGER) && !defined(STATIC)
 value hd(lst*);

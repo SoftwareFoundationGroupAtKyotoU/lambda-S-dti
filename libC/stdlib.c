@@ -72,6 +72,36 @@ value fun_alt_print_newline(value v) {
 	return retv;
 }
 
+value fun_read_int(value v, value w) {
+	value retv;
+	int64_t i = v.i_b_u;
+	if (i == 0) {
+		if (scanf("%ld", &retv.i_b_u) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_int");
+		exit(1);
+	}
+	return coerce(retv, w.s);
+}
+
+value fun_alt_read_int(value v) {
+	value retv;
+	int64_t i = v.i_b_u;
+	if (i == 0) {
+		if (scanf("%ld", &retv.i_b_u) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_int");
+		exit(1);
+	}
+	return retv;
+}
+
 value fun_not_ml(value b, value k) {
 	if(b.i_b_u == 1) {
 		value _retv = { .i_b_u = 0 };
@@ -269,6 +299,21 @@ value fun_print_newline(value v) {
 	return retv;
 }
 
+value fun_read_int(value v) {
+	value retv;
+	int64_t i = v.i_b_u;
+	if (i == 0) {
+		if (scanf("%ld", &retv.i_b_u) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}	
+	} else {
+		printf("error:not unit value is applied to read_int");
+		exit(1);
+	}
+	return retv;
+}
+
 value fun_not_ml(value b) {
 	if(b.i_b_u == 1) {
 		value retv = { .i_b_u = 0 };
@@ -384,6 +429,21 @@ value fun_print_newline(value v, value w) {
 	return coerce(retv, w.s);
 }
 
+value fun_read_int(value v, value w) {
+	value retv;
+	int64_t i = v.i_b_u;
+	if (i == 0) {
+		if (scanf("%ld", &retv.i_b_u) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_int");
+		exit(1);
+	}
+	return coerce(retv, w.s);
+}
+
 value fun_not_ml(value b, value k) {
 	if(b.i_b_u == 1) {
 		value _retv = { .i_b_u = 0 };
@@ -492,6 +552,7 @@ value fun_ignore(value x, value k, ty* tvs[1]) {
 static fun f_print_int     = INIT_LABEL(fun_print_int,     fun_alt_print_int);
 static fun f_print_bool    = INIT_LABEL(fun_print_bool,    fun_alt_print_bool);
 static fun f_print_newline = INIT_LABEL(fun_print_newline, fun_alt_print_newline);
+static fun f_read_int      = INIT_LABEL(fun_read_int,      fun_alt_read_int);
 static fun f_not_ml        = INIT_LABEL(fun_not_ml,        fun_alt_not_ml);
 static fun f_succ          = INIT_LABEL(fun_succ,          fun_alt_succ);
 static fun f_prec          = INIT_LABEL(fun_prec,          fun_alt_prec);
@@ -503,6 +564,7 @@ static fun f_ignore        = INIT_POLY_LABEL(fun_ignore,   fun_alt_ignore);
 static fun f_print_int     = INIT_LABEL(fun_print_int);
 static fun f_print_bool    = INIT_LABEL(fun_print_bool);
 static fun f_print_newline = INIT_LABEL(fun_print_newline);
+static fun f_read_int      = INIT_LABEL(fun_read_int);
 static fun f_not_ml        = INIT_LABEL(fun_not_ml);
 static fun f_succ          = INIT_LABEL(fun_succ);
 static fun f_prec          = INIT_LABEL(fun_prec);
@@ -521,6 +583,7 @@ value min_int = { .i_b_u = INT64_MIN };
 value print_int = { .f = &f_print_int };
 value print_bool = { .f = &f_print_bool };
 value print_newline = { .f = &f_print_newline };
+value read_int = { .f = &f_read_int };
 value not_ml = { .f = &f_not_ml };
 value succ = { .f = &f_succ };
 value prec = { .f = &f_prec };
