@@ -1,12 +1,9 @@
-(define (tak [x : Int] [y : Int] [z : Int]) : Int
-  (if (<= x y)
-      z
-      (tak (tak (- x 1) y z)
-           (tak (- y 1) z x)
-           (tak (- z 1) x y))))
+(define (tak [x : Int]) : (Int -> (Int -> Int))
+  (lambda ([y : Int])
+    (lambda ([z : Int])
+      (if (<= x y)
+        z
+        (((tak (((tak (- x 1)) y) z)) (((tak (- y 1)) z) x)) (((tak (- z 1)) x) y))))))
 
-(define (benchmark) : Unit
-  (let ([x : Int (read-int)])
-    (let ([y : Int (read-int)])
-      (let ([z : Int (read-int)])
-        (print-int (tak x y z))))))
+(define (benchmark) : Unit 
+  (print-int (((tak (read-int)) (read-int)) (read-int))))

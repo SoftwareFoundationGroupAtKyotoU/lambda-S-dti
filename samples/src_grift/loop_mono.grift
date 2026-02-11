@@ -1,9 +1,12 @@
-(define (loop [n : Int] [acc : Int] [f : (Int -> Int)]) : Int
-  (if (= n 0)
-      acc
-      (loop (- n 1) (f acc) f)))
+(define (loop [n : Int]) : (Int -> ((Int -> Int) -> Int))
+  (lambda ([acc : Int])
+    (lambda ([f : (Int -> Int)])
+      (if (= n 0)
+          acc
+          (((loop (- n 1)) (f acc)) f)))))
 
-(define (id [x : Int]) : Int x)
+(define (id [x : Int]) : Int
+  x)
 
 (define (benchmark) : Unit
-  (print-int (loop (read-int) 0 id)))
+  (print-int (((loop (read-int)) 0) id)))
