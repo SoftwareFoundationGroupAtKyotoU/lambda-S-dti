@@ -397,8 +397,10 @@ let mutate_prog_with_indices (idxs:int list) (p : program) : program =
   let mutated = match p with
     | Exp t     -> Exp (mutate_term_with_indices idxs t)
     | LetDecl (x,t) -> LetDecl (x, mutate_term_with_indices idxs t)
-  in let p, u = Typing.ITGL.type_of_program Environment.empty mutated in (* TODO: 各変異後のプログラムで意図されていない型変数への代入が起こっている→要修正 *)
-  let _, p, _ = Typing.ITGL.normalize Environment.empty p u in
+  in
+  let _, tyenv, _, _ = Stdlib.pervasives_LB ~config:(Config.default) in
+  let p, u = Typing.ITGL.type_of_program tyenv mutated in 
+  let _, p, _ = Typing.ITGL.normalize tyenv p u in
   p
 
 (* 0..n を長さ順に全列挙（昇順） *)
@@ -423,7 +425,7 @@ let mutate_all (p:program) : program list =
   let t =
     match p with Exp t | LetDecl (_, t) -> t
   in
-  let tyenv = Environment.empty in
+  let _, tyenv, _, _ = Stdlib.pervasives_LB ~config:(Config.default) in
   let p, u = Typing.ITGL.type_of_program tyenv p in
   let _, p, _ = Typing.ITGL.normalize tyenv p u in 
   Format.fprintf Format.std_formatter "program's type is %a\n" Pp.pp_ty u;

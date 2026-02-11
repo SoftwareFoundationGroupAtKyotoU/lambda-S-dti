@@ -244,7 +244,7 @@ let cc_compile ppf programs tyenv kfunenvs ~config ~bench_ppf ~bench =
   let c_code = toC ppf p ~config ~bench in
   c_code
 
-let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
+let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
   opt_file ~config ~bench ~profile =
   let intoB = config.intoB in
   let static = config.static in
@@ -255,7 +255,7 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then 
-    asprintf "gcc %s/bench/%s%s%s.c %s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir 
       file 
       mode_str
@@ -271,15 +271,15 @@ let build_gcc_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       (if profile then "_profile" else "")
   else match opt_file with
   | Some filename -> 
-    asprintf "gcc ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
+    asprintf "clang ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
       filename
       mode_var
       lst_var
       static_var
       filename
   | None -> 
-    (* gcc result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-    asprintf "gcc result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
+    (* clang result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
+    asprintf "clang result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3" (* TODO: -O3 *)
       mode_var
       lst_var
       static_var
@@ -292,8 +292,8 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "Generated C file: %s (Execution delegated)@." out_path *)
-    let i = Sys.command (build_gcc_cmd opt_file ~config ~bench:false ~profile:false) in
-    if i != 0 then raise @@ Compile_bad "gcc fail";
+    let i = Sys.command (build_clang_cmd opt_file ~config ~bench:false ~profile:false) in
+    if i != 0 then raise @@ Compile_bad "clang fail";
     let i = Sys.command ("../result/" ^ filename ^ ".out") in
     if i != 0 then raise @@ Compile_bad ".out fail";
     ()
@@ -304,8 +304,8 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "%s" (Compiler.build_cmd_for_stdin ()); *)
-    let i = Sys.command (build_gcc_cmd opt_file ~config ~bench:false ~profile:false) in
-    if i != 0 then raise @@ Compile_bad "gcc fail";
+    let i = Sys.command (build_clang_cmd opt_file ~config ~bench:false ~profile:false) in
+    if i != 0 then raise @@ Compile_bad "clang fail";
     let i = Sys.command "result/stdin.out" in
     if i != 0 then raise @@ Compile_bad ".out fail";
     ()
@@ -363,7 +363,7 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 
-      Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\n}\nprintf(\"mutant%d done. \");\nfflush(stdout);\n"
+      Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
        n (n - 1) n;
       print_itr (n + 1)
     end
@@ -380,7 +380,7 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 
-      Printf.fprintf oc "mutant%d();\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;\ncast_counts[%d] = current_cast;\ninference_counts[%d] = current_inference;\nlongest[%d] = current_longest;\ncurrent_cast = 0;\ncurrent_inference = 0;\ncurrent_longest = 0;\nprintf(\"mutant%d done. \");\nfflush(stdout);\n"
+      Printf.fprintf oc "mutant%d();\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;\ncast_counts[%d] = current_cast;\ninference_counts[%d] = current_inference;\nlongest[%d] = current_longest;\ncurrent_cast = 0;\ncurrent_inference = 0;\ncurrent_longest = 0;\nrewind(stdin);\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
        n (n - 1) (n - 1) (n - 1) (n - 1) n;
       print_itr (n + 1)
     end
@@ -388,20 +388,20 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   Printf.fprintf oc "return update_jsonl_file_profile(\"%s/%s_%s.jsonl\", gc_counts, cast_counts, inference_counts, longest, MUTANTS_LENGTH);\n}" log_dir mode_str file;
   close_out oc;
   (* build *)
-  let cmd = build_gcc_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false in
+  let cmd = build_clang_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false in
   fprintf std_formatter "@.%s@." cmd;
   let i = Sys.command cmd in
-  if i != 0 then raise @@ Compile_bad "gcc(for time) fail";
-  let cmd = build_gcc_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true in
+  if i != 0 then raise @@ Compile_bad "clang(for time) fail";
+  let cmd = build_clang_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true in
   fprintf std_formatter "@.%s@." cmd;
   let i = Sys.command cmd in
-  if i != 0 then raise @@ Compile_bad "gcc(for profile) fail";
+  if i != 0 then raise @@ Compile_bad "clang(for profile) fail";
   (* run *)
-  let cmd = asprintf "%s/bench/%s%s.out" log_dir file mode_str in
+  let cmd = asprintf "%s/bench/%s%s.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file in
   fprintf std_formatter "%s@." cmd;
   let i = Sys.command cmd in
   if i != 0 then raise @@ Compile_bad ".out(for time) fail";
-  let cmd = asprintf "%s/bench/%s%s_profile.out" log_dir file mode_str in
+  let cmd = asprintf "%s/bench/%s%s_profile.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file in
   fprintf std_formatter "%s@." cmd;
   let i = Sys.command cmd in
   if i != 0 then raise @@ Compile_bad ".out(for profile) fail";

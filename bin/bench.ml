@@ -13,13 +13,14 @@ let itr = 500
 let files = [
   (* "church_2"; *)
   (* "church_4"; *)
-  "church_65532"; 
+  (* "church_65532"; *)
   (* "easy"; *)
   "evenodd";
   "fib";
   "fold";
   "fold_mono";
   "loop";
+  "loop_mono";
   "map";
   "map_mono";
   "mklist";
@@ -146,7 +147,7 @@ let mem_json mode file idx ~compile =
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) =
-  let target_path = Printf.sprintf "samples/%s.ml" file in
+  let target_path = Printf.sprintf "samples/src/%s.ml" file in
   let _, lexeme = Pipeline.lex Format.std_formatter (Some target_path) in
   let decl  = Parser.toplevel Lexer.main lexeme in
   let lst_mutated = Mutate.mutate_all decl in
@@ -205,7 +206,6 @@ let bench_file_mode
       None, null_fmt, Some oc, ref true
   in
 
-  let tyenv = Syntax.Environment.empty in
   let ppf = Utils.Format.empty_formatter in
 
   (* ターゲット用 Progress を開始 *)
@@ -237,24 +237,32 @@ let bench_file_mode
       ) oc_opt;
 
       (* Coercion / Cast insertion *)
-      let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
-
       (* compileモードなら，コンパイルして.cに書き込み *)
-      if config.compile then begin
-        let decl = Pipeline.CC.tv_renew decl in
-        let c_code = 
-          if config.intoB then 
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LB ~config in
-            Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx
-          else
-            let _, _, kfunenvs, _ = Stdlib.pervasives_LS ~config in
-            Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx
-        in
-        let filename = Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx in
-        let oc = open_out filename in
-        Printf.fprintf oc "%s" c_code;
-        close_out oc
-      end;
+      let decl, tyenv = 
+        if config.compile then begin
+          let c_code, decl, tyenv = 
+            if config.intoB then 
+              let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LB ~config in
+              let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
+              let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
+              c_code, decl, tyenv
+            else
+              let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LS ~config in
+              let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
+              let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
+              c_code, decl, tyenv
+          in
+          let filename = Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx in
+          let oc = open_out filename in
+          Printf.fprintf oc "%s" c_code;
+          close_out oc;
+          decl, tyenv
+        end else 
+          let _, tyenv, _, _ = Stdlib.pervasives_LB ~config in
+          let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
+          let decl = Pipeline.CC.tv_renew decl in
+          decl, tyenv
+      in
 
       (* 実行時間のBenchmarking *)
       let lst_elapsed_time =
@@ -355,13 +363,16 @@ let () =
   let modes_ref = ref [] in
   let itr_ref = ref 0 in
   let static = ref false in
-  let dynamize = ref true in
+  let dynamize = ref false in
+  let grift = ref false in
   let specs = [
     ("-m", Arg.String (fun s -> modes_ref := mode_of_string s :: !modes_ref), " Select mode");
     ("-i", Arg.Int (fun i -> itr_ref := i), " Specify itration");
     ("-c", Arg.Unit (fun () -> modes_ref := [SLC; SEC; ALC; AEC; BLC; BEC; STATICC] @ !modes_ref), " Benchmarking all compile mode");
-    ("--static", Arg.Unit (fun () -> static := true; dynamize := false), " Benchmarking fully-static programs");
-    ("--all", Arg.Unit (fun  () -> static := true), " Benchmarking all");
+    ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
+    ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
+    ("--grift", Arg.Unit (fun () -> grift := true), " Benchmarking on grift");
+    ("--all", Arg.Unit (fun () -> dynamize := true; static := true; grift := true), " Benchmarking all (--static --dynamize --grift)");
     ("--paper", Arg.Unit (fun () -> modes_ref := [SLC; ALC; STATICC] @ !modes_ref), " Banchmarking modes for paper (SLC, ALC, STATICC)")
     ]
   in
@@ -401,10 +412,10 @@ let () =
   let log_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
   if not (Sys_unix.file_exists_exn log_base_dir) then Core_unix.mkdir log_base_dir;
   if not (Sys_unix.file_exists_exn log_dir) then Core_unix.mkdir log_dir;
-
-  Format.fprintf Format.std_formatter "debug: main iteration\n";
+  
   (* 3. 実行: 各ターゲットを順番に *)
-  if !dynamize then
+  Format.fprintf Format.std_formatter "debug: main iteration\n";
+  begin if !dynamize then
     List.iteri (fun i (file, mode, mutants) ->
       if mode = STATICI || mode = STATICC then () else
       bench_file_mode
@@ -415,8 +426,10 @@ let () =
         ~file
         ~mode
         ~mutants
-    ) targets;
-  if !static then 
+    ) targets
+  else () end;
+
+  begin if !static then 
     let targets = List.map (fun (file, m, muts) -> (file ^ "_fs", m, [List.hd muts])) targets in
     List.iteri (fun i (file, mode, mutants) ->
       bench_file_mode
@@ -427,6 +440,28 @@ let () =
         ~file
         ~mode
         ~mutants
-    ) targets;
+    ) targets
+  else () end;
+
+  begin if !grift then begin
+    Format.fprintf Format.std_formatter "debug: grift\n";
+    List.iter 
+      (fun file -> 
+        let i = Sys.command (Format.asprintf "python3 benchC/run_grift.py samples/src_grift/%s.grift samples/input/%s.txt -i %d" file file itr) in
+        if i != 0 then failwith "python grift\n";
+        ()
+      ) 
+      files;
+    begin if !static then
+      List.iter 
+        (fun file -> 
+          let i = Sys.command (Format.asprintf "python3 benchC/run_grift.py samples/src_grift/%s.grift samples/input/%s_fs.txt --static -i %d" file file itr) in
+          if i != 0 then failwith "python grift (fully-static)\n";
+          ()
+        ) 
+        files
+    else () end
+  end else () end;
+
   Printf.printf "\n";
   Printf.printf "debug: everything was done\n"

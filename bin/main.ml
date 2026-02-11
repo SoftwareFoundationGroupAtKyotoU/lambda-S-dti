@@ -70,4 +70,4 @@ let () =
   Arg.parse options parse_argv usage;
   start !file
 
-(* gcc logs/20260102-12:50:40/bench/zipwithSEC.c -D EAGER libC/*.c benchC/bench_json.c logs/20260102-12:50:40/SEC/zipwith*.c -o result/stdin.out -lgc -lcjson -O2 *)
+(* clang logs/20260102-12:50:40/bench/zipwithSEC.c -D EAGER libC/*.c benchC/bench_json.c logs/20260102-12:50:40/SEC/zipwith*.c -o result/stdin.out -lgc -lcjson -O2 *)
