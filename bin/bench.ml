@@ -204,9 +204,9 @@ let bench_file_mode
 
   if config.compile then
     let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
-    if not (Sys_unix.file_exists_exn c_dir) then Core_unix.mkdir c_dir;
+    if not (Caml.Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Sys_unix.file_exists_exn bench_dir) then Core_unix.mkdir bench_dir;
+    if not (Caml.Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
   
   let counter = ref 0 in
   List.iteri mutants (fun i p ->
@@ -354,8 +354,8 @@ let () =
       (tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday (tm.tm_hour) (tm.tm_min) (tm.tm_sec)
   in
   let log_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
-  if not (Sys_unix.file_exists_exn log_base_dir) then Core_unix.mkdir log_base_dir;
-  if not (Sys_unix.file_exists_exn log_dir) then Core_unix.mkdir log_dir;
+  if not (Caml.Sys.file_exists log_base_dir) then Core_unix.mkdir log_base_dir;
+  if not (Caml.Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
 
   Printf.fprintf stdout "debug: main iteration\n";
   (* 3. 実行: 各ターゲットを順番に *)

@@ -123,7 +123,7 @@ module CB = struct
 
   let run_config =
     Bench.Run_config.create
-      ~quota:(Bench.Quota.Span (Core.Time_float.Span.of_sec cb_quota_sec))
+      ~quota:(Bench.Quota.Span (Core.Time.Span.of_sec cb_quota_sec))
       ~stabilize_gc_between_runs:cb_stabilize_gc_between_runs
       ()
 
