@@ -150,22 +150,22 @@ let rec pp_coercion ppf = function
   | CProj (t, _) ->
     fprintf ppf "%a?p"
       pp_tag t
-  | CTvInj (_, {contents = None} as tv) ->
-    fprintf ppf "%a!"
+  | CTvInj ((_, {contents = None} as tv), _) ->
+    fprintf ppf "%a!p"
       pp_ty (TyVar tv)
   | CTvProj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a?p"
       pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "?p%a!"
+  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
+    fprintf ppf "?p%a!q"
       pp_ty (TyVar tv)
-  | CTvInj tv ->
+  | CTvInj (tv, _) ->
     fprintf ppf "|%a|!"
       pp_ty (TyVar tv)
   | CTvProj (tv, _) ->
     fprintf ppf "|%a|?"
       pp_ty (TyVar tv)
-  | CTvProjInj (tv, _) ->
+  | CTvProjInj (tv, _, _) ->
     fprintf ppf "?|%a|!"
       pp_ty (TyVar tv)
   | CFun (c1, c2) as c ->
@@ -196,22 +196,22 @@ let pp_coercion2 ppf c =
   | CProj (t, _) ->
     fprintf ppf "%a?p"
       pp_tag t
-  | CTvInj (_, {contents = None} as tv) ->
+  | CTvInj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a!"
       pp_ty (TyVar tv)
   | CTvProj ((_, {contents = None} as tv), _) ->
     fprintf ppf "%a?p"
       pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _) ->
+  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
     fprintf ppf "?p%a!"
       pp_ty (TyVar tv)
-  | CTvInj tv ->
+  | CTvInj (tv, _) ->
     fprintf ppf "|%a|!"
       pp_ty (TyVar tv)
   | CTvProj (tv, _) ->
     fprintf ppf "|%a|?"
       pp_ty (TyVar tv)
-  | CTvProjInj (tv, _) ->
+  | CTvProjInj (tv, _, _) ->
     fprintf ppf "?|%a|!"
       pp_ty (TyVar tv)
   | CFun (c1, c2) as c ->
@@ -304,14 +304,14 @@ module ITGL = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gte_exp e e2) pp_exp) e2
     | MatchExp (_, e1, ms) as e ->
-      fprintf ppf "match %a with %a"
+      fprintf ppf "match %a with%a"
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (ms, e)
     | LetExp (_, x, e1, e2) as e ->
       fprintf ppf "let %s = %a in %a"
         x
         (with_paren (gt_exp e e1) pp_exp) e1
-        (with_paren (gte_exp e e2) pp_exp) e2
+        pp_exp e2
     | NilExp _ -> pp_print_string ppf "[]"
     | ConsExp (_, e1, e2) as e ->
       fprintf ppf "%a :: %a"
@@ -319,7 +319,7 @@ module ITGL = struct
         (with_paren (gt_exp e e2) pp_exp) e2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
-      fprintf ppf "| %a -> %a %a"
+      fprintf ppf " | %a -> %a%a"
         pp_matchform mf
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (m, e)
@@ -417,7 +417,7 @@ module CC = struct
           pp_ty u2
       end
     | MatchExp (e1, ms) as e ->
-      fprintf ppf "match %a with %a"
+      fprintf ppf "match %a with%a"
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (ms, e)
     | LetExp (x, xs, f1, f2) as f ->
@@ -425,7 +425,7 @@ module CC = struct
         x
         pp_let_tyabses xs
         (with_paren (gt_exp f f1) pp_exp) f1
-        (with_paren (gte_exp f f2) pp_exp) f2
+        pp_exp f2
     | NilExp _ -> pp_print_string ppf "[]"
     | ConsExp (f1, f2) as f ->
       fprintf ppf "%a :: %a"
@@ -433,7 +433,7 @@ module CC = struct
         (with_paren (gt_exp f f2) pp_exp) f2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
-      fprintf ppf "| %a -> %a %a"
+      fprintf ppf " | %a -> %a%a"
         pp_matchform mf
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (m, e)
@@ -576,7 +576,7 @@ module LS1 = struct
           pp_exp f1
           pp_exp f2
     | MatchExp (e1, ms) as e ->
-      fprintf ppf "match %a with %a"
+      fprintf ppf "match %a with%a"
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (ms, e)
     | LetExp (x, xs, f1, f2) as f ->
@@ -584,7 +584,7 @@ module LS1 = struct
         x
         pp_let_tyabses xs
         (with_paren (gt_exp f f1) pp_exp) f1
-        (with_paren (gte_exp f f2) pp_exp) f2
+        pp_exp f2
     | CoercionExp c ->
       fprintf ppf "%a"
         pp_coercion c
@@ -615,7 +615,7 @@ module LS1 = struct
         (with_paren (gte_exp f f2) pp_exp) f2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
-      fprintf ppf "| %a -> %a %a"
+      fprintf ppf " | %a -> %a%a"
         pp_matchform mf
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (m, e)
@@ -721,7 +721,7 @@ module KNorm = struct
         pp_exp e1
         pp_exp e2
     | MatchExp (x, ms) as e ->
-      fprintf ppf "match %s with %a"
+      fprintf ppf "match %s with%a"
         x        
         pp_match (ms, e)
     | AppMExp (x, y) ->
@@ -745,7 +745,7 @@ module KNorm = struct
       fprintf ppf "let %s = %a in %a"
         x
         (with_paren (gt_exp e e1) pp_exp) e1
-        (with_paren (gte_exp e e2) pp_exp) e2
+        pp_exp e2
     | CoercionExp c ->
       pp_coercion ppf c
     | LetRecSExp (x, tvs, (y, k), e1, e2) as e ->
@@ -755,7 +755,7 @@ module KNorm = struct
         y
         k
         (with_paren (gt_exp e e1) pp_exp) e1
-        (with_paren (gte_exp e e2) pp_exp) e2
+        pp_exp e2
     | LetRecAExp (x, tvs, (y, k), (e1, e2), e3) as e ->
       fprintf ppf "let %s = %afun (%s, %s) -> (%a | %a) in %a"
         x
@@ -764,17 +764,17 @@ module KNorm = struct
         k
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
-        (with_paren (gte_exp e e3) pp_exp) e3
+        pp_exp e3
     | LetRecBExp (x, tvs, y, e1, e2) as e ->
       fprintf ppf "let %s = %afun %s -> %a in %a"
         x
         pp_let_tyabses tvs
         y
         (with_paren (gt_exp e e1) pp_exp) e1
-        (with_paren (gte_exp e e2) pp_exp) e2
+        pp_exp e2
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
-      fprintf ppf "| %a -> %a %a"
+      fprintf ppf " | %a -> %a%a"
         pp_matchform mf
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (m, e)
@@ -859,6 +859,18 @@ end
 module Cls = struct
   open Syntax.Cls
 
+  let rec pp_coercion ppf = function
+  | Id -> fprintf ppf "id"
+  (* | Fail _ -> fprintf ppf "⊥" *)
+  | SeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
+  | SeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
+  (* | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2 *)
+  | TvInj (tv, _) -> fprintf ppf "%a!" pp_ty (TyVar tv)
+  | TvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
+  (* | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv) *)
+  | Fun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
+  | List c -> fprintf ppf "[%a]" pp_coercion c
+
   let pp_let_tyabses ppf tyvars =
     if List.length tyvars = 0 then
       fprintf ppf ""
@@ -901,7 +913,7 @@ module Cls = struct
         pp_exp e1
         pp_exp e2
     | Match (x, ms) ->
-      fprintf ppf "match %s with %a"
+      fprintf ppf "match %s with%a"
         x        
         pp_match ms
     | AppDCls (x, (y, z)) -> fprintf ppf "%s:cls (%s, %s)" x y z
@@ -968,7 +980,7 @@ module Cls = struct
     | Insert _ -> raise @@ Syntax_error (*"insert or setty was applied to Cls.pp_exp"*)
   and pp_match ppf = function
     | (mf, e) :: m -> 
-      fprintf ppf "| %a -> %a %a"
+      fprintf ppf " | %a -> %a%a"
         pp_matchform mf
         pp_exp e
         pp_match m
@@ -1023,7 +1035,7 @@ module Cls = struct
       pp_list toplevel
 
   let pp_program ppf = function
-    | Prog (_, toplevel, cf) ->
+    | Prog (_, _, toplevel, cf) ->
       if List.length toplevel = 0 
         then 
           fprintf ppf "exp:\n%a"

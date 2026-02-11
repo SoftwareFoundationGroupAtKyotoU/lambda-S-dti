@@ -1,18 +1,6 @@
-# lambda-dti
-
-[![CI](https://github.com/ymyzk/lambda-dti/actions/workflows/ci.yml/badge.svg)](https://github.com/ymyzk/lambda-dti/actions/workflows/ci.yml)
-
-**lambda-dti** is an interpreter of the implicitly typed gradual language (ITGL) which uses **dynamic type inference** for evaluating programs.
-This implementation consists of:
-
-- Garcia and Cimini's type inference algorithm;
-- a cast-inserting translator from the ITGL to the blame calculus;
-- an evaluator of the blame calculus with dynamic type inference; and
-- some extensions (recursion, operators, and libraries) to the ITGL.
-
-This is the artifact of the following paper in POPL 2019.
-
-- Yusuke Miyazaki, Taro Sekiyama, and Atsushi Igarashi. [Dynamic Type Inference for Gradual Hindley–Milner Typing](https://doi.org/10.1145/3290331). POPL 2019.
+# lambda-S-dti
+## Source
+https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti.git
 
 ## Requirements
 - opam 2.0.0+
@@ -20,11 +8,36 @@ This is the artifact of the following paper in POPL 2019.
 - Dune 2.0.0+ (formerly known as Jbuilder)
 - Menhir
 - OUnit 2 (optional for running unit tests)
-- [rlwrap](https://github.com/hanslub42/rlwrap) (optional for line editing and input history)
+- Boehm GC (see below)
+- cJSON (see below)
+
+## Installing Dependencies
+### Boehm GC
+To compile and run this project, you need **GCC** and **Boehm GC** installed on your system.
+**For Ubuntu / Debian / WSL:**
+```console
+sudo apt update
+sudo apt install build-essential libgc-dev
+```
+**For macOS (Homebrew):**
+```console
+brew install bdw-gc
+```
+### cJSON
+To get benchmarks, you need to install the cJSON library.
+**For Ubuntu / Debian / WSL:**
+```console
+sudo apt install libcjson-dev
+```
+**For macOS (Homebrew):**
+```console
+brew install cjson
+```
 
 ## Getting started
-### A. Building from source
+In the "/lambda-S-dti" directory:
 ```console
+eval $(opam env)
 dune build
 ./_build/default/bin/main.exe
 ```
@@ -32,43 +45,29 @@ Run `$ ./_build/default/bin/main.exe --help` for command line options.
 
 (Optional) Run the following command to install the application:
 ```
-$ dune install
-$ ldti
+dune install
+lSdti
 ```
 
-### B. Running a Docker image
-Docker images are available on [GitHub](https://github.com/ymyzk/lambda-dti/pkgs/container/lambda-dti).
-
+When you want to input some code file, say "hoge.ml", to ldti, enter sub-directory of "/lambda-S-dti" and put the name as argument of "lSdti".
 ```console
-docker run -it --rm ghcr.io/ymyzk/lambda-dti:latest
+# in the "/lambda-dti-compiler" directory
+mkdr fuga
+cd fuga
+lSdti hoge.ml
 ```
-
-### C. Running a virtual machine
-Please see [HOW_TO_USE_ARTIFACT.md](./HOW_TO_USE_ARTIFACT.md) for details.
-The virtual machine image contains [lambda-dti v2.1](https://github.com/ymyzk/lambda-dti/tree/v2.1).
 
 ## Tips
 ### Running tests
 ```console
-dune runtest
+cd compile_test
+./dotests.sh
 ```
 
 ### Debug mode
 By enabling the debug mode, our interpreter show various messages to stderr.
 ```console
-ldti -d
-```
-
-### Non-interactive mode
-You can specify a file as a command line argument. Our interpreter executes the programs in the file then exits.
-```console
-ldti ./sample.ldti
-```
-
-### Line editing
-You may want to use rlwrap for line editing and input history.
-```console
-rlwrap ldti
+lSdti -d
 ```
 
 ## Syntax
@@ -253,8 +252,3 @@ line 18, character 23 -- line 18, character 24
 - `lib`: Implementation of the calculus
 - `test`: Unit tests
 
-## License
-MIT License. See [LICENSE](LICENSE).
-
-## References
-- [Ronald Garcia and Matteo Cimini. Principal Type Schemes for Gradual Programs. In Proc. of ACM POPL, 2015.](https://dl.acm.org/citation.cfm?id=2676992)

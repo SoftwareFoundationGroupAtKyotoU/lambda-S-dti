@@ -2,7 +2,7 @@
 import os
 import re
 import json
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Union
 
 import numpy as np
 
@@ -19,57 +19,75 @@ try:
 except Exception:
     stats = None
 
-base = "SLC"
-comp = "ALC"
+TARGET_PAIRS = [ # (base, comp)
+    ("BLC", ["ALC", "SLC"]),
+    ("SLC", ["ALC"]),
+    ("STATICC", ["ALC", "SLC"]),
+]
 
 # =========================
 # 設定まわり
 # =========================
-_DEFAULT_CONFIG = {
-    "log_root": "logs",
-    "json_pattern": fr"({base}|{comp})_(.*?)\.(jsonl|json)$",
-    "target_benchmarks": [
-        "church_big", "church_small", "church",
-        "evenodd", "fib", "tak", "loop", "fold", "map",
-    ],
-    # 相対グラフ
-    "relative": {
-        "outdir": "relative",
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": f"Relative Execution Time ({comp} / {base})",
-        "title_prefix": "Relative Performance",
-        "zigzag_tiers": 10,
-        "zigzag_fontsize": 5
-    },
-    # 散布グラフ
-    "scattered": {
-        "outdir": "scattered",
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": "Execution Time (seconds)",
-        "title_prefix": "Benchmark"
-    },
-    # Herman
-    "herman": {
-        "outdir": "herman",
-        "mad_k": 1,
-        "min_n": 2,
-        "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-        "ylabel": f"Relative Execution Time ({comp} / {base})",
-        "title_prefix": "Herman (robust)"
-    },
-    # 極端比レポート
-    "ratio_extremes": {
-        "outdir_high": "ratio_high",
-        "outdir_low": "ratio_low",
-        "ratio_high_min": 1.2,
-        "ratio_low_max": 0.5,
-        "require_ci_excludes_1": True
-    }
-}
+def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
+    """baseとcompを受け取って、そのペア専用の設定辞書を返す"""
+    if static:
+        fs = "_fs"
+    else:
+        fs = ""
 
-def load_config(path: str = "benchviz.config.json") -> Dict[str, Any]:
+    # "|" で結合して正規表現を作る
+    # ["ALC", "SLC"] -> "ALC|SLC"
+    comp_pattern = "|".join(comp)
+    # ラベル等が長くなりすぎないように調整（必要であれば）
+    comp_label = "|".join(comp) 
+
+    return { 
+        "log_root": "logs",
+        "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
+        "target_benchmarks": [
+            "church_65532",
+            "evenodd", "fib", "fold", "loop", "map",
+            "mklist", "tak", "zipwith", 
+            "map_mono", "fold_mono", "zipwith_mono"
+        ],
+        # 相対グラフ
+        "relative": {
+            "outdir": "relative",
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": f"Relative Execution Time ({comp_label} / {base})",
+            "title_prefix": "Relative Performance",
+            "zigzag_tiers": 10,
+            "zigzag_fontsize": 5
+        },
+        # 散布グラフ
+        "scattered": {
+            "outdir": "scattered",
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": "Execution Time (seconds)",
+            "title_prefix": "Benchmark"
+        },
+        # Herman
+        "herman": {
+            "outdir": "herman",
+            "mad_k": 1,
+            "min_n": 2,
+            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
+            "ylabel": f"Relative Execution Time ({comp_label} / {base})",
+            "title_prefix": "Herman (robust)"
+        },
+        # 極端比レポート
+        "ratio_extremes": {
+            "outdir_high": "ratio_high",
+            "outdir_low": "ratio_low",
+            "ratio_high_min": 1.2,
+            "ratio_low_max": 0.5,
+            "require_ci_excludes_1": True
+        }
+    }
+
+def load_config(base: str, comp: List[str], static: bool, path: str = "benchviz.config.json") -> Dict[str, Any]:
     """外部 JSON を読み込み、デフォルトとマージして返す。読み込んだ有効設定を標準出力に表示する。"""
-    cfg: Dict[str, Any] = dict(_DEFAULT_CONFIG)  # 既定ベース
+    cfg = get_config(base, comp, static)  # 既定ベース
     used_path = None
     user: Dict[str, Any] = {}
 
@@ -97,6 +115,26 @@ def load_config(path: str = "benchviz.config.json") -> Dict[str, Any]:
 
     return cfg
 
+def check_pair_exists(log_dir: str, base: str, comp: Union[str, List[str]], static: bool) -> bool:
+    """指定されたログディレクトリに base と comp の両方のログが含まれているか確認"""
+    files = os.listdir(log_dir)
+
+    # 判定用ヘルパー関数
+    def is_target_file(fname: str, target: str, is_static: bool) -> bool:
+        if is_static:
+            return fname.startswith(f"{target}_") and fname.endswith(("_fs.json", "_fs.jsonl"))
+        else:
+            return (fname.startswith(f"{target}_") and 
+                    fname.endswith((".json", ".jsonl")) and 
+                    not fname.endswith(("_fs.json", "_fs.jsonl")))
+
+    has_base = any(is_target_file(f, base, static) for f in files)
+    if isinstance(comp, list):
+        has_comp = all(any(is_target_file(f, c, static) for f in files) for c in comp)
+    else:
+        has_comp = any(is_target_file(f, comp, static) for f in files)
+
+    return has_base and has_comp
 
 # =========================
 # 共通 I/O
@@ -149,8 +187,7 @@ def _extract_promoted_bytes(mem_obj: Any) -> Optional[float]:
     except Exception:
         return None
 
-
-def ingest_latest_as_map(cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
+def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
     """
     最新ログディレクトリから、
       bench -> mutant_index -> {
@@ -172,13 +209,23 @@ def ingest_latest_as_map(cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[
         if bench not in data_by_benchmark:
             data_by_benchmark[bench] = {}
         if n not in data_by_benchmark[bench]:
-            data_by_benchmark[bench][n] = {
-                f"{base}_times": [], f"{comp}_times": [],
-                "after_mutate": None, "after_insertion": None, "after_translation": None,
-                f"{base}_pm": None,
-                f"{base}_promoted_bytes": None,
-                f"{comp}_promoted_bytes": None
-            }
+            for c in comp:
+                # 1. ベースとなる辞書を作成 (Base と共通項目)
+                slot = {
+                    f"{base}_times": [],
+                    f"{base}_pm": None,
+                    f"{base}_promoted_bytes": None,
+                    "after_mutate": None, 
+                    "after_insertion": None,
+                }
+
+                # 2. すべての comp に対するキーを追加
+                for c in comp:
+                    slot[f"{c}_times"] = []
+                    slot[f"{c}_promoted_bytes"] = None
+                    slot[f"after_translation_{c}"] = None
+                
+                data_by_benchmark[bench][n] = slot
 
     def update_from_obj(obj: Dict[str, Any], mode: str, bench: str):
         n = int(obj.get("mutant_index"))
@@ -191,14 +238,16 @@ def ingest_latest_as_map(cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[
         ensure_slot(bench, n)
         slot = data_by_benchmark[bench][n]
 
-        if isinstance(times, list):
-            (slot[f"{base}_times"] if mode == base else slot[f"{comp}_times"]).extend(times)
+        if mode == base or mode in comp:
+            target_key = f"{mode}_times"
+            if target_key in slot and isinstance(times, list):
+                slot[target_key].extend(times)
         if am and slot["after_mutate"] is None:
             slot["after_mutate"] = am
         if ai and slot["after_insertion"] is None:
             slot["after_insertion"] = ai
-        if mode == comp and at:
-            slot["after_translation"] = at
+        if mode in comp and at:
+            slot[f"after_translation_{mode}"] = at
         if mode == base and slot[f"{base}_pm"] is None:
             cpm = _extract_c_pm_from_mem(mem)
             if cpm is not None:
@@ -206,9 +255,9 @@ def ingest_latest_as_map(cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[
         if mem is not None:
             pb = _extract_promoted_bytes(mem)
             if pb is not None:
-                key = f"{base}_promoted_bytes" if mode == base else f"{comp}_promoted_bytes"
-                if slot[key] is None:
-                    slot[key] = pb
+                pb_key = f"{mode}_promoted_bytes"
+                if pb_key in slot and slot[pb_key] is None:
+                    slot[pb_key] = pb
 
     for filename in os.listdir(date_dir):
         m = json_pattern.match(filename)
@@ -298,7 +347,9 @@ def save_fig(fig, path: str, dpi: int = 150, tight: bool = True):
 # Markdown 出力補助
 # =========================
 
-def write_mutants_markdown(md_path: str,
+def write_mutants_markdown(base: str, 
+                           comp: str,
+                           md_path: str,
                            header: str,
                            latest_dirname: str,
                            filter_note: str,

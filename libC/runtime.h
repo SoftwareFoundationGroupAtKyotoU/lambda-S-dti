@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "gc.h"
+#include <gc.h>
 
 #include "types.h"
 

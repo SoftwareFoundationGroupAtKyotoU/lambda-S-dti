@@ -2,7 +2,7 @@ open Format
 
 open OUnit2
 
-open Lambda_S1_dti
+open Lambda_S_dti
 open Syntax
 open Pp
 

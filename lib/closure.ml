@@ -7,6 +7,14 @@ let toplevel = ref []
 
 let tvset = ref TV.empty
 
+let ranges = ref []
+
+let range_id r = 
+  let rec itr n l = match l with
+  | h :: t -> if h = r then n else itr (n + 1) t
+  | [] -> ranges := !ranges @ [r]; n
+  in itr 0 !ranges
+
 module KNorm = struct
   open Syntax.KNorm
 
@@ -47,14 +55,24 @@ module KNorm = struct
     | [] -> r
   in ttt (List.rev tvs) []
 
-  let rec crc_tv tvs = function
-    | CInj _ | CProj _ | CId _ -> ()
-    | CTvInj tv | CTvProj (tv, _) | CTvProjInj (tv, _) -> 
-      if not (List.mem tv tvs) then tvset := TV.add tv !tvset else ()
-    | CFun (c1, c2) | CSeq (c1, c2) -> 
-      crc_tv tvs c1; crc_tv tvs c2
-    | CList c -> crc_tv tvs c
-    | CFail _ -> raise @@ Closure_bug "CFail appear in crc_tv" 
+  let rec toCls_crc tvs = function
+    | CId _ -> Cls.Id
+    (* | CFail (_, (r, p), _) -> Cls.Fail (range_id r, p) *)
+    (* | CSeq (CProj (g, (r, p)), CSeq (c, CInj g')) -> Cls.SeqProjInj (g, (range_id r, p), toCls_crc tvs c, g') *)
+    | CSeq (CProj (g, (r, p)), c) -> Cls.SeqProj (g, (range_id r, p), toCls_crc tvs c)
+    | CSeq (c, CInj g) -> Cls.SeqInj (toCls_crc tvs c, g)
+    | CTvInj (tv, (r, p)) -> 
+      if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
+      Cls.TvInj (tv, (range_id r, p))
+    | CTvProj (tv, (r, p)) -> 
+      if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
+      Cls.TvProj (tv, (range_id r, p))
+    (* | CTvProjInj (tv, (r, p)) ->
+      if not (List.mem tv tvs) then tvset := TV.add tv !tvset;
+      Cls.TvProjInj (tv, (range_id r, p)) *)
+    | CFun (c1, c2) -> Cls.Fun (toCls_crc tvs c1, toCls_crc tvs c2)
+    | CList c -> Cls.List (toCls_crc tvs c)
+    | _ -> raise @@ Closure_bug "bad coercion"
 
   let rec toCls_exp known tvs = function
     | Var x -> Cls.Var x
@@ -71,9 +89,9 @@ module KNorm = struct
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs f1, toCls_exp known tvs f2)
-    | AppDExp (x, (y, z)) when Cls.V.mem x known -> Cls.AppDDir (Cls.to_label x, (y, z))
+    | AppDExp (x, (y, z)) when V.mem x known -> Cls.AppDDir (Cls.to_label x, (y, z))
     | AppDExp (x, (y, z)) -> Cls.AppDCls (x, (y, z))
-    | AppMExp (x, y) when Cls.V.mem x known -> Cls.AppMDir (Cls.to_label x, y)
+    | AppMExp (x, y) when V.mem x known -> Cls.AppMDir (Cls.to_label x, y)
     | AppMExp (x, y) -> Cls.AppMCls (x, y)
     | AppTy (x, _, tas) -> 
       let uandf = List.map (ta_tv tvs) tas in
@@ -82,36 +100,46 @@ module KNorm = struct
         | [] -> ru, rf 
       in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in
       f (Cls.AppTy (x, List.length tas + List.length tvs, us))
-    | CastExp (x, u1, u2, r_p) -> 
+    | CastExp (x, u1, u2, (r, p)) -> 
       let u1, udeclfun1 = ty_tv tvs u1 in 
       let u2, udeclfun2 = ty_tv tvs u2 in 
-      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, r_p)))
+      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, (range_id r, p))))
     | CAppExp (x, y) -> Cls.CApp (x, y)
     | CSeqExp (x, y) -> Cls.CSeq (x, y)
-    | CoercionExp c -> 
-      crc_tv tvs c;
-      Coercion c
+    | CoercionExp c -> Cls.Coercion (toCls_crc tvs c)
     | LetExp (x, f1, f2) -> 
       let f1 = toCls_exp known tvs f1 in
       let f2 = toCls_exp known tvs f2 in
       Cls.Let (x, f1, f2)
     | LetRecSExp (x, tvs', (y, z), f1, f2) ->
-      let toplevel_backup = !toplevel in
-      let tvset_backup = !tvset in
+      let k_fv = V.remove x @@ V.remove y @@ V.remove z @@ fv_exp f1 in
       let new_tvs = tvs' @ tvs in
-      let known' = Cls.V.add x known in
-      let f1' = toCls_exp known' new_tvs f1 in
-      let zs = Cls.V.diff (Cls.fv f1') (Cls.V.of_list [y; z]) in
       let known', f1' =
-        if Cls.V.is_empty zs && List.length new_tvs = 0 then known', f1'
-        else (toplevel := toplevel_backup; tvset := tvset_backup;
-        let f1' = toCls_exp known new_tvs f1 in
-        known, f1')
-      in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f1') (Cls.V.of_list [x; y; z])) in
+        if not (V.is_empty k_fv) || List.length new_tvs != 0 then
+          let f1' = toCls_exp known new_tvs f1 in
+          known, f1'
+        else 
+          let toplevel_backup = !toplevel in
+          let tvset_backup = !tvset in
+          let ranges_backup = !ranges in
+          let known' = V.add x known in
+          let f1' = toCls_exp known' new_tvs f1 in
+          let zs = V.diff (Cls.fv_exp f1') (V.of_list [y; z]) in
+          if V.is_empty zs (*&& List.length new_tvs = 0*) then 
+            known', f1'
+          else begin
+            toplevel := toplevel_backup; tvset := tvset_backup; ranges := ranges_backup;
+            (* Format.fprintf Format.err_formatter "backtracking %s\n" x; *)
+            let f1' = toCls_exp known new_tvs f1 in
+            known, f1'
+          end
+      in
+      let zs = V.elements (V.diff (Cls.fv_exp f1') (V.of_list [x; y; z])) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
-      toplevel := (Cls.FundefD { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f1' }) :: !toplevel;
+      let fundef = Cls.FundefD { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f1' } in
+      if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
       let f2' = toCls_exp known' tvs f2 in
-      if Cls.V.mem x (Cls.fv f2') then
+      if V.mem x (Cls.fv_exp f2') then
         if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel (x, Cls.to_label x, f2')
         else if List.length new_tvs = 0 then Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, f2')
         else if List.length zs = 0 then Cls.MakePolyLabel (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
@@ -119,55 +147,43 @@ module KNorm = struct
       else f2'
     | LetRecAExp _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
     | LetRecBExp (x, tvs', y, f1, f2) ->
-      let toplevel_backup = !toplevel in
-      let tvset_backup = !tvset in
+      let k_fv = V.remove x @@ V.remove y @@ fv_exp f1 in
       let new_tvs = tvs' @ tvs in
-      let known' = Cls.V.add x known in
-      let f1' = toCls_exp known' new_tvs f1 in
-      let zs = Cls.V.diff (Cls.fv f1') (Cls.V.singleton y) in
       let known', f1' =
-        if Cls.V.is_empty zs && List.length new_tvs = 0 then known', f1'
-        else (toplevel := toplevel_backup; tvset := tvset_backup;
-        let f1' = toCls_exp known new_tvs f1 in
-        known, f1')
-      in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f1') (Cls.V.of_list [x; y])) in
+        if not (V.is_empty k_fv) || List.length new_tvs != 0 then
+          let f1' = toCls_exp known new_tvs f1 in
+          known, f1'
+        else 
+          let toplevel_backup = !toplevel in
+          let tvset_backup = !tvset in
+          let ranges_backup = !ranges in
+          let known' = V.add x known in
+          let f1' = toCls_exp known' new_tvs f1 in
+          let zs = V.diff (Cls.fv_exp f1') (V.singleton y) in
+          if V.is_empty zs (*&& List.length new_tvs = 0*) then 
+            known', f1'
+          else begin
+            toplevel := toplevel_backup; tvset := tvset_backup; ranges := ranges_backup;
+            (* Format.fprintf Format.err_formatter "backtracking %s\n" x; *)
+            let f1' = toCls_exp known new_tvs f1 in
+            known, f1'
+          end
+      in
+      let zs = V.elements (V.diff (Cls.fv_exp f1') (V.of_list [x; y])) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
-      toplevel := (Cls.FundefM { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f1' }) :: !toplevel;
+      let fundef = Cls.FundefM { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f1' } in
+      if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
       let f2' = toCls_exp known' tvs f2 in
-      if Cls.V.mem x (Cls.fv f2') then
+      if V.mem x (Cls.fv_exp f2') then
         if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel (x, Cls.to_label x, f2')
         else if List.length new_tvs = 0 then Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, f2')
         else if List.length zs = 0 then Cls.MakePolyLabel (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
         else Cls.MakePolyCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'
-    (* | LetRecExp_alt (x, tvs', (y, z), (f11, f12), f2) ->
-      let toplevel_backup = !toplevel in
-      let tvset_backup = !tvset in
-      let new_tvs = tvs' @ tvs in
-      let known' = Cls.V.add x known in
-      let f11' = toCls_exp known' new_tvs f11 in
-      let zs = Cls.V.diff (Cls.fv f11') (Cls.V.of_list [y; z]) in
-      let known', f11', f12' =
-        if Cls.V.is_empty zs && List.length new_tvs = 0 then known', f11', toCls_exp known' new_tvs f12
-        else (toplevel := toplevel_backup; tvset := tvset_backup;
-        let f11' = toCls_exp known new_tvs f11 in
-        let f12' = toCls_exp known new_tvs f12 in
-        known, f11', f12')
-      in let zs = Cls.V.elements (Cls.V.diff (Cls.fv f11') (Cls.V.of_list [x; y; z])) in
-      (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
-      toplevel := (Cls.Fundef { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f12' }) :: !toplevel;
-      toplevel := (Cls.Fundef_alt { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f11' }) :: !toplevel;
-      let f2' = toCls_exp known' tvs f2 in
-      if Cls.V.mem x (Cls.fv f2') then
-        if List.length zs = 0 && List.length new_tvs = 0 then Cls.MakeLabel_alt (x, Cls.to_label x, f2')
-        else if List.length new_tvs = 0 then Cls.MakeCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, f2')
-        else if List.length zs = 0 then Cls.MakePolyLabel_alt (x, Cls.to_label x, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
-        else Cls.MakePolyCls_alt (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
-      else f2' *)
 
   let toCls kf known = 
     let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
-    toplevel := []; tvset := TV.empty;
+    toplevel := []; tvset := TV.empty; ranges := [];
     toCls_exp known [] f
 end
 
@@ -207,15 +223,15 @@ module Cls = struct
     | Cast _ -> raise @@ Closure_bug "Cast appear in replace"
 
   let rec to_alt ids = function
-    | Let (x, Coercion (CId _), f) -> 
+    | Let (x, Coercion Id, f) -> 
       let f = to_alt (V.add x ids) f in
-      if V.mem x (fv f) then raise @@ Closure_error "to_alt: id appear"
+      if V.mem x (fv_exp f) then raise @@ Closure_error "to_alt: id appear"
       else f
     | Let (x, CSeq (k1, k2), f) ->
       begin match V.mem k1 ids, V.mem k2 ids with
       | true, true -> 
         let f = to_alt (V.add x ids) f in
-        if V.mem x (fv f) then raise @@ Closure_error "to_alt: id appear"
+        if V.mem x (fv_exp f) then raise @@ Closure_error "to_alt: id appear"
         else f
       | true, false -> to_alt ids @@ replace_var x k2 f
       | false, true -> to_alt ids @@ replace_var x k1 f
@@ -249,8 +265,8 @@ module Cls = struct
     | [] -> []
 
   let altCls p alt =
-    if alt then Prog (!tvset, alt_funs !toplevel, to_alt V.empty p)
-    else Prog (!tvset, List.rev !toplevel, p)
+    if alt then Prog (!tvset, !ranges, alt_funs !toplevel, to_alt V.empty p)
+    else Prog (!tvset, !ranges, List.rev !toplevel, p)
 end
 
 let toCls_program kf venv ~alt =

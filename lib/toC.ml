@@ -1,6 +1,7 @@
 open Syntax
 open Syntax.Cls
 open Format
+open Config
 open Utils.Error
 
 exception ToC_bug of string
@@ -14,6 +15,8 @@ let is_alt = ref false
 let is_B = ref false
 
 let is_eager = ref false
+
+let is_static = ref false
 
 (*Utilities*)
 (*型のCプログラム表記を出力する関数
@@ -37,18 +40,6 @@ let c_of_tyarg = function
   | Ty u -> c_of_ty u
   | TyNu -> "newty()"
 
-(*Castのran_polを記述する関数*)
-(*toC_exp Let Castを参照*)
-let toC_ran_pol ppf (y, r, p) =
-  fprintf ppf "ran_pol %s_r_p = { .filename = %s, .startline = %d, .startchr = %d, .endline = %d, .endchr = %d, .polarity = %d };\n"
-    y
-    (if r.start_p.pos_fname <> "" then "\"File \\\""^r.start_p.pos_fname^"\\\", \"" else "\"\"")
-    r.start_p.pos_lnum
-    (r.start_p.pos_cnum - r.start_p.pos_bol)
-    r.end_p.pos_lnum
-    (r.end_p.pos_cnum - r.end_p.pos_bol)
-    (match p with Pos -> 1 | Neg -> 0)
-
 (*自由変数をクロージャに代入するプログラムを記述する関数*)
 (*自由変数の個数をカウントする変数*)
 let cnt_v = ref 0
@@ -56,7 +47,7 @@ let cnt_v = ref 0
 let toC_v x is_poly ppf v =
   fprintf ppf "%s.f->fundat.%sclosure%s.fvs[%d] = %s;"
     x
-    (if is_poly then "poly_" else "")
+    (if is_poly then "poly.f.poly_" else "")
     (if !is_alt then "_alt" else "")
     !cnt_v
     v;
@@ -74,7 +65,7 @@ let toC_vs ppf (x, is_poly, vs) =
 let cnt_ta = ref 0
 
 let toC_ta x ppf u =
-  fprintf ppf "%s.f->tas[%d] = %s;"
+  fprintf ppf "%s.f->fundat.poly.tas[%d] = %s;"
     x
     !cnt_ta
     (c_of_tyarg u);
@@ -84,13 +75,13 @@ let toC_tas ppf (y, n, x, tas) =
   cnt_ta := 0;
   let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:toC_sep in
-  let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else toC_list ppf ta in
-  fprintf ppf "%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);%a\n"
+  let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else fprintf ppf "\n%a" toC_list ta in
+  fprintf ppf "%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);%a\n"
     x
     n
     toC_list tas;
   while (!cnt_ta < n) do
-    fprintf ppf "\n%s.f->tas[%d] = %s.f->tas[%d];"
+    fprintf ppf "\n%s.f->fundat.poly.tas[%d] = %s.f->fundat.poly.tas[%d];"
       x
       !cnt_ta
       y
@@ -115,119 +106,91 @@ let toC_tag ppf = function
   | Li -> pp_print_string ppf "LI"
 
 let rec toC_crc ppf (c, x) = match c with
-  | CId _ -> fprintf ppf "%s.s = &crc_id;" x
-  | CSeq (CId _, CInj Ar) -> 
-    fprintf ppf "%s.s = make_crc_inj_ar(&crc_id);"
-      x
-  | CSeq (CId _, CInj Li) ->
-    fprintf ppf "%s.s = make_crc_inj_li(&crc_id);"
-      x
-  | CSeq (CId _, CInj t) -> 
+  | Id -> fprintf ppf "%s.s = &crc_id;" x
+  | SeqInj (Id, Ar) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_AR;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
+      x x x x
+  | SeqInj (Id, Li) ->
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_LI;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
+      x x x x
+  | SeqInj (Id, t) -> 
     fprintf ppf "%s.s = &crc_inj_%a;"
-      x
+      x 
       toC_tag t
-  | CSeq (CFun _ as c1, CInj Ar) -> 
-    fprintf ppf "value %s_cfun;\n%a\n%s.s = make_crc_inj_ar(%s_cfun.s);"
+  | SeqInj (Fun _ as c1, Ar) -> 
+    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_AR;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
       x
       toC_crc (c1, x ^ "_cfun")
-      x
-      x
-  | CSeq (CList _ as c1, CInj Li) -> 
-    fprintf ppf "value %s_clist;\n%a\n%s.s = make_crc_inj_li(%s_clist.s);"
+      x x x x x
+  | SeqInj (List _ as c1, Li) -> 
+    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_LI;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
       x
       toC_crc (c1, x ^ "_clist")
-      x
-      x
-  | CSeq (CProj (t, (r, p)), CId _) ->
-    fprintf ppf "%a%s.s = make_crc_proj(G_%a, %s_r_p, &crc_id);"
-      toC_ran_pol (x, r, p)
-      x
+      x x x x x
+  | SeqProj (t, (r, p), Id) ->
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_%a;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
+      x x x
       toC_tag t
-      x
-  | CSeq (CProj (Ar, (r, p)), (CFun _ as c2)) ->
-    fprintf ppf "value %s_cfun;\n%a\n%a%s.s = make_crc_proj(G_AR, %s_r_p, %s_cfun.s);"
+      x (match p with Pos -> 1 | Neg -> 0) x r x
+  | SeqProj (Ar, (r, p), (Fun _ as c2)) ->
+    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_AR;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
       x
       toC_crc (c2, x ^ "_cfun")
-      toC_ran_pol (x, r, p)
-      x
-      x
-      x
-  | CSeq (CProj (Li, (r, p)), (CList _ as c2)) ->
-    fprintf ppf "value %s_clist;\n%a\n%a%s.s = make_crc_proj(G_LI, %s_r_p, %s_clist.s);"
+      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
+  | SeqProj (Li, (r, p), (List _ as c2)) ->
+    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_LI;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
       x
       toC_crc (c2, x ^ "_clist")
-      toC_ran_pol (x, r, p)
-      x
-      x
-      x
-  | CTvInj (i, _) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = INJ_TV;\n%s.s->crcdat.tv = _ty%d;"
-      x
-      x
-      x
-      i
-  | CTvProj ((i, _), (r, p)) -> 
-    fprintf ppf "%a%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = PROJ_TV;\n%s.s->crcdat.tv = _ty%d;\n%s.s->r_p = %s_r_p;"
-      toC_ran_pol (x, r, p)
-      x
-      x
-      x
-      i
-      x
-      x
-  | CFun (c1, c2) -> 
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = make_crc_fun(%s_c1.s, %s_c2.s);"
+      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
+  | TvInj ((i, _), (r, p)) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x i
+  | TvProj ((i, _), (r, p)) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x i
+  | Fun (c1, c2) -> 
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = FUN;\n%s.s->crcdat.two_crc.c1 = %s_c1.s;\n%s.s->crcdat.two_crc.c2 = %s_c2.s;"
       x
       toC_crc (c1, x ^ "_c1")
       x
       toC_crc (c2, x ^ "_c2")
-      x
-      x
-      x
-  | CList c ->
-    fprintf ppf "value %s_c;\n%a\n%s.s = make_crc_list(%s_c.s);" 
+      x x x x x x
+  | List c ->
+    fprintf ppf "value %s_c;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = LIST;\n%s.s->crcdat.one_crc = %s_c.s;" 
       x
       toC_crc (c, x ^ "_c")
-      x
-      x
-  | CFail _ -> raise @@ ToC_bug "CFail should not appear in translated term"
-  | CTvProjInj _ -> raise @@ ToC_bug "CTvProjInj should not appear in translated term" 
-    (* fprintf ppf "%a%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = PROJ_INJ_TV;\n%s.s->crcdat.tv = _ty%d;\n%s.s->r_p = %s_r_p;"
-      toC_ran_pol (x, r, p)
-      x
-      x
-      x
-      i
-      x
-      x *)
-  | CSeq _ -> raise @@ ToC_bug "Invalid CSeq"
-  | CInj _ | CProj _ -> raise @@ ToC_bug "CInj or CProj should not appear directly"
+      x x x x
+  (* | Fail (*r, p*)_ 
+    (* -> "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = BOT;\n%s.s->polarity = %d;\n%s.s->crcdat.rid = %d;"
+    x x x (match p with Pos -> 1 | Neg -> 0) x r  *)
+  | SeqProj (_, _, Fail _) | SeqProjInj _ | TvProjInj _ -> raise @@ ToC_bug "not implemented"  *)
+  | _ -> raise @@ ToC_bug "bad coercion" 
 
 (* ======================================== *)
 let rec toC_mf ppf (x, mf) = match mf with
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit does not appear in toC"
   | MatchILit i -> 
-    fprintf ppf "%si_b_u == %d"
+    fprintf ppf "%s.i_b_u == %d"
       x
       i
   | MatchNil _ -> 
     if !is_eager then
-      fprintf ppf "%sl == NULL"
+      fprintf ppf "%s.l == NULL"
         x
     else
-      fprintf ppf "is_NULL(%sl)"
+      fprintf ppf "is_NULL(%s.l)"
         x
   | MatchCons (mf1, mf2) ->
     if !is_eager then
-      fprintf ppf "%sl != NULL && %a && %a"
+      fprintf ppf "%s.l != NULL && %a && %a"
         x
-        toC_mf (asprintf "%sl.h->" x, mf1)
-        toC_mf (asprintf "%sl.t->" x, mf2)
+        toC_mf (asprintf "%s.l->h" x, mf1)
+        toC_mf (asprintf "%s.l->t" x, mf2)
     else
-      fprintf ppf "!(is_NULL(%sl)) && %a && %a"
+      fprintf ppf "!(is_NULL(%s.l)) && %a && %a"
         x
-        toC_mf (asprintf "hd(%sl)." x, mf1)
-        toC_mf (asprintf "tl(%sl)." x, mf2)
+        toC_mf (asprintf "hd(%s.l)" x, mf1)
+        toC_mf (asprintf "tl(%s.l)" x, mf2)
   | MatchWild _ -> 
     fprintf ppf "1"
 
@@ -251,22 +214,18 @@ let rec toC_exp ppf f = match f with
         x
     | Cons (y, z) -> (* Insert(x, y::z) ~> TODO *)
       if !is_eager then
-        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->h = (value*)GC_MALLOC(sizeof(value));\n*%s.l->h = %s;\n%s.l->t = (value*)GC_MALLOC(sizeof(value));\n*%s.l->t = %s;\n"
-          x
+        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->h = %s;\n%s.l->t = %s;\n"
           x
           x
           y
-          x
           x
           z
       else
-        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->lstkind = UNWRAPPED_LIST;\n%s.l->lstdat.unwrap_l.h = (value*)GC_MALLOC(sizeof(value));\n*%s.l->lstdat.unwrap_l.h = %s;\n%s.l->lstdat.unwrap_l.t = (value*)GC_MALLOC(sizeof(value));\n*%s.l->lstdat.unwrap_l.t = %s;\n"
-          x
+        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->lstkind = UNWRAPPED_LIST;\n%s.l->lstdat.unwrap_l.h = %s;\n%s.l->lstdat.unwrap_l.t = %s;\n"
           x
           x
           x
           y
-          x
           x
           z
     | Add (y, z) ->
@@ -296,7 +255,7 @@ let rec toC_exp ppf f = match f with
         z
     | Hd y -> (* TODO *)
       if !is_eager then
-        fprintf ppf "%s = *%s.l->h;\n"
+        fprintf ppf "%s = %s.l->h;\n"
           x
           y
       else
@@ -305,7 +264,7 @@ let rec toC_exp ppf f = match f with
           y
     | Tl y -> (* TODO *)
       if !is_eager then
-        fprintf ppf "%s = *%s.l->t;\n"
+        fprintf ppf "%s = %s.l->t;\n"
           x
           y
       else
@@ -354,13 +313,13 @@ let rec toC_exp ppf f = match f with
       (*型の出力形式は関数c_of_tyによる TODO *)
       (* 名前の被りを防ぐために，Letとinsertはran_polにyではなくxを使う *)
       let c1, c2 = c_of_ty u1, c_of_ty u2 in
-      fprintf ppf "%a%s = cast(%s, %s, %s, %s_r_p);\n"
-        toC_ran_pol (x, r, p)
+      fprintf ppf "%s = cast(%s, %s, %s, %d, %d);\n"
         x
         y
         c1
         c2
-        x
+        r
+        (match p with Pos -> 1 | Neg -> 0)
     | CApp (y, z) -> (* TODO *)
       fprintf ppf "%s = coerce(%s, %s.s);\n"
         x
@@ -414,7 +373,7 @@ let rec toC_exp ppf f = match f with
     begin match ms with
     | (mf, f) :: t ->
       fprintf ppf "if(%a) {\n%a} else %a"
-        toC_mf (x ^ ".", mf)
+        toC_mf (x, mf)
         toC_exp f
         toC_exp (Match (x, t))
     | [] -> 
@@ -441,7 +400,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         l
         l
         l
@@ -454,7 +413,7 @@ let rec toC_exp ppf f = match f with
         toC_ftas (n, l, ftv)
         toC_exp f
     else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         l
         l
         l
@@ -491,7 +450,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then 
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly.f.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         x
         x
         x
@@ -507,7 +466,7 @@ let rec toC_exp ppf f = match f with
         toC_ftas (n, x, ftv)
         toC_exp f
     else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly.f.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
         x
         x
         x
@@ -665,6 +624,25 @@ let toC_tvs ppf (tvl, n) =
   let toC_list ppf tv = pp_print_list (toC_tv n) ppf tv ~pp_sep:toC_sep in
   fprintf ppf "%a\n"
     toC_list tvl
+
+(*Castのran_polを記述する関数*)
+(*toC_exp Let Castを参照*)
+let toC_range ppf r =
+  fprintf ppf "{ .filename = %s, .startline = %d, .startchr = %d, .endline = %d, .endchr = %d }"
+    (if r.start_p.pos_fname <> "" then "\"File \\\""^r.start_p.pos_fname^"\\\", \"" else "\"\"")
+    r.start_p.pos_lnum
+    (r.start_p.pos_cnum - r.start_p.pos_bol)
+    r.end_p.pos_lnum
+    (r.end_p.pos_cnum - r.end_p.pos_bol)
+
+let toC_ranges ppf ranges =
+  let toC_sep ppf () = fprintf ppf ",\n" in
+  let toC_list ppf range = pp_print_list toC_range ppf range ~pp_sep:toC_sep in
+  if List.length ranges = 0 then 
+    fprintf ppf ""(*"#ifndef STATIC\nstatic range local_range_list[] = { 0 };\n#endif\n\n"*)
+  else
+  fprintf ppf "static range local_range_list[] = {\n%a\n};\n\n"
+    toC_list ranges
   
 (*関数名の前方定義
   再帰関数などに対応するために，関数本体の前に，名前を前方定義する
@@ -675,34 +653,34 @@ let toC_label ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun_%s(value, value);"
+    fprintf ppf "static value fun_%s(value, value);"
       l
   else if num = 0 then
-    fprintf ppf "value fun_%s(value, value, ty**);"
+    fprintf ppf "static value fun_%s(value, value, ty**);"
       l
   else if num'= 0 then
-    fprintf ppf "value fun_%s(value, value, value*);"
+    fprintf ppf "static value fun_%s(value, value, value*);"
       l
   else
-    fprintf ppf "value fun_%s(value, value, value*, ty**);"
+    fprintf ppf "static value fun_%s(value, value, value*, ty**);"
       l
 | FundefM { name = l; tvs = (tvs, _); arg = _; formal_fv = fvl; body = _ } ->
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then
-    fprintf ppf "value fun%s_%s(value);"
+    fprintf ppf "static value fun%s_%s(value);"
       (if !is_alt then "_alt" else "")
       l
   else if num = 0 then
-    fprintf ppf "value fun%s_%s(value, ty**);"
+    fprintf ppf "static value fun%s_%s(value, ty**);"
       (if !is_alt then "_alt" else "")
       l
   else if num'= 0 then
-    fprintf ppf "value fun%s_%s(value, value*);"
+    fprintf ppf "static value fun%s_%s(value, value*);"
       (if !is_alt then "_alt" else "")
       l
   else
-    fprintf ppf "value fun%s_%s(value, value*, ty**);"
+    fprintf ppf "static value fun%s_%s(value, value*, ty**);"
       (if !is_alt then "_alt" else "")
       l
 
@@ -722,7 +700,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
         l
     else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->tas = tvs;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = tvs;\n"
         l
         l
         l
@@ -761,7 +739,7 @@ let toC_funv ppf (exists_fun, l, num, num') =
         l
         l
     else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly_label = fun_%s;\n%s.f->tas = tvs;\n"
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = tvs;\n"
         l
         l
         l
@@ -791,38 +769,38 @@ let toC_fundef ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s) {\n%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s) {\n%a%a}"
       l
       x
       y
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
       l
       x
       y
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
       l
       x
       y
       num
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
       l
       x
       y
       num
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
@@ -830,38 +808,38 @@ let toC_fundef ppf fundef = match fundef with
   let num = List.length fvl in
   let num' = List.length tvs in
   if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s) {\n%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s) {\n%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_exp f
   else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_exp f
   else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
       num
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_fvs fvl
       toC_exp f
   else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
+    fprintf ppf "static value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
       (if !is_alt then "_alt" else "")
       l
       x
       num
       num'
-      toC_funv (V.mem (to_id l) (fv f), l, num, num')
+      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
       toC_tvs (tvs, n)
       toC_fvs fvl
       toC_exp f
@@ -881,18 +859,21 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program ?(bench=0) ~alt ~intoB ~eager ppf (Prog (tvset, toplevel, f)) = 
+let toC_program ?(bench=0) ~config ppf (Prog (tvset, ranges, toplevel, f)) = 
   is_main := false;
-  is_alt := alt;
-  is_B := intoB;
-  is_eager := eager;
-  fprintf ppf "%s\n%a%a%s%s%s%a%s"
-    (Format.asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
+  is_alt := config.alt;
+  is_B := config.intoB;
+  is_eager := config.eager;
+  is_static := config.static;
+  fprintf ppf "%s\n%a%a%a%s%s%s%s%a%s"
+    (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
     toC_tys (TV.elements tvset, bench)
+    toC_ranges ranges
     toC_fundefs toplevel
-    (if bench = 0 then "int main() {\n" else Format.asprintf "int mutant%d() {\n" bench)
-    "stdlib();\n"
-    (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else Format.asprintf "set_tys%d();\n" bench)
+    (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
+    (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)
+    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
+    (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

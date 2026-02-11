@@ -4,11 +4,13 @@
 #include "types.h"
 
 typedef union value {
-	int i_b_u;
+	int64_t i_b_u;
+	#ifndef STATIC
 	dyn *d;
+	#endif
 	fun *f;
 	lst *l;
-	#ifndef CAST
+	#if !defined(CAST) && !defined(STATIC)
 	crc *s;
 	#endif
 } value;

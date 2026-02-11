@@ -1,8 +1,5 @@
-(*let rec f _ = 123 in
-let rec g _ = 456 in*)
-
-let rec f (x:'a) = 123 in
-let rec g (x:'b) = 456 in
+let rec f x = 123 in
+let rec g x = 456 in
 let x = f () in
 print_int ((if x <= 0 then g () + x else x) + x);;
 (* xがthen節ではセーブされ、else節ではセーブされない *)

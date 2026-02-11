@@ -1,12 +1,12 @@
 (executable
   (name main)
   (modules main)
-  (libraries lambda_S1_dti))
+  (libraries lambda_S_dti))
 
 (executable
  (name bench)
  (modules bench)
- (libraries lambda_S1_dti yojson core_bench core_unix.command_unix))
+ (libraries lambda_S_dti yojson core_bench core_unix.command_unix))
 
 (env
  (dev
@@ -14,4 +14,4 @@
 
 (install
   (section bin)
-  (files (main.exe as lS1dti)))
+  (files (main.exe as lSdti)))

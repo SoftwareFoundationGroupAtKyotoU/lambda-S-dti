@@ -2,27 +2,31 @@
 #define LST_H
 
 #include "types.h"
+#include "value.h"
 
 typedef struct lst {
-	#ifdef EAGER
-	value *h;
-	value *t;
+	#if defined(EAGER) || defined(STATIC)
+	value h;
+	value t;
 	#else
-	enum lstkind {
+	enum lstkind : uint8_t {
 		UNWRAPPED_LIST,
 		WRAPPED_LIST
 	} lstkind;
+	#ifdef CAST
+	uint8_t polarity;
+	uint32_t rid;
+	#endif
 	union lstdat {
 		struct unwrap_l {
-			value *h;
-			value *t;
+			value h;
+			value t;
 		} unwrap_l;
 		struct wrap_l {
 			lst *w;
 			#ifdef CAST
 			ty *u1;
 			ty *u2;
-			ran_pol r_p;
 			#else
 			crc *c;
 			#endif
@@ -33,7 +37,7 @@ typedef struct lst {
 
 int did_not_match();
 
-#ifndef EAGER
+#if !defined(EAGER) && !defined(STATIC)
 value hd(lst*);
 
 value tl(lst*);

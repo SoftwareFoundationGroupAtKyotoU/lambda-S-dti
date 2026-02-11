@@ -89,10 +89,12 @@ module CC = struct
       KNorm.LetExp (x, f, f') (* todo:考える。とりあえず[] *)
       (*多分大丈夫、applicationにしか不要で、(fun x...) vなら既に代入済み、(fun (x:?)...) vならcast済み*)
 
-  let rec k_normalize_exp tvsenv = function
+  let rec k_normalize_exp tvsenv f ~static = 
+    let k_normalize_exp = k_normalize_exp ~static in 
+    match f with
     | Var (x, tas) -> 
       let tvs = Environment.find x tvsenv in 
-      if List.length tas = 0 && List.length tvs = 0 then KNorm.Var x
+      if List.length tas = 0 && List.length tvs = 0 || static then KNorm.Var x
       else if List.length tas = List.length tvs then KNorm.AppTy (x, tvs, tas)
       else raise @@ KNormal_bug "tas and tvs don't have same length"
     | IConst i -> KNorm.IConst i
@@ -153,6 +155,7 @@ module CC = struct
       let f2 = k_normalize_exp tvsenv f2 in
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.AppMExp (x, y)
     | CastExp (f, u1, u2, r_p) ->
+      if static then raise @@ KNormal_error "static but Cast appear";
       let f = k_normalize_exp tvsenv f in
       insert_let f @@ fun x -> KNorm.CastExp (x, u1, u2, r_p)
     | MatchExp (f, ms) ->
@@ -169,12 +172,12 @@ module CC = struct
         | FunExp (x', _, f1) ->
           let f1 = k_normalize_exp (Environment.add x' [] tvsenv) f1 in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
-          KNorm.LetRecBExp (x, tvs, x', f1, f2)
+          KNorm.LetRecBExp (x, (if static then [] else tvs), x', f1, f2)
         | FixExp (x', y, _, _, f1) ->
           assert (x' = x);
           let f1 = k_normalize_exp (Environment.add y [] (Environment.add x' [] tvsenv)) f1 in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
-          KNorm.LetRecBExp (x, tvs, y, f1, f2)
+          KNorm.LetRecBExp (x, (if static then [] else tvs), y, f1, f2)
         | f ->
           let f1 = k_normalize_exp tvsenv f in
           let f2 = k_normalize_exp (Environment.add x tvs tvsenv) f2 in
@@ -182,19 +185,19 @@ module CC = struct
       end
     | CAppExp _ -> raise @@ KNormal_bug "CC.k_normalize_exp CAppExp"
 
-  let k_normalize_program tvsenv = function
-    | Exp f -> let f = k_normalize_exp tvsenv f in KNorm.Exp f, tvsenv
+  let k_normalize_program tvsenv ~static = function
+    | Exp f -> let f = k_normalize_exp tvsenv f ~static in KNorm.Exp f, tvsenv
     | LetDecl (x, tvs, f) -> 
       begin match f with
         | FunExp (x', _, f) ->
-          let f = k_normalize_exp (Environment.add x' [] tvsenv) f in
-          KNorm.LetRecBDecl (x, tvs, x', f), Environment.add x tvs tvsenv
+          let f = k_normalize_exp (Environment.add x' [] tvsenv) f ~static in
+          KNorm.LetRecBDecl (x, (if static then [] else tvs), x', f), Environment.add x tvs tvsenv
         | FixExp (x', y, _, _, f) ->
           assert (x' = x);
-          let f = k_normalize_exp (Environment.add y [] (Environment.add x' [] tvsenv)) f in
-          KNorm.LetRecBDecl (x, tvs, y, f), Environment.add x tvs tvsenv
+          let f = k_normalize_exp (Environment.add y [] (Environment.add x' [] tvsenv)) f ~static in
+          KNorm.LetRecBDecl (x, (if static then [] else tvs), y, f), Environment.add x tvs tvsenv
         | _ as f ->
-          let f = k_normalize_exp tvsenv f in KNorm.LetDecl (x, f), Environment.add x tvs tvsenv
+          let f = k_normalize_exp tvsenv f ~static in KNorm.LetDecl (x, f), Environment.add x tvs tvsenv
       end
 end
 
@@ -512,7 +515,7 @@ end
 
 let kNorm_funs_LB (tvsenv, alphaenv, betaenv) f = 
   let f, alphaenv = CC.alpha_program alphaenv f in
-  let f, tvsenv = CC.k_normalize_program tvsenv f in
+  let f, tvsenv = CC.k_normalize_program tvsenv f ~static:false in
   let rec iter betaenv f =
     let fbeta, betaenv = KNorm.beta_program betaenv f in
     let fassoc = KNorm.assoc_program fbeta in

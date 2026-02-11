@@ -11,6 +11,16 @@ module Environment = Map.Make (
   end
   )
 
+module V = struct
+  include Set.Make (
+    struct
+      type t = id
+      let compare (a1:id) a2 = compare a1 a2
+    end
+    )
+  let big_union vars = List.fold_right union vars empty
+end
+
 type binop = Plus | Minus | Mult | Div | Mod | Eq | Neq | Lt | Lte | Gt | Gte
 
 type ty =
@@ -94,6 +104,11 @@ type matchform = (*match式でmatchさせることのできる形の種類を定
   | MatchCons of matchform * matchform  (*リストとmatchするMatchList*)
   | MatchWild of ty
 
+let rec fv_matchform = function
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
+  | MatchVar (x, _) -> V.singleton x
+  | MatchCons (mf1, mf2) -> V.big_union [fv_matchform mf1; fv_matchform mf2]
+
 let rec tv_matchform : matchform -> TV.t = function
   | MatchVar (_, u) -> ftv_ty u
   | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
@@ -114,36 +129,6 @@ let neg = function Pos -> Neg | Neg -> Pos
 
 type tag = I | B | U | Ar | Li
 
-type coercion =
-  | CInj of tag
-  | CProj of tag * (range * polarity)
-  | CTvInj of tyvar
-  | CTvProj of tyvar * (range * polarity)
-  | CTvProjInj of tyvar * (range * polarity)
-  | CFun of coercion * coercion
-  | CList of coercion
-  | CId of ty
-  | CSeq of coercion * coercion
-  | CFail of tag * (range * polarity) * tag
-
-let is_d = function
-  | CSeq (CId u, CInj _) when u <> TyDyn -> true
-  | CSeq (CFun _, CInj _)
-  | CSeq (CList _, CInj _)
-  | CTvInj (_, {contents = None})
-  | CFun _ 
-  | CList _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
-  | _ -> false
-
-let rec ftv_coercion = function
-  | CInj _ | CProj _ -> TV.empty
-  | CTvInj tv | CTvProj (tv, _) | CTvProjInj (tv, _) -> TV.singleton tv
-  | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CList c -> ftv_coercion c
-  | CId u -> ftv_ty u
-  | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CFail _ -> TV.empty
-
 let type_of_tag = function
   | I -> TyInt
   | B -> TyBool
@@ -160,6 +145,35 @@ let rec tag_of_ty = function
   | TyVar (_, {contents = Some u}) -> tag_of_ty u
   | _ -> assert false
   (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
+
+type coercion =
+  | CInj of tag
+  | CProj of tag * (range * polarity)
+  | CTvInj of tyvar * (range * polarity)
+  | CTvProj of tyvar * (range * polarity)
+  | CTvProjInj of tyvar * (range * polarity) * (range * polarity)
+  | CFun of coercion * coercion
+  | CList of coercion
+  | CId of ty
+  | CSeq of coercion * coercion
+  | CFail of tag * (range * polarity) * tag
+
+let is_d = function
+  | CSeq (CId _, CInj _)
+  | CSeq (CFun _, CInj _)
+  | CSeq (CList _, CInj _)
+  | CFun _ 
+  | CList _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
+  | _ -> false
+
+let rec ftv_coercion = function
+  | CInj _ | CProj _ -> TV.empty
+  | CTvInj (tv, _) | CTvProj (tv, _) | CTvProjInj (tv, _, _) -> TV.singleton tv
+  | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CList c -> ftv_coercion c
+  | CId u -> ftv_ty u
+  | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CFail _ -> TV.empty
 
 exception Blame of range * polarity
 
@@ -427,6 +441,25 @@ module KNorm = struct
     | LetRecAExp of id * tyvar list * (id * id) * (exp * exp) * exp
     | LetRecBExp of id * tyvar list * id * exp * exp
 
+  let rec fv_exp = function
+    | Var x | Hd x | Tl x  -> V.singleton x
+    | IConst _ | Nil -> V.empty
+    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
+    | IfEqExp (x, y, f1, f2) | IfLteExp (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
+    | MatchExp (x, ms) -> 
+      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
+    | AppTy (x, _, _) -> V.singleton x
+    | AppMExp (x, y) -> V.of_list [x; y]
+    | AppDExp (x, (y, z)) -> V.of_list [x; y; z]
+    | CastExp (x, _, _, _) -> V.singleton x
+    | CAppExp (x, y) -> V.of_list [x; y]
+    | CSeqExp (x, y) -> V.of_list [x; y]
+    | CoercionExp _ -> V.empty
+    | LetExp (x, f1, f2) -> V.union (fv_exp f1) (V.remove x (fv_exp f2))
+    | LetRecSExp (x, _, (y, z), f1, f2) -> V.union (V.remove x @@ V.remove y @@ V.remove z @@ fv_exp f1) (V.remove x @@ fv_exp f2)
+    | LetRecAExp (x, _, (y, z), (f1, _), f2) -> V.union (V.remove x @@ V.remove y @@ V.remove z @@ fv_exp f1) (V.remove x @@ fv_exp f2)
+    | LetRecBExp (x, _, y, f1, f2) -> V.union (V.remove x @@ V.remove y @@ fv_exp f1) (V.remove x @@ fv_exp f2)
+
   type program =
     | Exp of exp
     | LetDecl of id * exp
@@ -447,8 +480,6 @@ module KNorm = struct
 end
 
 module Cls = struct
-  exception Cls_syntax_bug of string
-
   type label = string
 
   let to_label (x:id) = (x:label)
@@ -458,6 +489,15 @@ module Cls = struct
   type closure = { entry : label; actual_fv : id list }
 
   type ftv = { ftvs : tyarg list; offset : int }
+
+  type coercion =
+    | Id
+    | SeqInj of coercion * tag
+    | SeqProj of tag * (int * polarity) * coercion
+    | TvInj of tyvar * (int * polarity)
+    | TvProj of tyvar * (int * polarity)
+    | Fun of coercion * coercion
+    | List of coercion
 
   type exp =
     | Var of id
@@ -479,7 +519,7 @@ module Cls = struct
     | AppDDir of label * (id * id)
     | AppMCls of id * id
     | AppMDir of label * id
-    | Cast of id * ty * ty * (range * polarity)
+    | Cast of id * ty * ty * (int * polarity)
     | CApp of id * id
     | CSeq of id * id
     | Coercion of coercion
@@ -494,31 +534,16 @@ module Cls = struct
   type fundef = 
     | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
     | FundefM of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
-    
-  module V = struct
-    include Set.Make (
-      struct
-        type t = id
-        let compare (a1:id) a2 = compare a1 a2
-      end
-      )
-    let big_union vars = List.fold_right union vars empty
-  end
 
-  let rec fv_mf = function
-    | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
-    | MatchVar (x, _) -> V.singleton x
-    | MatchCons (mf1, mf2) -> V.big_union [fv_mf mf1; fv_mf mf2]
-
-  let rec fv = function
+  let rec fv_exp = function
     | Var x | Hd x | Tl x  -> V.singleton x
     | Int _ | Nil -> V.empty
     | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
-    | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv f1; fv f2]
+    | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | Match (x, ms) -> 
-      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_mf mf) (fv f)) ms)
+      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
     | AppTy (x, _, _) -> V.singleton x
-    | SetTy (_, f) -> fv f
+    | SetTy (_, f) -> fv_exp f
     | AppDDir (_, (y, z)) -> V.of_list [y; z]
     | AppDCls (x, (y, z)) -> V.of_list [x; y; z]
     | AppMDir (_, y) -> V.singleton y
@@ -527,13 +552,13 @@ module Cls = struct
     | CApp (x, y) -> V.of_list [x; y]
     | CSeq (x, y) -> V.of_list [x; y]
     | Coercion _ -> V.empty
-    | MakeLabel (x, _, f) -> V.remove x (fv f)
-    | MakePolyLabel (x, _, _, f) -> V.remove x (fv f)
-    | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv f))
-    | Let (x, c, f) -> V.union (fv c) (V.remove x (fv f))
-    | Insert _ -> raise @@ Cls_syntax_bug "Insert was applied to fv"
+    | MakeLabel (x, _, f) -> V.remove x (fv_exp f)
+    | MakePolyLabel (x, _, _, f) -> V.remove x (fv_exp f)
+    | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
+    | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
+    | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
+    | Insert (_, f) -> fv_exp f
 
-  type program = Prog of TV.t * fundef list * exp
+  type program = Prog of TV.t * range list * fundef list * exp
 
 end

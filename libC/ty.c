@@ -1,4 +1,6 @@
-#include "gc.h"
+#ifndef STATIC
+
+#include <gc.h>
 #include "ty.h"
 
 ty tydyn = { .tykind = DYN };
@@ -24,13 +26,12 @@ ty *ty_find(ty *t) {
     ty *curr = t;
     while (curr->tykind == SUBSTITUTED) {
         ty *next = curr->tydat.tv;
-        
-        if (next == root) break; 
-        
         curr->tydat.tv = root;
         curr = next;
     }
 
     return root;
 }
+#endif
+
 #endif

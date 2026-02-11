@@ -1,21 +1,25 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <stdint.h>
+
 // CAST : λBのとき
 // EAGER : lstのcoercionをeagerに
 // ALT : λSのid特化バージョン
+// STATIC: fully static 決め打ちバージョン
 // CASTとALTが同時に定義されることはない
 
-typedef struct ran_pol {
+#ifndef STATIC
+typedef struct range {
 	char *filename;
-	int startline;
-	int startchr;
-	int endline;
-	int endchr;
-	int polarity;
-} ran_pol;
+	uint32_t startline;
+	uint32_t startchr;
+	uint32_t endline;
+	uint32_t endchr;
+	// int polarity;
+} range;
 
-typedef enum ground_ty {
+typedef enum ground_ty : uint8_t {
 	G_INT,
 	G_BOOL,
 	G_UNIT,
@@ -25,16 +29,27 @@ typedef enum ground_ty {
 
 typedef struct ty ty;
 
+typedef struct dyn dyn;
+#endif
+
 typedef union value value;
 
 typedef struct fun fun;
 
 typedef struct lst lst;
 
-typedef struct dyn dyn;
-
-#ifndef CAST
+#if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;
+#endif
+
+#ifndef STATIC
+extern range *range_list;
+#endif
+
+#ifdef PROFILE
+extern int current_inference;
+extern int current_cast;
+extern int current_longest;
 #endif
 
 #endif
