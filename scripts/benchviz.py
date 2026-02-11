@@ -22,7 +22,8 @@ except Exception:
 TARGET_PAIRS = [ # (base, comp)
     ("BLC", ["ALC", "SLC"]),
     ("SLC", ["ALC"]),
-    ("STATICC", ["ALC", "SLC"]),
+    ("STATICC", ["ALC", "SLC", "GRIFT"]),
+    ("GRIFT", ["ALC"])
 ]
 
 # =========================
@@ -38,7 +39,6 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
     # "|" で結合して正規表現を作る
     # ["ALC", "SLC"] -> "ALC|SLC"
     comp_pattern = "|".join(comp)
-    # ラベル等が長くなりすぎないように調整（必要であれば）
     comp_label = "|".join(comp) 
 
     return { 
@@ -48,7 +48,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
             "church_65532",
             "evenodd", "fib", "fold", "loop", "map",
             "mklist", "tak", "zipwith", 
-            "map_mono", "fold_mono", "zipwith_mono"
+            "map_mono", "fold_mono", "zipwith_mono", "loop_mono"
         ],
         # 相対グラフ
         "relative": {
@@ -187,7 +187,7 @@ def _extract_promoted_bytes(mem_obj: Any) -> Optional[float]:
     except Exception:
         return None
 
-def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any]) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
+def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_metrics: List[str] = None) -> Tuple[str, str, Dict[str, Dict[int, Dict[str, Any]]]]:
     """
     最新ログディレクトリから、
       bench -> mutant_index -> {
@@ -218,12 +218,18 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any]) -> Tup
                     "after_mutate": None, 
                     "after_insertion": None,
                 }
+                if extra_metrics:
+                    for m in extra_metrics:
+                        slot[f"{base}_{m}"] = None
 
                 # 2. すべての comp に対するキーを追加
                 for c in comp:
                     slot[f"{c}_times"] = []
                     slot[f"{c}_promoted_bytes"] = None
                     slot[f"after_translation_{c}"] = None
+                    if extra_metrics:
+                        for m in extra_metrics:
+                            slot[f"{c}_{m}"] = None
                 
                 data_by_benchmark[bench][n] = slot
 
@@ -258,6 +264,15 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any]) -> Tup
                 pb_key = f"{mode}_promoted_bytes"
                 if pb_key in slot and slot[pb_key] is None:
                     slot[pb_key] = pb
+        if extra_metrics:
+            for m in extra_metrics:
+                val = obj.get(m)
+                if val is not None:
+                    # mode (Base or Comp) に応じたキーに保存
+                    # 値は定数想定なので、最初に見つかったものを採用（あるいは上書き）
+                    key = f"{mode}_{m}"
+                    if key in slot:
+                        slot[key] = val
 
     for filename in os.listdir(date_dir):
         m = json_pattern.match(filename)
