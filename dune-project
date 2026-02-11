@@ -20,7 +20,7 @@
  (license "MIT")
  
  (depends
-  (ocaml (>= 4.03))
+  (ocaml (>= 4.14.1))
   (dune (>= 2.0))
   
   (menhir (>= 2.0))

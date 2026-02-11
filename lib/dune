@@ -1,7 +1,7 @@
 (library
   (name lambda_S_dti)
   (public_name lambda-S-dti)
-  (libraries yojson core core_bench))
+  (libraries yojson core core_bench core_unix))
 
 (ocamllex lexer)
 ; Though we want to use --infer option in Menhir,

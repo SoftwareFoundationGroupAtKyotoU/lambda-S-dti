@@ -13,7 +13,7 @@ homepage: "https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti"
 bug-reports:
   "https://github.com/SoftwareFoundationGroupAtKyotoU/lambda-S-dti/issues"
 depends: [
-  "ocaml" {>= "4.03"}
+  "ocaml" {>= "4.14.1"}
   "dune" {>= "2.0"}
   "menhir" {>= "2.0"}
   "core" {>= "v0.17"}
