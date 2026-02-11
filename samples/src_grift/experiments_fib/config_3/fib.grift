@@ -1,0 +1,10 @@
+(define (fib [n : Dyn]) : Dyn (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(define (benchmark) : Unit (print-int (fib (read-int))))
+;; --- Auto-generated Loop Driver ---
+(define (run-benchmark-loop [k : Int]) : Unit
+  (if (<= k 0)
+      () 
+      (begin
+        (time (benchmark))
+        (run-benchmark-loop (- k 1)))))
+(run-benchmark-loop 500)

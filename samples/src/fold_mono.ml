@@ -7,5 +7,5 @@ let rec foldl (f : int -> int -> int) (acc : int) (xs : [int]) : int =
     []     -> acc
   | x :: xt -> foldl f (f acc x) xt in
 let add (a : int) (b : int) : int = a + b in
-let xs = mklist 10000 0 [] in
+let xs = mklist (read_int ()) 0 [] in
 foldl add 0 xs;;

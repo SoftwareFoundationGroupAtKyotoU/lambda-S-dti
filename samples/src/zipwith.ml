@@ -8,6 +8,7 @@ in let rec zipWith op xs ys acc =
     | [] -> acc
     | y :: yt -> zipWith op xt yt ((op x y) :: acc) 
 in let add a b = a + b in
-let xs = mklist 10000 0 [] in
-let ys = mklist 10000 0 [] in
+let i = read_int () in
+let xs = mklist i 0 [] in
+let ys = mklist i 0 [] in
 zipWith add xs ys [];;

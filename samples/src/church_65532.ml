@@ -12,4 +12,4 @@ let two f x = f (f x) in
 let four x = exp two two x in
 let twoHundredFiftySix y = exp four four y in
 let sixtyFiveThousandAndFiveHundredsThirtySix z = exp twoHundredFiftySix two z in
-realnat sixtyFiveThousandAndFiveHundredsThirtySix;;
+print_int (realnat sixtyFiveThousandAndFiveHundredsThirtySix);;
