@@ -490,6 +490,7 @@ static inline void dti(const ground_ty g, ty *tv) {
 	switch(g) {
 		case G_AR: {
 			// printf("DTI : arrow was inferred\n");
+			// printf("%p <- X1->X2\n", tv);
 			tv->tykind = TYFUN;
 			tv->tydat.tyfun.left = newty();
 			tv->tydat.tyfun.right = newty();
@@ -497,25 +498,26 @@ static inline void dti(const ground_ty g, ty *tv) {
 		}
 		case G_LI: {
 			// printf("DTI : list was inferred\n");
+			// printf("%p <- [X]\n", tv);
 			tv->tykind = TYLIST;
 			tv->tydat.tylist = newty();
 			return;
 		}
 		case G_INT: {
 			// printf("DTI : int was inferred\n");
-			// printf("%p <- int\n", c2->crcdat.seq_tv.ptr.tv);
+			// printf("%p <- int\n", tv);
 			*tv = tyint;
 			return;
 		}
 		case G_BOOL: {
 			// printf("DTI : bool was inferred\n");
-			// printf("%p <- bool\n", c2->crcdat.seq_tv.ptr.tv);
+			// printf("%p <- bool\n", tv);
 			*tv = tybool;
 			return;
 		}
 		case G_UNIT: {
 			// printf("DTI : unit was inferred\n");
-			// printf("%p <- unit\n", c2->crcdat.seq_tv.ptr.tv);
+			// printf("%p <- unit\n", tv);
 			*tv = tyunit;
 			return;
 		}

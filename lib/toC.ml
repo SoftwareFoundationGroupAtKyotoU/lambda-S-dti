@@ -3,6 +3,7 @@ open Syntax.Cls
 open Format
 open Config
 open Utils.Error
+open Static_manage
 
 exception ToC_bug of string
 (* exception ToC_error of string *)
@@ -27,12 +28,17 @@ let c_of_ty = function
   | TyUnit -> "&tyunit"
   | TyDyn -> "&tydyn"
   | TyFun (TyDyn, TyDyn) -> "&tyar"
-  | TyFun (_, _) -> raise @@ ToC_bug "tyfun should be eliminated by closure"
+  | TyFun (_, _) as u -> "&" ^ StaticTyManager.find u
   | TyList TyDyn -> "&tyli"
-  | TyList _ -> raise @@ ToC_bug "tylist should be eliminated by closure"
-  | TyVar (i, { contents = None }) -> "_ty" ^ string_of_int i
-  | TyVar (i, { contents = Some (TyFun _) }) -> "_tyfun" ^ string_of_int i
-  | TyVar (i, { contents = Some (TyList _) }) -> "_tylist" ^ string_of_int i
+  | TyList _ as u -> "&" ^ StaticTyManager.find u
+  | TyVar (i, { contents = None }) as u -> 
+    begin try 
+      "&" ^ StaticTyManager.find u
+    with Not_found ->
+      Format.asprintf "_ty%d" i
+    end
+  | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
+  | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
   | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun or list"
 
 (*型引数のCプログラム表記を出力する関数*)
@@ -142,12 +148,12 @@ let rec toC_crc ppf (c, x) = match c with
       x
       toC_crc (c2, x ^ "_clist")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
-  | TvInj ((i, _), (r, p)) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
-      x x x (match p with Pos -> 1 | Neg -> 0) x r x i
-  | TvProj ((i, _), (r, p)) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = _ty%d;"
-      x x x (match p with Pos -> 1 | Neg -> 0) x r x i
+  | TvInj (tv, (r, p)) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
+  | TvProj (tv, (r, p)) -> 
+    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
   | Fun (c1, c2) -> 
     fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = FUN;\n%s.s->crcdat.two_crc.c1 = %s_c1.s;\n%s.s->crcdat.two_crc.c2 = %s_c2.s;"
       x
@@ -521,12 +527,8 @@ let rec toC_exp ppf f = match f with
   ここで行われる型定義は，プログラム全体で共有される方についてのみである*)
 (*型名の前方定義
   型はポインタなので，共有して型を扱うには，まず名前を先に定義する必要がある*)
-let toC_tydecl ppf (i, { contents = opu }) =
-  match opu with
-  | None -> fprintf ppf "ty *_ty%d;" i
-  | Some TyFun _ -> fprintf ppf "ty *_tyfun%d;" i
-  | Some TyList _ -> fprintf ppf "ty *_tylist%d;" i
-  | _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
+let toC_tydecl ppf (_, name) =
+  fprintf ppf "static ty %s;" name
 
 let toC_tydecls ppf l = 
   if List.length l = 0 then fprintf ppf ""
@@ -536,32 +538,23 @@ let toC_tydecls ppf l =
     toC_list l
 
 (*型の定義*)
-let toC_tycontent ppf (i, { contents = opu }) =
-  match opu with
-  | None -> (* TyVarはMALLOCした後，tykindをTYVARにする *)
-    fprintf ppf "_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;"
-      i
-      i
-  | Some TyFun (u1, u2) -> 
-    (*TyFunはMALLOCしたのち，tykindをTYFUNとする
-      さらに，leftとrightをそれぞれMALLOCして，TyFunの二つの型をそれぞれ代入する*)
-    fprintf ppf "_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.left = %s;\n_tyfun%d->tydat.tyfun.right = %s;"
-      i
-      i
-      i
-      i
-      i
+let toC_tycontent ppf (u, name) =
+  match u with
+  | TyVar _ -> (* TyVarはtykindをTYVARにする *)
+    fprintf ppf "static ty %s = { .tykind = TYVAR };"
+      name
+  | TyFun (u1, u2) -> 
+    (*TyFunはtykindをTYFUNとする
+      さらに，leftとrightにTyFunの二つの型をそれぞれ代入する*)
+    fprintf ppf "static ty %s = { .tykind = TYFUN, .tydat.tyfun = { .left = %s, .right = %s } };"
+      name
       (c_of_ty u1)
-      i
       (c_of_ty u2)
-  | Some TyList u ->
-    fprintf ppf "_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;"
-      i
-      i
-      i
-      i
+  | TyList u ->
+    fprintf ppf "static ty %s = { .tykind = TYLIST, .tydat.tylist = %s };"
+      name
       (c_of_ty u)
-  | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
+  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
 
 let toC_tycontents ppf l = 
   let toC_sep ppf () = fprintf ppf "\n" in
@@ -570,15 +563,12 @@ let toC_tycontents ppf l =
     toC_list l
 
 (*型定義全体を記述*)
-let toC_tys ppf (l, bench) =
+let toC_tys ppf l =
   if l = [] then fprintf ppf ""
-  (*Cではset_tys()関数内で型の定義を行う．main関数で最初に呼び出す*)
   else 
-    fprintf ppf "%a%s%a%s"
+    fprintf ppf "%a%a\n\n"
       toC_tydecls l
-      (if bench = 0 then "int set_tys() {\n" else Format.asprintf "int set_tys%d() {\n" bench)
       toC_tycontents l
-      "return 0;\n}\n\n"
 
 (* ================================ *)
 
@@ -852,21 +842,20 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program ?(bench=0) ~config ppf (Prog (tvset, ranges, toplevel, f)) = 
+let toC_program ?(bench=0) ~config ppf (Prog (ranges, toplevel, f)) = 
   is_main := false;
   is_alt := config.alt;
   is_B := config.intoB;
   is_eager := config.eager;
   is_static := config.static;
-  fprintf ppf "%s\n%a%a%a%s%s%s%s%a%s"
+  fprintf ppf "%s\n%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
-    toC_tys (TV.elements tvset, bench)
+    toC_tys (StaticTyManager.get_definitions ())
     toC_ranges ranges
     toC_fundefs toplevel
     (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
     (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
-    (if TV.is_empty tvset then "" else if bench = 0 then "set_tys();\n" else asprintf "set_tys%d();\n" bench)
     toC_exp f
     "}"

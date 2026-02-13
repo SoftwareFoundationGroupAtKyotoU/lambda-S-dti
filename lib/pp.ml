@@ -1035,7 +1035,7 @@ module Cls = struct
       pp_list toplevel
 
   let pp_program ppf = function
-    | Prog (_, _, toplevel, cf) ->
+    | Prog (_, toplevel, cf) ->
       if List.length toplevel = 0 
         then 
           fprintf ppf "exp:\n%a"
