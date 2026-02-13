@@ -220,7 +220,12 @@ def main():
         analyze_ast(child, all_targets)
     
     total_variants = 2 ** len(all_targets)
-    variants_to_run = [0] if args.static else range(total_variants)
+    if args.static:
+        variants_to_run = [0]
+    else:
+        # 動的型(ビットが1)の数が少ない順にソートする
+        # 同じ数の場合は、インデックスの小さい順(辞書順)にする
+        variants_to_run = sorted(range(total_variants), key=lambda x: (bin(x).count('1'), x))
     
     print(f"Total variants: {total_variants}")
     with open(output_jsonl_path, 'w') as f: pass
