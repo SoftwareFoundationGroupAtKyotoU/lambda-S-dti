@@ -3,18 +3,16 @@
 
 #ifndef STATIC
 #include "types.h"
-#include "value.h"
 
-typedef struct dyn {
-	value v;
-	#ifdef CAST
-	uint32_t rid;
-	ground_ty g;
-	uint8_t polarity;
-	#else
-	crc *d;
-	#endif
+#ifdef CAST
+typedef uint64_t dyn;
+#else
+typedef union dyn {
+	uint64_t atom;
+	v_d *non_atom;
 } dyn;
+#endif
+
 #endif
 
 #endif

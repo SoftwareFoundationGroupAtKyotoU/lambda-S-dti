@@ -8,15 +8,9 @@ let toplevel = ref []
 
 (* let tvset = ref TV.empty *)
 
-let ranges = ref []
+(* let ranges = ref [] *)
 
 (* let crcs = ref [] *)
-
-let range_id r = 
-  let rec itr n l = match l with
-  | h :: t -> if h = r then n else itr (n + 1) t
-  | [] -> ranges := !ranges @ [r]; n
-  in itr 0 !ranges
 
 module KNorm = struct
   open Syntax.KNorm
@@ -27,12 +21,12 @@ module KNorm = struct
   
   let rec ty_tv tvs u = match u with
     | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn as u -> (u, fun x -> x)
-    | TyVar tv -> if not (List.mem tv tvs) then (StaticTyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
+    | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
     | TyFun (u1, u2) ->
       let u1, ufun1 = ty_tv tvs u1 in
       let u2, ufun2 = ty_tv tvs u2 in
       if not (exist_tv (TV.elements (Syntax.ftv_ty u1)) tvs) && not (exist_tv (TV.elements (Syntax.ftv_ty u2)) tvs) then begin
-        StaticTyManager.register u;
+        TyManager.register u;
         (u, fun x -> x)
       end else 
         let newu = Typing.fresh_tyvar () in
@@ -44,7 +38,7 @@ module KNorm = struct
     | TyList u' -> 
       let u', ufun' = ty_tv tvs u' in
       if not (exist_tv (TV.elements (Syntax.ftv_ty u)) tvs) then begin
-        StaticTyManager.register u;
+        TyManager.register u;
         (u, fun x -> x)
       end else
         let newu = Typing.fresh_tyvar () in
@@ -64,23 +58,56 @@ module KNorm = struct
     | [] -> r
   in ttt (List.rev tvs) []
 
-  let rec toCls_crc tvs c = match c with 
+  let rec toCls_crc tvs c = 
+    let is_static c = 
+      let cached = CrcManager.mem c in
+      let constant = match c with
+      | Cls.Id | Cls.SeqInj (Cls.Id, _) -> true
+      | _ -> false
+      in
+      cached || constant
+    in
+    match c with
     | CId _ -> Cls.Id
-    (* | CFail (_, (r, p), _) -> Cls.Fail (range_id r, p) *)
-    (* | CSeq (CProj (g, (r, p)), CSeq (c, CInj g')) -> Cls.SeqProjInj (g, (range_id r, p), toCls_crc tvs c, g') *)
-    | CSeq (CProj (g, (r, p)), c) -> Cls.SeqProj (g, (range_id r, p), toCls_crc tvs c)
-    | CSeq (c, CInj g) -> Cls.SeqInj (toCls_crc tvs c, g)
-    | CTvInj (tv, (r, p)) -> 
-      if not (List.mem tv tvs) then StaticTyManager.register (TyVar tv);
-      Cls.TvInj (tv, (range_id r, p))
-    | CTvProj (tv, (r, p)) -> 
-      if not (List.mem tv tvs) then StaticTyManager.register (TyVar tv);
-      Cls.TvProj (tv, (range_id r, p))
-    (* | CTvProjInj (tv, (r, p)) ->
-      if not (List.mem tv tvs) then StaticTyManager.register (TyVar tv);
-      Cls.TvProjInj (tv, (range_id r, p)) *)
-    | CFun (c1, c2) -> Cls.Fun (toCls_crc tvs c1, toCls_crc tvs c2)
-    | CList c -> Cls.List (toCls_crc tvs c)
+    | CSeq (CProj (g, (r, p)), c') ->
+      let c' = toCls_crc tvs c' in
+      let r = RangeManager.range_id r in
+      let c = Cls.SeqProj (g, (r, p), c') in
+      if is_static c' then CrcManager.register c;
+      c
+    | CSeq (CId _, CInj g) -> Cls.SeqInj (Cls.Id, g)
+    | CSeq (c', CInj g) ->
+      let c' = toCls_crc tvs c' in
+      let c = Cls.SeqInj (c', g) in
+      if is_static c' then CrcManager.register c;
+      c
+    | CTvInj (tv, (r, p)) ->
+      let r = RangeManager.range_id r in
+      let c = Cls.TvInj (tv, (r, p)) in
+      if not (List.mem tv tvs) then begin
+        TyManager.register (TyVar tv);
+        CrcManager.register c
+      end;
+      c
+    | CTvProj (tv, (r, p)) ->
+      let r = RangeManager.range_id r in
+      let c = Cls.TvProj (tv, (r, p)) in
+      if not (List.mem tv tvs) then begin
+        TyManager.register (TyVar tv);
+        CrcManager.register c
+      end;
+      c
+    | CFun (c1, c2) ->
+      let c1 = toCls_crc tvs c1 in
+      let c2 = toCls_crc tvs c2 in
+      let c = Cls.Fun (c1, c2) in
+      if is_static c1 && is_static c2 then CrcManager.register c;
+      c
+    | CList c' ->
+      let c' = toCls_crc tvs c' in
+      let c = Cls.List c' in
+      if is_static c' then CrcManager.register c;
+      c
     | _ -> raise @@ Closure_bug "bad coercion"
 
   let rec toCls_exp known tvs = function
@@ -92,7 +119,7 @@ module KNorm = struct
     | Div (x, y) -> Cls.Div (x, y)
     | Mod (x, y) -> Cls.Mod (x, y)
     | Nil -> Cls.Nil
-    | Cons (x, y) -> Cls.Cons (x, y) 
+    | Cons (x, y) -> Cls.Cons (x, y)
     | Hd x -> Cls.Hd x
     | Tl x -> Cls.Tl x
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs f) ms)
@@ -112,7 +139,7 @@ module KNorm = struct
     | CastExp (x, u1, u2, (r, p)) -> 
       let u1, udeclfun1 = ty_tv tvs u1 in 
       let u2, udeclfun2 = ty_tv tvs u2 in 
-      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, (range_id r, p))))
+      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, (RangeManager.range_id r, p))))
     | CAppExp (x, y) -> Cls.CApp (x, y)
     | CSeqExp (x, y) -> Cls.CSeq (x, y)
     | CoercionExp c -> Cls.Coercion (toCls_crc tvs c)
@@ -129,15 +156,14 @@ module KNorm = struct
           known, f1'
         else 
           let toplevel_backup = !toplevel in
-          let staticTy_backup = StaticTyManager.save () in
-          let ranges_backup = !ranges in
+          let static_backup = static_save () in
           let known' = V.add x known in
           let f1' = toCls_exp known' new_tvs f1 in
           let zs = V.diff (Cls.fv_exp f1') (V.of_list [y; z]) in
           if V.is_empty zs (*&& List.length new_tvs = 0*) then 
             known', f1'
           else begin
-            toplevel := toplevel_backup; StaticTyManager.restore staticTy_backup; ranges := ranges_backup;
+            toplevel := toplevel_backup; static_restore static_backup;
             (* Format.fprintf Format.err_formatter "backtracking %s\n" x; *)
             let f1' = toCls_exp known new_tvs f1 in
             known, f1'
@@ -164,15 +190,14 @@ module KNorm = struct
           known, f1'
         else 
           let toplevel_backup = !toplevel in
-          let staticTy_backup = StaticTyManager.save () in
-          let ranges_backup = !ranges in
+          let static_backup = static_save () in
           let known' = V.add x known in
           let f1' = toCls_exp known' new_tvs f1 in
           let zs = V.diff (Cls.fv_exp f1') (V.singleton y) in
           if V.is_empty zs (*&& List.length new_tvs = 0*) then 
             known', f1'
           else begin
-            toplevel := toplevel_backup; StaticTyManager.restore staticTy_backup; ranges := ranges_backup;
+            toplevel := toplevel_backup; static_restore static_backup;
             (* Format.fprintf Format.err_formatter "backtracking %s\n" x; *)
             let f1' = toCls_exp known new_tvs f1 in
             known, f1'
@@ -192,7 +217,7 @@ module KNorm = struct
 
   let toCls kf known = 
     let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
-    toplevel := []; StaticTyManager.clear (); ranges := [];
+    toplevel := []; static_clear ();
     toCls_exp known [] f
 end
 
@@ -274,8 +299,8 @@ module Cls = struct
     | [] -> []
 
   let altCls p alt =
-    if alt then Prog (!ranges, alt_funs !toplevel, to_alt V.empty p)
-    else Prog (!ranges, List.rev !toplevel, p)
+    if alt then Prog (alt_funs !toplevel, to_alt V.empty p)
+    else Prog (List.rev !toplevel, p)
 end
 
 let toCls_program kf venv ~alt =

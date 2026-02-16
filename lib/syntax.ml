@@ -498,7 +498,6 @@ module Cls = struct
     | TvProj of tyvar * (int * polarity)
     | Fun of coercion * coercion
     | List of coercion
-    (* | Static of string *)
 
   type exp =
     | Var of id
@@ -560,6 +559,6 @@ module Cls = struct
     | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
     | Insert (_, f) -> fv_exp f
 
-  type program = Prog of range list * fundef list * exp
+  type program = Prog of fundef list * exp
 
 end

@@ -21,6 +21,53 @@ static inline void update_longest(int new) {
 }
 #endif
 
+static inline uint8_t tag_of(value v) {
+	return (v.i_b_u & 0b111) - 1;
+}
+
+static inline value tag_value(value v, uint8_t t) {
+	#ifdef CAST
+	switch(t) {
+		case G_INT:
+		case G_BOOL:
+		case G_UNIT:
+			return (value){ .d = (v.i_b_u << 3 | (t + 1)) };
+		case G_AR:
+		case G_LI:
+			return (value){ .d = (v.i_b_u | (t + 1)) };
+		default: {
+			printf("%d is not ground_ty", t);
+			exit(1);
+		}
+	}
+	#else
+	#ifdef PROFILE
+	update_longest(1);
+	#endif
+	return (value){ .d.atom = (v.i_b_u << 3 | (t + 1)) };
+	#endif
+}
+
+static inline value untag_value(value v, uint8_t t) {
+	#ifdef CAST
+	switch(t) {
+		case G_INT:
+		case G_BOOL:
+		case G_UNIT:
+			return (value){ .i_b_u = v.d >> 3 };
+		case G_AR:
+		case G_LI:
+			return (value){ .i_b_u = v.d & ~0b111 };
+		default: {
+			printf("%d is not ground_ty", t);
+			exit(1);
+		}
+	}
+	#else
+	return (value){ .i_b_u = v.d.atom >> 3 };
+	#endif
+}
+
 #ifdef CAST
 #include "ty.h"
 
@@ -61,57 +108,21 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 	switch(tk1) {
 		case BASE_INT: {			// when t1 is ground and t2 is ?
 			switch(tk2) {
-				case DYN: {
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					value retx;
-					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-					retx.d->v = x;
-					retx.d->g = G_INT;
-					retx.d->rid = rid;
-					retx.d->polarity = polarity;
-					return retx;
-				}
+				case DYN: return tag_value(x, G_INT); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
 		}
 		case BASE_BOOL: {
 			switch(tk2) {
-				case DYN: {
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					value retx;
-					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-					retx.d->v = x;
-					retx.d->g = G_BOOL;
-					retx.d->rid = rid;
-					retx.d->polarity = polarity;
-					return retx;
-				}
+				case DYN: return tag_value(x, G_BOOL); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
 		}
 		case BASE_UNIT: {
 			switch(tk2) {
-				case DYN: {
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					value retx;
-					// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-					retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-					retx.d->v = x;
-					retx.d->g = G_UNIT;
-					retx.d->rid = rid;
-					retx.d->polarity = polarity;
-					return retx;
-				}
+				case DYN: return tag_value(x, G_UNIT); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
@@ -151,14 +162,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 						update_longest(cur);
 						#endif
-						value retx;
-						// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-						retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-						retx.d->v = x;
-						retx.d->g = G_AR;
-						retx.d->rid = rid;
-						retx.d->polarity = polarity;
-						return retx;
+						return tag_value(x, G_AR); // define x:G=>? as dynamic type value
 					} else {			// when t1 is function type and t2 is ?
 						// printf("cast ground\n");
 						value x_ = cast(x, t1, &tyar, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
@@ -225,14 +229,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						update_longest(cur);
 						#endif
 						#endif
-						value retx;
-						// printf("defined as a dyn value\n");								// define x:G=>? as dynamic type value
-						retx.d = (dyn*)GC_MALLOC(sizeof(dyn));
-						retx.d->v = x;
-						retx.d->g = G_LI;
-						retx.d->rid = rid;
-						retx.d->polarity = polarity;
-						return retx;
+						return tag_value(x, G_AR); // define x:G=>? as dynamic type value
 					} else {			// when t1 is list type and t2 is ?
 						// printf("cast ground\n");
 						value x_ = cast(x, t1, &tyli, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
@@ -246,28 +243,27 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 		case DYN: {
 			switch(tk2) {
 				case BASE_INT: {			// when t1 is ? and t2 is ground type
-					ground_ty t = x.d->g;
-					if (t == G_INT) {													// when t1's injection ground type equals t2
+					if (tag_of(x) == G_INT) {													// when t1's injection ground type equals t2
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-						return x.d->v;
+						return untag_value(x, G_INT);
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", t, G_INT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
 					}
 				}
 				case BASE_BOOL: {
-					if (x.d->g == G_BOOL) {													// when t1's injection ground type equals t2
+					if (tag_of(x) == G_BOOL) {													// when t1's injection ground type equals t2
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-						return x.d->v;
+						return untag_value(x, G_BOOL);
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_BOOL);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
 					}
 				}
 				case BASE_UNIT: {
-					if (x.d->g == G_UNIT) {													// when t1's injection ground type equals t2
+					if (tag_of(x) == G_UNIT) {													// when t1's injection ground type equals t2
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-						return x.d->v;
+						return untag_value(x, G_UNIT);
 					} else {											// when t1's injection ground type dosen't equal t2
 						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_UNIT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 						blame(rid, polarity);
@@ -275,9 +271,9 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case TYFUN: {
 					if (t2->tydat.tyfun.left->tykind == DYN && t2->tydat.tyfun.right->tykind == DYN) {
-						if (x.d->g == G_AR) {													// when t1's injection ground type equals t2
+						if (tag_of(x) == G_AR) {													// when t1's injection ground type equals t2
 							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-							return x.d->v;
+							return untag_value(x, G_AR);
 						} else {											// when t1's injection ground type dosen't equal t2
 							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_AR);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
@@ -290,9 +286,9 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case TYLIST: {
 					if (t2->tydat.tylist->tykind == DYN) {
-						if (x.d->g == G_LI) {													// when t1's injection ground type equals t2
+						if (tag_of(x) == G_LI) {													// when t1's injection ground type equals t2
 							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-							return x.d->v;
+							return untag_value(x, G_LI);
 						} else {											// when t1's injection ground type dosen't equal t2
 							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
@@ -304,14 +300,14 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					}
 				}
 				case TYVAR: {			// when t1 is ? and t2 is type variable
-					switch(x.d->g) {
+					switch(tag_of(x)) {
 						case(G_INT): {											// when t1's injection ground type is int
 							// printf("DTI : int was inferred\n");							// R_INSTBASE (x':int=>?=>X -[X:=int]> x')
 							#ifdef PROFILE
 							current_inference++;
 							#endif
 							*t2 = tyint;
-							return x.d->v;
+							return untag_value(x, G_INT);
 						}
 						case(G_BOOL): {												// when t1's injection ground type is bool	
 							// printf("DTI : bool was inferred\n");							// R_INSTBASE (x':bool=>?=>X -[X:=bool]> x')
@@ -319,7 +315,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							current_inference++;
 							#endif
 							*t2 = tybool;
-							return x.d->v;
+							return untag_value(x, G_BOOL);
 						}
 						case(G_UNIT): {											// when t1's injection ground type is unit
 							// printf("DTI : unit was inferred\n");							// R_INSTBASE (x':unit=>?=>X -[X:=unit]> x')
@@ -327,7 +323,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							current_inference++;
 							#endif
 							*t2 = tyunit;
-							return x.d->v;
+							return untag_value(x, G_UNIT);
 						}
 						case(G_AR):	{												// when t1's injection ground type is ?->?
 							// printf("DTI : arrow was inferenced\n");							// R_INSTARROW (x':?->?=>?=>X -[X:=X_1->X_2]> x':?->?=>X_1->X_2)
@@ -339,7 +335,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							t2->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));
 							t2->tydat.tyfun.left->tykind = TYVAR;
 							t2->tydat.tyfun.right->tykind = TYVAR;
-							return cast(x.d->v, &tyar, t2, rid, polarity);
+							return cast(untag_value(x, G_AR), &tyar, t2, rid, polarity);
 						}
 						case(G_LI):	{												// when t1's injection ground type is [?]
 							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':[?]=>?=>X -[X:=X_1->X_2]> x':[?]=>[X_1])
@@ -349,7 +345,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							t2->tykind = TYLIST;
 							t2->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));
 							t2->tydat.tylist->tykind = TYVAR;
-							return cast(x.d->v, &tyli, t2, rid, polarity);
+							return cast(untag_value(x, G_LI), &tyli, t2, rid, polarity);
 						}
 					}
 				}
@@ -371,11 +367,13 @@ value coerce(value v, crc *s) {
 	#ifdef PROFILE
 	current_cast++;
 	#endif
+	if (s == &crc_id) return v; // v<id> -> v
+	if (s == &crc_inj_INT) return tag_value(v, G_INT);
+	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
+	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
 	switch (s->crckind) {
-		case ID: return v; // v<id> -> v
-		case BOT: { // v<bot^p> -> blame p
-			blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-		}
+		case ID: goto OPTIMIZATION_UNCAUGHT;
+		case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
 		case FUN: { // v<s'=>t'>
 			if (v.f->funkind == WRAPPED) { // u<<s=>t>><s'=>t'>
 				crc *c = compose(v.f->fundat.wrap.c, s);
@@ -443,94 +441,120 @@ value coerce(value v, crc *s) {
 			#endif
 		}
 		case TV_INJ: {
-			normalize_crc(s);
+			s = normalize_crc(s);
+			if (s == &crc_inj_INT) return tag_value(v, G_INT);
+			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
+			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
 			// return coerce(v, s);
 		}
 		case SEQ_INJ: 
 		switch(s->crcdat.seq_tv.ptr.s->crckind) {
 			case FUN: { // v<s'=>t';G!>
 				value retv;
-				retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
+				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
 				if (v.f->funkind == WRAPPED) {                                      // u<<s=>t>><s'=>t';G!>
 					crc *c = compose(v.f->fundat.wrap.c, s->crcdat.seq_tv.ptr.s);
-					retv.d->v.f = v.f->fundat.wrap.w;
-					retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
-					retv.d->d->crckind = SEQ_INJ;
-					retv.d->d->g_inj = s->g_inj;
-					retv.d->d->crcdat.seq_tv.ptr.s = c;
+					retv.d.non_atom->v.f = v.f->fundat.wrap.w;
+					retv.d.non_atom->d = (crc*)GC_MALLOC(sizeof(crc));
+					retv.d.non_atom->d->crckind = SEQ_INJ;
+					retv.d.non_atom->d->g_inj = s->g_inj;
+					retv.d.non_atom->d->crcdat.seq_tv.ptr.s = c;
 					return retv;
 				} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
 					#ifdef PROFILE
 					update_longest(1);
 					#endif
-					retv.d->v.f = v.f;
-					retv.d->d = s;
+					retv.d.non_atom->v.f = v.f;
+					retv.d.non_atom->d = s;
 					return retv;
 				}
 			}
 			case LIST: { // v<[s'];G!>
 				value retv;
-				retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
+				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
 				#ifdef EAGER
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				retv.d->v.l = v.l;
-				retv.d->d = s;
+				retv.d.non_atom->v.l = v.l;
+				retv.d.non_atom->d = s;
 				return retv;
 				#else
 				if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
 					crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.seq_tv.ptr.s);
-					retv.d->v.l = v.l->lstdat.wrap_l.w;
-					retv.d->d = (crc*)GC_MALLOC(sizeof(crc));
-					retv.d->d->crckind = SEQ_INJ;
-					retv.d->d->g_inj = s->g_inj;
-					retv.d->d->crcdat.seq_tv.ptr.s = c;
+					retv.d.non_atom->v.l = v.l->lstdat.wrap_l.w;
+					retv.d.non_atom->d = (crc*)GC_MALLOC(sizeof(crc));
+					retv.d.non_atom->d->crckind = SEQ_INJ;
+					retv.d.non_atom->d->g_inj = s->g_inj;
+					retv.d.non_atom->d->crcdat.seq_tv.ptr.s = c;
 					return retv;
 				} else { // u<[s'];G!> -> u<<[s'];G!>>
 					#ifdef PROFILE
 					update_longest(1);
 					#endif
-					retv.d->v.l = v.l;
-					retv.d->d = s;
+					retv.d.non_atom->v.l = v.l;
+					retv.d.non_atom->d = s;
 					return retv;
 				}
 				#endif
 			}
 			default: {// v<id;G!> -> v<<id;G!>>
-				#ifdef PROFILE
-				update_longest(1);
-				#endif
+				// 関数とリストの id;G! のみがここでdynにされる
 				value retv;
-				retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
-				retv.d->v = v;
-				retv.d->d = s;
+				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
+				retv.d.non_atom->v = v;
+				retv.d.non_atom->d = s;
 				return retv;
 			}	
 		}
 
 		default: {									// v<G?p;i> = u<<d>><G?p;i>, v<X?p> = u<<d>><X?p>, v<?pX!> = u<<d>><?pX!>
-			crc *c1 = compose(v.d->d, s);
-			// printf("composed c:%d\n", c1->crckind);
-			switch(c1->crckind) {
-				case ID: return v.d->v;     // u<<d>><s> -> u<id> -> u
-				case BOT: {
-					blame(c1->crcdat.seq_tv.rid_proj, c1->p_proj);
+			uint8_t tag = tag_of(v);
+			switch(tag) {
+				case G_INT: {
+					s = compose(&crc_inj_INT, s); 
+					v = untag_value(v, G_INT); 
+					break;
 				}
+				case G_BOOL: {
+					s = compose(&crc_inj_BOOL, s); 
+					v = untag_value(v, G_BOOL); 
+					break;
+				}
+				case G_UNIT: {
+					s = compose(&crc_inj_UNIT, s); 
+					v = untag_value(v, G_UNIT); 
+					break;
+				}
+				default: {
+					s = compose(v.d.non_atom->d, s); 
+					break;
+				}
+			}
+
+			// printf("composed c:%d\n", c1->crckind);
+			if (s == &crc_id) return v; // u<<d>><s> -> u<id> -> u
+			if (s == &crc_inj_INT) return tag_value(v, G_INT);
+			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
+			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
+
+			switch(s->crckind) {
+				case ID: goto OPTIMIZATION_UNCAUGHT;
+				case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
 				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
 					value retv;
 					retv.f = (fun*)GC_MALLOC(sizeof(fun));
 					retv.f->funkind = WRAPPED;
-					retv.f->fundat.wrap.w = v.d->v.f;
-					retv.f->fundat.wrap.c = c1;
+					retv.f->fundat.wrap.w = v.d.non_atom->v.f;
+					retv.f->fundat.wrap.c = s;
 					return retv;
 				}
 				case LIST: {        // u<<d>><s> -> u<[s]> -> u<<[s]>>
 					#ifdef EAGER
 					value retv = { .l = NULL };
     				value *dest = &retv;
-    				value curr_src = v.d->v;
-					crc *clist = c1->crcdat.one_crc;
+    				value curr_src = v.d.non_atom->v;
+					crc *clist = s->crcdat.one_crc;
     				while (curr_src.l != NULL) {
     				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
     				    dest->l = new_lst;
@@ -544,22 +568,26 @@ value coerce(value v, crc *s) {
 					value retv;
 					retv.l = (lst*)GC_MALLOC(sizeof(lst));
 					retv.l->lstkind = WRAPPED_LIST;
-					retv.l->lstdat.wrap_l.w = v.d->v.l;
-					retv.l->lstdat.wrap_l.c = c1;
+					retv.l->lstdat.wrap_l.w = v.d.non_atom->v.l;
+					retv.l->lstdat.wrap_l.c = s;
 					return retv;
 					#endif
 				}
 
-				default: {                                 // u<<d>><s> -> u<d> -> u<<d>>
+				default: {    // u<<d>><s> -> u<d> -> u<<d>>
 					value retv;
-					retv.d = (dyn*)GC_MALLOC(sizeof(dyn));
-					retv.d->v = v.d->v;
-					retv.d->d = c1;
+					retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
+					retv.d.non_atom->v = v.d.non_atom->v;
+					retv.d.non_atom->d = s;
 					return retv;
 				}
 			}
 		}
 	}
+
+	OPTIMIZATION_UNCAUGHT: 
+	printf("optimization for coercion %d is not caught", s->crckind);
+	exit(1);
 }		
 #endif	
 

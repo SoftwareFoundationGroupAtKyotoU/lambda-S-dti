@@ -97,7 +97,7 @@ value appD(value f, value v, value w) {									// reduction of f(v)
 	}
 
 	#ifdef ALT
-	if (s.s->crckind == ID) {
+	if (s.s == &crc_id) {
 		switch(g->funkind){
 			case(LABEL): return g->fundat.label_alt.l_a(arg);	
 			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl_a(arg, g->fundat.poly.tas);

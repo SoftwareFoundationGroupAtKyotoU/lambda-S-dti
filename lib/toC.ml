@@ -28,12 +28,12 @@ let c_of_ty = function
   | TyUnit -> "&tyunit"
   | TyDyn -> "&tydyn"
   | TyFun (TyDyn, TyDyn) -> "&tyar"
-  | TyFun (_, _) as u -> "&" ^ StaticTyManager.find u
+  | TyFun (_, _) as u -> "&" ^ TyManager.find u
   | TyList TyDyn -> "&tyli"
-  | TyList _ as u -> "&" ^ StaticTyManager.find u
+  | TyList _ as u -> "&" ^ TyManager.find u
   | TyVar (i, { contents = None }) as u -> 
     begin try 
-      "&" ^ StaticTyManager.find u
+      "&" ^ TyManager.find u
     with Not_found ->
       Format.asprintf "_ty%d" i
     end
@@ -111,24 +111,21 @@ let toC_tag ppf = function
   | Ar -> pp_print_string ppf "AR"
   | Li -> pp_print_string ppf "LI"
 
-let rec toC_crc ppf (c, x) = match c with
+let rec toC_crc ppf (c, x) = 
+  if CrcManager.mem c then 
+    fprintf ppf "%s.s = &%s;" x (CrcManager.find c)
+  else match c with
   | Id -> fprintf ppf "%s.s = &crc_id;" x
-  | SeqInj (Id, Ar) -> 
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_AR;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
-      x x x x
-  | SeqInj (Id, Li) ->
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_LI;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
-      x x x x
-  | SeqInj (Id, t) -> 
+  | SeqInj (Id, t) ->
     fprintf ppf "%s.s = &crc_inj_%a;"
-      x 
+      x
       toC_tag t
-  | SeqInj (Fun _ as c1, Ar) -> 
+  | SeqInj (Fun _ as c1, Ar) ->
     fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_AR;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
       x
       toC_crc (c1, x ^ "_cfun")
       x x x x x
-  | SeqInj (List _ as c1, Li) -> 
+  | SeqInj (List _ as c1, Li) ->
     fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_LI;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
       x
       toC_crc (c1, x ^ "_clist")
@@ -148,13 +145,13 @@ let rec toC_crc ppf (c, x) = match c with
       x
       toC_crc (c2, x ^ "_clist")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
-  | TvInj (tv, (r, p)) -> 
+  | TvInj (tv, (r, p)) ->
     fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
-  | TvProj (tv, (r, p)) -> 
+  | TvProj (tv, (r, p)) ->
     fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
-  | Fun (c1, c2) -> 
+  | Fun (c1, c2) ->
     fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = FUN;\n%s.s->crcdat.two_crc.c1 = %s_c1.s;\n%s.s->crcdat.two_crc.c2 = %s_c2.s;"
       x
       toC_crc (c1, x ^ "_c1")
@@ -166,10 +163,6 @@ let rec toC_crc ppf (c, x) = match c with
       x
       toC_crc (c, x ^ "_c")
       x x x x
-  (* | Fail (*r, p*)_ 
-    (* -> "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = BOT;\n%s.s->polarity = %d;\n%s.s->crcdat.rid = %d;"
-    x x x (match p with Pos -> 1 | Neg -> 0) x r  *)
-  | SeqProj (_, _, Fail _) | SeqProjInj _ | TvProjInj _ -> raise @@ ToC_bug "not implemented"  *)
   | _ -> raise @@ ToC_bug "bad coercion" 
 
 (* ======================================== *)
@@ -522,9 +515,7 @@ let rec toC_exp ppf f = match f with
 (* =================================== *)
 
 (*型定義をするCプログラムを記述*)
-(*declとしてtyvar = int * ty option refが渡される
-  ty option refはcontentsがNoneであればTyVarを，SomeであればTyFunを表すようにしている
-  ここで行われる型定義は，プログラム全体で共有される方についてのみである*)
+(*ここで行われる型定義は，プログラム全体で共有される型についてのみである*)
 (*型名の前方定義
   型はポインタなので，共有して型を扱うには，まず名前を先に定義する必要がある*)
 let toC_tydecl ppf (_, name) =
@@ -538,8 +529,7 @@ let toC_tydecls ppf l =
     toC_list l
 
 (*型の定義*)
-let toC_tycontent ppf (u, name) =
-  match u with
+let toC_tycontent ppf (u, name) = match u with
   | TyVar _ -> (* TyVarはtykindをTYVARにする *)
     fprintf ppf "static ty %s = { .tykind = TYVAR };"
       name
@@ -608,9 +598,11 @@ let toC_tvs ppf tvl =
   fprintf ppf "%a\n"
     toC_list tvl
 
+(* ================================ *)
+
 (*Castのran_polを記述する関数*)
 (*toC_exp Let Castを参照*)
-let toC_range ppf r =
+let toC_range ppf (r, _) =
   fprintf ppf "{ .filename = %s, .startline = %d, .startchr = %d, .endline = %d, .endchr = %d }"
     (if r.start_p.pos_fname <> "" then "\"File \\\""^r.start_p.pos_fname^"\\\", \"" else "\"\"")
     r.start_p.pos_lnum
@@ -625,7 +617,80 @@ let toC_ranges ppf ranges =
     fprintf ppf ""(*"#ifndef STATIC\nstatic range local_range_list[] = { 0 };\n#endif\n\n"*)
   else
   fprintf ppf "static range local_range_list[] = {\n%a\n};\n\n"
-    toC_list ranges
+    toC_list (List.sort (fun (_, i1) (_, i2) -> compare i1 i2) ranges)
+
+(* ================================ *)
+
+(*コアーション定義をするCプログラムを記述*)
+(*ここで行われるコアーション定義は，プログラム全体で共有されるコアーションについてのみである*)
+(*コアーション名の前方定義*)
+let toC_crcdecl ppf (_, name) =
+  fprintf ppf "static crc %s;" name
+
+let toC_crcdecls ppf l = 
+  if List.length l = 0 then fprintf ppf ""
+  else let toC_sep ppf () = fprintf ppf "\n" in
+  let toC_list ppf decls = pp_print_list toC_crcdecl ppf decls ~pp_sep:toC_sep in
+  fprintf ppf "%a\n"
+    toC_list l
+
+(*コアーションの定義*)
+let toC_crccontent ppf (c, name) = 
+  let c_of_crc c = match c with
+  | Id -> "&crc_id"
+  | SeqInj (Id, g) -> Format.asprintf "&crc_inj_%a" toC_tag g
+  | _ -> "&" ^ CrcManager.find c 
+  in match c with
+  | SeqInj (c', g) ->
+    fprintf ppf "static crc %s = { .crckind = SEQ_INJ, .g_inj = G_%a, .crcdat.seq_tv = { .ptr.s = %s } };"
+      name
+      toC_tag g
+      (c_of_crc c')
+  | SeqProj (g, (rid, p), c') -> 
+    fprintf ppf "static crc %s = { .crckind = SEQ_PROJ, .g_proj = G_%a, .p_proj = %d, .crcdat.seq_tv = { .rid_proj = %d, .ptr.s = %s } };"
+      name
+      toC_tag g
+      (match p with Pos -> 1 | Neg -> 0)
+      rid
+      (c_of_crc c')
+  | TvInj (tv, (rid, p)) ->
+    fprintf ppf "static crc %s = { .crckind = TV_INJ, .p_inj = %d, .crcdat.seq_tv = { .rid_inj = %d, .ptr.tv = %s } };"
+      name
+      (match p with Pos -> 1 | Neg -> 0)
+      rid
+      (c_of_ty (TyVar tv))
+  | TvProj (tv, (rid, p)) ->
+    fprintf ppf "static crc %s = { .crckind = TV_PROJ, .p_proj = %d, .crcdat.seq_tv = { .rid_proj = %d, .ptr.tv = %s } };"
+      name
+      (match p with Pos -> 1 | Neg -> 0)
+      rid
+      (c_of_ty (TyVar tv))
+  | Fun (c1, c2) -> 
+    fprintf ppf "static crc %s = { .crckind = FUN, .crcdat.two_crc = { .c1 = %s, .c2 = %s } };"
+      name
+      (c_of_crc c1)
+      (c_of_crc c2)
+  | List c' ->
+    fprintf ppf "static crc %s = { .crckind = LIST, .crcdat.one_crc = %s };"
+      name
+      (c_of_crc c')
+  | _ -> raise @@ ToC_bug (Format.asprintf "not in crccontent")
+
+let toC_crccontents ppf l = 
+  let toC_sep ppf () = fprintf ppf "\n" in
+  let toC_list ppf decls = pp_print_list toC_crccontent ppf decls ~pp_sep:toC_sep in
+  fprintf ppf "%a\n"
+    toC_list l
+
+(*型定義全体を記述*)
+let toC_crcs ppf l =
+  if l = [] then fprintf ppf ""
+  else 
+    fprintf ppf "%a%a\n\n"
+      toC_crcdecls l
+      toC_crccontents l
+
+(* ================================ *)
   
 (*関数名の前方定義
   再帰関数などに対応するために，関数本体の前に，名前を前方定義する
@@ -842,17 +907,21 @@ let toC_fundefs ppf toplevel =
 (* =================================== *)
 
 (*全体を記述*)
-let toC_program ?(bench=0) ~config ppf (Prog (ranges, toplevel, f)) = 
+let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) = 
   is_main := false;
   is_alt := config.alt;
   is_B := config.intoB;
   is_eager := config.eager;
   is_static := config.static;
-  fprintf ppf "%s\n%a%a%a%s%s%s%a%s"
+  let tys = TyManager.get_definitions () in
+  let ranges = RangeManager.get_definitions () in
+  let crcs = CrcManager.get_definitions () in
+  fprintf ppf "%s\n%a%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
-    toC_tys (StaticTyManager.get_definitions ())
+    toC_tys tys
     toC_ranges ranges
+    toC_crcs crcs
     toC_fundefs toplevel
     (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
     (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)

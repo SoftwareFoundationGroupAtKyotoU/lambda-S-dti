@@ -29,7 +29,13 @@ typedef enum ground_ty : uint8_t {
 
 typedef struct ty ty;
 
-typedef struct dyn dyn;
+#ifdef CAST
+typedef uint64_t dyn;
+#else 
+typedef struct v_d v_d;
+typedef union dyn dyn;
+#endif
+
 #endif
 
 typedef union value value;

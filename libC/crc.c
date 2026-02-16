@@ -12,6 +12,8 @@ crc crc_id = { .crckind = ID };
 crc crc_inj_INT = { .crckind = SEQ_INJ, .g_inj = G_INT, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_BOOL = { .crckind = SEQ_INJ, .g_inj = G_BOOL, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
+crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
+crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
 static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
 	crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -33,11 +35,21 @@ static inline crc* new_seq_proj(const crc *base_proj, crc *s_new) {
 }
 
 static inline crc* new_seq_inj(crc *s_new, const crc *base_inj) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = SEQ_INJ;
-    c->g_inj = base_inj->g_inj;
-    c->crcdat.seq_tv.ptr.s = s_new;
-    return c;
+	if (s_new == &crc_id) {
+		switch (base_inj->g_inj) {
+			case G_INT: return &crc_inj_INT;
+			case G_BOOL: return &crc_inj_BOOL;
+			case G_UNIT: return &crc_inj_UNIT;
+			case G_AR: return &crc_inj_AR;
+			case G_LI: return &crc_inj_LI;
+		}
+	} else {
+		crc *c = (crc*)GC_MALLOC(sizeof(crc));
+    	c->crckind = SEQ_INJ;
+    	c->g_inj = base_inj->g_inj;
+    	c->crcdat.seq_tv.ptr.s = s_new;
+    	return c;
+	}
 }
 
 static inline crc* new_seq_proj_inj(const crc *base_proj, crc *s_new, const crc *base_inj) {
@@ -101,22 +113,22 @@ static inline crc* new_tv_proj_occur(const crc* base_proj, const uint8_t bot_p, 
 	return c;
 }
 
-static inline void normalize_tv_inj_int(crc *c) {
+static inline crc *normalize_tv_inj_int(crc *c) {
 	*c = crc_inj_INT;
-	return;
+	return &crc_inj_INT;
 }
 
-static inline void normalize_tv_inj_bool(crc *c) {
+static inline crc *normalize_tv_inj_bool(crc *c) {
 	*c = crc_inj_BOOL;
-	return;
+	return &crc_inj_BOOL;
 }
 
-static inline void normalize_tv_inj_unit(crc *c) {
+static inline crc *normalize_tv_inj_unit(crc *c) {
 	*c = crc_inj_UNIT;
-	return;
+	return &crc_inj_UNIT;
 }
 
-static inline void normalize_tv_inj_fun(crc *c) {
+static inline crc *normalize_tv_inj_fun(crc *c) {
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
 	crc *cfun1 = &cs[0];
 	crc *cfun2 = &cs[1];
@@ -135,10 +147,10 @@ static inline void normalize_tv_inj_fun(crc *c) {
 	c->crckind = SEQ_INJ;
 	c->g_inj = G_AR;
 	c->crcdat.seq_tv.ptr.s = cfun;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_inj_list(crc* c) {
+static inline crc *normalize_tv_inj_list(crc* c) {
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
 	crc *clist_ = &cs[0];
 	crc *clist = &cs[1];
@@ -151,42 +163,42 @@ static inline void normalize_tv_inj_list(crc* c) {
 	c->crckind = SEQ_INJ;
 	c->g_inj = G_LI;
 	c->crcdat.seq_tv.ptr.s = clist;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_inj(crc *c) {
+static inline crc *normalize_tv_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_inj_int(c); // X! [X:=int] -> id;int!
 		case BASE_BOOL: return normalize_tv_inj_bool(c);
 		case BASE_UNIT: return normalize_tv_inj_unit(c);
 		case TYFUN: return normalize_tv_inj_fun(c);         // X! [X:=X1=>X2] -> X1?p=>X2!;(★→★)!	
 		case TYLIST: return normalize_tv_inj_list(c);         // X! [X:=[X1]] -> [X1!];[★]!
-		default: return;
+		default: return c;
 	}
 }
 
-static inline void normalize_tv_proj_int(crc *c) {
+static inline crc *normalize_tv_proj_int(crc *c) {
 	c->crckind = SEQ_PROJ;
 	c->g_proj = G_INT;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_bool(crc *c) {
+static inline crc *normalize_tv_proj_bool(crc *c) {
 	c->crckind = SEQ_PROJ;
 	c->g_proj = G_BOOL;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_unit(crc *c) {
+static inline crc *normalize_tv_proj_unit(crc *c) {
 	c->crckind = SEQ_PROJ;
 	c->g_proj = G_UNIT;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_fun(crc *c) {
+static inline crc *normalize_tv_proj_fun(crc *c) {
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
 	crc *cfun1 = &cs[0];
 	crc *cfun2 = &cs[1];
@@ -205,10 +217,10 @@ static inline void normalize_tv_proj_fun(crc *c) {
 	c->crckind = SEQ_PROJ;
 	c->g_proj = G_AR;
 	c->crcdat.seq_tv.ptr.s = cfun;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_list(crc *c) {
+static inline crc *normalize_tv_proj_list(crc *c) {
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
 	crc *clist_ = &cs[0];
 	crc *clist = &cs[1];
@@ -221,45 +233,45 @@ static inline void normalize_tv_proj_list(crc *c) {
 	c->crckind = SEQ_PROJ;
 	c->g_proj = G_LI;
 	c->crcdat.seq_tv.ptr.s = clist;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj(crc *c) {
+static inline crc *normalize_tv_proj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_int(c);				// X?p [X:=int] -> int?p;id
 		case BASE_BOOL: return normalize_tv_proj_bool(c);
 		case BASE_UNIT: return normalize_tv_proj_unit(c);
 		case TYFUN: return normalize_tv_proj_fun(c);       // X?p [X:=X1=>X2] -> (★→★)?p;X1!=>X2?p
 		case TYLIST: return normalize_tv_proj_list(c);        // X?p [X:=[X1]] -> [★]?p;[X1?p]
-		default: return;
+		default: return c;
 	}
 }
 
-static inline void normalize_tv_proj_inj_int(crc *c) {
+static inline crc *normalize_tv_proj_inj_int(crc *c) {
 	c->crckind = SEQ_PROJ_INJ;
 	c->g_proj = G_INT;
 	c->g_inj = G_INT;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_inj_bool(crc *c) {
+static inline crc *normalize_tv_proj_inj_bool(crc *c) {
 	c->crckind = SEQ_PROJ_INJ;
 	c->g_proj = G_BOOL;
 	c->g_inj = G_BOOL;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_inj_unit(crc *c) {
+static inline crc *normalize_tv_proj_inj_unit(crc *c) {
 	c->crckind = SEQ_PROJ_INJ;
 	c->g_proj = G_UNIT;
 	c->g_inj = G_UNIT;
 	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_inj_fun(crc *c) {
+static inline crc *normalize_tv_proj_inj_fun(crc *c) {
 	ty *t1 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
 	ty *t2 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
@@ -285,10 +297,10 @@ static inline void normalize_tv_proj_inj_fun(crc *c) {
 	c->g_inj = G_AR;
 	c->g_proj = G_AR;
 	c->crcdat.seq_tv.ptr.s = cfun;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_inj_list(crc *c) {
+static inline crc *normalize_tv_proj_inj_list(crc *c) {
 	ty *t = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
 	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
 	crc *clist_ = &cs[0];
@@ -305,82 +317,82 @@ static inline void normalize_tv_proj_inj_list(crc *c) {
 	c->g_inj = G_LI;
 	c->g_proj = G_LI;
 	c->crcdat.seq_tv.ptr.s = clist;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_inj(crc *c) {
+static inline crc *normalize_tv_proj_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_inj_int(c);                    // ?pX!q [X:=int] -> int?p;id;int!
 		case BASE_BOOL: return normalize_tv_proj_inj_bool(c);
 		case BASE_UNIT: return normalize_tv_proj_inj_unit(c);
 		case TYFUN: return normalize_tv_proj_inj_fun(c);  				// ?pX!q [X:=X1=>X2] -> (★→★)?p;(?-qX1!-p=>?pX2!q);(★→★)!
 		case TYLIST: return normalize_tv_proj_inj_list(c);				// ?pX!q [X:=[X1]] -> [★]?p;[?pX1!q];[★]!
-		default: return;
+		default: return c;
 	}
 }
 
-static inline void normalize_tv_proj_occur_int(crc *c) {
+static inline crc *normalize_tv_proj_occur_int(crc *c) {
 	c->crckind = SEQ_PROJ_BOT;
 	c->g_proj = G_INT;
 	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
 	bot->p_proj = c->p_inj;
 	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
 	c->crcdat.seq_tv.ptr.s = bot;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_occur_bool(crc *c) {
+static inline crc *normalize_tv_proj_occur_bool(crc *c) {
 	c->crckind = SEQ_PROJ_BOT;
 	c->g_proj = G_BOOL;
 	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
 	bot->p_proj = c->p_inj;
 	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
 	c->crcdat.seq_tv.ptr.s = bot;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_occur_unit(crc *c) {
+static inline crc *normalize_tv_proj_occur_unit(crc *c) {
 	c->crckind = SEQ_PROJ_BOT;
 	c->g_proj = G_UNIT;
 	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
 	bot->p_proj = c->p_inj;
 	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
 	c->crcdat.seq_tv.ptr.s = bot;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_occur_fun(crc *c) {
+static inline crc *normalize_tv_proj_occur_fun(crc *c) {
 	c->crckind = SEQ_PROJ_BOT;
 	c->g_proj = G_AR;
 	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
 	bot->p_proj = c->p_inj;
 	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
 	c->crcdat.seq_tv.ptr.s = bot;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_occur_list(crc *c) {
+static inline crc *normalize_tv_proj_occur_list(crc *c) {
 	c->crckind = SEQ_PROJ_BOT;
 	c->g_proj = G_LI;
 	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
 	bot->p_proj = c->p_inj;
 	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
 	c->crcdat.seq_tv.ptr.s = bot;
-	return;
+	return c;
 }
 
-static inline void normalize_tv_proj_occur(crc *c) {
+static inline crc *normalize_tv_proj_occur(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_occur_int(c);                    // ?p⊥Xq [X:=int] -> int?p;⊥q
 		case BASE_BOOL: return normalize_tv_proj_occur_bool(c);
 		case BASE_UNIT: return normalize_tv_proj_occur_unit(c);
 		case TYFUN: return normalize_tv_proj_occur_fun(c);  				// ?p⊥Xq [X:=X1=>X2] -> (★→★)?p;⊥q
 		case TYLIST: return normalize_tv_proj_occur_list(c);				// ?p⊥Xq [X:=[X1]] -> [★]?p;⊥q
-		default: return;
+		default: return c;
 	}
 }
 
-void normalize_crc(crc *c) {
+crc *normalize_crc(crc *c) {
 	switch(c->crckind) {
 		case TV_INJ: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
@@ -405,11 +417,11 @@ void normalize_crc(crc *c) {
 }
 
 static inline crc *compose_funs(crc *c1, crc *c2) {
-	if (c1->crckind == ID) return c2;
-	if (c2->crckind == ID) return c1;
+	if (c1 == &crc_id) return c2;
+	if (c2 == &crc_id) return c1;
 	crc *cfun1 = compose(c2->crcdat.two_crc.c1, c1->crcdat.two_crc.c1);
 	crc *cfun2 = compose(c1->crcdat.two_crc.c2, c2->crcdat.two_crc.c2);
-	if (cfun1->crckind == ID && cfun2->crckind == ID) { //s=>t;;s'=>t' -> id (if s=id and t=id)
+	if (cfun1 == &crc_id && cfun2 == &crc_id) { //s=>t;;s'=>t' -> id (if s=id and t=id)
 		return &crc_id;
 	} else {
 		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -421,10 +433,10 @@ static inline crc *compose_funs(crc *c1, crc *c2) {
 }
 
 static inline crc *compose_lists(crc *c1, crc *c2) {
-	if (c1->crckind == ID) return c2;
-	if (c2->crckind == ID) return c1;
+	if (c1 == &crc_id) return c2;
+	if (c2 == &crc_id) return c1;
 	crc *clist = compose(c1->crcdat.one_crc, c2->crcdat.one_crc);
-	if (clist->crckind == ID) {
+	if (clist == &crc_id) {
 		return &crc_id;
 	} else {
 		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
@@ -435,9 +447,10 @@ static inline crc *compose_lists(crc *c1, crc *c2) {
 }
 
 static inline crc *compose_g(crc *c1, crc *c2) {
-	if (c2->crckind == ID) return c1; // s;;id -> s
+	if (c2 == &crc_id) return c1; // s;;id -> s
+	if (c1 == &crc_id) return c2; // s;;id -> s
 	switch(c1->crckind) {
-		case ID: return c2;
+		// case ID: return c2;
 		case FUN: return compose_funs(c1, c2);
 		case LIST: return compose_lists(c1, c2);
 		default: 
@@ -450,25 +463,25 @@ static inline int occur_check(crc* c, const ty *tv) {
 	switch (c->crckind) {
 		case TV_INJ: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			normalize_tv_inj(c);
+			c = normalize_tv_inj(c);
 			if (c->crckind != TV_INJ) goto CASE_SEQ;
 			return c->crcdat.seq_tv.ptr.tv == tv;
 		}
 		case TV_PROJ: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			normalize_tv_proj(c);
+			c = normalize_tv_proj(c);
 			if (c->crckind != TV_PROJ) goto CASE_SEQ;
 			return c->crcdat.seq_tv.ptr.tv == tv;
 		}
 		case TV_PROJ_INJ: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			normalize_tv_proj_inj(c);
+			c = normalize_tv_proj_inj(c);
 			if (c->crckind != TV_PROJ_INJ) goto CASE_SEQ;
 			return c->crcdat.seq_tv.ptr.tv == tv;
 		}
 		case TV_PROJ_OCCUR: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			normalize_tv_proj_occur(c);
+			c = normalize_tv_proj_occur(c);
 			if (c->crckind != TV_PROJ_OCCUR) return 0;
 			return c->crcdat.seq_tv.ptr.tv == tv;
 		}
@@ -526,12 +539,13 @@ static inline void dti(const ground_ty g, ty *tv) {
 
 crc* compose(crc *c1, crc *c2) {
 	// printf("c1: %d, c2: %d\n", c1->crckind, c2->crckind);
-	if (c2->crckind == ID) return c1; // s;;id -> s
+	if (c2 == &crc_id) return c1; // s;;id -> s
 	// if (c2->crckind == BOT) return c2; 
 	  // s;;⊥ は ⊥ ではない (G?p;i;;⊥ -> G?p;⊥)
+	if (c1 == &crc_id) return c2; // id;;s -> s
 
 	switch(c1->crckind) {
-		case ID: return c2; // id;;s -> s
+		// case ID: return c2; 
 		case BOT: return c1; // ⊥p;;s -> ⊥p
 		case SEQ_PROJ_BOT: return c1; // G?p;⊥q;;s -> G?p;⊥q
 		case TV_PROJ_OCCUR: return c1; // ?p⊥Xq;;s -> ?p⊥Xq (normalize will be applied the coercion comes to right side)
@@ -541,7 +555,7 @@ crc* compose(crc *c1, crc *c2) {
 			switch(c2->crckind) {
 				case TV_INJ: {
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_inj(c2);
+					c2 = normalize_tv_inj(c2);
 				}
 				case SEQ_INJ: { // G?p;g1;;g2;H! -> G?p;(g1;;g2);H!
 					return new_seq_proj_inj(c1, compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s), c2);
@@ -585,7 +599,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ: {										   	// g;G!;;X?p
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj(c2);
+					c2 = normalize_tv_proj(c2);
 					if (c2->crckind != TV_PROJ) goto CASE_SEQ_INJ_SEQ_PROJ;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // g;G!;;X?p -> ⊥p (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -593,13 +607,13 @@ crc* compose(crc *c1, crc *c2) {
 						return new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1);
 					} else { // g;G!;;X?p -> g;;g' (where X?p is normalized to G?p;g')
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj(c2);
+						c2 = normalize_tv_proj(c2);
 						return compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s);
 					}
 				}
 				case TV_PROJ_INJ: {									   // g;G!;;?pX!q
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_inj(c2);
+					c2 = normalize_tv_proj_inj(c2);
 					if (c2->crckind != TV_PROJ_INJ) goto CASE_SEQ_INJ_SEQ_PROJ_INJ;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // g;G!;;?pX!q -> ⊥p (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -607,13 +621,13 @@ crc* compose(crc *c1, crc *c2) {
 						return new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1);
 					} else {  // g;G!;;?pX!q -> (g;;g');G! (where ?pX!q is normalized to G?p;g';G!)
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_inj(c2);
+						c2 = normalize_tv_proj_inj(c2);
 						return new_seq_inj(compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s), c2);
 					}
 				}
 				case TV_PROJ_OCCUR: {									   	// g;G!;;?p⊥Xq
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_occur(c2);
+					c2 = normalize_tv_proj_occur(c2);
 					if (c2->crckind != TV_PROJ_OCCUR) goto CASE_SEQ_INJ_SEQ_PROJ_BOT;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // g;G!;;?p⊥Xq -> ⊥p (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -621,7 +635,7 @@ crc* compose(crc *c1, crc *c2) {
 						return new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1);
 					} else {  // g;G!;;?p⊥Xq -> ⊥q (where ?p⊥Xq is normalized to G?p;⊥q)
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_occur(c2);
+						c2 = normalize_tv_proj_occur(c2);
 						return c2->crcdat.seq_tv.ptr.s;
 					}
 				}
@@ -659,7 +673,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ: {										   	// G'?p;g;G!;;X?q
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj(c2);
+					c2 = normalize_tv_proj(c2);
 					if (c2->crckind != TV_PROJ) goto CASE_SEQ_PROJ_INJ_SEQ_PROJ;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // G'?p;g;G!;;X?q -> G'?p;⊥q (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -667,13 +681,13 @@ crc* compose(crc *c1, crc *c2) {
 						return new_seq_proj_bot(c1, new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1));
 					} else {   // G'?p;g;G!;;X?q -> G'?p;(g;;g') (where X?q is normalized to G?q;g')
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj(c2);
+						c2 = normalize_tv_proj(c2);
 						return new_seq_proj(c1, compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s));
 					}
 				}
 				case TV_PROJ_INJ: {									   // G'?p;g;G!;;?qX!r
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_inj(c2);
+					c2 = normalize_tv_proj_inj(c2);
 					if (c2->crckind != TV_PROJ_INJ) goto CASE_SEQ_PROJ_INJ_SEQ_PROJ_INJ;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // G'?p;g;G!;;?qX!r -> G'?p;⊥q (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -681,13 +695,13 @@ crc* compose(crc *c1, crc *c2) {
 						return new_seq_proj_bot(c1, new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1));
 					} else {  // G'?p;g;G!;;?qX!r -> G'?p;(g;;g');G! (where ?qX!r is normalized to G?q;g';G!)
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_inj(c2);
+						c2 = normalize_tv_proj_inj(c2);
 						return new_seq_proj_inj(c1, compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s), c2);
 					}
 				}
 				case TV_PROJ_OCCUR: {            // G'?p;g;G!;;?q⊥Xr
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_occur(c2);
+					c2 = normalize_tv_proj_occur(c2);
 					if (c2->crckind != TV_PROJ_OCCUR) goto CASE_SEQ_PROJ_INJ_SEQ_PROJ_BOT;
 					if (occur_check(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.tv)) { // G'?p;g;G!;;?q⊥Xr -> G'?p;⊥q (when X occurs in g)
 						// blame(c2->crcdat.seq_tv.rid_proj, c2->p_proj);
@@ -695,7 +709,7 @@ crc* compose(crc *c1, crc *c2) {
 						return new_seq_proj_bot(c1, new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1));
 					} else {  // G'?p;g;G!;;?q⊥Xr -> G'?p;⊥r (where ?q⊥Xr is normalized to G?q;⊥r)
 						dti(c1->g_inj, c2->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_occur(c2);
+						c2 = normalize_tv_proj_occur(c2);
 						return new_seq_proj_bot(c1, c2->crcdat.seq_tv.ptr.s);
 					}
 				}
@@ -704,7 +718,7 @@ crc* compose(crc *c1, crc *c2) {
 		}
 		case TV_PROJ: {                                // X?p;;s
 			c1->crcdat.seq_tv.ptr.tv = ty_find(c1->crcdat.seq_tv.ptr.tv);
-			normalize_tv_proj(c1);
+			c1 = normalize_tv_proj(c1);
 			if (c1->crckind != TV_PROJ) goto CASE_SEQ_PROJ;
 			if (c2->crckind == BOT) { 			// X?p;;⊥q -> ?p⊥Xq
 				return new_tv_proj_occur(c1, c2->p_proj, c2->crcdat.seq_tv.rid_proj);
@@ -715,7 +729,7 @@ crc* compose(crc *c1, crc *c2) {
 		}
 		case TV_INJ: {								    // X!p;;s
 			c1->crcdat.seq_tv.ptr.tv = ty_find(c1->crcdat.seq_tv.ptr.tv);
-			normalize_tv_inj(c1);
+			c1 = normalize_tv_inj(c1);
 			if (c1->crckind != TV_INJ) goto CASE_SEQ_INJ;
 			switch (c2->crckind) {     
 				case SEQ_PROJ: 
@@ -727,7 +741,7 @@ crc* compose(crc *c1, crc *c2) {
 						return new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1);
 					} else { // X!p;;G?q;g -> g';;g (where X!p is normalized to g';G!)
 						dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-						normalize_tv_inj(c1);
+						c1 = normalize_tv_inj(c1);
 						return compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s);
 					}
 				}	
@@ -740,19 +754,19 @@ crc* compose(crc *c1, crc *c2) {
 						return new_bot(c2->p_proj, c2->crcdat.seq_tv.rid_proj, 1);
 					} else { // X!p;;G?q;g;G! -> (g';;g);G! (where X!p is normalized to g';G!)
 						dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-						normalize_tv_inj(c1);
+						c1 = normalize_tv_inj(c1);
 						return new_seq_inj(compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s), c2);
 					}
 				}	
 				case SEQ_PROJ_BOT: 
 				CASE_TV_INJ_SEQ_PROJ_BOT: { // X!p;;G?q;⊥r -> ⊥r
 					dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-					normalize_tv_inj(c1);
+					c1 = normalize_tv_inj(c1);
 					return c2->crcdat.seq_tv.ptr.s;
 				} 	
 				case TV_PROJ: {                                            // X!p;;Y?q
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj(c2);
+					c2 = normalize_tv_proj(c2);
 					if (c2->crckind != TV_PROJ) goto CASE_TV_INJ_SEQ_PROJ;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -769,7 +783,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ_INJ: {									    // X!p;;?qY!r
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_inj(c2);
+					c2 = normalize_tv_proj_inj(c2);
 					if (c2->crckind != TV_PROJ_INJ) goto CASE_TV_INJ_SEQ_PROJ_INJ;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -786,7 +800,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ_OCCUR: { // X!p;;?q⊥Yr
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_occur(c2);
+					c2 = normalize_tv_proj_occur(c2);
 					if (c2->crckind != TV_PROJ_OCCUR) goto CASE_TV_INJ_SEQ_PROJ_BOT;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -806,7 +820,7 @@ crc* compose(crc *c1, crc *c2) {
 		}
 		case TV_PROJ_INJ: {				// ?pX!q;;s
 			c1->crcdat.seq_tv.ptr.tv = ty_find(c1->crcdat.seq_tv.ptr.tv);
-			normalize_tv_proj_inj(c1);
+			c1 = normalize_tv_proj_inj(c1);
 			if (c1->crckind != TV_PROJ_INJ) goto CASE_SEQ_PROJ_INJ;
 			switch (c2->crckind) {   
 				case SEQ_PROJ: 
@@ -818,7 +832,7 @@ crc* compose(crc *c1, crc *c2) {
 						return new_tv_proj_occur(c1, c2->p_proj, c2->crcdat.seq_tv.rid_proj);
 					} else { // ?pX!q;;G?r;g -> G?p;(g';;g) (where ?pX!q is normalized to G?p;g';G!)
 						dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_inj(c1);
+						c1 = normalize_tv_proj_inj(c1);
 						return new_seq_proj(c1, compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s));
 					}
 				}
@@ -831,19 +845,19 @@ crc* compose(crc *c1, crc *c2) {
 						return new_tv_proj_occur(c1, c2->p_proj, c2->crcdat.seq_tv.rid_proj);
 					} else { // ?pX!q;;G?r;g;G! -> G?p;(g';;g);G! (where ?pX!q is normalized to G?p;g';G!)
 						dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-						normalize_tv_proj_inj(c1);
+						c1 = normalize_tv_proj_inj(c1);
 						return new_seq_proj_inj(c1, compose_g(c1->crcdat.seq_tv.ptr.s, c2->crcdat.seq_tv.ptr.s), c2);
 					}
 				}
 				case SEQ_PROJ_BOT: 
 				CASE_TV_PROJ_INJ_SEQ_PROJ_BOT: { // ?pX!q;;G?p';⊥q' -> G?p;⊥q'
 					dti(c2->g_proj, c1->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_inj(c1);
+					c1 = normalize_tv_proj_inj(c1);
 					return new_seq_proj_bot(c1, c2->crcdat.seq_tv.ptr.s);
 				}   
 				case TV_PROJ: {                                            // ?pX!q;;Y?r
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj(c2);
+					c2 = normalize_tv_proj(c2);
 					if (c2->crckind != TV_PROJ) goto CASE_TV_PROJ_INJ_SEQ_PROJ;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -860,7 +874,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ_INJ: {									    // ?pX!q;;?p'Y!q'
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_inj(c2);
+					c2 = normalize_tv_proj_inj(c2);
 					if (c2->crckind != TV_PROJ_INJ) goto CASE_TV_PROJ_INJ_SEQ_PROJ_INJ;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -877,7 +891,7 @@ crc* compose(crc *c1, crc *c2) {
 				}
 				case TV_PROJ_OCCUR: {                                            // ?pX!q;;?p'⊥Yq'
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_proj_occur(c2);
+					c2 = normalize_tv_proj_occur(c2);
 					if (c2->crckind != TV_PROJ_OCCUR) goto CASE_TV_PROJ_INJ_SEQ_PROJ_BOT;
 					ty *tv1 = c1->crcdat.seq_tv.ptr.tv;
 					ty *tv2 = c2->crcdat.seq_tv.ptr.tv;
@@ -900,7 +914,7 @@ crc* compose(crc *c1, crc *c2) {
 				case BOT: return c2; // g;;⊥p -> ⊥p
 				case TV_INJ: {
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_inj_fun(c2);
+					c2 = normalize_tv_inj_fun(c2);
 				}
 				case SEQ_INJ: { 						// g;;h;G! -> (g;;h);G!
 					// printf("  c2.c:%d, c2.g_inj:%d\n", c2->crcdat.seq_tv.ptr.s->crckind, c2->g_inj);
@@ -915,7 +929,7 @@ crc* compose(crc *c1, crc *c2) {
 				case BOT: return c2; // g;;⊥p -> ⊥p
 				case TV_INJ: {
 					c2->crcdat.seq_tv.ptr.tv = ty_find(c2->crcdat.seq_tv.ptr.tv);
-					normalize_tv_inj_list(c2);
+					c2 = normalize_tv_inj_list(c2);
 				}
 				case SEQ_INJ: { 						// g;;h;G! -> (g;;h);G!
 					// printf("  c2.c:%d, c2.g_inj:%d\n", c2->crcdat.seq_tv.ptr.s->crckind, c2->g_inj);

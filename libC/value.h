@@ -3,16 +3,24 @@
 
 #include "types.h"
 
+#include "dyn.h"
 typedef union value {
 	int64_t i_b_u;
-	#ifndef STATIC
-	dyn *d;
-	#endif
 	fun *f;
 	lst *l;
-	#if !defined(CAST) && !defined(STATIC)
+	#ifndef STATIC
+	dyn d;
+	#ifndef CAST
 	crc *s;
 	#endif
+	#endif
 } value;
+
+#if !defined(CAST) && !defined(STATIC)
+typedef struct v_d {
+	value v;
+	crc *d;
+} v_d;
+#endif
 
 #endif

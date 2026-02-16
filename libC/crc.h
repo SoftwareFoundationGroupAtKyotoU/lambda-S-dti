@@ -50,12 +50,14 @@ typedef struct crc {
 
 crc *compose(crc*, crc*);
 
-void normalize_crc(crc*);
+crc *normalize_crc(crc*);
 
 extern crc crc_id;
 extern crc crc_inj_INT;
 extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
+extern crc crc_inj_AR;
+extern crc crc_inj_LI;
 
 #endif
 
