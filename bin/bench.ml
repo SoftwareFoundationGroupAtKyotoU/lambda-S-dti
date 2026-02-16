@@ -218,9 +218,9 @@ let bench_file_mode
   (* compileモードなら，.c用のディレクトリを作成 *)
   if config.compile then
     let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
-    if not (Caml.Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
+    if not (Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Caml.Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
+    if not (Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
   
   let counter = ref 0 in
   List.iteri (fun i p ->
@@ -410,8 +410,8 @@ let () =
   in
   let log_base_dir = "logs" in
   let log_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
-  if not (Caml.Sys.file_exists log_base_dir) then Core_unix.mkdir log_base_dir;
-  if not (Caml.Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
+  if not (Sys.file_exists log_base_dir) then Core_unix.mkdir log_base_dir;
+  if not (Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
 
   (* 3. 実行: 各ターゲットを順番に *)
   Format.fprintf Format.std_formatter "debug: main iteration\n";
