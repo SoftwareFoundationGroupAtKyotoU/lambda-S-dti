@@ -10,7 +10,7 @@ import shutil
 # ================= 設定エリア =================
 DOCKER_IMAGE = "grift"
 GRIFT_CMD = "/root/.racket/7.2/bin/grift"
-LOG_BASE_DIR = "~/lambda-S-dti/logs" # ログ保存先のベースディレクトリ
+LOG_BASE_DIR = "/app/logs" # ログ保存先のベースディレクトリ
 # ============================================
 
 class SExp:
@@ -135,26 +135,29 @@ def parse_all_grift_times(stdout_str):
     return [float(m) for m in matches]
 
 def run_benchmark(config_dir, source_filename, input_content_multiplied):
-    compile_cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{config_dir}:/src", "-w", "/src",
-        DOCKER_IMAGE, GRIFT_CMD, "-O", "3", "-o", "bench", source_filename
-    ]
-    try:
-        subprocess.run(compile_cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        # 詳細なコンパイルエラーを表示
-        print(f"\n[Compile Error in {source_filename}]\n{e.stderr}")
-        return {"status": "Compile Failed", "times": [], "stderr": e.stderr}
+    # 1. ファイルの場所を「絶対パス（/app/.../fib.grift）」で確実に指定する
+    import os
+    abs_source_path = os.path.abspath(os.path.join(config_dir, source_filename))
+    abs_output_path = os.path.abspath(os.path.join(config_dir, "bench"))
 
-    run_cmd = [
-        "docker", "run", "--rm", "-i",
-        "-v", f"{config_dir}:/src", "-w", "/src",
-        DOCKER_IMAGE, "./bench"
+    # 2. コマンドに絶対パスを渡す
+    compile_cmd = [
+        GRIFT_CMD, "-O", "3", "-o", abs_output_path, abs_source_path
     ]
     
     try:
-        proc = subprocess.run(run_cmd, input=input_content_multiplied, check=True, capture_output=True, text=True)
+        # cwd=config_dir を追加（Griftが中間ファイルなどを正しい場所に置けるようにするため）
+        subprocess.run(compile_cmd, cwd=config_dir, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        print(f"\n[Compile Error in {source_filename}]\n{e.stderr}")
+        return {"status": "Compile Failed", "times": [], "stderr": e.stderr}
+
+    # 3. 実行時も絶対パスでバイナリを叩く
+    run_cmd = [abs_output_path]
+    
+    try:
+        # ここでも cwd=config_dir を追加します
+        proc = subprocess.run(run_cmd, input=input_content_multiplied, cwd=config_dir, check=True, capture_output=True, text=True)
         stdout_str = proc.stdout.strip()
         times = parse_all_grift_times(stdout_str)
         status = "Success" if len(times) > 0 else "No Output"
@@ -204,7 +207,12 @@ def main():
 
     # 入力準備
     with open(input_path, 'r') as f:
-        multiplied_input = (f.read().strip() + "\n") * args.iter
+        base_input = f.read().strip()
+        if not base_input:
+            print(f"\n[Warning] Input file {input_path} is empty!")
+            
+        # args.iter ぴったりではなく、余裕を持たせて +10 回分連結する
+        multiplied_input = (base_input + "\n") * (args.iter + 10)
 
     # AST解析
     with open(grift_path, 'r') as f:
