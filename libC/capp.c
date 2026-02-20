@@ -22,7 +22,7 @@ static inline void update_longest(int new) {
 #endif
 
 static inline uint8_t tag_of(value v) {
-	return (v.i_b_u & 0b111) - 1;
+	return (v.i_b_u & 0b111);
 }
 
 static inline value tag_value(value v, uint8_t t) {
@@ -31,10 +31,10 @@ static inline value tag_value(value v, uint8_t t) {
 		case G_INT:
 		case G_BOOL:
 		case G_UNIT:
-			return (value){ .d = (v.i_b_u << 3 | (t + 1)) };
+			return (value){ .d = (v.i_b_u << 3 | t) };
 		case G_AR:
 		case G_LI:
-			return (value){ .d = (v.i_b_u | (t + 1)) };
+			return (value){ .d = (v.i_b_u | t) };
 		default: {
 			printf("%d is not ground_ty", t);
 			exit(1);
@@ -44,7 +44,7 @@ static inline value tag_value(value v, uint8_t t) {
 	#ifdef PROFILE
 	update_longest(1);
 	#endif
-	return (value){ .d.atom = (v.i_b_u << 3 | (t + 1)) };
+	return (value){ .d.atom = (v.i_b_u << 3 | t) };
 	#endif
 }
 

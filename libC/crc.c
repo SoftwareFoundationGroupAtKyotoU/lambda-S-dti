@@ -42,6 +42,10 @@ static inline crc* new_seq_inj(crc *s_new, const crc *base_inj) {
 			case G_UNIT: return &crc_inj_UNIT;
 			case G_AR: return &crc_inj_AR;
 			case G_LI: return &crc_inj_LI;
+			default: {
+				printf("got G_NONE");
+				exit(1);
+			}
 		}
 	} else {
 		crc *c = (crc*)GC_MALLOC(sizeof(crc));
@@ -533,6 +537,10 @@ static inline void dti(const ground_ty g, ty *tv) {
 			// printf("%p <- unit\n", tv);
 			*tv = tyunit;
 			return;
+		}
+		default: {
+			printf("got G_NONE");
+			exit(1);
 		}
 	}
 }

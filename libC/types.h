@@ -20,6 +20,7 @@ typedef struct range {
 } range;
 
 typedef enum ground_ty : uint8_t {
+	G_NONE, // this is dummy in the present implementation
 	G_INT,
 	G_BOOL,
 	G_UNIT,

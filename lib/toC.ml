@@ -320,10 +320,28 @@ let rec toC_exp ppf f = match f with
         r
         (match p with Pos -> 1 | Neg -> 0)
     | CApp (y, z) -> (* TODO *)
-      fprintf ppf "%s = coerce(%s, %s.s);\n"
-        x
-        y
-        z
+      if CrcManager.mem_inj z then
+        let tag = CrcManager.find_inj z in
+        fprintf ppf "%s = (value){ .d%s = (%s.i_b_u << 3 | G_%a) };\n"
+          x
+          (if !is_B then "" else ".atom")
+          y
+          toC_tag tag
+      else if CrcManager.mem_proj z then
+        let (tag, rid, p) = CrcManager.find_proj z in
+        fprintf ppf "if ((uint8_t)(%s.i_b_u & 0b111) == G_%a) {\n%s = (value){ .i_b_u = %s.d%s >> 3 };\n} else {\nblame(%d, %d);\n}"
+          y
+          toC_tag tag
+          x
+          y
+          (if !is_B then "" else ".atom")
+          rid
+          (match p with Pos -> 1 | Neg -> 0)
+      else
+        fprintf ppf "%s = coerce(%s, %s.s);\n"
+          x
+          y
+          z
     | Coercion c -> (* TODO *)
       fprintf ppf "%a\n"
         toC_crc (c, x)

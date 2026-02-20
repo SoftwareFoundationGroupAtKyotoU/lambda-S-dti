@@ -31,6 +31,9 @@ RUN wget https://apt.llvm.org/llvm.sh && \
 ENV LLVM_CONFIG=llvm-config-11
 RUN raco pkg install --auto --name grift https://github.com/Gradual-Typing/Grift.git
 RUN ln -s $(racket -e '(require setup/dirs) (displayln (find-user-console-bin-dir))')/grift /usr/local/bin/grift
+RUN cd /root/.racket/7.2/pkgs/grift/src/backend/runtime && \
+    sed -i 's/-std=c99/-std=gnu99 -D_GNU_SOURCE/g' Makefile && \
+    make
 
 # -----------------------------------------------------------------------------
 # 3. OCaml (lambda-S-dti) のセットアップ

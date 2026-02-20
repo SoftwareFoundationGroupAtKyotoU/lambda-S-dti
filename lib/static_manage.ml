@@ -73,6 +73,8 @@ end
 
 module CrcManager = struct
   module StaticCrc = Map.Make (struct type t = Cls.coercion let compare = compare end)
+  module AtomInjCrc = Map.Make (struct type t = string let compare = compare end)
+  module AtomProjCrc = Map.Make (struct type t = string let compare = compare end)
 
   type state = {
     counter : int;
@@ -84,13 +86,20 @@ module CrcManager = struct
     cache = StaticCrc.empty;
   }
 
+  let current_inj = ref AtomInjCrc.empty
+  let current_proj = ref AtomProjCrc.empty
+
   let clear () = 
-    current_state := { counter = 0; cache = StaticCrc.empty }
+    current_state := { counter = 0; cache = StaticCrc.empty };
+    current_inj := AtomInjCrc.empty;
+    current_proj := AtomProjCrc.empty
 
-  let save () = !current_state
+  let save () = !current_state, !current_inj, !current_proj
 
-  let restore s = 
-    current_state := s
+  let restore (cs, ci, cp) = 
+    current_state := cs;
+    current_inj := ci;
+    current_proj := cp
 
   let register s =
     if not (StaticCrc.mem s !current_state.cache) then
@@ -106,6 +115,22 @@ module CrcManager = struct
   let find s = StaticCrc.find s !current_state.cache
 
   let get_definitions () = StaticCrc.bindings !current_state.cache
+
+  let register_inj (str: string) (tag: tag) =
+    if not (AtomInjCrc.mem str !current_inj) then
+      current_inj := AtomInjCrc.add str tag !current_inj
+  
+  let mem_inj str = AtomInjCrc.mem str !current_inj
+
+  let find_inj str = AtomInjCrc.find str !current_inj
+
+  let register_proj (str: string) ((tag, rid, p): tag * int * polarity) =
+    if not (AtomProjCrc.mem str !current_proj) then
+      current_proj := AtomProjCrc.add str (tag, rid, p) !current_proj
+  
+  let mem_proj str = AtomProjCrc.mem str !current_proj
+
+  let find_proj str = AtomProjCrc.find str !current_proj
 end
 
 let static_clear () = 

@@ -146,6 +146,13 @@ module KNorm = struct
     | LetExp (x, f1, f2) -> 
       let f1 = toCls_exp known tvs f1 in
       let f2 = toCls_exp known tvs f2 in
+      begin match f1 with
+      | Cls.Coercion (Cls.SeqInj (Cls.Id, (I | B | U as g))) -> CrcManager.register_inj x g
+      | Cls.Coercion (Cls.SeqProj ((I | B | U as g), (rid, p), Cls.Id)) -> CrcManager.register_proj x (g, rid, p)
+      | Cls.Var y when CrcManager.mem_inj y -> CrcManager.register_inj x (CrcManager.find_inj y)
+      | Cls.Var y when CrcManager.mem_proj y -> CrcManager.register_proj x (CrcManager.find_proj y)
+      | _ -> ()
+      end;
       Cls.Let (x, f1, f2)
     | LetRecSExp (x, tvs', (y, z), f1, f2) ->
       let k_fv = V.remove x @@ V.remove y @@ V.remove z @@ fv_exp f1 in
