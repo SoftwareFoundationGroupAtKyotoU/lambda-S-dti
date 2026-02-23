@@ -533,7 +533,16 @@ value coerce(value v, crc *s) {
 			}
 
 			// printf("composed c:%d\n", c1->crckind);
-			if (s == &crc_id) return v; // u<<d>><s> -> u<id> -> u
+			if (s == &crc_id) { // u<<d>><s> -> u<id> -> u
+				switch(tag) {
+					case G_INT:
+					case G_BOOL:
+					case G_UNIT:
+						return v;
+					default:
+						return v.d.non_atom->v;
+				}
+			}
 			if (s == &crc_inj_INT) return tag_value(v, G_INT);
 			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
