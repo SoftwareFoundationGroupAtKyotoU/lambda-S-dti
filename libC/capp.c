@@ -498,13 +498,19 @@ value coerce(value v, crc *s) {
 				}
 				#endif
 			}
-			default: {// v<id;G!> -> v<<id;G!>>
-				// 関数とリストの id;G! のみがここでdynにされる
-				value retv;
-				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-				retv.d.non_atom->v = v;
-				retv.d.non_atom->d = s;
-				return retv;
+			default: { // v<id;G!> -> v<<id;G!>>
+				switch(s->g_inj) {
+					case G_INT: return tag_value(v, G_INT);
+					case G_BOOL: return tag_value(v, G_BOOL);
+					case G_UNIT: return tag_value(v, G_UNIT);
+					default: {
+						value retv;
+						retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
+						retv.d.non_atom->v = v;
+						retv.d.non_atom->d = s;
+						return retv;
+					}
+				}
 			}	
 		}
 
@@ -583,12 +589,19 @@ value coerce(value v, crc *s) {
 					#endif
 				}
 
-				default: {    // u<<d>><s> -> u<d> -> u<<d>>
-					value retv;
-					retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-					retv.d.non_atom->v = v.d.non_atom->v;
-					retv.d.non_atom->d = s;
-					return retv;
+				default: {    // u<<d>><s> -> u<g;G!> -> u<<g;G!>>
+					switch(s->g_inj) {
+						case G_INT: return tag_value(v, G_INT);
+						case G_BOOL: return tag_value(v, G_BOOL);
+						case G_UNIT: return tag_value(v, G_UNIT);
+						default: {
+							value retv;
+							retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
+							retv.d.non_atom->v = v.d.non_atom->v;
+							retv.d.non_atom->d = s;
+							return retv;
+						}
+					}
 				}
 			}
 		}
