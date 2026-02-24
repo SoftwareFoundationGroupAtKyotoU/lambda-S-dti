@@ -6,6 +6,7 @@ import re
 import sys
 import argparse
 import shutil
+import itertools
 
 # ================= 設定エリア =================
 DOCKER_IMAGE = "grift"
@@ -58,13 +59,12 @@ def get_nested_type_slots(node):
         return [node.children[0]] + get_nested_type_slots(node.children[2])
     return [node]
 
-def analyze_ast(node, all_targets):
-    """ASTを走査して変異ターゲットを特定。lambdaとdefine返り値を連動させる"""
+def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
+    """ASTを走査して変異ターゲットを特定。OCaml側のインデックス付与順序に完全同期させる。"""
     if not node.is_list: return
 
     is_define = (len(node.children) > 0 and node.children[0].value == "define")
     
-    # benchmark関数は除外
     is_benchmark = False
     if is_define:
         try:
@@ -76,11 +76,12 @@ def analyze_ast(node, all_targets):
     if is_define and not is_benchmark:
         try:
             header = node.children[1]
-            # 1. defineの引数 (例: takのx)
+            # 1. defineの引数 (例: takのx, y, z)
+            define_args = []
             if header.is_list and len(header.children) > 1:
                 for arg_sexp in header.children[1:]:
                     if arg_sexp.is_list and len(arg_sexp.children) == 3 and arg_sexp.children[1].value == ":":
-                        all_targets.append([arg_sexp.children[2]])
+                        define_args.append(arg_sexp.children[2])
 
             # 2. defineの返り値型シグネチャのスロット
             ret_type_node = None
@@ -101,21 +102,41 @@ def analyze_ast(node, all_targets):
                 for c in n.children: find_lambdas(c)
             find_lambdas(node)
 
-            # 4. 同期リンク (lambda引数とシグネチャ位置を統合)
+            # --- [OCaml側の付番順序に合わせた抽出] ---
+            
+            # (A) Fix.ty1 に相当 (出現順)
+            if define_args:
+                fix_dom_targets.append([define_args[0]])
+                
+            # (B) Fix.ty2_ret に相当 (出現順)
+            if type_slots:
+                fix_ret_targets.append([type_slots[-1]])
+                
+            # (C) Fun に相当 (後行順)
+            # OCaml側では、内側のラムダ(body内のラムダ)が先、その後に引数側のラムダ(y, z等)の順に後行順で付番される。
+            # なので、これらを「逆順（内側から外側へ）」にして fun_targets に積む。
+            
+            # C-1. body内のlambda (同期ペアも作成)
+            lambda_pairs = []
             for idx, lat in enumerate(lambda_arg_types):
                 if idx < len(type_slots) - 1:
-                    all_targets.append([lat, type_slots[idx]])
-            
-            # 5. 右端の返り値型
-            if type_slots:
-                all_targets.append([type_slots[-1]])
+                    lambda_pairs.append([lat, type_slots[idx]])
+                else:
+                    lambda_pairs.append([lat])
+            for pair in reversed(lambda_pairs):
+                fun_targets.append(pair)
+                
+            # C-2. 第2引数以降 (y, zなど) を逆順に
+            if len(define_args) > 1:
+                for arg in reversed(define_args[1:]):
+                    fun_targets.append([arg])
 
         except Exception as e: pass
 
     # 子要素を再帰探索
-    if not is_benchmark: # benchmarkの中身は探索しない
+    if not is_benchmark:
         for child in node.children:
-            analyze_ast(child, all_targets)
+            analyze_ast(child, fun_targets, fix_dom_targets, fix_ret_targets)
 
 def get_grift_driver_code(loop_count):
     code = f"""
@@ -223,17 +244,29 @@ def main():
     definitions = [c for c in ast_root.children if c.is_list and len(c.children) > 0 and c.children[0].value in ["define", "module", "imports"]]
     ast_root.children = definitions
 
-    all_targets = []
+    fun_targets = []
+    fix_dom_targets = []
+    fix_ret_targets = []
     for child in ast_root.children:
-        analyze_ast(child, all_targets)
+        analyze_ast(child, fun_targets, fix_dom_targets, fix_ret_targets)
     
+    all_targets = fun_targets + fix_dom_targets + fix_ret_targets
+
     total_variants = 2 ** len(all_targets)
     if args.static:
         variants_to_run = [0]
     else:
-        # 動的型(ビットが1)の数が少ない順にソートする
-        # 同じ数の場合は、インデックスの小さい順(辞書順)にする
-        variants_to_run = sorted(range(total_variants), key=lambda x: (bin(x).count('1'), x))
+        variants_to_run = [0]  # まず 0個 (完全に静的)
+        elements = list(range(len(all_targets)))
+        
+        # 1個Dyn, 2個Dyn, ..., 全てDyn と長さ順に組み合わせを生成
+        for k in range(1, len(all_targets) + 1):
+            # itertools.combinations は辞書順に生成するため OCaml側の choose と一致する
+            for comb in itertools.combinations(elements, k):
+                val = 0
+                for bit in comb:
+                    val |= (1 << bit)
+                variants_to_run.append(val)
     
     print(f"Total variants: {total_variants}")
     with open(output_jsonl_path, 'w') as f: pass
@@ -242,7 +275,7 @@ def main():
     os.makedirs(work_dir, exist_ok=True)
 
     # 実行ループ
-    for i in variants_to_run:
+    for seq_idx, i in enumerate(variants_to_run):
         # すべて初期化してからビットに応じて適用
         for group in all_targets:
             for node in group: node.is_mutable_type = False
@@ -262,17 +295,16 @@ def main():
         with open(os.path.join(variant_dir, filename), 'w') as f:
             f.write(full_code)
 
-        print(f"[{i+1}/{total_variants}] {config_id} ... ", end="", flush=True)
+        print(f"[{seq_idx + 1}/{total_variants}] {config_id} ... ", end="", flush=True)
         result = run_benchmark(variant_dir, filename, multiplied_input)
         
         times = result.get("times", [])
         avg_time = sum(times) / len(times) if times else 0.0
         print(f"{result['status']} (Avg: {avg_time:.4f}s)")
         
-        # ご指定の厳密なJSON構造
         output_obj = {
             "mode": "GRIFT",
-            "mutant_index": i + 1,
+            "mutant_index": seq_idx + 1,
             "after_mutate": base_code,
             "after_insertion": None,
             "after_translation": None,
