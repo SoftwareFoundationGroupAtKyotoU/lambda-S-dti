@@ -82,9 +82,7 @@ let toC_tas ppf (y, n, x, tas) =
   let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:toC_sep in
   let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else fprintf ppf "\n%a" toC_list ta in
-  fprintf ppf "%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);%a\n"
-    x
-    n
+  fprintf ppf "%a\n"
     toC_list tas;
   while (!cnt_ta < n) do
     fprintf ppf "\n%s.f->fundat.poly.tas[%d] = %s.f->fundat.poly.tas[%d];"
@@ -295,10 +293,13 @@ let rec toC_exp ppf f = match f with
         z
         (* (if !is_alt then ", crc_id_value" else "") *)
     | AppTy (y, n, tas) ->
-      fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun));\n*%s.f = *%s.f;\n%a" (* TODO *)
+      fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n*%s.f = *%s.f;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a" (* TODO *)
+        x
+        n
+        x
+        y
         x
         x
-        y        
         toC_tas (y, n, x, tas)    
     | Cast (y, u1, u2, (r, p)) -> 
       (*
@@ -417,83 +418,93 @@ let rec toC_exp ppf f = match f with
         toC_exp f
   | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-        l
-        l
-        l
-        l
-        l
-        l
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a%a"
         l
         l
         (List.length ftv + n)
+        l
+        l
+        l
+        l
+        l
+        l
+        l
         toC_ftas (n, l, ftv)
         toC_exp f
     else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-        l
-        l
-        l
-        l
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a%a"
         l
         l
         (List.length ftv + n)
+        l
+        l
+        l
+        l
+        l
         toC_ftas (n, l, ftv)
         toC_exp f
   | MakeCls (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
     if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
-        x
-        x
-        x
-        x
-        x
-        x
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d);\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)(%s.f + 1);\n%a\n%a"
         x
         x
         (List.length vs)
+        x
+        x
+        x
+        x
+        x
+        x
+        x
         toC_vs (x, false, vs)
         toC_exp f
     else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%a"
-        x
-        x
-        x
-        x
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun)  + sizeof(value) * %d);\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)(%s.f + 1);\n%a\n%a"
         x
         x
         (List.length vs)
+        x
+        x
+        x
+        x
+        x
         toC_vs (x, false, vs)
         toC_exp f
   | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     if !is_alt then 
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly.f.poly_closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-        x
-        x
-        x
-        x
-        x
-        x
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d + sizeof(ty*) * %d);\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly.f.poly_closure_alt.fvs = (value*)(%s.f + 1);\n%a\n%s.f->fundat.poly.tas = (ty**)(%s.f->fundat.poly.f.poly_closure_alt.fvs + %d);\n%a%a"
         x
         x
         (List.length vs)
+        (List.length ftv + n)
+        x
+        x
+        x
+        x
+        x
+        x
+        x
         toC_vs (x, true, vs)
         x
-        (List.length ftv + n)
+        x
+        (List.length vs)
         toC_ftas (n, x, ftv)
         toC_exp f
     else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly.f.poly_closure.fvs = (value*)GC_MALLOC(sizeof(value) * %d);\n%a\n%s.f->fundat.poly.tas = (ty**)GC_MALLOC(sizeof(ty*) * %d);\n%a%a"
-        x
-        x
-        x
-        x
+      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d + sizeof(ty*) * %d);\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly.f.poly_closure.fvs = (value*)(%s.f + 1);\n%a\n%s.f->fundat.poly.tas = (ty**)(%s.f->fundat.poly.f.poly_closure.fvs + %d);\n%a%a"
         x
         x
         (List.length vs)
+        (List.length ftv + n)
+        x
+        x
+        x
+        x
+        x
         toC_vs (x, true, vs)
         x
-        (List.length ftv + n)
+        x
+        (List.length vs)
         toC_ftas (n, x, ftv)
         toC_exp f  
   | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
