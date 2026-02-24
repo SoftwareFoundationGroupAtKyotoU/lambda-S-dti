@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl git make gcc g++ m4 unzip pkg-config libgmp-dev \
     racket llvm-11-dev clang-11 \
     python3 python3-pip \
-    opam \
+    opam nano \
     lsb-release wget software-properties-common gnupg \
     libgc-dev libcjson-dev \
     && rm -rf /var/lib/apt/lists/*

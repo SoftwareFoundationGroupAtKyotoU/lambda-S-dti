@@ -155,37 +155,73 @@ def parse_all_grift_times(stdout_str):
     matches = re.findall(r"time \(sec\):\s*([\d\.]+)", stdout_str)
     return [float(m) for m in matches]
 
-def run_benchmark(config_dir, source_filename, input_content_multiplied):
-    # 1. ファイルの場所を「絶対パス（/app/.../fib.grift）」で確実に指定する
+def parse_grift_profiler(stdout_str):
+    """Griftの --cast-profiler 出力からキャスト関連の数値を抽出する"""
+    cast_total = None
+    longest_data = None
+    
+    for line in stdout_str.split('\n'):
+        # "total casts:" の行を探す
+        if "total casts:" in line:
+            # "total casts:" 以降の文字列を取得して空白で分割
+            parts = line.split("total casts:")[1].split()
+            
+            # 数値に変換できるもの（N/Aなどを除く）をすべて合計する
+            total = 0
+            for p in parts:
+                if p.isdigit():
+                    total += int(p)
+            cast_total = total
+            
+        # "longest proxy chain:" の行を探す
+        elif "longest proxy chain:" in line:
+            parts = line.split("longest proxy chain:")[1].split()
+            if parts and parts[0].isdigit():
+                longest_data = int(parts[0])
+                
+    return cast_total, longest_data
+
+def run_benchmark(config_dir, source_filename, input_content, enable_profiler=False):
     import os
     abs_source_path = os.path.abspath(os.path.join(config_dir, source_filename))
-    abs_output_path = os.path.abspath(os.path.join(config_dir, "bench"))
+    output_bin = "bench_prof" if enable_profiler else "bench_perf"
+    abs_output_path = os.path.abspath(os.path.join(config_dir, output_bin))
 
-    # 2. コマンドに絶対パスを渡す
-    compile_cmd = [
-        GRIFT_CMD, "-O", "3", "-o", abs_output_path, abs_source_path
-    ]
+    # コンパイルコマンドの構築
+    compile_cmd = [GRIFT_CMD, "-O", "3"]
+    if enable_profiler:
+        compile_cmd.append("--cast-profiler")
+    compile_cmd.extend(["-o", abs_output_path, abs_source_path])
     
     try:
-        # cwd=config_dir を追加（Griftが中間ファイルなどを正しい場所に置けるようにするため）
         subprocess.run(compile_cmd, cwd=config_dir, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         print(f"\n[Compile Error in {source_filename}]\n{e.stderr}")
-        return {"status": "Compile Failed", "times": [], "stderr": e.stderr}
+        return {"status": "Compile Failed", "times": [], "cast": None, "longest": None, "stderr": e.stderr}
 
-    # 3. 実行時も絶対パスでバイナリを叩く
     run_cmd = [abs_output_path]
     
     try:
-        # ここでも cwd=config_dir を追加します
-        proc = subprocess.run(run_cmd, input=input_content_multiplied, cwd=config_dir, check=True, capture_output=True, text=True)
+        proc = subprocess.run(run_cmd, input=input_content, cwd=config_dir, check=True, capture_output=True, text=True)
         stdout_str = proc.stdout.strip()
-        times = parse_all_grift_times(stdout_str)
-        status = "Success" if len(times) > 0 else "No Output"
-        return {"status": status, "times": times, "stdout": stdout_str}
+        
+        result = {"status": "Success"}
+        if enable_profiler:
+            # プロファイルON時はキャスト情報のみパース
+            cast_data, longest_data = parse_grift_profiler(stdout_str)
+            result["cast"] = cast_data
+            result["longest"] = longest_data
+        else:
+            # プロファイルOFF時は実行時間のみパース
+            times = parse_all_grift_times(stdout_str)
+            result["status"] = "Success" if len(times) > 0 else "No Output"
+            result["times"] = times
+            
+        return result
     except subprocess.CalledProcessError as e:
         print(f"\n[Runtime Error]\n{e.stderr}")
-        return {"status": "Run Failed", "times": [], "stderr": e.stderr}
+        return {"status": "Run Failed", "times": [], "cast": None, "longest": None, "stderr": e.stderr}
+
 
 def get_latest_log_dir():
     log_base = os.path.expanduser(LOG_BASE_DIR)
@@ -197,6 +233,34 @@ def get_latest_log_dir():
     if not valid_subdirs:
         raise FileNotFoundError(f"No timestamped directories found in {log_base}")
     return os.path.join(log_base, valid_subdirs[-1])
+
+def generate_c_code(config_dir, source_filename, dest_dir, dest_filename):
+    """GriftでCコードを生成し、指定したディレクトリに保存する"""
+    import os
+    import shutil
+    
+    # 修正: --keep-ir <出力ファイル名> <入力ファイル名> の順番に変更
+    cmd = [GRIFT_CMD, "--backend", "C", "--keep-ir", dest_filename, source_filename]
+    
+    try:
+        # config_dir内でコマンドを実行し、Cコードを生成
+        subprocess.run(cmd, cwd=config_dir, check=True, capture_output=True, text=True)
+        
+        # config_dir内に生成されたCコードを、目的のログディレクトリへ移動
+        src_c = os.path.join(config_dir, dest_filename)
+        dest_c = os.path.join(dest_dir, dest_filename)
+        
+        # 指定した名前で正しくファイルが生成されていれば移動
+        if os.path.exists(src_c):
+            shutil.move(src_c, dest_c)
+        else:
+            # 万が一、Grift側が自動で別の名前（元のファイル名.cなど）をつけてしまった場合の保険
+            c_files = [f for f in os.listdir(config_dir) if f.endswith(".c")]
+            if c_files:
+                shutil.move(os.path.join(config_dir, c_files[0]), dest_c)
+                
+    except subprocess.CalledProcessError as e:
+        print(f"\n[C Code Generation Error in {source_filename}]\n{e.stderr}")
 
 def main():
     parser = argparse.ArgumentParser(description="Run Grift Lattice Benchmark.")
@@ -222,6 +286,8 @@ def main():
         latest_log_dir = get_latest_log_dir()
         suffix = "_fs" if args.static else ""
         output_jsonl_path = os.path.join(latest_log_dir, f"GRIFT_{filename_no_ext}{suffix}.jsonl")
+        c_code_dir = os.path.join(latest_log_dir, "GRIFT")
+        os.makedirs(c_code_dir, exist_ok=True)
     except Exception as e:
         print(f"Error setting up log directory: {e}")
         return
@@ -232,8 +298,8 @@ def main():
         if not base_input:
             print(f"\n[Warning] Input file {input_path} is empty!")
             
-        # args.iter ぴったりではなく、余裕を持たせて +10 回分連結する
-        multiplied_input = (base_input + "\n") * (args.iter + 10)
+        multiplied_input_perf = (base_input + "\n") * (args.iter + 10)
+        multiplied_input_prof = (base_input + "\n") * (1 + 10)
 
     # AST解析
     with open(grift_path, 'r') as f:
@@ -288,37 +354,65 @@ def main():
                 node.is_mutable_type = is_dyn
 
         base_code = "\n".join([serialize(c) for c in ast_root.children])
-        full_code = base_code + get_grift_driver_code(args.iter)
         
         variant_dir = os.path.join(work_dir, f"config_{i}")
         os.makedirs(variant_dir, exist_ok=True)
-        with open(os.path.join(variant_dir, filename), 'w') as f:
-            f.write(full_code)
+        mutant_index = seq_idx + 1
 
-        print(f"[{seq_idx + 1}/{total_variants}] {config_id} ... ", end="", flush=True)
-        result = run_benchmark(variant_dir, filename, multiplied_input)
-        
-        times = result.get("times", [])
+        print(f"[{mutant_index}/{total_variants}] {config_id} ... ", end="", flush=True)
+
+        # ---------------------------------------------------------------------
+        # Phase 1: 実行時間の計測 (プロファイラ OFF, args.iter 回ループ)
+        # ---------------------------------------------------------------------
+        filename_perf = f"perf_{filename}"
+        full_code_perf = base_code + get_grift_driver_code(args.iter)
+        with open(os.path.join(variant_dir, filename_perf), 'w') as f:
+            f.write(full_code_perf)
+            
+        res_perf = run_benchmark(variant_dir, filename_perf, multiplied_input_perf, enable_profiler=False)
+        times = res_perf.get("times", [])
         avg_time = sum(times) / len(times) if times else 0.0
-        print(f"{result['status']} (Avg: {avg_time:.4f}s)")
+
+        # Cコード生成 (純粋な実行用コードを元に生成)
+        dest_c_filename = f"{filename_no_ext}{mutant_index}.c"
+        generate_c_code(variant_dir, filename_perf, c_code_dir, dest_c_filename)
+
+        # ---------------------------------------------------------------------
+        # Phase 2: キャストプロファイルの取得 (プロファイラ ON, 1回のみ実行)
+        # ---------------------------------------------------------------------
+        filename_prof = f"prof_{filename}"
+        full_code_prof = base_code + get_grift_driver_code(1)
+        with open(os.path.join(variant_dir, filename_prof), 'w') as f:
+            f.write(full_code_prof)
+
+        res_prof = run_benchmark(variant_dir, filename_prof, multiplied_input_prof, enable_profiler=True)
         
+        print(f"{res_perf['status']} (Avg: {avg_time:.4f}s)")
+        
+        # ---------------------------------------------------------------------
+        # 結果の統合とJSON出力
+        # ---------------------------------------------------------------------
         output_obj = {
             "mode": "GRIFT",
-            "mutant_index": seq_idx + 1,
+            "mutant_index": mutant_index,
             "after_mutate": base_code,
             "after_insertion": None,
             "after_translation": None,
             "times_sec": times,
             "mem": None,
-            "cast": None,
+            "cast": res_prof.get("cast"),       # Phase 2 の結果を利用
             "inference": None,
-            "longest": None
+            "longest": res_prof.get("longest")  # Phase 2 の結果を利用
         }
 
         with open(output_jsonl_path, 'a') as f:
             f.write(json.dumps(output_obj) + "\n")
 
     print(f"Done! Saved to: {output_jsonl_path}")
+
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
+        print(f"Cleaned up temporary directory: {work_dir}")
 
 if __name__ == "__main__":
     main()
