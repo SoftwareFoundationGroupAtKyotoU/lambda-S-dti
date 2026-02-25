@@ -76,14 +76,12 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
     if is_define and not is_benchmark:
         try:
             header = node.children[1]
-            # 1. defineの引数 (例: takのx, y, z)
             define_args = []
             if header.is_list and len(header.children) > 1:
                 for arg_sexp in header.children[1:]:
                     if arg_sexp.is_list and len(arg_sexp.children) == 3 and arg_sexp.children[1].value == ":":
                         define_args.append(arg_sexp.children[2])
 
-            # 2. defineの返り値型シグネチャのスロット
             ret_type_node = None
             for i, child in enumerate(node.children):
                 if not child.is_list and child.value == ":":
@@ -92,7 +90,6 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
             
             type_slots = get_nested_type_slots(ret_type_node) if ret_type_node else []
 
-            # 3. 内部の lambda 引数を再帰的に探索
             lambda_arg_types = []
             def find_lambdas(n):
                 if not n.is_list or not n.children: return
@@ -101,22 +98,13 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
                     lambda_arg_types.append(arg_decl.children[2])
                 for c in n.children: find_lambdas(c)
             find_lambdas(node)
-
-            # --- [OCaml側の付番順序に合わせた抽出] ---
             
-            # (A) Fix.ty1 に相当 (出現順)
             if define_args:
                 fix_dom_targets.append([define_args[0]])
                 
-            # (B) Fix.ty2_ret に相当 (出現順)
             if type_slots:
                 fix_ret_targets.append([type_slots[-1]])
                 
-            # (C) Fun に相当 (後行順)
-            # OCaml側では、内側のラムダ(body内のラムダ)が先、その後に引数側のラムダ(y, z等)の順に後行順で付番される。
-            # なので、これらを「逆順（内側から外側へ）」にして fun_targets に積む。
-            
-            # C-1. body内のlambda (同期ペアも作成)
             lambda_pairs = []
             for idx, lat in enumerate(lambda_arg_types):
                 if idx < len(type_slots) - 1:
@@ -126,14 +114,12 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
             for pair in reversed(lambda_pairs):
                 fun_targets.append(pair)
                 
-            # C-2. 第2引数以降 (y, zなど) を逆順に
             if len(define_args) > 1:
                 for arg in reversed(define_args[1:]):
                     fun_targets.append([arg])
 
         except Exception as e: pass
 
-    # 子要素を再帰探索
     if not is_benchmark:
         for child in node.children:
             analyze_ast(child, fun_targets, fix_dom_targets, fix_ret_targets)
@@ -161,19 +147,14 @@ def parse_grift_profiler(stdout_str):
     longest_data = None
     
     for line in stdout_str.split('\n'):
-        # "total casts:" の行を探す
         if "total casts:" in line:
-            # "total casts:" 以降の文字列を取得して空白で分割
             parts = line.split("total casts:")[1].split()
-            
-            # 数値に変換できるもの（N/Aなどを除く）をすべて合計する
             total = 0
             for p in parts:
                 if p.isdigit():
                     total += int(p)
             cast_total = total
             
-        # "longest proxy chain:" の行を探す
         elif "longest proxy chain:" in line:
             parts = line.split("longest proxy chain:")[1].split()
             if parts and parts[0].isdigit():
@@ -187,7 +168,6 @@ def run_benchmark(config_dir, source_filename, input_content, enable_profiler=Fa
     output_bin = "bench_prof" if enable_profiler else "bench_perf"
     abs_output_path = os.path.abspath(os.path.join(config_dir, output_bin))
 
-    # コンパイルコマンドの構築
     compile_cmd = [GRIFT_CMD, "-O", "3"]
     if enable_profiler:
         compile_cmd.append("--cast-profiler")
@@ -207,12 +187,10 @@ def run_benchmark(config_dir, source_filename, input_content, enable_profiler=Fa
         
         result = {"status": "Success"}
         if enable_profiler:
-            # プロファイルON時はキャスト情報のみパース
             cast_data, longest_data = parse_grift_profiler(stdout_str)
             result["cast"] = cast_data
             result["longest"] = longest_data
         else:
-            # プロファイルOFF時は実行時間のみパース
             times = parse_all_grift_times(stdout_str)
             result["status"] = "Success" if len(times) > 0 else "No Output"
             result["times"] = times
@@ -222,6 +200,37 @@ def run_benchmark(config_dir, source_filename, input_content, enable_profiler=Fa
         print(f"\n[Runtime Error]\n{e.stderr}")
         return {"status": "Run Failed", "times": [], "cast": None, "longest": None, "stderr": e.stderr}
 
+# =====================================================================
+# 新規追加: Cバックエンド(--backend C)でコンパイルし、バイナリを実行する関数
+# =====================================================================
+def run_benchmark_c(config_dir, source_filename, input_content):
+    import os
+    abs_source_path = os.path.abspath(os.path.join(config_dir, source_filename))
+    output_bin = "bench_c_perf"
+    abs_output_path = os.path.abspath(os.path.join(config_dir, output_bin))
+
+    # コンパイル: --backend C と -o オプションで直接バイナリを生成
+    compile_cmd = [GRIFT_CMD, "--backend", "C", "-O", "3", "-o", abs_output_path, abs_source_path]
+    
+    try:
+        subprocess.run(compile_cmd, cwd=config_dir, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        return {"status": "Compile Failed", "times": [], "stderr": e.stderr}
+
+    run_cmd = [abs_output_path]
+    try:
+        proc = subprocess.run(run_cmd, input=input_content, cwd=config_dir, check=True, capture_output=True, text=True)
+        stdout_str = proc.stdout.strip()
+        
+        # Cバックエンドでも time 関数による出力は同じ形式で出るためパース可能
+        times = parse_all_grift_times(stdout_str)
+        return {
+            "status": "Success" if len(times) > 0 else "No Output",
+            "times": times
+        }
+    except subprocess.CalledProcessError as e:
+        return {"status": "Run Failed", "times": [], "stderr": e.stderr}
+# =====================================================================
 
 def get_latest_log_dir():
     log_base = os.path.expanduser(LOG_BASE_DIR)
@@ -239,22 +248,17 @@ def generate_c_code(config_dir, source_filename, dest_dir, dest_filename):
     import os
     import shutil
     
-    # 修正: --keep-ir <出力ファイル名> <入力ファイル名> の順番に変更
     cmd = [GRIFT_CMD, "--backend", "C", "--keep-ir", dest_filename, source_filename]
     
     try:
-        # config_dir内でコマンドを実行し、Cコードを生成
         subprocess.run(cmd, cwd=config_dir, check=True, capture_output=True, text=True)
         
-        # config_dir内に生成されたCコードを、目的のログディレクトリへ移動
         src_c = os.path.join(config_dir, dest_filename)
         dest_c = os.path.join(dest_dir, dest_filename)
         
-        # 指定した名前で正しくファイルが生成されていれば移動
         if os.path.exists(src_c):
             shutil.move(src_c, dest_c)
         else:
-            # 万が一、Grift側が自動で別の名前（元のファイル名.cなど）をつけてしまった場合の保険
             c_files = [f for f in os.listdir(config_dir) if f.endswith(".c")]
             if c_files:
                 shutil.move(os.path.join(config_dir, c_files[0]), dest_c)
@@ -285,9 +289,16 @@ def main():
     try:
         latest_log_dir = get_latest_log_dir()
         suffix = "_fs" if args.static else ""
+        
+        # 通常のGRIFT用のJSONLとCコード保存先
         output_jsonl_path = os.path.join(latest_log_dir, f"GRIFT_{filename_no_ext}{suffix}.jsonl")
         c_code_dir = os.path.join(latest_log_dir, "GRIFT")
         os.makedirs(c_code_dir, exist_ok=True)
+        
+        # Cバックエンド用のJSONLファイルのパスを準備
+        output_jsonl_path_c = os.path.join(latest_log_dir, f"GRIFT_C_{filename_no_ext}{suffix}.jsonl")
+        with open(output_jsonl_path_c, 'w') as f: pass # ファイルを初期化
+        
     except Exception as e:
         print(f"Error setting up log directory: {e}")
         return
@@ -322,12 +333,9 @@ def main():
     if args.static:
         variants_to_run = [0]
     else:
-        variants_to_run = [0]  # まず 0個 (完全に静的)
+        variants_to_run = [0]
         elements = list(range(len(all_targets)))
-        
-        # 1個Dyn, 2個Dyn, ..., 全てDyn と長さ順に組み合わせを生成
         for k in range(1, len(all_targets) + 1):
-            # itertools.combinations は辞書順に生成するため OCaml側の choose と一致する
             for comb in itertools.combinations(elements, k):
                 val = 0
                 for bit in comb:
@@ -387,11 +395,8 @@ def main():
 
         res_prof = run_benchmark(variant_dir, filename_prof, multiplied_input_prof, enable_profiler=True)
         
-        print(f"{res_perf['status']} (Avg: {avg_time:.4f}s)")
+        print(f"  -> GRIFT  : {res_perf['status']} (Avg: {avg_time:.4f}s)")
         
-        # ---------------------------------------------------------------------
-        # 結果の統合とJSON出力
-        # ---------------------------------------------------------------------
         output_obj = {
             "mode": "GRIFT",
             "mutant_index": mutant_index,
@@ -400,15 +405,40 @@ def main():
             "after_translation": None,
             "times_sec": times,
             "mem": None,
-            "cast": res_prof.get("cast"),       # Phase 2 の結果を利用
+            "cast": res_prof.get("cast"),       
             "inference": None,
-            "longest": res_prof.get("longest")  # Phase 2 の結果を利用
+            "longest": res_prof.get("longest")  
         }
 
         with open(output_jsonl_path, 'a') as f:
             f.write(json.dumps(output_obj) + "\n")
 
-    print(f"Done! Saved to: {output_jsonl_path}")
+        # ---------------------------------------------------------------------
+        # Phase 3: GRIFT_C (Cバックエンド) での実行とJSON出力
+        # ---------------------------------------------------------------------
+        res_c = run_benchmark_c(variant_dir, filename_perf, multiplied_input_perf)
+        times_c = res_c.get("times", [])
+        avg_time_c = sum(times_c) / len(times_c) if times_c else 0.0
+        
+        print(f"  -> GRIFT_C: {res_c['status']} (Avg: {avg_time_c:.4f}s)")
+
+        output_obj_c = {
+            "mode": "GRIFT_C",
+            "mutant_index": mutant_index,
+            "after_mutate": base_code,
+            "after_insertion": None,
+            "after_translation": None,
+            "times_sec": times_c,
+            "mem": None,
+            "cast": None,
+            "inference": None,
+            "longest": None
+        }
+
+        with open(output_jsonl_path_c, 'a') as f:
+            f.write(json.dumps(output_obj_c) + "\n")
+
+    print(f"Done! Saved to: {latest_log_dir}")
 
     if os.path.exists(work_dir):
         shutil.rmtree(work_dir)

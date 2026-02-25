@@ -23,7 +23,8 @@ TARGET_PAIRS = [ # (base, comp)
     ("BLC", ["ALC", "SLC"]),
     ("SLC", ["ALC"]),
     ("STATICC", ["ALC", "SLC", "GRIFT"]),
-    ("GRIFT", ["ALC", "SLC"])
+    ("GRIFT", ["ALC", "SLC", "GRIFT_C"]),
+    ("GRIFT_C", ["ALC", "SLC"]),
 ]
 
 # =========================
