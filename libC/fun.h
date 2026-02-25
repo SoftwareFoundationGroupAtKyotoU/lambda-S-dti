@@ -4,97 +4,50 @@
 #include "types.h"
 
 typedef struct fun {
-	enum funkind : uint8_t {
-		LABEL,
-		CLOSURE,
-		#ifndef STATIC
-		POLY_LABEL,
-		POLY_CLOSURE,
-		WRAPPED,
-		#endif
-	} funkind;
-	#ifdef CAST
-	uint8_t polarity;
-	uint32_t rid;
-	#endif
-	union fundat {
-		#if defined(CAST) || defined(STATIC)
-		value (*label)(value);
-		struct closure {
-			value (*cls)(value, value*);
-			value *fvs;
-		} closure;
-		#ifndef STATIC
-		struct poly {
-			ty **tas;
-			union f {
-				value (*poly_label)(value, ty**);
-				struct poly_closure {
-					value (*pcls)(value, value*, ty**);
-					value *fvs;
-				} poly_closure;
-			} f;
-		} poly;
-		struct wrap {
-			fun *w;
-			ty *u1;
-			ty *u2;
-		} wrap;
-		#endif
-		#elif defined(ALT)
-		struct label_alt {
-			value (*l)(value, value);
-			value (*l_a)(value);
-		} label_alt;
-		struct closure_alt {
-			struct cls_alt {
-				value (*c)(value, value, value*);
-				value (*c_a)(value, value*);
-			} cls_alt;
-			value *fvs;
-		} closure_alt;
-		struct poly {
-			ty **tas;
-			union f {
-				struct poly_label_alt {
-					value (*pl)(value, value, ty**);
-					value (*pl_a)(value, ty**);
-				} poly_label_alt;
-				struct poly_closure_alt {
-					struct pcls_alt {
-						value (*pc)(value, value, value*, ty**);
-						value (*pc_a)(value, value*, ty**);
-					} pcls_alt;
-					value *fvs;
-				} poly_closure_alt;
-			} f;
-		} poly;
-		struct wrap {
-			fun *w;
-			crc *c;
-		} wrap;
-		#else 
-		value (*label)(value, value);
-		struct closure {
-			value (*cls)(value, value, value*);
-			value *fvs;
-		} closure;
-		struct poly {
-			ty **tas;
-			union f {
-				value (*poly_label)(value, value, ty**);
-				struct poly_closure {
-					value (*pcls)(value, value, value*, ty**);
-					value *fvs;
-				} poly_closure;
-			} f;
-		} poly;
-		struct wrap {
-			fun *w;
-			crc *c;
-		} wrap;
-		#endif
-	} fundat;
+    // 第一引数に 自分自身のクロージャ cls を受け取る
+	// クロージャを生成しないDirの適用であれば、envにはdummyのvalueを入れて対処
+    #if defined(CAST) || defined(STATIC)
+    value (*funcM)(value, value);
+    #elif defined(ALT)
+    value (*funcM)(value, value);
+    value (*funcD)(value, value, value);
+    #else 
+    value (*funcD)(value, value, value);
+    #endif
+	
+	// 自由変数や型引数、Wrapであればcoercionや型情報など
+    void* env[];
 } fun;
+
+/* 
+ * メモリレイアウトの例 (すべて void* にキャストして格納)
+ * (A) 普通のクロージャ (自由変数がx, yの2つ)
+ * [ funcM / funcD ]
+ * [ env[0] = (void*)x  ] <-- value x = *(value*)&env[0] として取り出す
+ * [ env[1] = (void*)y  ]
+ *
+ * (B) 多相クロージャ (自由変数がx、型引数がty1)
+ * [ funcM / funcD ]
+ * [ env[0] = (void*)x   ]
+ * [ env[1] = (void*)ty1 ] <-- ty* ty1 = (ty*)env[1] として取り出す
+ *
+ * (C) WRAPされたクロージャ
+ * [ funcM / funcD = fun_wrapped_call_funcM / fun_wrapped_call_funcD ]
+ * [ env[0] = (void*)元の関数(fun*)  ]
+ * [ env[1] = (void*)コアーション(crc*) ]
+ * 
+ * (D) WRAPされたクロージャ (CASTオン時)
+ * [ funcM = fun_wrapped_call_funcM ]
+ * [ env[0] = (void*)元の関数(fun*)  ]
+ * [ env[1] = (void*)t1(ty*) ]         <-- ポインタなのでそのまま入る
+ * [ env[2] = (void*)t2(ty*) ]         <-- ポインタなのでそのまま入る
+ * [ env[3] = (void*)(uintptr_t)rid ]  <-- 整数は uintptr_t を経由してポインタ幅に合わせる
+ * [ env[4] = (void*)(uintptr_t)polarity ]
+ */
+
+/*
+ * wrap関数であるかどうかの判定は
+ * 関数ポインタのアドレスがトランポリン関数のアドレスと一致するかで行う。
+ */
 
 #endif

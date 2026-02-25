@@ -514,7 +514,7 @@ module Cls = struct
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list
-    | AppTy of id * int * tyarg list
+    | AppTy of id * int * int * tyarg list
     | AppDCls of id * (id * id)
     | AppDDir of label * (id * id)
     | AppMCls of id * id
@@ -524,10 +524,7 @@ module Cls = struct
     | CSeq of id * id
     | Coercion of coercion
     | Let of id * exp * exp
-    | MakeCls of id * closure * exp
-    | MakeLabel of id * label * exp
-    | MakePolyLabel of id * label * ftv * exp
-    | MakePolyCls of id * closure * ftv * exp
+    | MakeCls of id * closure * ftv * exp
     | SetTy of tyvar * exp
     | Insert of id * exp
 
@@ -542,7 +539,7 @@ module Cls = struct
     | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | Match (x, ms) -> 
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
-    | AppTy (x, _, _) -> V.singleton x
+    | AppTy (x, _, _, _) -> V.singleton x
     | SetTy (_, f) -> fv_exp f
     | AppDDir (_, (y, z)) -> V.of_list [y; z]
     | AppDCls (x, (y, z)) -> V.of_list [x; y; z]
@@ -552,10 +549,7 @@ module Cls = struct
     | CApp (x, y) -> V.of_list [x; y]
     | CSeq (x, y) -> V.of_list [x; y]
     | Coercion _ -> V.empty
-    | MakeLabel (x, _, f) -> V.remove x (fv_exp f)
-    | MakePolyLabel (x, _, _, f) -> V.remove x (fv_exp f)
-    | MakeCls (x, { entry = _; actual_fv = vs }, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
-    | MakePolyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
+    | MakeCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
     | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
     | Insert (_, f) -> fv_exp f
 

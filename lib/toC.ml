@@ -47,55 +47,50 @@ let c_of_tyarg = function
   | TyNu -> "newty()"
 
 (*自由変数をクロージャに代入するプログラムを記述する関数*)
-(*自由変数の個数をカウントする変数*)
-let cnt_v = ref 0
+(*自由変数と型変数を共通のインデックスで管理*)
+let cnt_env = ref 0
 
-let toC_v x is_poly ppf v =
-  fprintf ppf "%s.f->fundat.%sclosure%s.fvs[%d] = %s;"
+let toC_v x ppf v =
+  fprintf ppf "%s.f->env[%d] = (void*)(uintptr_t)%s.i_b_u;"
     x
-    (if is_poly then "poly.f.poly_" else "")
-    (if !is_alt then "_alt" else "")
-    !cnt_v
+    !cnt_env
     v;
-  cnt_v := !cnt_v + 1
+  cnt_env := !cnt_env + 1
 
-let toC_vs ppf (x, is_poly, vs) =
-  cnt_v := 0;
+let toC_vs ppf (x, vs) =
   let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf fv = pp_print_list (toC_v x is_poly) ppf fv ~pp_sep:toC_sep in
+  let toC_list ppf fv = pp_print_list (toC_v x) ppf fv ~pp_sep:toC_sep in
   fprintf ppf "%a"
     toC_list vs
 
 (*型引数を代入するプログラムを記述する関数*)
-(*型引数の個数をカウントする変数*)
-let cnt_ta = ref 0
-
 let toC_ta x ppf u =
-  fprintf ppf "%s.f->fundat.poly.tas[%d] = %s;"
+  fprintf ppf "%s.f->env[%d] = (void*)%s;"
     x
-    !cnt_ta
+    !cnt_env
     (c_of_tyarg u);
-  cnt_ta := !cnt_ta + 1
+  cnt_env := !cnt_env + 1
 
-let toC_tas ppf (y, n, x, tas) =
-  cnt_ta := 0;
-  let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:toC_sep in
-  let toC_list ppf ta = if List.length ta = 0 then fprintf ppf "" else fprintf ppf "\n%a" toC_list ta in
-  fprintf ppf "%a\n"
+let toC_tas ppf (y, k, n, x, tas) =
+  cnt_env := 0;
+
+  while (!cnt_env < k) do
+    fprintf ppf "%s.f->env[%d] = %s.f->env[%d];\n" x !cnt_env y !cnt_env;
+    cnt_env := !cnt_env + 1
+  done;
+
+  let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:(fun ppf () -> fprintf ppf "\n") in
+  fprintf ppf "%a\n" 
     toC_list tas;
-  while (!cnt_ta < n) do
-    fprintf ppf "\n%s.f->fundat.poly.tas[%d] = %s.f->fundat.poly.tas[%d];"
-      x
-      !cnt_ta
-      y
-      !cnt_ta;
-    cnt_ta := !cnt_ta + 1
+  
+  while (!cnt_env < n) do
+    fprintf ppf "%s.f->env[%d] = %s.f->env[%d];\n" x !cnt_env y !cnt_env;
+    cnt_env := !cnt_env + 1
   done
 
 (*束縛されていない型引数を代入するプログラムを記述する関数*)
-let toC_ftas ppf (n, x, ftas) =
-  cnt_ta := n;
+let toC_ftas ppf (offset, x, ftas) =
+  cnt_env := !cnt_env + offset;
   if List.length ftas = 0 then fprintf ppf ""
   else let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf fta = pp_print_list (toC_ta x) ppf fta ~pp_sep:toC_sep in
@@ -269,38 +264,37 @@ let rec toC_exp ppf f = match f with
           x
           y
     | AppDDir (y, (z1, z2)) ->
-      fprintf ppf "%s = fun_%s(%s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
+      fprintf ppf "%s = fun_%s((value){ .i_b_u = 0 }, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
         x
         y
         z1
         z2
     | AppDCls (y, (z1, z2)) ->
-      fprintf ppf "%s = appD(%s, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = appD(y, z1, z2); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = (%s.f->funcD)(%s, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = appD(y, z1, z2); *) (*yがクロージャを用いて適用する関数の場合*)
         x
+        y
         y
         z1
         z2
     | AppMDir (y, z) ->
-      fprintf ppf "%s = fun%s_%s(%s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
+      fprintf ppf "%s = fun%s_%s((value){ .i_b_u = 0 }, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
         (if !is_alt then "_alt" else "")
         y
         z
     | AppMCls (y, z) -> 
-      fprintf ppf "%s = appM(%s, %s);\n" (* Insert(x, y z) ~> x = appM(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = (%s.f->funcM)(%s, %s);\n" (* Insert(x, y z) ~> x = appM(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
+        y
         y
         z
-        (* (if !is_alt then ", crc_id_value" else "") *)
-    | AppTy (y, n, tas) ->
-      fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n*%s.f = *%s.f;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a" (* TODO *)
+    | AppTy (y, k, n, tas) ->
+      fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*%s.f = *%s.f;\n%a" (* TODO *)
         x
-        n
+        (k + n + List.length tas)
         x
         y
-        x
-        x
-        toC_tas (y, n, x, tas)    
+        toC_tas (y, k, n, x, tas)
     | Cast (y, u1, u2, (r, p)) -> 
       (*
       Insert(x, y:u1=>^(r, p)u2)
@@ -357,10 +351,7 @@ let rec toC_exp ppf f = match f with
     | IfEq (y, z, f1, f2) -> toC_exp ppf (IfEq (y, z, Insert (x, f1), Insert (x, f2)))
     | IfLte (y, z, f1, f2) -> toC_exp ppf (IfLte (y, z, Insert (x, f1), Insert (x, f2)))
     | Match (y, ms) -> toC_exp ppf (Match (y, List.map (fun (mf, f) -> mf, Insert (x, f)) ms))
-    | MakeLabel (y, l, f) -> toC_exp ppf (MakeLabel (y, l, Insert (x, f)))
-    | MakeCls (y, c, f) -> toC_exp ppf (MakeCls (y, c, Insert (x, f)))
-    | MakePolyLabel (y, l, tvs, f) -> toC_exp ppf (MakePolyLabel (y, l, tvs, Insert (x, f)))
-    | MakePolyCls (y, c, tvs, f) -> toC_exp ppf (MakePolyCls (y, c, tvs, Insert (x, f)))
+    | MakeCls (y, c, tvs, f) -> toC_exp ppf (MakeCls (y, c, tvs, Insert (x, f)))
     | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Insert (x, f)))
     (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
     | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
@@ -397,116 +388,23 @@ let rec toC_exp ppf f = match f with
     | [] -> 
       fprintf ppf "{\ndid_not_match();\n}\n"
     end
-  | MakeLabel (_, l, f) -> (* TODO *)
-    if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n%a"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        toC_exp f
-    else 
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n%a"
-        l
-        l
-        l
-        l
-        l
-        toC_exp f
-  | MakePolyLabel (_, l, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a%a"
-        l
-        l
-        (List.length ftv + n)
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        toC_ftas (n, l, ftv)
-        toC_exp f
-    else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(ty*) * %d);\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = (ty**)(%s.f + 1);\n%a%a"
-        l
-        l
-        (List.length ftv + n)
-        l
-        l
-        l
-        l
-        l
-        toC_ftas (n, l, ftv)
-        toC_exp f
-  | MakeCls (x, { entry = _; actual_fv = vs }, f) -> (*TODO*)
-    if !is_alt then
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d);\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = (value*)(%s.f + 1);\n%a\n%a"
-        x
-        x
-        (List.length vs)
-        x
-        x
-        x
-        x
-        x
-        x
-        x
-        toC_vs (x, false, vs)
-        toC_exp f
-    else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun)  + sizeof(value) * %d);\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = (value*)(%s.f + 1);\n%a\n%a"
-        x
-        x
-        (List.length vs)
-        x
-        x
-        x
-        x
-        x
-        toC_vs (x, false, vs)
-        toC_exp f
-  | MakePolyCls (x, { entry = _; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    if !is_alt then 
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d + sizeof(ty*) * %d);\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly.f.poly_closure_alt.fvs = (value*)(%s.f + 1);\n%a\n%s.f->fundat.poly.tas = (ty**)(%s.f->fundat.poly.f.poly_closure_alt.fvs + %d);\n%a%a"
-        x
-        x
-        (List.length vs)
-        (List.length ftv + n)
-        x
-        x
-        x
-        x
-        x
-        x
-        x
-        toC_vs (x, true, vs)
-        x
-        x
-        (List.length vs)
-        toC_ftas (n, x, ftv)
-        toC_exp f
-    else
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(value) * %d + sizeof(ty*) * %d);\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly.f.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly.f.poly_closure.fvs = (value*)(%s.f + 1);\n%a\n%s.f->fundat.poly.tas = (ty**)(%s.f->fundat.poly.f.poly_closure.fvs + %d);\n%a%a"
-        x
-        x
-        (List.length vs)
-        (List.length ftv + n)
-        x
-        x
-        x
-        x
-        x
-        toC_vs (x, true, vs)
-        x
-        x
-        (List.length vs)
-        toC_ftas (n, x, ftv)
-        toC_exp f  
+  | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
+    let env_size = List.length vs + List.length ftv + n in
+    cnt_env := 0;
+    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a%a"
+      x
+      x
+      env_size
+      begin if !is_B || !is_static then
+        asprintf "%s.f->funcM = fun_%s;\n" x l
+      else if !is_alt then
+        asprintf "%s.f->funcD = fun_%s;\n%s.f->funcM = fun_alt_%s;\n" x l x l
+      else
+        asprintf "%s.f->funcD = fun_%s;\n" x l
+      end
+      toC_vs (x, vs)
+      toC_ftas (n, x, ftv)
+      toC_exp f
   | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
     | None ->
         fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
@@ -593,36 +491,32 @@ let toC_tys ppf l =
 
 (*関数定義をするCプログラムを記述*)
 (*関数定義の最初に，自由変数を詰める場所を設ける*)
-(*自由変数をカウントする変数*)
-let cnt_fv = ref 0
 
 (*引数zsから要素を取り出し，変数名xの値に代入*)
 let toC_fv ppf x =
-  fprintf ppf "value %s = zs[%d];"
+  fprintf ppf "value %s = (value){ .i_b_u = (uintptr_t)(cls.f->env[%d]) };"
     x
-    !cnt_fv;
-  cnt_fv := !cnt_fv + 1
+    !cnt_env;
+  cnt_env := !cnt_env + 1
 
 let toC_fvs ppf fvl =
-  cnt_fv := 0; (*呼出しごとに0に初期化*)
-  let toC_sep ppf () = fprintf ppf "\n" in
+  if fvl = [] then fprintf ppf ""
+  else let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf fv = pp_print_list toC_fv ppf fv ~pp_sep:toC_sep in
   fprintf ppf "%a\n"
     toC_list fvl
 
 (*関数定義の最初に，型変数を詰める場所も設ける*)
-(*型変数をカウントする変数*)
-let cnt_tv = ref 0
 
 let toC_tv ppf (i, _) = (* TODO *)
-  fprintf ppf "ty *_ty%d = tvs[%d];"
+  fprintf ppf "ty *_ty%d = (ty*)(cls.f->env[%d]);"
     i
-    !cnt_tv;
-  cnt_tv := !cnt_tv + 1
+    !cnt_env;
+  cnt_env := !cnt_env + 1
 
 let toC_tvs ppf tvl =
-  cnt_tv := 0;
-  let toC_sep ppf () = fprintf ppf "\n" in
+  if tvl = [] then fprintf ppf ""
+  else let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf tv = pp_print_list toC_tv ppf tv ~pp_sep:toC_sep in
   fprintf ppf "%a\n"
     toC_list tvl
@@ -726,200 +620,42 @@ let toC_crcs ppf l =
   ここで定義する内容はfun型の関数自体の定義 (*いらない：と，関数が格納されたvalue型の値の二つ*)
   fundef内のfvl(自由変数のリスト)とtvs(型変数のリスト)に要素が入っているかどうかで関数の型が異なるので，四通りの場合分けが発生する*)
 let toC_label ppf fundef = match fundef with
-| FundefD { name = l; tvs = (tvs, _); arg = (_, _); formal_fv = fvl; body = _ } ->
-  let num = List.length fvl in
-  let num' = List.length tvs in
-  if num = 0 && num' = 0 then
-    fprintf ppf "static value fun_%s(value, value);"
-      l
-  else if num = 0 then
-    fprintf ppf "static value fun_%s(value, value, ty**);"
-      l
-  else if num'= 0 then
-    fprintf ppf "static value fun_%s(value, value, value*);"
-      l
-  else
-    fprintf ppf "static value fun_%s(value, value, value*, ty**);"
-      l
-| FundefM { name = l; tvs = (tvs, _); arg = _; formal_fv = fvl; body = _ } ->
-  let num = List.length fvl in
-  let num' = List.length tvs in
-  if num = 0 && num' = 0 then
-    fprintf ppf "static value fun%s_%s(value);"
-      (if !is_alt then "_alt" else "")
-      l
-  else if num = 0 then
-    fprintf ppf "static value fun%s_%s(value, ty**);"
-      (if !is_alt then "_alt" else "")
-      l
-  else if num'= 0 then
-    fprintf ppf "static value fun%s_%s(value, value*);"
-      (if !is_alt then "_alt" else "")
-      l
-  else
-    fprintf ppf "static value fun%s_%s(value, value*, ty**);"
-      (if !is_alt then "_alt" else "")
-      l
+| FundefD { name = l; tvs = (_, _); arg = (_, _); formal_fv = _; body = _ } ->
+  fprintf ppf "static value fun_%s(value, value, value);"
+    l
+| FundefM { name = l; tvs = (_, _); arg = _; formal_fv = _; body = _ } ->
+  fprintf ppf "static value fun%s_%s(value, value);"
+    (if !is_alt then "_alt" else "")
+    l
 
-(*関数本体の定義
-  やはり4通りの場合分けが発生*)
-let toC_funv ppf (exists_fun, l, num, num') =
+(*関数本体の定義*)
+let toC_funv ppf (exists_fun, l) =
   if not exists_fun then
     fprintf ppf ""
-  else if !is_alt then
-    if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label_alt.l = fun_%s;\n%s.f->fundat.label_alt.l_a = fun_alt_%s;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-    else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label_alt.pl = fun_%s;\n%s.f->fundat.poly.f.poly_label_alt.pl_a = fun_alt_%s;\n%s.f->fundat.poly.tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-    else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure_alt.cls_alt.c = fun_%s;\n%s.f->fundat.closure_alt.cls_alt.c_a = fun_alt_%s;\n%s.f->fundat.closure_alt.fvs = zs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-    else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc = fun_%s;\n%s.f->fundat.poly_closure_alt.pcls_alt.pc_a = fun_alt_%s;\n%s.f->fundat.poly_closure_alt.fvs = zs;\n%s.f->tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        l
-        l
   else
-    if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = LABEL;\n%s.f->fundat.label = fun_%s;\n"
-        l
-        l
-        l
-        l
-        l
-    else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_LABEL;\n%s.f->fundat.poly.f.poly_label = fun_%s;\n%s.f->fundat.poly.tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-    else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = CLOSURE;\n%s.f->fundat.closure.cls = fun_%s;\n%s.f->fundat.closure.fvs = zs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-    else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-      fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun));\n%s.f->funkind = POLY_CLOSURE;\n%s.f->fundat.poly_closure.pcls = fun_%s;\n%s.f->fundat.poly_closure.fvs = zs;\n%s.f->tas = tvs;\n"
-        l
-        l
-        l
-        l
-        l
-        l
-        l
+    fprintf ppf "value %s = cls;\n" l
 
 let toC_fundef ppf fundef = match fundef with
 | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
-  let num = List.length fvl in
-  let num' = List.length tvs in
-  if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "static value fun_%s(value %s, value %s) {\n%a%a}"
-      l
-      x
-      y
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_exp f
-  else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun_%s(value %s, value %s, ty* tvs[%d]) {\n%a%a%a}"
-      l
-      x
-      y
-      num'
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs tvs
-      toC_exp f
-  else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d]) {\n%a%a%a}"
-      l
-      x
-      y
-      num
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_fvs fvl
-      toC_exp f
-  else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun_%s(value %s, value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
-      l
-      x
-      y
-      num
-      num'
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs tvs
-      toC_fvs fvl
-      toC_exp f
+  cnt_env := 0;
+  fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
+    l
+    x
+    y
+    toC_funv (V.mem (to_id l) (fv_exp f), l)
+    toC_fvs fvl
+    toC_tvs tvs
+    toC_exp f
 | FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
-  let num = List.length fvl in
-  let num' = List.length tvs in
-  if num = 0 && num' = 0 then (*自由変数も型変数もない関数は，引数を一つとる関数として定義*)
-    fprintf ppf "static value fun%s_%s(value %s) {\n%a%a}"
-      (if !is_alt then "_alt" else "")
-      l
-      x
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_exp f
-  else if num = 0 then (*自由変数がない関数は，引数を一つと，型変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun%s_%s(value %s, ty* tvs[%d]) {\n%a%a%a}"
-      (if !is_alt then "_alt" else "")
-      l
-      x
-      num'
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs tvs
-      toC_exp f
-  else if num' = 0 then (*型変数がない関数は，引数を一つと，自由変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun%s_%s(value %s, value zs[%d]) {\n%a%a%a}"
-      (if !is_alt then "_alt" else "")
-      l
-      x
-      num
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_fvs fvl
-      toC_exp f
-  else (*上記以外の場合は，引数を一つ，自由変数リスト，型変数リストを受け取る関数として定義*)
-    fprintf ppf "static value fun%s_%s(value %s, value zs[%d], ty* tvs[%d]) {\n%a%a%a%a}"
-      (if !is_alt then "_alt" else "")
-      l
-      x
-      num
-      num'
-      toC_funv (V.mem (to_id l) (fv_exp f), l, num, num')
-      toC_tvs tvs
-      toC_fvs fvl
-      toC_exp f
+  cnt_env := 0;
+  fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
+    (if !is_alt then "_alt" else "")
+    l
+    x
+    toC_funv (V.mem (to_id l) (fv_exp f), l)
+    toC_fvs fvl
+    toC_tvs tvs
+    toC_exp f
   
 (*関数定義全体を記述*)
 let toC_fundefs ppf toplevel =

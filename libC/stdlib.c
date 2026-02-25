@@ -2,21 +2,21 @@
 #include "stdlib.h"
 
 #ifdef ALT
-value fun_print_int(value v, value w) {
+value fun_print_int(value cls, value v, value w) {
 	value retv;
 	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return coerce(retv, w.s);
 }
 
-value fun_alt_print_int(value v) {
+value fun_alt_print_int(value cls, value v) {
 	value retv;
 	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return retv;
 }
 
-value fun_print_bool(value v, value w) {
+value fun_print_bool(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 1) {
@@ -31,7 +31,7 @@ value fun_print_bool(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_alt_print_bool(value v) {
+value fun_alt_print_bool(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 1) {
@@ -46,7 +46,7 @@ value fun_alt_print_bool(value v) {
 	return retv;
 }
 
-value fun_print_newline(value v, value w) {
+value fun_print_newline(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -59,7 +59,7 @@ value fun_print_newline(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_alt_print_newline(value v) {
+value fun_alt_print_newline(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -72,7 +72,7 @@ value fun_alt_print_newline(value v) {
 	return retv;
 }
 
-value fun_read_int(value v, value w) {
+value fun_read_int(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -87,7 +87,7 @@ value fun_read_int(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_alt_read_int(value v) {
+value fun_alt_read_int(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -102,7 +102,7 @@ value fun_alt_read_int(value v) {
 	return retv;
 }
 
-value fun_not_ml(value b, value k) {
+value fun_not_ml(value cls, value b, value k) {
 	if(b.i_b_u == 1) {
 		value _retv = { .i_b_u = 0 };
 		value retv = coerce(_retv, k.s);
@@ -114,7 +114,7 @@ value fun_not_ml(value b, value k) {
 	}
 }
 
-value fun_alt_not_ml(value b) {
+value fun_alt_not_ml(value cls, value b) {
 	if(b.i_b_u == 1) {
 		value retv = { .i_b_u = 0 };
 		return retv;
@@ -124,30 +124,30 @@ value fun_alt_not_ml(value b) {
 	}
 }
 
-value fun_succ(value x, value k) {
+value fun_succ(value cls, value x, value k) {
 	value _retv = { .i_b_u = x.i_b_u + 1 };
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_alt_succ(value x) {
+value fun_alt_succ(value cls, value x) {
 	value retv = { .i_b_u = x.i_b_u + 1 };
 	return retv;
 }
 
-value fun_prec(value x, value k) {
+value fun_prec(value cls, value x, value k) {
 	value _retv = { .i_b_u = x.i_b_u - 1 };
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_alt_prec(value x) {
+value fun_alt_prec(value cls, value x) {
 	value retv = { .i_b_u = x.i_b_u - 1 };
 	return retv;
 }
 
-value fun_min_x(value y, value k, value zs[1]) {
-	value x = zs[0];
+value fun_min_x(value cls, value y, value k) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u < y.i_b_u) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -157,8 +157,8 @@ value fun_min_x(value y, value k, value zs[1]) {
 	}
 }
 
-value fun_alt_min_x(value y, value zs[1]) {
-	value x = zs[0];
+value fun_alt_min_x(value cls, value y) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u < y.i_b_u) {
 		return x;
 	} else {
@@ -166,31 +166,27 @@ value fun_alt_min_x(value y, value zs[1]) {
 	}
 }
 
-value fun_min(value x, value k) {
+value fun_min(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	_retv.f->funkind = CLOSURE;
-	_retv.f->fundat.closure_alt.cls_alt.c = fun_min_x;
-	_retv.f->fundat.closure_alt.cls_alt.c_a = fun_alt_min_x;
-	_retv.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	_retv.f->fundat.closure_alt.fvs[0] = x;
+	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	_retv.f->funcM = fun_alt_min_x;
+	_retv.f->funcD = fun_min_x;
+	_retv.f->env[0] = (void*)x.i_b_u;
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_alt_min(value x) {
+value fun_alt_min(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	retv.f->funkind = CLOSURE;
-	retv.f->fundat.closure_alt.cls_alt.c = fun_min_x;
-	retv.f->fundat.closure_alt.cls_alt.c_a = fun_alt_min_x;
-	retv.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	retv.f->fundat.closure_alt.fvs[0] = x;
+	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	retv.f->funcM = fun_alt_min_x;
+	retv.f->funcD = fun_min_x;
+	retv.f->env[0] = (void*)x.i_b_u;
 	return retv;
 }
 
-value fun_max_x(value y, value k, value zs[1]) {
-	value x = zs[0];
+value fun_max_x(value cls, value y, value k) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u > y.i_b_u) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -200,8 +196,8 @@ value fun_max_x(value y, value k, value zs[1]) {
 	}
 }
 
-value fun_alt_max_x(value y, value zs[1]) {
-	value x = zs[0];
+value fun_alt_max_x(value cls, value y) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u > y.i_b_u) {
 		return x;
 	} else {
@@ -209,30 +205,26 @@ value fun_alt_max_x(value y, value zs[1]) {
 	}
 }
 
-value fun_max(value x, value k) {
+value fun_max(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	_retv.f->funkind = CLOSURE;
-	_retv.f->fundat.closure_alt.cls_alt.c = fun_max_x;
-	_retv.f->fundat.closure_alt.cls_alt.c_a = fun_alt_max_x;
-	_retv.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	_retv.f->fundat.closure_alt.fvs[0] = x;
+	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	_retv.f->funcM = fun_alt_max_x;
+	_retv.f->funcD = fun_max_x;
+	_retv.f->env[0] = (void*)x.i_b_u;
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_alt_max(value x) {
+value fun_alt_max(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	retv.f->funkind = CLOSURE;
-	retv.f->fundat.closure_alt.cls_alt.c = fun_max_x;
-	retv.f->fundat.closure_alt.cls_alt.c_a = fun_alt_max_x;
-	retv.f->fundat.closure_alt.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	retv.f->fundat.closure_alt.fvs[0] = x;
+	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	retv.f->funcM = fun_alt_max_x;
+	retv.f->funcD = fun_max_x;
+	retv.f->env[0] = (void*)x.i_b_u;
 	return retv;
 }
 
-value fun_abs_ml(value x, value k) {
+value fun_abs_ml(value cls, value x, value k) {
 	if(x.i_b_u >= 0) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -243,7 +235,7 @@ value fun_abs_ml(value x, value k) {
 	}
 }
 
-value fun_alt_abs_ml(value x) {
+value fun_alt_abs_ml(value cls, value x) {
 	if(x.i_b_u >= 0) {
 		return x;
 	} else {
@@ -252,26 +244,26 @@ value fun_alt_abs_ml(value x) {
 	}
 }
 
-value fun_ignore(value x, value k, ty* tvs[1]) {
+value fun_ignore(value cls, value x, value k) {
 	value _retv = { .i_b_u = 0 };
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_alt_ignore(value x, ty* tvs[1]) {
+value fun_alt_ignore(value cls, value x) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
 
 #elif defined(CAST) || defined(STATIC)
-value fun_print_int(value v) {
+value fun_print_int(value cls, value v) {
 	value retv;
 	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return retv;
 }
 
-value fun_print_bool(value v) {
+value fun_print_bool(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 1) {
@@ -286,7 +278,7 @@ value fun_print_bool(value v) {
 	return retv;
 }
 
-value fun_print_newline(value v) {
+value fun_print_newline(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -299,7 +291,7 @@ value fun_print_newline(value v) {
 	return retv;
 }
 
-value fun_read_int(value v) {
+value fun_read_int(value cls, value v) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -314,7 +306,7 @@ value fun_read_int(value v) {
 	return retv;
 }
 
-value fun_not_ml(value b) {
+value fun_not_ml(value cls, value b) {
 	if(b.i_b_u == 1) {
 		value retv = { .i_b_u = 0 };
 		return retv;
@@ -324,18 +316,18 @@ value fun_not_ml(value b) {
 	}
 }
 
-value fun_succ(value x) {
+value fun_succ(value cls, value x) {
 	value retv = { .i_b_u = x.i_b_u + 1 };
 	return retv;
 }
 
-value fun_prec(value x) {
+value fun_prec(value cls, value x) {
 	value retv = { .i_b_u = x.i_b_u - 1 };
 	return retv;
 }
 
-value fun_min_x(value y, value zs[1]) {
-	value x = zs[0];
+value fun_min_x(value cls, value y) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u < y.i_b_u) {
 		return x;
 	} else {
@@ -343,18 +335,16 @@ value fun_min_x(value y, value zs[1]) {
 	}
 }
 
-value fun_min(value x) {
+value fun_min(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	retv.f->funkind = CLOSURE;
-	retv.f->fundat.closure.cls = fun_min_x;
-	retv.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	retv.f->fundat.closure.fvs[0] = x;
+	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	retv.f->funcM = fun_min_x;
+	retv.f->env[0] = (void*)x.i_b_u;
 	return retv;
 }
 
-value fun_max_x(value y, value zs[1]) {
-	value x = zs[0];
+value fun_max_x(value cls, value y) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u > y.i_b_u) {
 		return x;
 	} else {
@@ -362,17 +352,15 @@ value fun_max_x(value y, value zs[1]) {
 	}
 }
 
-value fun_max(value x) {
+value fun_max(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	retv.f->funkind = CLOSURE;
-	retv.f->fundat.closure.cls = fun_max_x;
-	retv.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	retv.f->fundat.closure.fvs[0] = x;
+	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	retv.f->funcM = fun_max_x;
+	retv.f->env[0] = (void*)x.i_b_u;
 	return retv;
 }
 
-value fun_abs_ml(value x) {
+value fun_abs_ml(value cls, value x) {
 	if(x.i_b_u >= 0) {
 		return x;
 	} else {
@@ -381,27 +369,20 @@ value fun_abs_ml(value x) {
 	}
 }
 
-#ifdef STATIC
-value fun_ignore(value x) {
+value fun_ignore(value cls, value x) {
 	value retv = { .i_b_u = 0 };
 	return retv;
 }
-#else
-value fun_ignore(value x, ty* tvs[1]) {
-	value retv = { .i_b_u = 0 };
-	return retv;
-}
-#endif
 
 #else
-value fun_print_int(value v, value w) {
+value fun_print_int(value cls, value v, value w) {
 	value retv;
 	printf("%ld", v.i_b_u);
 	retv.i_b_u = 0;
 	return coerce(retv, w.s);
 }
 
-value fun_print_bool(value v, value w) {
+value fun_print_bool(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 1) {
@@ -416,7 +397,7 @@ value fun_print_bool(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_print_newline(value v, value w) {
+value fun_print_newline(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -429,7 +410,7 @@ value fun_print_newline(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_read_int(value v, value w) {
+value fun_read_int(value cls, value v, value w) {
 	value retv;
 	int64_t i = v.i_b_u;
 	if (i == 0) {
@@ -444,7 +425,7 @@ value fun_read_int(value v, value w) {
 	return coerce(retv, w.s);
 }
 
-value fun_not_ml(value b, value k) {
+value fun_not_ml(value cls, value b, value k) {
 	if(b.i_b_u == 1) {
 		value _retv = { .i_b_u = 0 };
 		value retv = coerce(_retv, k.s);
@@ -456,20 +437,20 @@ value fun_not_ml(value b, value k) {
 	}
 }
 
-value fun_succ(value x, value k) {
+value fun_succ(value cls, value x, value k) {
 	value _retv = { .i_b_u = x.i_b_u + 1 };
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_prec(value x, value k) {
+value fun_prec(value cls, value x, value k) {
 	value _retv = { .i_b_u = x.i_b_u - 1 };
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_min_x(value y, value k, value zs[1]) {
-	value x = zs[0];
+value fun_min_x(value cls, value y, value k) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u < y.i_b_u) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -479,19 +460,17 @@ value fun_min_x(value y, value k, value zs[1]) {
 	}
 }
 
-value fun_min(value x, value k) {
+value fun_min(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	_retv.f->funkind = CLOSURE;
-	_retv.f->fundat.closure.cls = fun_min_x;
-	_retv.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	_retv.f->fundat.closure.fvs[0] = x;
+	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	_retv.f->funcD = fun_min_x;
+	_retv.f->env[0] = (void*)x.i_b_u;
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_max_x(value y, value k, value zs[1]) {
-	value x = zs[0];
+value fun_max_x(value cls, value y, value k) {
+	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
 	if(x.i_b_u > y.i_b_u) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -501,18 +480,16 @@ value fun_max_x(value y, value k, value zs[1]) {
 	}
 }
 
-value fun_max(value x, value k) {
+value fun_max(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun));
-	_retv.f->funkind = CLOSURE;
-	_retv.f->fundat.closure.cls = fun_max_x;
-	_retv.f->fundat.closure.fvs = (value*)GC_MALLOC(sizeof(value) * 1);
-	_retv.f->fundat.closure.fvs[0] = x;
+	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	_retv.f->funcD = fun_max_x;
+	_retv.f->env[0] = (void*)x.i_b_u;
 	value retv = coerce(_retv, k.s);
 	return retv;
 }
 
-value fun_abs_ml(value x, value k) {
+value fun_abs_ml(value cls, value x, value k) {
 	if(x.i_b_u >= 0) {
 		value retv = coerce(x, k.s);
 		return retv;
@@ -523,7 +500,7 @@ value fun_abs_ml(value x, value k) {
 	}
 }
 
-value fun_ignore(value x, value k, ty* tvs[1]) {
+value fun_ignore(value cls, value x, value k) {
 	value _retv = { .i_b_u = 0 };
 	value retv = coerce(_retv, k.s);
 	return retv;
@@ -531,51 +508,40 @@ value fun_ignore(value x, value k, ty* tvs[1]) {
 #endif
 
 #ifdef ALT
-#define INIT_LABEL(func, func_alt) \
-    { .funkind = LABEL, \
-      .fundat = { .label_alt = { .l = (func), .l_a = (func_alt) } } }
-#define INIT_POLY_LABEL(func, func_alt) \
-    { .funkind = POLY_LABEL, \
-      .fundat = { .poly = { .f = { .poly_label_alt = { .pl = (func), .pl_a = (func_alt) } } } } }
-#else 
-#define INIT_LABEL(func) \
-    { .funkind = LABEL, \
-      .fundat = { .label = (func) } }
-#ifndef STATIC
-#define INIT_POLY_LABEL(func) \
-    { .funkind = POLY_LABEL, \
-      .fundat = { .poly = { .f = { .poly_label = (func) } } } }
-#endif
+#define INIT(func, func_alt) \
+    { .funcD = (func), .funcM = (func_alt) }
+#elif defined(CAST) || defined(STATIC)
+#define INIT(func) \
+    { .funcM = (func) }
+#else
+#define INIT(func) \
+    { .funcD = (func) }
 #endif
 
 #ifdef ALT
-static fun f_print_int     = INIT_LABEL(fun_print_int,     fun_alt_print_int);
-static fun f_print_bool    = INIT_LABEL(fun_print_bool,    fun_alt_print_bool);
-static fun f_print_newline = INIT_LABEL(fun_print_newline, fun_alt_print_newline);
-static fun f_read_int      = INIT_LABEL(fun_read_int,      fun_alt_read_int);
-static fun f_not_ml        = INIT_LABEL(fun_not_ml,        fun_alt_not_ml);
-static fun f_succ          = INIT_LABEL(fun_succ,          fun_alt_succ);
-static fun f_prec          = INIT_LABEL(fun_prec,          fun_alt_prec);
-static fun f_min           = INIT_LABEL(fun_min,           fun_alt_min);
-static fun f_max           = INIT_LABEL(fun_max,           fun_alt_max);
-static fun f_abs_ml        = INIT_LABEL(fun_abs_ml,        fun_alt_abs_ml);
-static fun f_ignore        = INIT_POLY_LABEL(fun_ignore,   fun_alt_ignore);
+static fun f_print_int     = INIT(fun_print_int,     fun_alt_print_int);
+static fun f_print_bool    = INIT(fun_print_bool,    fun_alt_print_bool);
+static fun f_print_newline = INIT(fun_print_newline, fun_alt_print_newline);
+static fun f_read_int      = INIT(fun_read_int,      fun_alt_read_int);
+static fun f_not_ml        = INIT(fun_not_ml,        fun_alt_not_ml);
+static fun f_succ          = INIT(fun_succ,          fun_alt_succ);
+static fun f_prec          = INIT(fun_prec,          fun_alt_prec);
+static fun f_min           = INIT(fun_min,           fun_alt_min);
+static fun f_max           = INIT(fun_max,           fun_alt_max);
+static fun f_abs_ml        = INIT(fun_abs_ml,        fun_alt_abs_ml);
+static fun f_ignore        = INIT(fun_ignore,        fun_alt_ignore);
 #else
-static fun f_print_int     = INIT_LABEL(fun_print_int);
-static fun f_print_bool    = INIT_LABEL(fun_print_bool);
-static fun f_print_newline = INIT_LABEL(fun_print_newline);
-static fun f_read_int      = INIT_LABEL(fun_read_int);
-static fun f_not_ml        = INIT_LABEL(fun_not_ml);
-static fun f_succ          = INIT_LABEL(fun_succ);
-static fun f_prec          = INIT_LABEL(fun_prec);
-static fun f_min           = INIT_LABEL(fun_min);
-static fun f_max           = INIT_LABEL(fun_max);
-static fun f_abs_ml        = INIT_LABEL(fun_abs_ml);
-#ifdef STATIC
-static fun f_ignore        = INIT_LABEL(fun_ignore);
-#else
-static fun f_ignore        = INIT_POLY_LABEL(fun_ignore);
-#endif
+static fun f_print_int     = INIT(fun_print_int);
+static fun f_print_bool    = INIT(fun_print_bool);
+static fun f_print_newline = INIT(fun_print_newline);
+static fun f_read_int      = INIT(fun_read_int);
+static fun f_not_ml        = INIT(fun_not_ml);
+static fun f_succ          = INIT(fun_succ);
+static fun f_prec          = INIT(fun_prec);
+static fun f_min           = INIT(fun_min);
+static fun f_max           = INIT(fun_max);
+static fun f_abs_ml        = INIT(fun_abs_ml);
+static fun f_ignore        = INIT(fun_ignore);
 #endif
 
 value max_int = { .i_b_u = INT64_MAX };

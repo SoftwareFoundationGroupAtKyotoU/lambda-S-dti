@@ -1,14 +1,17 @@
 #ifndef APP_H
 #define APP_H
 
+#ifndef STATIC
 #include "types.h"
 
-#if defined(CAST) || defined(ALT) || defined(STATIC)
-value appM(value, value);
-#endif
+#if defined(CAST) || defined(ALT)
+value fun_wrapped_call_funcM(value, value);
+#endif // CAST || ALT
 
-#if !defined(CAST) && !defined(STATIC)
-value appD(value, value, value);
-#endif
+#ifndef CAST
+value fun_wrapped_call_funcD(value, value, value);
+#endif // not CAST
 
-#endif
+#endif // not STATIC
+
+#endif // APP_H

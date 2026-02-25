@@ -1,3 +1,5 @@
+#ifndef STATIC
+
 #include <stdio.h>
 #include <stdlib.h> //for abort
 #include <gc.h>
@@ -11,117 +13,57 @@
 #include "app.h"
 #include "ty.h"
 
-#if defined(CAST) || defined(STATIC)
-value appM(value f, value v) {									// reduction of f(v)
-	switch(f.f->funkind) {
-		case(LABEL): return f.f->fundat.label(v);	// if f is "label" function R_BETA : return f(v)
-		case(CLOSURE): return f.f->fundat.closure.cls(v, f.f->fundat.closure.fvs); // if f is closure R_BETA : return f(v, fvs)
-		#ifndef STATIC
-		case(POLY_LABEL): return f.f->fundat.poly.f.poly_label(v, f.f->fundat.poly.tas);
-		case(POLY_CLOSURE):	return f.f->fundat.poly.f.poly_closure.pcls(v, f.f->fundat.poly.f.poly_closure.fvs, f.f->fundat.poly.tas); // if f is closure R_BETA : return f(v, fvs)
-		case(WRAPPED): {												// if f is wrapped function (f = w:U1->U2=>U3->U4)
-			uint8_t pos_pol = f.f->polarity;
-			uint8_t neg_pol = pos_pol ^ 1;
-			uint32_t rid = f.f->rid;
-			struct wrap w = f.f->fundat.wrap;
-			value f1 = { .f = w.w };									// R_APPCAST : return (w(v:U3=>U1)):U2=>U4
-			ty *u1 = w.u1;
-			ty *u2 = w.u2;
-			//printf("Heap size = %d\n", (int)GC_get_heap_size());
-			value v_ = cast(v, u2->tydat.tyfun.left , u1->tydat.tyfun.left, rid, neg_pol);
-			//printf("Heap size = %d\n", (int)GC_get_heap_size());
-			value v__ = appM(f1, v_);
-			//printf("Heap size = %d\n", (int)GC_get_heap_size());
-			return cast(v__, u1->tydat.tyfun.right, u2->tydat.tyfun.right, rid, pos_pol);
-		}
-		#endif
-	}
+#if defined(CAST) || defined(ALT)
+value fun_wrapped_call_funcM(value cls, value arg) {
+	// closureから関数と、wrapしている情報を取り出す
+    fun *inner_f = (fun*)cls.f->env[0];
+	#ifdef CAST
+	ty *t1 = (ty*)cls.f->env[1];
+	ty *t2 = (ty*)cls.f->env[2];
+	uint32_t rid = (uint32_t)(uintptr_t)cls.f->env[3];
+	uint8_t polarity = (uint8_t)(uintptr_t)cls.f->env[4];
+	#else // CAST
+    crc *c = (crc*)cls.f->env[1];
+	#endif // CAST
+
+	value inner_f_val = (value){ .f = inner_f };
+
+	// Coercion / Cast 適用し、return
+	#ifdef CAST
+	ty *t11 = t1->tydat.tyfun.left;
+	ty *t12 = t1->tydat.tyfun.right;
+	ty *t21 = t2->tydat.tyfun.left;
+	ty *t22 = t2->tydat.tyfun.right;
+	uint8_t neg_polarity = polarity ^ 1;
+	value _arg = cast(arg, t21, t11, rid, neg_polarity);
+	value ret = inner_f->funcM(inner_f_val, _arg);
+	return cast(ret, t12, t22, rid, polarity);
+	#else // CAST
+    crc *c1 = c->crcdat.two_crc.c1;
+    crc *c2 = c->crcdat.two_crc.c2;
+    value _arg = coerce(arg, c1);
+    value c2_val = (value){ .s = c2 };
+    return inner_f->funcD(inner_f_val, _arg, c2_val);
+	#endif // CAST
 }
-#endif
+#endif // CAST || ALT
 
-#ifdef ALT
-value appM(value f, value v) {									// reduction of f(v)
-	// value s = { .s = &crc_id };
-	// return app(f, v, s);
+#ifndef CAST
+value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
+	// closureから関数と、wrapしている情報を取り出す
+    fun *inner_f = (fun*)cls.f->env[0];
+    crc *c = (crc*)cls.f->env[1];
 
-	value s;
-	value arg;
-	fun *g;
+    value inner_f_val = (value){ .f = inner_f };
 
-	if (f.f->funkind == WRAPPED) {
-		s.s = f.f->fundat.wrap.c->crcdat.two_crc.c2;
-		arg = coerce(v, f.f->fundat.wrap.c->crcdat.two_crc.c1);
-		g = f.f->fundat.wrap.w;
-	} else {
-		arg = v;
-		g = f.f;
-		goto CRC_ID;
-	}
-
-	if (s.s->crckind != ID) {
-		switch(g->funkind) {
-			case(LABEL): return g->fundat.label_alt.l(arg, s);	// if f is "label" function R_BETA : return f(v)
-			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl(arg, s, g->fundat.poly.tas);
-			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c(arg, s, g->fundat.closure_alt.fvs);	// if f is closure R_BETA : return f(v, fvs)		
-			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc(arg, s, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);	// if f is closure R_BETA : return f(v, fvs)
-			default: exit(1);
-		}
-	}
-
-	CRC_ID:
-	switch(g->funkind) {
-		case(LABEL): return g->fundat.label_alt.l_a(arg); // if f is "label" function R_BETA : return f(v)
-		case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl_a(arg, g->fundat.poly.tas);
-		case(CLOSURE): return g->fundat.closure_alt.cls_alt.c_a(arg, g->fundat.closure_alt.fvs); // if f is closure R_BETA : return f(v, fvs)
-		case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a(arg, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas); // if f is closure R_BETA : return f(v, fvs)
-		default: exit(1);
-	}
+	// Coercion 適用し、return
+    crc *c1 = c->crcdat.two_crc.c1;
+    crc *c2 = c->crcdat.two_crc.c2;
+    crc *_arg2_crc = compose(c2, arg2.s);
+    value _arg2 = (value){ .s = _arg2_crc };
+    value _arg1 = coerce(arg1, c1);
+	return inner_f->funcD(inner_f_val, _arg1, _arg2);
 }
-#endif
+#endif // not CAST
 
-#if !defined(CAST) && !defined(STATIC)
-value appD(value f, value v, value w) {									// reduction of f(v)
-	value s;
-	value arg;
-	fun *g;
-
-    if (f.f->funkind == WRAPPED) {
-		struct wrap wrap = f.f->fundat.wrap;
-		s.s = compose(wrap.c->crcdat.two_crc.c2, w.s);
-		arg = coerce(v, wrap.c->crcdat.two_crc.c1);
-		g = wrap.w;
-	} else {
-		s.s = w.s;
-		arg = v;
-		g = f.f;
-	}
-
-	#ifdef ALT
-	if (s.s == &crc_id) {
-		switch(g->funkind){
-			case(LABEL): return g->fundat.label_alt.l_a(arg);	
-			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl_a(arg, g->fundat.poly.tas);
-			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c_a(arg, g->fundat.closure_alt.fvs);
-			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc_a(arg, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);
-			default: exit(1);
-		}
-	} else {
-		switch(g->funkind) {
-			case(LABEL): return g->fundat.label_alt.l(arg, s);
-			case(POLY_LABEL): return g->fundat.poly.f.poly_label_alt.pl(arg, s, g->fundat.poly.tas);
-			case(CLOSURE): return g->fundat.closure_alt.cls_alt.c(arg, s, g->fundat.closure_alt.fvs);
-			case(POLY_CLOSURE):	return g->fundat.poly.f.poly_closure_alt.pcls_alt.pc(arg, s, g->fundat.poly.f.poly_closure_alt.fvs, g->fundat.poly.tas);
-			default: exit(1);
-		}
-	}
-	#else
-	switch(g->funkind) {
-		case(LABEL): return g->fundat.label(arg, s);
-		case(POLY_LABEL): return g->fundat.poly.f.poly_label(arg, s, g->fundat.poly.tas);
-		case(CLOSURE): return g->fundat.closure.cls(arg, s, g->fundat.closure.fvs);
-		case(POLY_CLOSURE): return g->fundat.poly.f.poly_closure.pcls(arg, s, g->fundat.poly.f.poly_closure.fvs, g->fundat.poly.tas);
-		default: exit(1);
-	}
-	#endif
-}
-#endif
+#endif // not STATIC

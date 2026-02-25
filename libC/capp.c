@@ -9,6 +9,7 @@
 #include "dyn.h"
 #include "lst.h"
 #include "value.h"
+#include "app.h"
 
 #include "capp.h"
 
@@ -133,22 +134,21 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					#ifdef PROFILE
 					int cur = 1;
 					fun *tmp = x.f;
-					while(tmp->funkind != WRAPPED) {
+					while(tmp->funcM != fun_wrapped_call_funcM) {
 						cur++;
-						tmp = tmp->fundat.wrap.w;
+						tmp = (fun*)tmp->env[0];
 					}
 					update_longest(cur);
 					#endif
 					value retx;
 					// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function
-					retx.f = (fun*)GC_MALLOC(sizeof(fun));
-					retx.f->fundat.wrap.w = (fun*)GC_MALLOC(sizeof(fun));
-					retx.f->fundat.wrap.w = x.f;
-					retx.f->fundat.wrap.u1 = t1;
-					retx.f->fundat.wrap.u2 = t2;
-					retx.f->rid = rid;
-					retx.f->polarity = polarity;
-					retx.f->funkind = WRAPPED;
+					retx.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 5);
+					retx.f->funcM = fun_wrapped_call_funcM;
+					retx.f->env[0] = (void*)x.f;
+					retx.f->env[1] = (void*)t1;
+					retx.f->env[2] = (void*)t2;
+					retx.f->env[3] = (void*)(uintptr_t)rid;
+					retx.f->env[4] = (void*)(uintptr_t)polarity;
 					return retx;
 				}
 				case DYN: {
@@ -156,9 +156,9 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						#ifdef PROFILE
 						int cur = 1;
 						fun *tmp = x.f;
-						while(tmp->funkind != WRAPPED) {
+						while(tmp->funcM != fun_wrapped_call_funcM) {
 							cur++;
-							tmp = tmp->fundat.wrap.w;
+							tmp = (fun*)tmp->env[0];
 						}
 						update_longest(cur);
 						#endif
@@ -361,7 +361,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 	printf("cast cannot be resolved. t1: %d, t2: %d\n", t1->tykind, t2->tykind);
 	exit(1);
 }
-#else
+#else // CAST
 value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
 	#ifdef PROFILE
@@ -375,16 +375,19 @@ value coerce(value v, crc *s) {
 		case ID: goto OPTIMIZATION_UNCAUGHT;
 		case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
 		case FUN: { // v<s'=>t'>
-			if (v.f->funkind == WRAPPED) { // u<<s=>t>><s'=>t'>
-				crc *c = compose(v.f->fundat.wrap.c, s);
+			if (v.f->funcD == fun_wrapped_call_funcD) { // u<<s=>t>><s'=>t'>
+				crc *c = compose((crc*)v.f->env[1], s);
 				if (c->crckind == ID) {    // u<<s=>t>><s'=>t'> -> u<id> -> u
-					return (value){ .f = v.f->fundat.wrap.w };
+					return (value){ .f = (fun*)v.f->env[0] };
 				} else {										 // u<<s=>t>><s'=>t'> -> u<s';;s=>t;;t'> -> u<<s';;s=>t;;t'>>
 					value retv;
-					retv.f = (fun*)GC_MALLOC(sizeof(fun));
-					retv.f->funkind = WRAPPED;
-					retv.f->fundat.wrap.w = v.f->fundat.wrap.w;
-					retv.f->fundat.wrap.c = c;
+					retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+					retv.f->funcD = fun_wrapped_call_funcD;
+					#ifdef ALT
+					retv.f->funcM = fun_wrapped_call_funcM;
+					#endif // ALT
+					retv.f->env[0] = (void*)v.f->env[0];
+					retv.f->env[1] = (void*)c;
 					return retv;
 				}
 			} else {                   // u<s'=>t'> -> u<<s'=>t'>>
@@ -392,10 +395,13 @@ value coerce(value v, crc *s) {
 				update_longest(1);
 				#endif
 				value retv;
-				retv.f = (fun*)GC_MALLOC(sizeof(fun));
-				retv.f->funkind = WRAPPED;
-				retv.f->fundat.wrap.w = v.f;
-				retv.f->fundat.wrap.c = s;
+				retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+				retv.f->funcD = fun_wrapped_call_funcD;
+				#ifdef ALT
+				retv.f->funcM = fun_wrapped_call_funcM;
+				#endif // ALT
+				retv.f->env[0] = (void*)v.f;
+				retv.f->env[1] = (void*)s;
 				return retv;
 			}
 		}
@@ -452,13 +458,10 @@ value coerce(value v, crc *s) {
 			case FUN: { // v<s'=>t';G!>
 				value retv;
 				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-				if (v.f->funkind == WRAPPED) {                                      // u<<s=>t>><s'=>t';G!>
-					crc *c = compose(v.f->fundat.wrap.c, s->crcdat.seq_tv.ptr.s);
-					retv.d.non_atom->v.f = v.f->fundat.wrap.w;
-					retv.d.non_atom->d = (crc*)GC_MALLOC(sizeof(crc));
-					retv.d.non_atom->d->crckind = SEQ_INJ;
-					retv.d.non_atom->d->g_inj = s->g_inj;
-					retv.d.non_atom->d->crcdat.seq_tv.ptr.s = c;
+				if (v.f->funcD == fun_wrapped_call_funcD) {                                      // u<<s=>t>><s'=>t';G!>
+					crc *c = compose((crc*)v.f->env[1], s);
+					retv.d.non_atom->v.f = (fun*)v.f->env[0];
+					retv.d.non_atom->d = c;
 					return retv;
 				} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
 					#ifdef PROFILE
@@ -558,10 +561,13 @@ value coerce(value v, crc *s) {
 				case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
 				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
 					value retv;
-					retv.f = (fun*)GC_MALLOC(sizeof(fun));
-					retv.f->funkind = WRAPPED;
-					retv.f->fundat.wrap.w = v.d.non_atom->v.f;
-					retv.f->fundat.wrap.c = s;
+					retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+					retv.f->funcD = fun_wrapped_call_funcD;
+					#ifdef ALT
+					retv.f->funcM = fun_wrapped_call_funcM;
+					#endif
+					retv.f->env[0] = (void*)v.d.non_atom->v.f;
+					retv.f->env[1] = (void*)s;
 					return retv;
 				}
 				case LIST: {        // u<<d>><s> -> u<[s]> -> u<<[s]>>

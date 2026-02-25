@@ -920,7 +920,7 @@ module Cls = struct
     | AppDDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
     | AppMCls (x, y) -> fprintf ppf "%s:cls_alt %s" x y
     | AppMDir (l, y) -> fprintf ppf "%s:label_alt %s" l y
-    | AppTy (x, _, tas) ->
+    | AppTy (x, _, _, tas) ->
       fprintf ppf "%s[%a]"
         x
         pp_print_tas tas
@@ -952,23 +952,8 @@ module Cls = struct
     | Coercion c ->
       fprintf ppf "%a"
         pp_coercion c
-    | MakeLabel (x, l, f) ->
-      fprintf ppf "lbl %s = %s in %a"
-        x
-        l
-        pp_exp f
-    | MakePolyLabel (x, l, _, f) ->
-      fprintf ppf "plbl %s = %s in %a"
-        x
-        l
-        pp_exp f
-    | MakeCls (x, cls, f) ->
+    | MakeCls (x, cls, _, f) ->
       fprintf ppf "cls %s = %a in %a"
-        x
-        pp_print_cls cls
-        pp_exp f
-    | MakePolyCls (x, cls, _, f) ->
-      fprintf ppf "pcls %s = %a in %a"
         x
         pp_print_cls cls
         pp_exp f
