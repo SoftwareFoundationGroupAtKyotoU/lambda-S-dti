@@ -22,9 +22,9 @@ except Exception:
 TARGET_PAIRS = [ # (base, comp)
     ("BLC", ["ALC", "SLC"]),
     ("SLC", ["ALC"]),
-    ("STATICC", ["ALC", "SLC", "GRIFT"]),
-    ("GRIFT", ["ALC", "SLC", "GRIFT_C"]),
-    ("GRIFT_C", ["ALC", "SLC"]),
+    ("STATICC", ["ALC", "SLC", "GRIFT", "GRIFTC"]),
+    ("GRIFT", ["ALC", "SLC", "GRIFTC"]),
+    ("GRIFTC", ["ALC", "SLC"]),
 ]
 
 # =========================

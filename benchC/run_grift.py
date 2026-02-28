@@ -296,7 +296,7 @@ def main():
         os.makedirs(c_code_dir, exist_ok=True)
         
         # Cバックエンド用のJSONLファイルのパスを準備
-        output_jsonl_path_c = os.path.join(latest_log_dir, f"GRIFT_C_{filename_no_ext}{suffix}.jsonl")
+        output_jsonl_path_c = os.path.join(latest_log_dir, f"GRIFTC_{filename_no_ext}{suffix}.jsonl")
         with open(output_jsonl_path_c, 'w') as f: pass # ファイルを初期化
         
     except Exception as e:
@@ -414,16 +414,16 @@ def main():
             f.write(json.dumps(output_obj) + "\n")
 
         # ---------------------------------------------------------------------
-        # Phase 3: GRIFT_C (Cバックエンド) での実行とJSON出力
+        # Phase 3: GRIFTC (Cバックエンド) での実行とJSON出力
         # ---------------------------------------------------------------------
         res_c = run_benchmark_c(variant_dir, filename_perf, multiplied_input_perf)
         times_c = res_c.get("times", [])
         avg_time_c = sum(times_c) / len(times_c) if times_c else 0.0
         
-        print(f"  -> GRIFT_C: {res_c['status']} (Avg: {avg_time_c:.4f}s)")
+        print(f"  -> GRIFTC: {res_c['status']} (Avg: {avg_time_c:.4f}s)")
 
         output_obj_c = {
-            "mode": "GRIFT_C",
+            "mode": "GRIFTC",
             "mutant_index": mutant_index,
             "after_mutate": base_code,
             "after_insertion": None,
