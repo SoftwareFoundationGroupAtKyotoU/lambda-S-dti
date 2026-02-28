@@ -51,7 +51,7 @@ let c_of_tyarg = function
 let cnt_env = ref 0
 
 let toC_v x ppf v =
-  fprintf ppf "%s.f->env[%d] = (void*)(uintptr_t)%s.i_b_u;"
+  fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;"
     x
     !cnt_env
     v;
@@ -65,7 +65,7 @@ let toC_vs ppf (x, vs) =
 
 (*型引数を代入するプログラムを記述する関数*)
 let toC_ta x ppf u =
-  fprintf ppf "%s.f->env[%d] = (void*)%s;"
+  fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;"
     x
     !cnt_env
     (c_of_tyarg u);
@@ -75,7 +75,7 @@ let toC_tas ppf (y, k, n, x, tas) =
   cnt_env := 0;
 
   while (!cnt_env < k) do
-    fprintf ppf "%s.f->env[%d] = %s.f->env[%d];\n" x !cnt_env y !cnt_env;
+    fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
     cnt_env := !cnt_env + 1
   done;
 
@@ -84,7 +84,7 @@ let toC_tas ppf (y, k, n, x, tas) =
     toC_list tas;
   
   while (!cnt_env < n) do
-    fprintf ppf "%s.f->env[%d] = %s.f->env[%d];\n" x !cnt_env y !cnt_env;
+    fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
     cnt_env := !cnt_env + 1
   done
 
@@ -106,53 +106,53 @@ let toC_tag ppf = function
 
 let rec toC_crc ppf (c, x) = 
   if CrcManager.mem c then 
-    fprintf ppf "%s.s = &%s;" x (CrcManager.find c)
+    fprintf ppf "%s = (value)&%s;" x (CrcManager.find c)
   else match c with
-  | Id -> fprintf ppf "%s.s = &crc_id;" x
+  | Id -> fprintf ppf "%s = (value)&crc_id;" x
   | SeqInj (Id, t) ->
-    fprintf ppf "%s.s = &crc_inj_%a;"
+    fprintf ppf "%s = (value)&crc_inj_%a;"
       x
       toC_tag t
   | SeqInj (Fun _ as c1, Ar) ->
-    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_AR;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
+    fprintf ppf "value %s_cfun;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_INJ;\n((crc*)%s)->g_inj = G_AR;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_cfun;"
       x
       toC_crc (c1, x ^ "_cfun")
       x x x x x
   | SeqInj (List _ as c1, Li) ->
-    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_INJ;\n%s.s->g_inj = G_LI;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
+    fprintf ppf "value %s_clist;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_INJ;\n((crc*)%s)->g_inj = G_LI;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_clist;"
       x
       toC_crc (c1, x ^ "_clist")
       x x x x x
   | SeqProj (t, (r, p), Id) ->
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_%a;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = &crc_id;"
+    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_%a;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = &crc_id;"
       x x x
       toC_tag t
       x (match p with Pos -> 1 | Neg -> 0) x r x
   | SeqProj (Ar, (r, p), (Fun _ as c2)) ->
-    fprintf ppf "value %s_cfun;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_AR;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_cfun.s;"
+    fprintf ppf "value %s_cfun;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_AR;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_cfun;"
       x
       toC_crc (c2, x ^ "_cfun")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
   | SeqProj (Li, (r, p), (List _ as c2)) ->
-    fprintf ppf "value %s_clist;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = SEQ_PROJ;\n%s.s->g_proj = G_LI;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.s = %s_clist.s;"
+    fprintf ppf "value %s_clist;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_LI;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_clist;"
       x
       toC_crc (c2, x ^ "_clist")
       x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
   | TvInj (tv, (r, p)) ->
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_INJ;\n%s.s->p_inj = %d;\n%s.s->crcdat.seq_tv.rid_inj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
+    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = TV_INJ;\n((crc*)%s)->p_inj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_inj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.tv = %s;"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
   | TvProj (tv, (r, p)) ->
-    fprintf ppf "%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = TV_PROJ;\n%s.s->p_proj = %d;\n%s.s->crcdat.seq_tv.rid_proj = %d;\n%s.s->crcdat.seq_tv.ptr.tv = %s;"
+    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = TV_PROJ;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.tv = %s;"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
   | Fun (c1, c2) ->
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = FUN;\n%s.s->crcdat.two_crc.c1 = %s_c1.s;\n%s.s->crcdat.two_crc.c2 = %s_c2.s;"
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = FUN;\n((crc*)%s)->crcdat.two_crc.c1 = (crc*)%s_c1;\n((crc*)%s)->crcdat.two_crc.c2 = (crc*)%s_c2;"
       x
       toC_crc (c1, x ^ "_c1")
       x
       toC_crc (c2, x ^ "_c2")
       x x x x x x
   | List c ->
-    fprintf ppf "value %s_c;\n%a\n%s.s = (crc*)GC_MALLOC(sizeof(crc));\n%s.s->crckind = LIST;\n%s.s->crcdat.one_crc = %s_c.s;" 
+    fprintf ppf "value %s_c;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = LIST;\n((crc*)%s)->crcdat.one_crc = (crc*)%s_c;" 
       x
       toC_crc (c, x ^ "_c")
       x x x x
@@ -162,27 +162,27 @@ let rec toC_crc ppf (c, x) =
 let rec toC_mf ppf (x, mf) = match mf with
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit does not appear in toC"
   | MatchILit i -> 
-    fprintf ppf "%s.i_b_u == %d"
+    fprintf ppf "%s == %d"
       x
       i
   | MatchNil _ -> 
     if !is_eager then
-      fprintf ppf "%s.l == NULL"
+      fprintf ppf "((lst*)%s) == NULL"
         x
     else
-      fprintf ppf "is_NULL(%s.l)"
+      fprintf ppf "is_NULL((lst*)%s)"
         x
   | MatchCons (mf1, mf2) ->
     if !is_eager then
-      fprintf ppf "%s.l != NULL && %a && %a"
+      fprintf ppf "((lst*)%s) != NULL && %a && %a"
         x
-        toC_mf (asprintf "%s.l->h" x, mf1)
-        toC_mf (asprintf "%s.l->t" x, mf2)
+        toC_mf (asprintf "((lst*)%s)->h" x, mf1)
+        toC_mf (asprintf "((lst*)%s)->t" x, mf2)
     else
-      fprintf ppf "!(is_NULL(%s.l)) && %a && %a"
+      fprintf ppf "!(is_NULL((lst*)%s)) && %a && %a"
         x
-        toC_mf (asprintf "hd(%s.l)" x, mf1)
-        toC_mf (asprintf "tl(%s.l)" x, mf2)
+        toC_mf (asprintf "hd((lst*)%s)" x, mf1)
+        toC_mf (asprintf "tl((lst*)%s)" x, mf2)
   | MatchWild _ -> 
     fprintf ppf "1"
 
@@ -198,22 +198,22 @@ let rec toC_exp ppf f = match f with
         x
         y
     | Int i -> 
-      fprintf ppf "%s.i_b_u = %d;\n" (* Insert(x, i) ~> x.i_b_u = i; *)
+      fprintf ppf "%s = %d;\n" (* Insert(x, i) ~> x.i_b_u = i; *)
         x
         i
     | Nil -> 
-      fprintf ppf "%s.l = (lst*)NULL;\n" (* Insert(x, []) ~> x.l = (lst* )NULL; *)
+      fprintf ppf "%s = 0;\n" (* Insert(x, []) ~> x.l = (lst* )NULL; *)
         x
     | Cons (y, z) -> (* Insert(x, y::z) ~> TODO *)
       if !is_eager then
-        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->h = %s;\n%s.l->t = %s;\n"
+        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n((lst*)%s)->h = %s;\n((lst*)%s)->t = %s;\n"
           x
           x
           y
           x
           z
       else
-        fprintf ppf "%s.l = (lst*)GC_MALLOC(sizeof(lst));\n%s.l->lstkind = UNWRAPPED_LIST;\n%s.l->lstdat.unwrap_l.h = %s;\n%s.l->lstdat.unwrap_l.t = %s;\n"
+        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n((lst*)%s)->lstkind = UNWRAPPED_LIST;\n((lst*)%s)->lstdat.unwrap_l.h = %s;\n((lst*)%s)->lstdat.unwrap_l.t = %s;\n"
           x
           x
           x
@@ -221,75 +221,75 @@ let rec toC_exp ppf f = match f with
           x
           z
     | Add (y, z) ->
-      fprintf ppf "%s.i_b_u = %s.i_b_u + %s.i_b_u;\n" (* Insert (x, y+z) ~> x.i_b_u = y.i_b_u + z.i_b_u; *)
+      fprintf ppf "%s = %s + %s;\n" (* Insert (x, y+z) ~> x.i_b_u = y.i_b_u + z.i_b_u; *)
         x
         y
         z
     | Sub (y, z) ->
-      fprintf ppf "%s.i_b_u = %s.i_b_u - %s.i_b_u;\n" (*Addと同じ*)
+      fprintf ppf "%s = %s - %s;\n" (*Addと同じ*)
         x
         y
         z
     | Mul (y, z) ->
-      fprintf ppf "%s.i_b_u = %s.i_b_u * %s.i_b_u;\n" (*Addと同じ*)
+      fprintf ppf "%s = %s * %s;\n" (*Addと同じ*)
         x
         y
         z
     | Div (y, z) ->
-      fprintf ppf "%s.i_b_u = %s.i_b_u / %s.i_b_u;\n" (*Addと同じ*)
+      fprintf ppf "%s = %s / %s;\n" (*Addと同じ*)
         x
         y
         z
     | Mod (y, z) ->
-      fprintf ppf "%s.i_b_u = %s.i_b_u %% %s.i_b_u;\n" (*Addと同じ*)
+      fprintf ppf "%s = %s %% %s;\n" (*Addと同じ*)
         x
         y
         z
     | Hd y -> (* TODO *)
       if !is_eager then
-        fprintf ppf "%s = %s.l->h;\n"
+        fprintf ppf "%s = ((lst*)%s)->h;\n"
           x
           y
       else
-        fprintf ppf "%s = hd(%s.l);\n"
+        fprintf ppf "%s = (value)hd((lst*)%s);\n"
           x
           y
     | Tl y -> (* TODO *)
       if !is_eager then
-        fprintf ppf "%s = %s.l->t;\n"
+        fprintf ppf "%s = ((lst*)%s)->t;\n"
           x
           y
       else
-        fprintf ppf "%s = tl(%s.l);\n"
+        fprintf ppf "%s = (value)tl((lst*)%s);\n"
           x
           y
     | AppDDir (y, (z1, z2)) ->
-      fprintf ppf "%s = fun_%s((value){ .i_b_u = 0 }, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
+      fprintf ppf "%s = fun_%s(0, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
         x
         y
         z1
         z2
     | AppDCls (y, (z1, z2)) ->
-      fprintf ppf "%s = (%s.f->funcD)(%s, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = appD(y, z1, z2); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = (((fun*)%s)->funcD)(%s, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = appD(y, z1, z2); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
         y
         z1
         z2
     | AppMDir (y, z) ->
-      fprintf ppf "%s = fun%s_%s((value){ .i_b_u = 0 }, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
+      fprintf ppf "%s = fun%s_%s(0, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
         x
         (if !is_alt then "_alt" else "")
         y
         z
     | AppMCls (y, z) -> 
-      fprintf ppf "%s = (%s.f->funcM)(%s, %s);\n" (* Insert(x, y z) ~> x = appM(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
+      fprintf ppf "%s = (((fun*)%s)->funcM)(%s, %s);\n" (* Insert(x, y z) ~> x = appM(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
         x
         y
         y
         z
     | AppTy (y, k, n, tas) ->
-      fprintf ppf "%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*%s.f = *%s.f;\n%a" (* TODO *)
+      fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a" (* TODO *)
         x
         (k + n + List.length tas)
         x
@@ -317,23 +317,21 @@ let rec toC_exp ppf f = match f with
     | CApp (y, z) -> (* TODO *)
       if CrcManager.mem_inj z then
         let tag = CrcManager.find_inj z in
-        fprintf ppf "%s = (value){ .d%s = (%s.i_b_u << 3 | G_%a) };\n"
+        fprintf ppf "%s = (%s << 3) | G_%a;\n"
           x
-          (if !is_B then "" else ".atom")
           y
           toC_tag tag
       else if CrcManager.mem_proj z then
         let (tag, rid, p) = CrcManager.find_proj z in
-        fprintf ppf "if ((uint8_t)(%s.i_b_u & 0b111) == G_%a) {\n%s = (value){ .i_b_u = %s.d%s >> 3 };\n} else {\nblame(%d, %d);\n}"
+        fprintf ppf "if ((uint8_t)(%s & 0b111) == G_%a) {\n%s = %s >> 3;\n} else {\nblame(%d, %d);\n}"
           y
           toC_tag tag
           x
           y
-          (if !is_B then "" else ".atom")
           rid
           (match p with Pos -> 1 | Neg -> 0)
       else
-        fprintf ppf "%s = coerce(%s, %s.s);\n"
+        fprintf ppf "%s = coerce(%s, (crc*)%s);\n"
           x
           y
           z
@@ -341,7 +339,7 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "%a\n"
         toC_crc (c, x)
     | CSeq (y, z) -> 
-      fprintf ppf "%s.s = compose(%s.s, %s.s);\n"
+      fprintf ppf "%s = (crc*)compose((crc*)%s, (crc*)%s);\n"
         x
         y
         z
@@ -367,13 +365,13 @@ let rec toC_exp ppf f = match f with
     }
     *)
     (*等価判定はint型を用いて行うので，.i_b_uを取り出す*)
-    fprintf ppf "if(%s.i_b_u == %s.i_b_u) {\n%a} else {\n%a}\n"
+    fprintf ppf "if(%s == %s) {\n%a} else {\n%a}\n"
       x
       y
       toC_exp f1
       toC_exp f2
   | IfLte (x, y, f1, f2) -> (*IfEqと同じ*)
-    fprintf ppf "if(%s.i_b_u <= %s.i_b_u) {\n%a} else {\n%a}\n"
+    fprintf ppf "if(%s <= %s) {\n%a} else {\n%a}\n"
       x
       y
       toC_exp f1
@@ -391,16 +389,16 @@ let rec toC_exp ppf f = match f with
   | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     let env_size = List.length vs + List.length ftv + n in
     cnt_env := 0;
-    fprintf ppf "value %s;\n%s.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a%a"
+    fprintf ppf "value %s;\n%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a%a"
       x
       x
       env_size
       begin if !is_B || !is_static then
-        asprintf "%s.f->funcM = fun_%s;\n" x l
+        asprintf "((fun*)%s)->funcM = fun_%s;\n" x l
       else if !is_alt then
-        asprintf "%s.f->funcD = fun_%s;\n%s.f->funcM = fun_alt_%s;\n" x l x l
+        asprintf "((fun*)%s)->funcD = fun_%s;\n((fun*)%s)->funcM = fun_alt_%s;\n" x l x l
       else
-        asprintf "%s.f->funcD = fun_%s;\n" x l
+        asprintf "((fun*)%s)->funcD = fun_%s;\n" x l
       end
       toC_vs (x, vs)
       toC_ftas (n, x, ftv)
@@ -494,7 +492,7 @@ let toC_tys ppf l =
 
 (*引数zsから要素を取り出し，変数名xの値に代入*)
 let toC_fv ppf x =
-  fprintf ppf "value %s = (value){ .i_b_u = (uintptr_t)(cls.f->env[%d]) };"
+  fprintf ppf "value %s = (value)(((fun*)cls)->env[%d]);"
     x
     !cnt_env;
   cnt_env := !cnt_env + 1
@@ -509,7 +507,7 @@ let toC_fvs ppf fvl =
 (*関数定義の最初に，型変数を詰める場所も設ける*)
 
 let toC_tv ppf (i, _) = (* TODO *)
-  fprintf ppf "ty *_ty%d = (ty*)(cls.f->env[%d]);"
+  fprintf ppf "ty *_ty%d = (ty*)(((fun*)cls)->env[%d]);"
     i
     !cnt_env;
   cnt_env := !cnt_env + 1
