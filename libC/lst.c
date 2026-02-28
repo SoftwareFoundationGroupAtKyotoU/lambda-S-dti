@@ -8,7 +8,6 @@ __attribute__((noreturn)) void did_not_match() {
 
 #if !defined(EAGER) && !defined(STATIC)
 #include "lst.h"
-#include "value.h"
 #include "capp.h"
 #include "ty.h"
 #include "crc.h"

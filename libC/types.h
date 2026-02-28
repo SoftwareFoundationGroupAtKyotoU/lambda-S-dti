@@ -7,6 +7,7 @@
 // EAGER : lstのcoercionをeagerに
 // ALT : λSのid特化バージョン
 // STATIC: fully static 決め打ちバージョン
+
 // CASTとALTが同時に定義されることはない
 
 #ifndef STATIC
@@ -16,7 +17,6 @@ typedef struct range {
 	uint32_t startchr;
 	uint32_t endline;
 	uint32_t endchr;
-	// int polarity;
 } range;
 
 typedef enum ground_ty : uint8_t {
@@ -30,16 +30,15 @@ typedef enum ground_ty : uint8_t {
 
 typedef struct ty ty;
 
-#ifdef CAST
-typedef uint64_t dyn;
-#else 
+typedef intptr_t dyn;
+
+#ifndef CAST
 typedef struct v_d v_d;
-typedef union dyn dyn;
-#endif
+#endif //CAST
 
-#endif
+#endif //not STATIC
 
-typedef union value value;
+typedef intptr_t value;
 
 typedef struct fun fun;
 
@@ -47,16 +46,16 @@ typedef struct lst lst;
 
 #if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;
-#endif
+#endif //not CAST && not STATIC
 
 #ifndef STATIC
 extern range *range_list;
-#endif
+#endif //STATIC
 
 #ifdef PROFILE
 extern int current_inference;
 extern int current_cast;
 extern int current_longest;
-#endif
+#endif //PROFILE
 
-#endif
+#endif //TYPES_H

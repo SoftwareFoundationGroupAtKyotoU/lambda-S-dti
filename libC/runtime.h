@@ -12,7 +12,6 @@
 #include "dyn.h"
 #include "fun.h"
 #include "lst.h"
-#include "value.h"
 
 #include "app.h"
 #include "capp.h"

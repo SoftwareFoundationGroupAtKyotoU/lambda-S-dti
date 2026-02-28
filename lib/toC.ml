@@ -339,7 +339,7 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "%a\n"
         toC_crc (c, x)
     | CSeq (y, z) -> 
-      fprintf ppf "%s = (crc*)compose((crc*)%s, (crc*)%s);\n"
+      fprintf ppf "%s = (value)compose((crc*)%s, (crc*)%s);\n"
         x
         y
         z

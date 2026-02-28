@@ -8,7 +8,6 @@
 #include "fun.h"
 #include "dyn.h"
 #include "lst.h"
-#include "value.h"
 #include "app.h"
 
 #include "capp.h"
@@ -23,7 +22,7 @@ static inline void update_longest(int new) {
 #endif
 
 static inline uint8_t tag_of(value v) {
-	return (v.i_b_u & 0b111);
+	return (v & 0b111);
 }
 
 static inline value tag_value(value v, uint8_t t) {
@@ -32,10 +31,10 @@ static inline value tag_value(value v, uint8_t t) {
 		case G_INT:
 		case G_BOOL:
 		case G_UNIT:
-			return (value){ .d = (v.i_b_u << 3 | t) };
+			return (value)(v << 3 | t);
 		case G_AR:
 		case G_LI:
-			return (value){ .d = (v.i_b_u | t) };
+			return (value)(v | t);
 		default: {
 			printf("%d is not ground_ty", t);
 			exit(1);
@@ -45,7 +44,7 @@ static inline value tag_value(value v, uint8_t t) {
 	#ifdef PROFILE
 	update_longest(1);
 	#endif
-	return (value){ .d.atom = (v.i_b_u << 3 | t) };
+	return (value)(v << 3 | t);
 	#endif
 }
 
@@ -55,17 +54,17 @@ static inline value untag_value(value v, uint8_t t) {
 		case G_INT:
 		case G_BOOL:
 		case G_UNIT:
-			return (value){ .i_b_u = v.d >> 3 };
+			return (value)(v >> 3);
 		case G_AR:
 		case G_LI:
-			return (value){ .i_b_u = v.d & ~0b111 };
+			return (value)(v & ~0b111);
 		default: {
 			printf("%d is not ground_ty", t);
 			exit(1);
 		}
 	}
 	#else
-	return (value){ .i_b_u = v.d.atom >> 3 };
+	return (value)(v >> 3);
 	#endif
 }
 
@@ -133,7 +132,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				case TYFUN: { 				// when t1 and t2 are function type
 					#ifdef PROFILE
 					int cur = 1;
-					fun *tmp = x.f;
+					fun *tmp = (fun*)x;
 					while(tmp->funcM != fun_wrapped_call_funcM) {
 						cur++;
 						tmp = (fun*)tmp->env[0];
@@ -142,20 +141,20 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					#endif
 					value retx;
 					// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function
-					retx.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 5);
-					retx.f->funcM = fun_wrapped_call_funcM;
-					retx.f->env[0] = (void*)x.f;
-					retx.f->env[1] = (void*)t1;
-					retx.f->env[2] = (void*)t2;
-					retx.f->env[3] = (void*)(uintptr_t)rid;
-					retx.f->env[4] = (void*)(uintptr_t)polarity;
+					retx = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 5);
+					((fun*)retx)->funcM = fun_wrapped_call_funcM;
+					((fun*)retx)->env[0] = (void*)((fun*)x);
+					((fun*)retx)->env[1] = (void*)t1;
+					((fun*)retx)->env[2] = (void*)t2;
+					((fun*)retx)->env[3] = (void*)(uintptr_t)rid;
+					((fun*)retx)->env[4] = (void*)(uintptr_t)polarity;
 					return retx;
 				}
 				case DYN: {
 					if (t1->tydat.tyfun.left->tykind == DYN && t1->tydat.tyfun.right->tykind == DYN) {
 						#ifdef PROFILE
 						int cur = 1;
-						fun *tmp = x.f;
+						fun *tmp = (fun*)x;
 						while(tmp->funcM != fun_wrapped_call_funcM) {
 							cur++;
 							tmp = (fun*)tmp->env[0];
@@ -177,24 +176,24 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			switch(tk2) {
 				case TYLIST: {
 					#ifdef EAGER
-					value retv = { .l = NULL };
+					value retv = 0;
     				value *dest = &retv;
     				value curr_src = x;
 					ty *tylist1 = t1->tydat.tylist;
 					ty *tylist2 = t2->tydat.tylist;
-    				while(curr_src.l != NULL) {
-    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
-    				    dest->l = new_lst;
-    				    new_lst->h = cast(curr_src.l->h, tylist1, tylist2, rid, polarity);
+    				while((lst*)curr_src != NULL) {
+    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
+    				    *dest = (value)new_lst;
+    				    new_lst->h = cast(((lst*)curr_src)->h, tylist1, tylist2, rid, polarity);
     				    dest = &new_lst->t;
-    				    curr_src = curr_src.l->t;
+    				    curr_src = ((lst*)curr_src)->t;
     				}
-    				dest->l = NULL;
+    				*dest = (lst*)NULL;
     				return retv;
 					#else
 					#ifdef PROFILE
 					int cur = 1;
-					lst *tmp = x.l;
+					lst *tmp = (lst*)x;
 					while(tmp->lstkind != WRAPPED_LIST) {
 						cur++;
 						tmp = tmp->lstdat.wrap_l.w;
@@ -203,14 +202,14 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					#endif
 					value retx;
 					// printf("defined as a wrapped list\n");						// define x:[U1]=>[U2] as wrapped list
-					retx.l = (lst*)GC_MALLOC(sizeof(lst));
-					retx.l->lstdat.wrap_l.w = (lst*)GC_MALLOC(sizeof(lst));
-					retx.l->lstdat.wrap_l.w = x.l;
-					retx.l->lstdat.wrap_l.u1 = t1;
-					retx.l->lstdat.wrap_l.u2 = t2;
-					retx.l->rid = rid;
-					retx.l->polarity = polarity;
-					retx.l->lstkind = WRAPPED_LIST;
+					retx = (value)GC_MALLOC(sizeof(lst));
+					((lst*)retx)->lstdat.wrap_l.w = (lst*)GC_MALLOC(sizeof(lst));
+					((lst*)retx)->lstdat.wrap_l.w = (lst*)x;
+					((lst*)retx)->lstdat.wrap_l.u1 = t1;
+					((lst*)retx)->lstdat.wrap_l.u2 = t2;
+					((lst*)retx)->rid = rid;
+					((lst*)retx)->polarity = polarity;
+					((lst*)retx)->lstkind = WRAPPED_LIST;
 					return retx;
 					#endif
 				}
@@ -221,7 +220,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						#ifdef EAGER
 						update_longest(1);
 						#else
-						lst *tmp = x.l;
+						lst *tmp = (lst*)x;
 						while(tmp->lstkind != WRAPPED_LIST) {
 							cur++;
 							tmp = tmp->lstdat.wrap_l.w;
@@ -375,19 +374,19 @@ value coerce(value v, crc *s) {
 		case ID: goto OPTIMIZATION_UNCAUGHT;
 		case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
 		case FUN: { // v<s'=>t'>
-			if (v.f->funcD == fun_wrapped_call_funcD) { // u<<s=>t>><s'=>t'>
-				crc *c = compose((crc*)v.f->env[1], s);
+			if (((fun*)v)->funcD == fun_wrapped_call_funcD) { // u<<s=>t>><s'=>t'>
+				crc *c = compose((crc*)((fun*)v)->env[1], s);
 				if (c->crckind == ID) {    // u<<s=>t>><s'=>t'> -> u<id> -> u
-					return (value){ .f = (fun*)v.f->env[0] };
+					return (value)(fun*)((fun*)v)->env[0];
 				} else {										 // u<<s=>t>><s'=>t'> -> u<s';;s=>t;;t'> -> u<<s';;s=>t;;t'>>
 					value retv;
-					retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-					retv.f->funcD = fun_wrapped_call_funcD;
+					retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+					((fun*)retv)->funcD = fun_wrapped_call_funcD;
 					#ifdef ALT
-					retv.f->funcM = fun_wrapped_call_funcM;
+					((fun*)retv)->funcM = fun_wrapped_call_funcM;
 					#endif // ALT
-					retv.f->env[0] = (void*)v.f->env[0];
-					retv.f->env[1] = (void*)c;
+					((fun*)retv)->env[0] = (void*)((fun*)v)->env[0];
+					((fun*)retv)->env[1] = (void*)c;
 					return retv;
 				}
 			} else {                   // u<s'=>t'> -> u<<s'=>t'>>
@@ -395,42 +394,42 @@ value coerce(value v, crc *s) {
 				update_longest(1);
 				#endif
 				value retv;
-				retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-				retv.f->funcD = fun_wrapped_call_funcD;
+				retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+				((fun*)retv)->funcD = fun_wrapped_call_funcD;
 				#ifdef ALT
-				retv.f->funcM = fun_wrapped_call_funcM;
+				((fun*)retv)->funcM = fun_wrapped_call_funcM;
 				#endif // ALT
-				retv.f->env[0] = (void*)v.f;
-				retv.f->env[1] = (void*)s;
+				((fun*)retv)->env[0] = (void*)(fun*)v;
+				((fun*)retv)->env[1] = (void*)s;
 				return retv;
 			}
 		}
 		case LIST: { // v<[s']>
 			#ifdef EAGER
-			value retv = { .l = NULL };
+			value retv = 0;
     		value *dest = &retv;
     		value curr_src = v;
 			crc *clist = s->crcdat.one_crc;
-    		while (curr_src.l != NULL) {
-    		    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
-    		    dest->l = new_lst;
-    		    new_lst->h = coerce(curr_src.l->h, clist);
+    		while ((lst*)curr_src != NULL) {
+    		    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
+    		    *dest = (value)new_lst;
+    		    new_lst->h = coerce(((lst*)curr_src)->h, clist);
     		    dest = &new_lst->t;
-    		    curr_src = curr_src.l->t;
+    		    curr_src = ((lst*)curr_src)->t;
     		}
-    		dest->l = NULL;
+    		dest = 0;
     		return retv;
 			#else
-			if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
-				crc *c = compose(v.l->lstdat.wrap_l.c, s);
+			if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
+				crc *c = compose(((lst*)v)->lstdat.wrap_l.c, s);
 				if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
-					return (value){ .l = v.l->lstdat.wrap_l.w };
+					return (value)((lst*)v)->lstdat.wrap_l.w;
 				} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
 					value retv;
-					retv.l = (lst*)GC_MALLOC(sizeof(lst));
-					retv.l->lstkind = WRAPPED_LIST;
-					retv.l->lstdat.wrap_l.w = v.l->lstdat.wrap_l.w;
-					retv.l->lstdat.wrap_l.c = c;
+					retv = (value)GC_MALLOC(sizeof(lst));
+					((lst*)retv)->lstkind = WRAPPED_LIST;
+					((lst*)retv)->lstdat.wrap_l.w = ((lst*)v)->lstdat.wrap_l.w;
+					((lst*)retv)->lstdat.wrap_l.c = c;
 					return retv;
 				}
 			} else {                   // u<[s']> -> u<<[s']>>
@@ -438,10 +437,10 @@ value coerce(value v, crc *s) {
 				update_longest(1);
 				#endif
 				value retv;
-				retv.l = (lst*)GC_MALLOC(sizeof(lst));
-				retv.l->lstkind = WRAPPED_LIST;
-				retv.l->lstdat.wrap_l.w = v.l;
-				retv.l->lstdat.wrap_l.c = s;
+				retv = (value)GC_MALLOC(sizeof(lst));
+				((lst*)retv)->lstkind = WRAPPED_LIST;
+				((lst*)retv)->lstdat.wrap_l.w = (lst*)v;
+				((lst*)retv)->lstdat.wrap_l.c = s;
 				return retv;
 			}
 			#endif
@@ -457,46 +456,46 @@ value coerce(value v, crc *s) {
 		switch(s->crcdat.seq_tv.ptr.s->crckind) {
 			case FUN: { // v<s'=>t';G!>
 				value retv;
-				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-				if (v.f->funcD == fun_wrapped_call_funcD) {                                      // u<<s=>t>><s'=>t';G!>
-					crc *c = compose((crc*)v.f->env[1], s);
-					retv.d.non_atom->v.f = (fun*)v.f->env[0];
-					retv.d.non_atom->d = c;
+				retv = (value)GC_MALLOC(sizeof(v_d));
+				if (((fun*)v)->funcD == fun_wrapped_call_funcD) {                                      // u<<s=>t>><s'=>t';G!>
+					crc *c = compose((crc*)((fun*)v)->env[1], s);
+					((v_d*)retv)->v = (value)((fun*)v)->env[0];
+					((v_d*)retv)->d = c;
 					return retv;
 				} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
 					#ifdef PROFILE
 					update_longest(1);
 					#endif
-					retv.d.non_atom->v.f = v.f;
-					retv.d.non_atom->d = s;
+					((v_d*)retv)->v = v;
+					((v_d*)retv)->d = s;
 					return retv;
 				}
 			}
 			case LIST: { // v<[s'];G!>
 				value retv;
-				retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
+				retv = (value)GC_MALLOC(sizeof(v_d));
 				#ifdef EAGER
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				retv.d.non_atom->v.l = v.l;
-				retv.d.non_atom->d = s;
+				((v_d*)retv)->v = v;
+				((v_d*)retv)->d = s;
 				return retv;
 				#else
-				if (v.l != NULL && v.l->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
-					crc *c = compose(v.l->lstdat.wrap_l.c, s->crcdat.seq_tv.ptr.s);
-					retv.d.non_atom->v.l = v.l->lstdat.wrap_l.w;
-					retv.d.non_atom->d = (crc*)GC_MALLOC(sizeof(crc));
-					retv.d.non_atom->d->crckind = SEQ_INJ;
-					retv.d.non_atom->d->g_inj = s->g_inj;
-					retv.d.non_atom->d->crcdat.seq_tv.ptr.s = c;
+				if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
+					crc *c = compose(((lst*)v)->lstdat.wrap_l.c, s->crcdat.seq_tv.ptr.s);
+					((v_d*)retv)->v = (value)((lst*)v)->lstdat.wrap_l.w;
+					((v_d*)retv)->d = (crc*)GC_MALLOC(sizeof(crc));
+					((v_d*)retv)->d->crckind = SEQ_INJ;
+					((v_d*)retv)->d->g_inj = s->g_inj;
+					((v_d*)retv)->d->crcdat.seq_tv.ptr.s = c;
 					return retv;
 				} else { // u<[s'];G!> -> u<<[s'];G!>>
 					#ifdef PROFILE
 					update_longest(1);
 					#endif
-					retv.d.non_atom->v.l = v.l;
-					retv.d.non_atom->d = s;
+					((v_d*)retv)->v = v;
+					((v_d*)retv)->d = s;
 					return retv;
 				}
 				#endif
@@ -508,9 +507,9 @@ value coerce(value v, crc *s) {
 					case G_UNIT: return tag_value(v, G_UNIT);
 					default: {
 						value retv;
-						retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-						retv.d.non_atom->v = v;
-						retv.d.non_atom->d = s;
+						retv = (value)GC_MALLOC(sizeof(v_d));
+						((v_d*)retv)->v = v;
+						((v_d*)retv)->d = s;
 						return retv;
 					}
 				}
@@ -536,7 +535,7 @@ value coerce(value v, crc *s) {
 					break;
 				}
 				default: {
-					s = compose(v.d.non_atom->d, s); 
+					s = compose(((v_d*)v)->d, s); 
 					break;
 				}
 			}
@@ -549,7 +548,7 @@ value coerce(value v, crc *s) {
 					case G_UNIT:
 						return v;
 					default:
-						return v.d.non_atom->v;
+						return ((v_d*)v)->v;
 				}
 			}
 			if (s == &crc_inj_INT) return tag_value(v, G_INT);
@@ -561,36 +560,36 @@ value coerce(value v, crc *s) {
 				case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
 				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
 					value retv;
-					retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-					retv.f->funcD = fun_wrapped_call_funcD;
+					retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
+					((fun*)retv)->funcD = fun_wrapped_call_funcD;
 					#ifdef ALT
-					retv.f->funcM = fun_wrapped_call_funcM;
+					((fun*)retv)->funcM = fun_wrapped_call_funcM;
 					#endif
-					retv.f->env[0] = (void*)v.d.non_atom->v.f;
-					retv.f->env[1] = (void*)s;
+					((fun*)retv)->env[0] = (void*)((v_d*)v)->v;
+					((fun*)retv)->env[1] = (void*)s;
 					return retv;
 				}
 				case LIST: {        // u<<d>><s> -> u<[s]> -> u<<[s]>>
 					#ifdef EAGER
-					value retv = { .l = NULL };
+					value retv = 0;
     				value *dest = &retv;
-    				value curr_src = v.d.non_atom->v;
+    				value curr_src = ((v_d*)v)->v;
 					crc *clist = s->crcdat.one_crc;
-    				while (curr_src.l != NULL) {
+    				while ((lst*)curr_src != NULL) {
     				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
-    				    dest->l = new_lst;
-    				    new_lst->h = coerce(curr_src.l->h, clist);
+    				    *dest = (value)new_lst;
+    				    new_lst->h = coerce(((lst*)curr_src)->h, clist);
     				    dest = &new_lst->t;
-    				    curr_src = curr_src.l->t;
+    				    curr_src = ((lst*)curr_src)->t;
     				}
-    				dest->l = NULL;
+    				dest = 0;
     				return retv;
 					#else
 					value retv;
-					retv.l = (lst*)GC_MALLOC(sizeof(lst));
-					retv.l->lstkind = WRAPPED_LIST;
-					retv.l->lstdat.wrap_l.w = v.d.non_atom->v.l;
-					retv.l->lstdat.wrap_l.c = s;
+					retv = (value)GC_MALLOC(sizeof(lst));
+					((lst*)retv)->lstkind = WRAPPED_LIST;
+					((lst*)retv)->lstdat.wrap_l.w = (lst*)((v_d*)v)->v;
+					((lst*)retv)->lstdat.wrap_l.c = s;
 					return retv;
 					#endif
 				}
@@ -602,9 +601,9 @@ value coerce(value v, crc *s) {
 						case G_UNIT: return tag_value(v, G_UNIT);
 						default: {
 							value retv;
-							retv.d.non_atom = (v_d*)GC_MALLOC(sizeof(v_d));
-							retv.d.non_atom->v = v.d.non_atom->v;
-							retv.d.non_atom->d = s;
+							retv = (value)GC_MALLOC(sizeof(v_d));
+							((v_d*)retv)->v = ((v_d*)v)->v;
+							((v_d*)retv)->d = s;
 							return retv;
 						}
 					}

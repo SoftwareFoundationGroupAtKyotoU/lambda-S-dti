@@ -2,7 +2,6 @@
 #define LST_H
 
 #include "types.h"
-#include "value.h"
 
 typedef struct lst {
 	#if defined(EAGER) || defined(STATIC)

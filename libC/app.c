@@ -9,24 +9,23 @@
 #include "dyn.h"
 #include "lst.h"
 #include "capp.h"
-#include "value.h"
 #include "app.h"
 #include "ty.h"
 
 #if defined(CAST) || defined(ALT)
 value fun_wrapped_call_funcM(value cls, value arg) {
 	// closureから関数と、wrapしている情報を取り出す
-    fun *inner_f = (fun*)cls.f->env[0];
+    fun *inner_f = (fun*)((fun*)cls)->env[0];
 	#ifdef CAST
-	ty *t1 = (ty*)cls.f->env[1];
-	ty *t2 = (ty*)cls.f->env[2];
-	uint32_t rid = (uint32_t)(uintptr_t)cls.f->env[3];
-	uint8_t polarity = (uint8_t)(uintptr_t)cls.f->env[4];
+	ty *t1 = (ty*)((fun*)cls)->env[1];
+	ty *t2 = (ty*)((fun*)cls)->env[2];
+	uint32_t rid = (uint32_t)(uintptr_t)((fun*)cls)->env[3];
+	uint8_t polarity = (uint8_t)(uintptr_t)((fun*)cls)->env[4];
 	#else // CAST
-    crc *c = (crc*)cls.f->env[1];
+    crc *c = (crc*)((fun*)cls)->env[1];
 	#endif // CAST
 
-	value inner_f_val = (value){ .f = inner_f };
+	value inner_f_val = (value)inner_f;
 
 	// Coercion / Cast 適用し、return
 	#ifdef CAST
@@ -45,7 +44,7 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 	if (c2 == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg);
 	} else {
-		value c2_val = (value){ .s = c2 };
+		value c2_val = (value)c2;
     	return inner_f->funcD(inner_f_val, _arg, c2_val);
 	}
 	#endif // CAST
@@ -55,25 +54,25 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 #ifndef CAST
 value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
 	// closureから関数と、wrapしている情報を取り出す
-    fun *inner_f = (fun*)cls.f->env[0];
-    crc *c = (crc*)cls.f->env[1];
+    fun *inner_f = (fun*)((fun*)cls)->env[0];
+    crc *c = (crc*)((fun*)cls)->env[1];
 
-    value inner_f_val = (value){ .f = inner_f };
+    value inner_f_val = (value)inner_f;
 
 	// Coercion 適用し、return
     crc *c1 = c->crcdat.two_crc.c1;
     crc *c2 = c->crcdat.two_crc.c2;
-    crc *_arg2_crc = compose(c2, arg2.s);
+    crc *_arg2_crc = compose(c2, (crc*)arg2);
     value _arg1 = coerce(arg1, c1);
 	#ifdef ALT
 	if (_arg2_crc == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg1);
 	} else {
-		value _arg2 = (value){ .s = _arg2_crc };
+		value _arg2 = (value)_arg2_crc;
 		return inner_f->funcD(inner_f_val, _arg1, _arg2);
 	}
 	#else
-	value _arg2 = (value){ .s = _arg2_crc };
+	value _arg2 = (value)_arg2_crc;
 	return inner_f->funcD(inner_f_val, _arg1, _arg2);
 	#endif
 }

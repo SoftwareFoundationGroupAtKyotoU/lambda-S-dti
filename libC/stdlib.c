@@ -4,21 +4,21 @@
 #ifdef ALT
 value fun_print_int(value cls, value v, value w) {
 	value retv;
-	printf("%ld", v.i_b_u);
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	printf("%ld", v);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_alt_print_int(value cls, value v) {
 	value retv;
-	printf("%ld", v.i_b_u);
-	retv.i_b_u = 0;
+	printf("%ld", v);
+	retv = 0;
 	return retv;
 }
 
 value fun_print_bool(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -27,13 +27,13 @@ value fun_print_bool(value cls, value v, value w) {
 		printf("error:not boolean value is applied to print_bool");
 		exit(1);
 	}
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_alt_print_bool(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -42,41 +42,41 @@ value fun_alt_print_bool(value cls, value v) {
 		printf("error:not boolean value is applied to print_bool");
 		exit(1);
 	}
-	retv.i_b_u = 0;
+	retv = 0;
 	return retv;
 }
 
 value fun_print_newline(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
 		printf("\n");
 	} else {
 		printf("error:not unit value is applied to print_newline");
 		exit(1);
 	}
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_alt_print_newline(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
 		printf("\n");
 	} else {
 		printf("error:not unit value is applied to print_newline");
 		exit(1);
 	}
-	retv.i_b_u = 0;
+	retv = 0;
 	return retv;
 }
 
 value fun_read_int(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
-		if (scanf("%ld", &retv.i_b_u) != 1) {
+		if (scanf("%ld", &retv) != 1) {
 		    printf("Error: Input format error or EOF.");
 		    exit(1);
 		}
@@ -84,14 +84,14 @@ value fun_read_int(value cls, value v, value w) {
 		printf("error:not unit value is applied to read_int");
 		exit(1);
 	}
-	return coerce(retv, w.s);
+	return coerce(retv, (crc*)w);
 }
 
 value fun_alt_read_int(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
-		if (scanf("%ld", &retv.i_b_u) != 1) {
+		if (scanf("%ld", &retv) != 1) {
 		    printf("Error: Input format error or EOF.");
 		    exit(1);
 		}
@@ -103,63 +103,63 @@ value fun_alt_read_int(value cls, value v) {
 }
 
 value fun_not_ml(value cls, value b, value k) {
-	if(b.i_b_u == 1) {
-		value _retv = { .i_b_u = 0 };
-		value retv = coerce(_retv, k.s);
+	if(b == 1) {
+		value _retv = 0;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	} else {
-		value _retv = { .i_b_u = 1 };
-		value retv = coerce(_retv, k.s);
+		value _retv = 1;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_alt_not_ml(value cls, value b) {
-	if(b.i_b_u == 1) {
-		value retv = { .i_b_u = 0 };
+	if(b == 1) {
+		value retv =  0;
 		return retv;
 	} else {
-		value retv = { .i_b_u = 1 };
+		value retv = 1;
 		return retv;
 	}
 }
 
 value fun_succ(value cls, value x, value k) {
-	value _retv = { .i_b_u = x.i_b_u + 1 };
-	value retv = coerce(_retv, k.s);
+	value _retv = x + 1;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_alt_succ(value cls, value x) {
-	value retv = { .i_b_u = x.i_b_u + 1 };
+	value retv = x + 1;
 	return retv;
 }
 
 value fun_prec(value cls, value x, value k) {
-	value _retv = { .i_b_u = x.i_b_u - 1 };
-	value retv = coerce(_retv, k.s);
+	value _retv = x - 1;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_alt_prec(value cls, value x) {
-	value retv = { .i_b_u = x.i_b_u - 1 };
+	value retv = x - 1;
 	return retv;
 }
 
 value fun_min_x(value cls, value y, value k) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u < y.i_b_u) {
-		value retv = coerce(x, k.s);
+	value x = (value)((fun*)cls)->env[0];
+	if(x < y) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value retv = coerce(y, k.s);
+		value retv = coerce(y, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_alt_min_x(value cls, value y) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u < y.i_b_u) {
+	value x = (value)((fun*)cls)->env[0];
+	if(x < y) {
 		return x;
 	} else {
 		return y;
@@ -168,37 +168,37 @@ value fun_alt_min_x(value cls, value y) {
 
 value fun_min(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	_retv.f->funcM = fun_alt_min_x;
-	_retv.f->funcD = fun_min_x;
-	_retv.f->env[0] = (void*)x.i_b_u;
-	value retv = coerce(_retv, k.s);
+	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)_retv)->funcM = fun_alt_min_x;
+	((fun*)_retv)->funcD = fun_min_x;
+	((fun*)_retv)->env[0] = (void*)x;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_alt_min(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	retv.f->funcM = fun_alt_min_x;
-	retv.f->funcD = fun_min_x;
-	retv.f->env[0] = (void*)x.i_b_u;
+	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)retv)->funcM = fun_alt_min_x;
+	((fun*)retv)->funcD = fun_min_x;
+	((fun*)retv)->env[0] = (void*)x;
 	return retv;
 }
 
 value fun_max_x(value cls, value y, value k) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u > y.i_b_u) {
-		value retv = coerce(x, k.s);
+	value x = (value)((fun*)cls)->env[0];
+	if(x > y) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value retv = coerce(y, k.s);
+		value retv = coerce(y, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_alt_max_x(value cls, value y) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u > y.i_b_u) {
+	value x = (value)((fun*)cls)->env[0];
+	if(x > y) {
 		return x;
 	} else {
 		return y;
@@ -207,65 +207,65 @@ value fun_alt_max_x(value cls, value y) {
 
 value fun_max(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	_retv.f->funcM = fun_alt_max_x;
-	_retv.f->funcD = fun_max_x;
-	_retv.f->env[0] = (void*)x.i_b_u;
-	value retv = coerce(_retv, k.s);
+	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)_retv)->funcM = fun_alt_max_x;
+	((fun*)_retv)->funcD = fun_max_x;
+	((fun*)_retv)->env[0] = (void*)x;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_alt_max(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	retv.f->funcM = fun_alt_max_x;
-	retv.f->funcD = fun_max_x;
-	retv.f->env[0] = (void*)x.i_b_u;
+	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)retv)->funcM = fun_alt_max_x;
+	((fun*)retv)->funcD = fun_max_x;
+	((fun*)retv)->env[0] = (void*)x;
 	return retv;
 }
 
 value fun_abs_ml(value cls, value x, value k) {
-	if(x.i_b_u >= 0) {
-		value retv = coerce(x, k.s);
+	if(x >= 0) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value _retv = { .i_b_u = 0 - x.i_b_u };
-		value retv = coerce(_retv, k.s);
+		value _retv = 0 - x;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_alt_abs_ml(value cls, value x) {
-	if(x.i_b_u >= 0) {
+	if(x >= 0) {
 		return x;
 	} else {
-		value retv = { .i_b_u = 0 - x.i_b_u };
+		value retv = 0 - x;
 		return retv;
 	}
 }
 
 value fun_ignore(value cls, value x, value k) {
-	value _retv = { .i_b_u = 0 };
-	value retv = coerce(_retv, k.s);
+	value _retv = 0;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_alt_ignore(value cls, value x) {
-	value retv = { .i_b_u = 0 };
+	value retv = 0;
 	return retv;
 }
 
 #elif defined(CAST) || defined(STATIC)
 value fun_print_int(value cls, value v) {
 	value retv;
-	printf("%ld", v.i_b_u);
-	retv.i_b_u = 0;
+	printf("%ld", v);
+	retv = 0;
 	return retv;
 }
 
 value fun_print_bool(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -274,28 +274,28 @@ value fun_print_bool(value cls, value v) {
 		printf("error:not boolean value is applied to print_bool");
 		exit(1);
 	}
-	retv.i_b_u = 0;
+	retv = 0;
 	return retv;
 }
 
 value fun_print_newline(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
 		printf("\n");
 	} else {
 		printf("error:not unit value is applied to print_newline");
 		exit(1);
 	}
-	retv.i_b_u = 0;
+	retv = 0;
 	return retv;
 }
 
 value fun_read_int(value cls, value v) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
-		if (scanf("%ld", &retv.i_b_u) != 1) {
+		if (scanf("%ld", &retv) != 1) {
 		    printf("Error: Input format error or EOF.");
 		    exit(1);
 		}	
@@ -307,28 +307,28 @@ value fun_read_int(value cls, value v) {
 }
 
 value fun_not_ml(value cls, value b) {
-	if(b.i_b_u == 1) {
-		value retv = { .i_b_u = 0 };
+	if(b == 1) {
+		value retv = 0;
 		return retv;
 	} else {
-		value retv = { .i_b_u = 1 };
+		value retv = 1;
 		return retv;
 	}
 }
 
 value fun_succ(value cls, value x) {
-	value retv = { .i_b_u = x.i_b_u + 1 };
+	value retv = x + 1;
 	return retv;
 }
 
 value fun_prec(value cls, value x) {
-	value retv = { .i_b_u = x.i_b_u - 1 };
+	value retv = x - 1;
 	return retv;
 }
 
 value fun_min_x(value cls, value y) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u < y.i_b_u) {
+	value x = (value)((fun*)cls)->env[0];
+	if(x < y) {
 		return x;
 	} else {
 		return y;
@@ -337,15 +337,15 @@ value fun_min_x(value cls, value y) {
 
 value fun_min(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	retv.f->funcM = fun_min_x;
-	retv.f->env[0] = (void*)x.i_b_u;
+	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)retv)->funcM = fun_min_x;
+	((fun*)retv)->env[0] = (void*)x;
 	return retv;
 }
 
 value fun_max_x(value cls, value y) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u > y.i_b_u) {
+	value x = (value)((fun*)cls)->env[0];
+	if(x > y) {
 		return x;
 	} else {
 		return y;
@@ -354,37 +354,37 @@ value fun_max_x(value cls, value y) {
 
 value fun_max(value cls, value x) {
 	value retv;
-	retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	retv.f->funcM = fun_max_x;
-	retv.f->env[0] = (void*)x.i_b_u;
+	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)retv)->funcM = fun_max_x;
+	((fun*)retv)->env[0] = (void*)x;
 	return retv;
 }
 
 value fun_abs_ml(value cls, value x) {
-	if(x.i_b_u >= 0) {
+	if(x >= 0) {
 		return x;
 	} else {
-		value retv = { .i_b_u = 0 - x.i_b_u };
+		value retv = 0 - x;
 		return retv;
 	}
 }
 
 value fun_ignore(value cls, value x) {
-	value retv = { .i_b_u = 0 };
+	value retv = 0;
 	return retv;
 }
 
 #else
 value fun_print_int(value cls, value v, value w) {
 	value retv;
-	printf("%ld", v.i_b_u);
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	printf("%ld", v);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_print_bool(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 1) {
 		printf("true");
 	} else if (i == 0) {
@@ -393,28 +393,28 @@ value fun_print_bool(value cls, value v, value w) {
 		printf("error:not boolean value is applied to print_bool");
 		exit(1);
 	}
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_print_newline(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
 		printf("\n");
 	} else {
 		printf("error:not unit value is applied to print_newline");
 		exit(1);
 	}
-	retv.i_b_u = 0;
-	return coerce(retv, w.s);
+	retv = 0;
+	return coerce(retv, (crc*)w);
 }
 
 value fun_read_int(value cls, value v, value w) {
 	value retv;
-	int64_t i = v.i_b_u;
+	int64_t i = v;
 	if (i == 0) {
-		if (scanf("%ld", &retv.i_b_u) != 1) {
+		if (scanf("%ld", &retv) != 1) {
 		    printf("Error: Input format error or EOF.");
 		    exit(1);
 		}
@@ -422,87 +422,87 @@ value fun_read_int(value cls, value v, value w) {
 		printf("error:not unit value is applied to read_int");
 		exit(1);
 	}
-	return coerce(retv, w.s);
+	return coerce(retv, (crc*)w);
 }
 
 value fun_not_ml(value cls, value b, value k) {
-	if(b.i_b_u == 1) {
-		value _retv = { .i_b_u = 0 };
-		value retv = coerce(_retv, k.s);
+	if(b == 1) {
+		value _retv = 0;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	} else {
-		value _retv = { .i_b_u = 1 };
-		value retv = coerce(_retv, k.s);
+		value _retv = 1 ;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_succ(value cls, value x, value k) {
-	value _retv = { .i_b_u = x.i_b_u + 1 };
-	value retv = coerce(_retv, k.s);
+	value _retv = x + 1;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_prec(value cls, value x, value k) {
-	value _retv = { .i_b_u = x.i_b_u - 1 };
-	value retv = coerce(_retv, k.s);
+	value _retv = x - 1;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_min_x(value cls, value y, value k) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u < y.i_b_u) {
-		value retv = coerce(x, k.s);
+	value x = (value)((fun*)cls)->env[0];
+	if(x < y) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value retv = coerce(y, k.s);
+		value retv = coerce(y, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_min(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	_retv.f->funcD = fun_min_x;
-	_retv.f->env[0] = (void*)x.i_b_u;
-	value retv = coerce(_retv, k.s);
+	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)_retv)->funcD = fun_min_x;
+	((fun*)_retv)->env[0] = (void*)x;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_max_x(value cls, value y, value k) {
-	value x = (value){ .i_b_u = (uintptr_t)cls.f->env[0] };
-	if(x.i_b_u > y.i_b_u) {
-		value retv = coerce(x, k.s);
+	value x = (value)((fun*)cls)->env[0];
+	if(x > y) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value retv = coerce(y, k.s);
+		value retv = coerce(y, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_max(value cls, value x, value k) {
 	value _retv;
-	_retv.f = (fun*)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	_retv.f->funcD = fun_max_x;
-	_retv.f->env[0] = (void*)x.i_b_u;
-	value retv = coerce(_retv, k.s);
+	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
+	((fun*)_retv)->funcD = fun_max_x;
+	((fun*)_retv)->env[0] = (void*)x;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 
 value fun_abs_ml(value cls, value x, value k) {
-	if(x.i_b_u >= 0) {
-		value retv = coerce(x, k.s);
+	if(x >= 0) {
+		value retv = coerce(x, (crc*)k);
 		return retv;
 	} else {
-		value _retv = { .i_b_u = 0 - x.i_b_u };
-		value retv = coerce(_retv, k.s);
+		value _retv = 0 - x;
+		value retv = coerce(_retv, (crc*)k);
 		return retv;
 	}
 }
 
 value fun_ignore(value cls, value x, value k) {
-	value _retv = { .i_b_u = 0 };
-	value retv = coerce(_retv, k.s);
+	value _retv = 0;
+	value retv = coerce(_retv, (crc*)k);
 	return retv;
 }
 #endif
@@ -544,16 +544,16 @@ static fun f_abs_ml        = INIT(fun_abs_ml);
 static fun f_ignore        = INIT(fun_ignore);
 #endif
 
-value max_int = { .i_b_u = INT64_MAX };
-value min_int = { .i_b_u = INT64_MIN };
-value print_int = { .f = &f_print_int };
-value print_bool = { .f = &f_print_bool };
-value print_newline = { .f = &f_print_newline };
-value read_int = { .f = &f_read_int };
-value not_ml = { .f = &f_not_ml };
-value succ = { .f = &f_succ };
-value prec = { .f = &f_prec };
-value min = { .f = &f_min };
-value max = { .f = &f_max };
-value abs_ml = { .f = &f_abs_ml };
-value ignore = { .f = &f_ignore };
+value max_int = INT64_MAX >> 3;
+value min_int = INT64_MIN >> 3;
+value print_int = (value)&f_print_int;
+value print_bool = (value)&f_print_bool;
+value print_newline = (value)&f_print_newline;
+value read_int = (value)&f_read_int;
+value not_ml = (value)&f_not_ml;
+value succ = (value)&f_succ;
+value prec = (value)&f_prec;
+value min = (value)&f_min;
+value max = (value)&f_max;
+value abs_ml = (value)&f_abs_ml;
+value ignore = (value)&f_ignore;
