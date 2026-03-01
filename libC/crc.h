@@ -48,9 +48,17 @@ typedef struct crc {
 	} crcdat;
 } crc;
 
-crc *compose(crc*, crc*);
+void dti(const ground_ty g, ty *tv);
 
-crc *normalize_crc(crc*);
+crc *compose(crc*, crc*);
+crc *compose_funs(crc*, crc*);
+crc *compose_lists(crc*, crc*);
+
+// crc *normalize_crc(crc*);
+crc *normalize_tv_inj(crc*);
+crc *normalize_tv_proj(crc*);
+crc *normalize_tv_proj_inj(crc*);
+crc *normalize_tv_proj_occur(crc*);
 
 extern crc crc_id;
 extern crc crc_inj_INT;

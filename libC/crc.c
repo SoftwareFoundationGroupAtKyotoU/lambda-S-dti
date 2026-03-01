@@ -15,7 +15,7 @@ crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = 
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
-static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
+inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
 	crc *retc = (crc*)GC_MALLOC(sizeof(crc));
 	retc->crckind = BOT;
 	retc->botkind = is_occur;
@@ -170,7 +170,7 @@ static inline crc *normalize_tv_inj_list(crc* c) {
 	return c;
 }
 
-static inline crc *normalize_tv_inj(crc *c) {
+inline crc *normalize_tv_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_inj_int(c); // X! [X:=int] -> id;int!
 		case BASE_BOOL: return normalize_tv_inj_bool(c);
@@ -240,7 +240,7 @@ static inline crc *normalize_tv_proj_list(crc *c) {
 	return c;
 }
 
-static inline crc *normalize_tv_proj(crc *c) {
+inline crc *normalize_tv_proj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_int(c);				// X?p [X:=int] -> int?p;id
 		case BASE_BOOL: return normalize_tv_proj_bool(c);
@@ -324,7 +324,7 @@ static inline crc *normalize_tv_proj_inj_list(crc *c) {
 	return c;
 }
 
-static inline crc *normalize_tv_proj_inj(crc *c) {
+inline crc *normalize_tv_proj_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_inj_int(c);                    // ?pX!q [X:=int] -> int?p;id;int!
 		case BASE_BOOL: return normalize_tv_proj_inj_bool(c);
@@ -385,7 +385,7 @@ static inline crc *normalize_tv_proj_occur_list(crc *c) {
 	return c;
 }
 
-static inline crc *normalize_tv_proj_occur(crc *c) {
+inline crc *normalize_tv_proj_occur(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_occur_int(c);                    // ?p⊥Xq [X:=int] -> int?p;⊥q
 		case BASE_BOOL: return normalize_tv_proj_occur_bool(c);
@@ -396,7 +396,7 @@ static inline crc *normalize_tv_proj_occur(crc *c) {
 	}
 }
 
-crc *normalize_crc(crc *c) {
+static inline crc *normalize_crc(crc *c) {
 	switch(c->crckind) {
 		case TV_INJ: {
 			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
@@ -420,7 +420,7 @@ crc *normalize_crc(crc *c) {
 	}
 }
 
-static inline crc *compose_funs(crc *c1, crc *c2) {
+inline crc *compose_funs(crc *c1, crc *c2) {
 	if (c1 == &crc_id) return c2;
 	if (c2 == &crc_id) return c1;
 	crc *cfun1 = compose(c2->crcdat.two_crc.c1, c1->crcdat.two_crc.c1);
@@ -436,7 +436,7 @@ static inline crc *compose_funs(crc *c1, crc *c2) {
 	}
 }
 
-static inline crc *compose_lists(crc *c1, crc *c2) {
+inline crc *compose_lists(crc *c1, crc *c2) {
 	if (c1 == &crc_id) return c2;
 	if (c2 == &crc_id) return c1;
 	crc *clist = compose(c1->crcdat.one_crc, c2->crcdat.one_crc);
@@ -500,7 +500,7 @@ static inline int occur_check(crc* c, const ty *tv) {
 	}
 }
 
-static inline void dti(const ground_ty g, ty *tv) {
+inline void dti(const ground_ty g, ty *tv) {
 	#ifdef PROFILE
 	current_inference++;
 	#endif

@@ -6,7 +6,6 @@
 
 #include "crc.h"
 #include "fun.h"
-#include "dyn.h"
 #include "lst.h"
 #include "capp.h"
 #include "app.h"

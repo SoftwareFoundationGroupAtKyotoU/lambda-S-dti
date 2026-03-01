@@ -6,7 +6,6 @@
 
 #include "crc.h"
 #include "fun.h"
-#include "dyn.h"
 #include "lst.h"
 #include "app.h"
 
@@ -26,7 +25,9 @@ static inline uint8_t tag_of(value v) {
 }
 
 static inline value tag_value(value v, uint8_t t) {
-	#ifdef CAST
+	#ifdef PROFILE
+	update_longest(1);
+	#endif
 	switch(t) {
 		case G_INT:
 		case G_BOOL:
@@ -40,16 +41,9 @@ static inline value tag_value(value v, uint8_t t) {
 			exit(1);
 		}
 	}
-	#else
-	#ifdef PROFILE
-	update_longest(1);
-	#endif
-	return (value)(v << 3 | t);
-	#endif
 }
 
 static inline value untag_value(value v, uint8_t t) {
-	#ifdef CAST
 	switch(t) {
 		case G_INT:
 		case G_BOOL:
@@ -63,9 +57,6 @@ static inline value untag_value(value v, uint8_t t) {
 			exit(1);
 		}
 	}
-	#else
-	return (value)(v >> 3);
-	#endif
 }
 
 #ifdef CAST
@@ -370,12 +361,17 @@ value coerce(value v, crc *s) {
 	if (s == &crc_inj_INT) return tag_value(v, G_INT);
 	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
+	if (s == &crc_inj_AR) return tag_value(v, G_AR);
+	if (s == &crc_inj_LI) return tag_value(v, G_LI);
+	crc *mid_crc;
 	switch (s->crckind) {
 		case ID: goto OPTIMIZATION_UNCAUGHT;
-		case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
-		case FUN: { // v<s'=>t'>
+		case BOT: 
+		CASE_BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
+		case FUN: 
+		CASE_FUN: { // v<s'=>t'>
 			if (((fun*)v)->funcD == fun_wrapped_call_funcD) { // u<<s=>t>><s'=>t'>
-				crc *c = compose((crc*)((fun*)v)->env[1], s);
+				crc *c = compose_funs((crc*)((fun*)v)->env[1], s);
 				if (c->crckind == ID) {    // u<<s=>t>><s'=>t'> -> u<id> -> u
 					return (value)(fun*)((fun*)v)->env[0];
 				} else {										 // u<<s=>t>><s'=>t'> -> u<s';;s=>t;;t'> -> u<<s';;s=>t;;t'>>
@@ -404,7 +400,8 @@ value coerce(value v, crc *s) {
 				return retv;
 			}
 		}
-		case LIST: { // v<[s']>
+		case LIST: 
+		CASE_LIST: { // v<[s']>
 			#ifdef EAGER
 			value retv = 0;
     		value *dest = &retv;
@@ -417,11 +414,11 @@ value coerce(value v, crc *s) {
     		    dest = &new_lst->t;
     		    curr_src = ((lst*)curr_src)->t;
     		}
-    		dest = 0;
+    		*dest = 0;
     		return retv;
 			#else
 			if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
-				crc *c = compose(((lst*)v)->lstdat.wrap_l.c, s);
+				crc *c = compose_lists(((lst*)v)->lstdat.wrap_l.c, s);
 				if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
 					return (value)((lst*)v)->lstdat.wrap_l.w;
 				} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
@@ -446,169 +443,151 @@ value coerce(value v, crc *s) {
 			#endif
 		}
 		case TV_INJ: {
-			s = normalize_crc(s);
+			s = normalize_tv_inj(s);
 			if (s == &crc_inj_INT) return tag_value(v, G_INT);
 			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
-			// return coerce(v, s);
+			// fallthrough
 		}
-		case SEQ_INJ: 
-		switch(s->crcdat.seq_tv.ptr.s->crckind) {
-			case FUN: { // v<s'=>t';G!>
-				value retv;
-				retv = (value)GC_MALLOC(sizeof(v_d));
-				if (((fun*)v)->funcD == fun_wrapped_call_funcD) {                                      // u<<s=>t>><s'=>t';G!>
-					crc *c = compose((crc*)((fun*)v)->env[1], s);
-					((v_d*)retv)->v = (value)((fun*)v)->env[0];
-					((v_d*)retv)->d = c;
-					return retv;
-				} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					((v_d*)retv)->v = v;
-					((v_d*)retv)->d = s;
-					return retv;
-				}
-			}
-			case LIST: { // v<[s'];G!>
-				value retv;
-				retv = (value)GC_MALLOC(sizeof(v_d));
-				#ifdef EAGER
-				#ifdef PROFILE
-				update_longest(1);
-				#endif
-				((v_d*)retv)->v = v;
-				((v_d*)retv)->d = s;
-				return retv;
-				#else
-				if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
-					crc *c = compose(((lst*)v)->lstdat.wrap_l.c, s->crcdat.seq_tv.ptr.s);
-					((v_d*)retv)->v = (value)((lst*)v)->lstdat.wrap_l.w;
-					((v_d*)retv)->d = (crc*)GC_MALLOC(sizeof(crc));
-					((v_d*)retv)->d->crckind = SEQ_INJ;
-					((v_d*)retv)->d->g_inj = s->g_inj;
-					((v_d*)retv)->d->crcdat.seq_tv.ptr.s = c;
-					return retv;
-				} else { // u<[s'];G!> -> u<<[s'];G!>>
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					((v_d*)retv)->v = v;
-					((v_d*)retv)->d = s;
-					return retv;
-				}
-				#endif
-			}
-			default: { // v<id;G!> -> v<<id;G!>>
-				switch(s->g_inj) {
-					case G_INT: return tag_value(v, G_INT);
-					case G_BOOL: return tag_value(v, G_BOOL);
-					case G_UNIT: return tag_value(v, G_UNIT);
-					default: {
-						value retv;
-						retv = (value)GC_MALLOC(sizeof(v_d));
-						((v_d*)retv)->v = v;
-						((v_d*)retv)->d = s;
-						return retv;
-					}
-				}
-			}	
-		}
-
-		default: {									// v<G?p;i> = u<<d>><G?p;i>, v<X?p> = u<<d>><X?p>, v<?pX!> = u<<d>><?pX!>
-			uint8_t tag = tag_of(v);
-			switch(tag) {
-				case G_INT: {
-					s = compose(&crc_inj_INT, s); 
-					v = untag_value(v, G_INT); 
-					break;
-				}
-				case G_BOOL: {
-					s = compose(&crc_inj_BOOL, s); 
-					v = untag_value(v, G_BOOL); 
-					break;
-				}
-				case G_UNIT: {
-					s = compose(&crc_inj_UNIT, s); 
-					v = untag_value(v, G_UNIT); 
-					break;
-				}
-				default: {
-					s = compose(((v_d*)v)->d, s); 
-					break;
-				}
-			}
-
-			// printf("composed c:%d\n", c1->crckind);
-			if (s == &crc_id) { // u<<d>><s> -> u<id> -> u
-				switch(tag) {
-					case G_INT:
-					case G_BOOL:
-					case G_UNIT:
-						return v;
-					default:
-						return ((v_d*)v)->v;
-				}
-			}
-			if (s == &crc_inj_INT) return tag_value(v, G_INT);
-			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
-			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
-
-			switch(s->crckind) {
-				case ID: goto OPTIMIZATION_UNCAUGHT;
-				case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-				case FUN: {        // u<<d>><s> -> u<s=>t> -> u<<s=>t>>
+		case SEQ_INJ: {
+			mid_crc = s->crcdat.seq_tv.ptr.s;
+			switch(mid_crc->crckind) {
+				case FUN: 
+				CASE_SEQ_INJ_FUN: { // v<s'=>t';G!>
 					value retv;
 					retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
 					((fun*)retv)->funcD = fun_wrapped_call_funcD;
 					#ifdef ALT
 					((fun*)retv)->funcM = fun_wrapped_call_funcM;
-					#endif
-					((fun*)retv)->env[0] = (void*)((v_d*)v)->v;
-					((fun*)retv)->env[1] = (void*)s;
-					return retv;
+					#endif // ALT
+					if (((fun*)v)->funcD == fun_wrapped_call_funcD) {  // u<<s=>t>><s'=>t';G!>
+						((fun*)retv)->env[0] = ((fun*)v)->env[0];
+						((fun*)retv)->env[1] = (void*)compose_funs((crc*)((fun*)v)->env[1], mid_crc);
+					} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
+						#ifdef PROFILE
+						update_longest(1);
+						#endif
+						((fun*)retv)->env[0] = (void*)v;
+						((fun*)retv)->env[1] = (void*)mid_crc;
+					}
+					return tag_value(retv, G_AR);
 				}
-				case LIST: {        // u<<d>><s> -> u<[s]> -> u<<[s]>>
+				case LIST: 
+				CASE_SEQ_INJ_LIST: { // v<[s'];G!>
 					#ifdef EAGER
+					#ifdef PROFILE
+					update_longest(1);
+					#endif
 					value retv = 0;
     				value *dest = &retv;
-    				value curr_src = ((v_d*)v)->v;
-					crc *clist = s->crcdat.one_crc;
+    				value curr_src = v;
+					crc *clist = mid_crc->crcdat.one_crc;
     				while ((lst*)curr_src != NULL) {
-    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));        
+    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
     				    *dest = (value)new_lst;
     				    new_lst->h = coerce(((lst*)curr_src)->h, clist);
     				    dest = &new_lst->t;
     				    curr_src = ((lst*)curr_src)->t;
     				}
-    				dest = 0;
-    				return retv;
+    				*dest = 0;
+    				return tag_value(retv, G_LI);
 					#else
 					value retv;
 					retv = (value)GC_MALLOC(sizeof(lst));
 					((lst*)retv)->lstkind = WRAPPED_LIST;
-					((lst*)retv)->lstdat.wrap_l.w = (lst*)((v_d*)v)->v;
-					((lst*)retv)->lstdat.wrap_l.c = s;
-					return retv;
+					if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
+						((lst*)retv)->lstdat.wrap_l.w = ((lst*)v)->lstdat.wrap_l.w;
+						((lst*)retv)->lstdat.wrap_l.c = compose_lists(((lst*)v)->lstdat.wrap_l.c, mid_crc);
+					} else { // u<[s'];G!> -> u<<[s'];G!>>
+						#ifdef PROFILE
+						update_longest(1);
+						#endif
+						((lst*)retv)->lstdat.wrap_l.w = (lst*)v;
+						((lst*)retv)->lstdat.wrap_l.c = mid_crc;
+					}
+					return tag_value(retv, G_LI);
 					#endif
 				}
+				default: { // v<id;G!> -> v<<id;G!>>
+					// return tag_value(v, s->g_inj);
+					goto OPTIMIZATION_UNCAUGHT;
+				}	
+			}
+		}
 
-				default: {    // u<<d>><s> -> u<g;G!> -> u<<g;G!>>
-					switch(s->g_inj) {
-						case G_INT: return tag_value(v, G_INT);
-						case G_BOOL: return tag_value(v, G_BOOL);
-						case G_UNIT: return tag_value(v, G_UNIT);
-						default: {
-							value retv;
-							retv = (value)GC_MALLOC(sizeof(v_d));
-							((v_d*)retv)->v = ((v_d*)v)->v;
-							((v_d*)retv)->d = s;
-							return retv;
-						}
-					}
+		case TV_PROJ: { // v<X?p> = u<<d>><X?p>
+			s = normalize_tv_proj(s);
+			if (s->crckind != TV_PROJ) goto CASE_SEQ_PROJ;
+			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
+			s = normalize_tv_proj(s);
+			goto CASE_SEQ_PROJ;
+		}
+
+		case TV_PROJ_INJ: { // v<?pX!> = u<<d>><?pX!>
+			s = normalize_tv_proj_inj(s);
+			if (s->crckind != TV_PROJ_INJ) goto CASE_SEQ_PROJ_INJ;
+			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
+			s = normalize_tv_proj_inj(s);
+			goto CASE_SEQ_PROJ_INJ;
+		}
+
+		case TV_PROJ_OCCUR: {
+			s = normalize_tv_proj_occur(s);
+			if (s->crckind != TV_PROJ_OCCUR) goto CASE_SEQ_PROJ_BOT;
+			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
+			s = normalize_tv_proj_occur(s);
+			goto CASE_SEQ_PROJ_BOT;
+		}
+
+		case SEQ_PROJ: 
+		CASE_SEQ_PROJ: {				// v<G?p;g> = u<<d>><G?p;g>
+			uint8_t tag = tag_of(v);
+			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
+
+			v = untag_value(v, tag);
+			s = s->crcdat.seq_tv.ptr.s;
+
+			if (s == &crc_id) return v; // u<<d>><s> -> u<id> -> u
+
+			switch(s->crckind) {
+				case FUN: goto CASE_FUN;
+				case LIST: goto CASE_LIST;
+				case ID: goto OPTIMIZATION_UNCAUGHT;
+				default: {
+					printf("seq_proj should have only g\n");
+					exit(1);
 				}
 			}
+		}
+
+		case SEQ_PROJ_INJ: 
+		CASE_SEQ_PROJ_INJ: {
+			uint8_t tag = tag_of(v);
+			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
+
+			v = untag_value(v, tag);
+			mid_crc = s->crcdat.seq_tv.ptr.s;
+
+			if (mid_crc == &crc_id) return tag_value(v, s->g_inj); // u<<d>><s> -> u<id> -> u
+
+			switch(mid_crc->crckind) {
+				case ID: goto OPTIMIZATION_UNCAUGHT;
+				// case BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
+				case FUN: goto CASE_SEQ_INJ_FUN;
+				case LIST: goto CASE_SEQ_INJ_LIST;
+				default: {    // u<<d>><s> -> u<g;G!> -> u<<g;G!>>
+					printf("seq_proj should have only g\n");
+					exit(1);
+				}
+			}
+		}
+
+		case SEQ_PROJ_BOT: 
+		CASE_SEQ_PROJ_BOT: {
+			uint8_t tag = tag_of(v);
+			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
+			s = s->crcdat.seq_tv.ptr.s;
+			goto CASE_BOT;
 		}
 	}
 

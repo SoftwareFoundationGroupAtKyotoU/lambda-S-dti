@@ -9,7 +9,6 @@
 
 #include "ty.h"
 #include "crc.h"
-#include "dyn.h"
 #include "fun.h"
 #include "lst.h"
 
