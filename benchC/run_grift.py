@@ -70,7 +70,10 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
         try:
             header = node.children[1]
             if header.is_list and len(header.children) > 0:
-                if header.children[0].value == "benchmark": is_benchmark = True
+                func_name = header.children[0].value
+                # benchmark関数に加えて、リスト操作の補助関数も変異から除外（スキップ）する
+                if func_name in ["benchmark", "empty-list", "cons", "is-empty", "head", "tail"]: 
+                    is_benchmark = True
         except: pass
 
     if is_define and not is_benchmark:
