@@ -59,6 +59,15 @@ def get_nested_type_slots(node):
         return [node.children[0]] + get_nested_type_slots(node.children[2])
     return [node]
 
+def is_referenced(node, target_name):
+    """ASTノード内に特定のシンボル（関数名など）が含まれているか再帰的に検索する"""
+    if not node.is_list:
+        return node.value == target_name
+    for child in node.children:
+        if is_referenced(child, target_name):
+            return True
+    return False
+
 def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
     """ASTを走査して変異ターゲットを特定。OCaml側のインデックス付与順序に完全同期させる。"""
     if not node.is_list: return
@@ -66,12 +75,13 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
     is_define = (len(node.children) > 0 and node.children[0].value == "define")
     
     is_benchmark = False
+    func_name = ""
     if is_define:
         try:
             header = node.children[1]
             if header.is_list and len(header.children) > 0:
                 func_name = header.children[0].value
-                # benchmark関数に加えて、リスト操作の補助関数も変異から除外（スキップ）する
+                # リスト操作の補助関数などは変異の対象から除外（OCaml側のASTに存在しないため）
                 if func_name in ["benchmark", "empty-list", "cons", "is-empty", "head", "tail"]: 
                     is_benchmark = True
         except: pass
@@ -86,12 +96,15 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
                         define_args.append(arg_sexp.children[2])
 
             ret_type_node = None
+            ret_type_idx = -1
             for i, child in enumerate(node.children):
                 if not child.is_list and child.value == ":":
                     ret_type_node = node.children[i + 1]
+                    ret_type_idx = i + 1
                     break
             
             type_slots = get_nested_type_slots(ret_type_node) if ret_type_node else []
+            body_nodes = node.children[ret_type_idx + 1:] if ret_type_idx != -1 else []
 
             lambda_arg_types = []
             def find_lambdas(n):
@@ -102,24 +115,39 @@ def analyze_ast(node, fun_targets, fix_dom_targets, fix_ret_targets):
                 for c in n.children: find_lambdas(c)
             find_lambdas(node)
             
-            if define_args:
-                fix_dom_targets.append([define_args[0]])
-                
-            if type_slots:
-                fix_ret_targets.append([type_slots[-1]])
-                
             lambda_pairs = []
             for idx, lat in enumerate(lambda_arg_types):
                 if idx < len(type_slots) - 1:
                     lambda_pairs.append([lat, type_slots[idx]])
                 else:
                     lambda_pairs.append([lat])
-            for pair in reversed(lambda_pairs):
-                fun_targets.append(pair)
-                
-            if len(define_args) > 1:
-                for arg in reversed(define_args[1:]):
+            
+            # --- 関数本体に自分自身の名前が含まれているか（再帰かどうか）を自動判定 ---
+            is_recursive_def = False
+            if func_name:
+                for b_node in body_nodes:
+                    if is_referenced(b_node, func_name):
+                        is_recursive_def = True
+                        break
+
+            # --- 判定結果に基づき OCaml の let (Fun) と let rec (Fix) の動作を模倣 ---
+            if not is_recursive_def:
+                # 非再帰 (let 相当): 戻り値の型はターゲットにしない
+                for arg in reversed(define_args):
                     fun_targets.append([arg])
+                for pair in reversed(lambda_pairs):
+                    fun_targets.append(pair)
+            else:
+                # 再帰 (let rec 相当): 第一引数をFixのドメイン、戻り値をFixのcodomainとする
+                if define_args:
+                    fix_dom_targets.append([define_args[0]])
+                if type_slots:
+                    fix_ret_targets.append([type_slots[-1]])
+                for pair in reversed(lambda_pairs):
+                    fun_targets.append(pair)
+                if len(define_args) > 1:
+                    for arg in reversed(define_args[1:]):
+                        fun_targets.append([arg])
 
         except Exception as e: pass
 
