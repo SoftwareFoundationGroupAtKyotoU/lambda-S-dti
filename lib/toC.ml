@@ -213,9 +213,9 @@ let rec toC_exp ppf f = match f with
           x
           z
       else
-        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n((lst*)%s)->lstkind = UNWRAPPED_LIST;\n((lst*)%s)->lstdat.unwrap_l.h = %s;\n((lst*)%s)->lstdat.unwrap_l.t = %s;\n"
+        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n%s((lst*)%s)->lstdat.unwrap_l.h = %s;\n((lst*)%s)->lstdat.unwrap_l.t = %s;\n"
           x
-          x
+          (if !is_B then asprintf "((lst*)%s)->lstkind = UNWRAPPED_LIST;\n" x else "")
           x
           y
           x

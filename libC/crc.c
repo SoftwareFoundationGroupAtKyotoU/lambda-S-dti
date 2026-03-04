@@ -15,7 +15,7 @@ crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = 
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
-inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
+static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
 	crc *retc = (crc*)GC_MALLOC(sizeof(crc));
 	retc->crckind = BOT;
 	retc->botkind = is_occur;
