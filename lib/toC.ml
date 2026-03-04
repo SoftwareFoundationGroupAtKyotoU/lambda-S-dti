@@ -679,15 +679,16 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
   let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in
-  fprintf ppf "%s\n%a%a%a%a%s%s%s%a%s"
+  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
+    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
     toC_tys tys
     toC_ranges ranges
     toC_crcs crcs
     toC_fundefs toplevel
     (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
-    (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)
+    (if bench = 0 then "int main() {\nGC_INIT();\n" else asprintf "int mutant%d() {\n" bench)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     toC_exp f
     "}"

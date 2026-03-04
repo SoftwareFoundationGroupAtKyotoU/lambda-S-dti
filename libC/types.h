@@ -30,12 +30,6 @@ typedef enum ground_ty : uint8_t {
 
 typedef struct ty ty;
 
-typedef intptr_t dyn;
-
-#ifndef CAST
-typedef struct v_d v_d;
-#endif //CAST
-
 #endif //not STATIC
 
 typedef intptr_t value;
