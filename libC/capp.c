@@ -417,16 +417,15 @@ value coerce(value v, crc *s) {
     		*dest = 0;
     		return retv;
 			#else
-			if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) { // u<<[s]>><[s']>
-				crc *c = compose_lists(((lst*)v)->lstdat.wrap_l.c, s);
+			if ((lst*)v != NULL && (((lst*)v)->lstdat.wrap_l.c & 0b1)) { // u<<[s]>><[s']>
+				crc *c = compose_lists((crc*)(((lst*)v)->lstdat.wrap_l.c & ~0b1), s);
 				if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
 					return (value)((lst*)v)->lstdat.wrap_l.w;
 				} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
 					value retv;
 					retv = (value)GC_MALLOC(sizeof(lst));
-					((lst*)retv)->lstkind = WRAPPED_LIST;
 					((lst*)retv)->lstdat.wrap_l.w = ((lst*)v)->lstdat.wrap_l.w;
-					((lst*)retv)->lstdat.wrap_l.c = c;
+					((lst*)retv)->lstdat.wrap_l.c = (crc*)((uintptr_t)c | 0b1);
 					return retv;
 				}
 			} else {                   // u<[s']> -> u<<[s']>>
@@ -435,9 +434,8 @@ value coerce(value v, crc *s) {
 				#endif
 				value retv;
 				retv = (value)GC_MALLOC(sizeof(lst));
-				((lst*)retv)->lstkind = WRAPPED_LIST;
 				((lst*)retv)->lstdat.wrap_l.w = (lst*)v;
-				((lst*)retv)->lstdat.wrap_l.c = s;
+				((lst*)retv)->lstdat.wrap_l.c = (uintptr_t)s | 0b1;
 				return retv;
 			}
 			#endif
@@ -494,16 +492,15 @@ value coerce(value v, crc *s) {
 					#else
 					value retv;
 					retv = (value)GC_MALLOC(sizeof(lst));
-					((lst*)retv)->lstkind = WRAPPED_LIST;
-					if ((lst*)v != NULL && ((lst*)v)->lstkind == WRAPPED_LIST) {   // u<<[s]>><[s'];G!>
+					if ((lst*)v != NULL && (((lst*)v)->lstdat.wrap_l.c & 0b1)) {   // u<<[s]>><[s'];G!>
 						((lst*)retv)->lstdat.wrap_l.w = ((lst*)v)->lstdat.wrap_l.w;
-						((lst*)retv)->lstdat.wrap_l.c = compose_lists(((lst*)v)->lstdat.wrap_l.c, mid_crc);
+						((lst*)retv)->lstdat.wrap_l.c = (crc*)((uintptr_t)compose_lists((crc*)(((lst*)v)->lstdat.wrap_l.c & ~0b1), mid_crc) | 0b1);
 					} else { // u<[s'];G!> -> u<<[s'];G!>>
 						#ifdef PROFILE
 						update_longest(1);
 						#endif
 						((lst*)retv)->lstdat.wrap_l.w = (lst*)v;
-						((lst*)retv)->lstdat.wrap_l.c = mid_crc;
+						((lst*)retv)->lstdat.wrap_l.c = (uintptr_t)mid_crc | 0b1;
 					}
 					return tag_value(retv, G_LI);
 					#endif
