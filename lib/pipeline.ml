@@ -360,11 +360,12 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   close_out oc;
   (* .c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
-  Printf.fprintf oc "%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
+  Printf.fprintf oc "%s\n%s\n%s\n%s\n%s"
+    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
+    "#define GC_INITIAL_HEAP_SIZE 1048576\n"
     (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
     "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nint i;\nstruct rusage start_usage, end_usage;\n"
-    "int main(){\n";
+    "int main(){\nGC_INIT();\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 
@@ -381,7 +382,7 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
     (asprintf "#include <stdio.h>\n#include <gc.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n" mutants_length)
     "#ifndef STATIC\nrange *range_list;\n#endif\nstatic int gc_counts[MUTANTS_LENGTH], cast_counts[MUTANTS_LENGTH], inference_counts[MUTANTS_LENGTH], longest[MUTANTS_LENGTH];\nint i;\nint gc_num, gc_tmp, current_cast, current_inference, current_longest;\n"
-    "int main(){\n";
+    "int main(){\nGC_INIT();\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 

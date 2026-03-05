@@ -695,15 +695,16 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in
   let init_crcs = if !is_static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
-  fprintf ppf "%s\n%a%a%a%a%s%s%s%a%s"
+  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
+    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
     toC_tys tys
     toC_ranges ranges
     toC_crcs crcs
     toC_fundefs toplevel
     (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
-    (if bench = 0 then asprintf "int main() {\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
+    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     toC_exp f
     "}"
