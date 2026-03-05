@@ -145,7 +145,7 @@ let rec toC_crc ppf (c, x) =
     fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_PROJ;\n%s_temp.p_proj = %d;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
       x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv)) x x
   | Fun (c1, c2) ->
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s = {0};\n%s_temp.crckind = FUN;\n%s_temp.crcdat.two_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.two_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = FUN;\n%s_temp.crcdat.two_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.two_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c1, x ^ "_c1")
       x
