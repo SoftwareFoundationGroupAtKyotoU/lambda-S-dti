@@ -250,18 +250,21 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let static = config.static in
   let eager = config.eager in
   let alt = config.alt in
+  let hash = config.hash in
   let mode_var = (if intoB && not static then "-D CAST " else if alt && not static then "-D ALT " else "") in
   let lst_var = (if eager && not static then "-D EAGER " else "") in
+  let hash_var = (if hash && not static then "-D HASH " else "") in
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then 
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir 
       file 
       mode_str
       (if profile then "_profile" else "")
       mode_var
       lst_var
+      hash_var
       static_var
       profile_var
       src_files
@@ -271,17 +274,19 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       (if profile then "_profile" else "")
   else match opt_file with
   | Some filename -> 
-    asprintf "clang ../result_C/%s_out.c %s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
+    asprintf "clang ../result_C/%s_out.c %s%s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
       filename
       mode_var
       lst_var
+      hash_var
       static_var
       filename
   | None -> 
     (* clang result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-    asprintf "clang result_C/stdin.c %s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
+    asprintf "clang result_C/stdin.c %s%s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
       mode_var
       lst_var
+      hash_var
       static_var
 
 let build_run c_code opt_file ~config = match opt_file with
@@ -356,14 +361,14 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   (* .c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
   Printf.fprintf oc "%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
+    (asprintf "#include <stdio.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
     "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nint i;\nstruct rusage start_usage, end_usage;\n"
     "int main(){\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 
-      Printf.fprintf oc "for (i = 0; i<ITR; i++){\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
+      Printf.fprintf oc "for (i = 0; i<ITR; i++){\n\n#ifdef HASH\nclear_crc_caches();\n#endif\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
        n (n - 1) n;
       print_itr (n + 1)
     end
@@ -373,14 +378,14 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   (* _profile.c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s_profile.c" log_dir file mode_str) in
   Printf.fprintf oc "%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n" file mode_str)
+    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n" mutants_length)
     "#ifndef STATIC\nrange *range_list;\n#endif\nstatic int gc_counts[MUTANTS_LENGTH], cast_counts[MUTANTS_LENGTH], inference_counts[MUTANTS_LENGTH], longest[MUTANTS_LENGTH];\nint i;\nint gc_num, gc_tmp, current_cast, current_inference, current_longest;\n"
     "int main(){\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
     else begin 
-      Printf.fprintf oc "mutant%d();\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;\ncast_counts[%d] = current_cast;\ninference_counts[%d] = current_inference;\nlongest[%d] = current_longest;\ncurrent_cast = 0;\ncurrent_inference = 0;\ncurrent_longest = 0;\nrewind(stdin);\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
+      Printf.fprintf oc "\n#ifdef HASH\nclear_crc_caches();\n#endif\nmutant%d();\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;\ncast_counts[%d] = current_cast;\ninference_counts[%d] = current_inference;\nlongest[%d] = current_longest;\ncurrent_cast = 0;\ncurrent_inference = 0;\ncurrent_longest = 0;\nrewind(stdin);\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
        n (n - 1) (n - 1) (n - 1) (n - 1) n;
       print_itr (n + 1)
     end

@@ -60,7 +60,8 @@ let () =
       ("-c", Arg.Unit (fun () -> config.compile <- true), " Compile the program to C code");
       ("-b", Arg.Unit (fun () -> config.intoB <- true), " Translate into LB");
       ("-e", Arg.Unit (fun () -> config.eager <- true), " Eager list coercion-/cast-composition");
-      ("--static", Arg.Unit (fun () -> config.static <- true), " Evaluate or compile only fully statically program")
+      ("-h", Arg.Unit (fun () -> config.hash <- true), " hash-consing / compose-memo on");
+      ("--static", Arg.Unit (fun () -> config.static <- true), " Evaluate or compile only fully statically program");
     ]
   in
   let parse_argv arg = match !file with

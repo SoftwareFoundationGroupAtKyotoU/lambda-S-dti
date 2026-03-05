@@ -6,7 +6,7 @@ open Lambda_S_dti
 open Syntax
 open Config
 
-let config = create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~opt_file:None ()
+let config = create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
 
 let test_cases = List.map (fun l -> List.map (fun (a, _, _, _, e, _) -> (a, e)) l) Testcases.tests
 

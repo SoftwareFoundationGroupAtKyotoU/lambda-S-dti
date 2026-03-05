@@ -20,11 +20,12 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    ("BLC", ["ALC", "SLC"]),
-    ("SLC", ["ALC"]),
-    ("STATICC", ["ALC", "SLC", "GRIFT", "GRIFTC"]),
-    ("GRIFT", ["ALC", "SLC", "GRIFTC"]),
-    ("GRIFTC", ["ALC", "SLC"]),
+    # ("BLC", ["ALC", "SLC"]),
+    ("SLNC", ["SLHC", "ALNC", "ALHC"]),
+    ("SLHC", ["ALHC"]),
+    ("STATICENC", ["ALHC", "SLHC", "GRIFT", "GRIFTC"]),
+    ("GRIFT", ["ALHC", "SLHC", "GRIFTC"]),
+    ("GRIFTC", ["ALHC", "SLHC"]),
 ]
 
 # =========================

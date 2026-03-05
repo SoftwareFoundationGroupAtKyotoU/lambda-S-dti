@@ -4,8 +4,7 @@ open Unix
 open Lambda_S_dti
 
 type mode = 
-| SEI | SEC | AEI | AEC | BEI | BEC
-| SLI | SLC | ALI | ALC | BLI | BLC
+| SI | SC | AI | AC | BI | BC
 | STATICI | STATICC
 
 (* Base of Benchmark settings *)
@@ -29,56 +28,48 @@ let files = [
   "zipwith_mono";
 ]
 let modes = [
-  SEI;
-  SEC;
-  AEI;
-  AEC;
-  BEI;
-  BEC;
-  SLI;
-  SLC;
-  ALI;
-  ALC;
-  BLI;
-  BLC;
+  SI;
+  SC;
+  AI;
+  AC;
+  BI;
+  BC;
   STATICI;
   STATICC;
   ]   
-  (* [SEC; SLI] : SEC と SLI を実行 *)
+  (* [SC; SI] : SC と SI を実行 *)
 
 (* ------------------ *)
 let string_of_mode = function
-  | SEI -> "SEI"
-  | SEC -> "SEC"
-  | AEI -> "AEI"
-  | AEC -> "AEC"
-  | BEI -> "BEI"
-  | BEC -> "BEC"
-  | SLI -> "SLI"
-  | SLC -> "SLC"
-  | ALI -> "ALI"
-  | ALC -> "ALC"
-  | BLI -> "BLI"
-  | BLC -> "BLC"
+  | SI -> "SI"
+  | SC -> "SC"
+  | AI -> "AI"
+  | AC -> "AC"
+  | BI -> "BI"
+  | BC -> "BC"
   | STATICI -> "STATICI"
   | STATICC -> "STATICC"
 
 let mode_of_string = function
-  | "SEI" -> SEI
-  | "SEC" -> SEC
-  | "AEI" -> AEI
-  | "AEC" -> AEC
-  | "BEI" -> BEI
-  | "BEC" -> BEC
-  | "SLI" -> SLI
-  | "SLC" -> SLC
-  | "ALI" -> ALI
-  | "ALC" -> ALC
-  | "BLI" -> BLI
-  | "BLC" -> BLC
+  | "SI" -> SI
+  | "SC" -> SC
+  | "AI" -> AI
+  | "AC" -> AC
+  | "BI" -> BI
+  | "BC" -> BC
+  | "SLI" -> SI
   | "STATICI" -> STATICI
   | "STATICC" -> STATICC
   | _ -> failwith "mode_of_string"
+
+let full_mode_name mode eager hash =
+  let prefix, suffix = match mode with
+    | SI -> "S", "I" | SC -> "S", "C"
+    | AI -> "A", "I" | AC -> "A", "C"
+    | BI -> "B", "I" | BC -> "B", "C"
+    | STATICI -> "STATIC", "I" | STATICC -> "STATIC", "C"
+  in
+  Printf.sprintf "%s%s%s%s" prefix (if eager then "E" else "L") (if hash then "H" else "N") suffix
   
 let split_pairs lst =
   List.fold_right
@@ -90,7 +81,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
   let _ = Typing.CC.type_of_program tyenv decl in
   (* Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u; *)
   match mode with
-  | SLI ->
+  | SI ->
     let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate tyenv (Pipeline.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
@@ -99,7 +90,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
     |> split_pairs
     |> snd
-  | ALI ->
+  | AI ->
     let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate_alt tyenv (Pipeline.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
@@ -108,7 +99,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
     |> split_pairs
     |> snd
-  | BEI -> 
+  | BI -> 
     let env = Syntax.Environment.empty in
     let translated = Pipeline.CC.tv_renew decl in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
@@ -117,12 +108,13 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
     |> split_pairs
     |> snd
-  | SEI | AEI | BLI | STATICI -> raise @@ Failure "yet"
-  | SEC | AEC | BEC | SLC | ALC | BLC | STATICC -> raise @@ Failure "bench Compiler"
+  | STATICI -> raise @@ Failure "yet"
+  | SC | AC | BC | STATICC -> raise @@ Failure "bench Compiler"
 
 (* メモリ計測（設定に応じて）を JSON に *)
-let mem_json mode file idx ~compile =
-  let label = Printf.sprintf "%s/%s#%d" (string_of_mode mode) file idx in
+let mem_json mode file idx ~compile ~eager ~hash =
+  let mode_str = full_mode_name mode eager hash in
+  let label = Printf.sprintf "%s/%s#%d" mode_str file idx in
   if compile then     
     let run () = ignore (Core_unix.system "logs/bench.out") in
     Bench_utils.measure_mem_to_json ~label run
@@ -161,24 +153,22 @@ let bench_file_mode
     ~(total_targets:int)
     ~(file:string)
     ~(mode:mode)
+    ~eager
+    ~hash
     ~(mutants:Syntax.ITGL.program list)
   =
+  let mode_str = full_mode_name mode eager hash in
+
   (* modeに応じたconfigの生成 *)
   let config = match mode with
-  | SEI -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
-  | SEC -> Config.create ~alt:false ~intoB:false ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
-  | AEI -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
-  | AEC -> Config.create ~alt:true ~intoB:false ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
-  | BEI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ~static:false ~opt_file:(Some file) ()
-  | BEC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ~static:false ~opt_file:(Some file) ()
-  | SLI -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
-  | SLC -> Config.create ~alt:false ~intoB:false ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
-  | ALI -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
-  | ALC -> Config.create ~alt:true ~intoB:false ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
-  | BLI -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~opt_file:(Some file) ()
-  | BLC -> Config.create ~alt:false ~intoB:true ~eager:false ~compile:true ~static:false ~opt_file:(Some file) ()
-  | STATICI -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:false ~static:true ~opt_file:(Some file) ()
-  | STATICC -> Config.create ~alt:false ~intoB:true ~eager:true ~compile:true ~static:true ~opt_file:(Some file) ()
+  | SI -> Config.create ~alt:false ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | SC -> Config.create ~alt:false ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | AI -> Config.create ~alt:true ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | AC -> Config.create ~alt:true ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | BI -> Config.create ~alt:false ~intoB:true ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | BC -> Config.create ~alt:false ~intoB:true ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | STATICI -> Config.create ~alt:false ~intoB:true ~eager ~compile:false ~static:true ~hash ~opt_file:(Some file) ()
+  | STATICC -> Config.create ~alt:false ~intoB:true ~eager ~compile:true ~static:true ~hash ~opt_file:(Some file) ()
   in
 
   Format.fprintf Format.std_formatter "debug: bench_file_mode\n";
@@ -187,18 +177,18 @@ let bench_file_mode
     let null_fmt = Format.make_formatter (fun _buf _pos _len -> ()) (fun () -> ()) in
     match Bench_utils.out_mode with
     | Text -> 
-      let file_path = Printf.sprintf "%s/%s_%s.log" log_dir (string_of_mode mode) file in
+      let file_path = Printf.sprintf "%s/%s_%s.log" log_dir mode_str file in
       let oc = open_out file_path in
       Some oc, Format.formatter_of_out_channel oc, None, ref true
     | JsonLines ->
-      let jsonl_path = Printf.sprintf "%s/%s_%s.jsonl" log_dir (string_of_mode mode) file in
+      let jsonl_path = Printf.sprintf "%s/%s_%s.jsonl" log_dir mode_str file in
       let oc = open_out jsonl_path in
       None, null_fmt, Some oc, ref true
     | Json -> 
-      let json_path = Printf.sprintf "%s/%s_%s.json"  log_dir (string_of_mode mode) file in
+      let json_path = Printf.sprintf "%s/%s_%s.json" log_dir mode_str file in
       let oc = open_out json_path in
       Out_channel.output_string oc "{ \"file\": \""; Out_channel.output_string oc file; Out_channel.output_string oc "\", ";
-      Out_channel.output_string oc "\"mode\": \""; Out_channel.output_string oc (string_of_mode mode); Out_channel.output_string oc "\", ";
+      Out_channel.output_string oc "\"mode\": \""; Out_channel.output_string oc mode_str; Out_channel.output_string oc "\", ";
       Out_channel.output_string oc "\"settings\": {\"mem_mode\": \""; 
       Out_channel.output_string oc (match Bench_utils.mem_mode with Off->"off" | Fast->"fast" | Corebench->"corebench");
       Out_channel.output_string oc "\", \"fast_runs\": "; Out_channel.output_string oc (string_of_int Bench_utils.fast_runs);
@@ -209,7 +199,7 @@ let bench_file_mode
   let ppf = Utils.Format.empty_formatter in
 
   (* ターゲット用 Progress を開始 *)
-  let label = Printf.sprintf "%s_%s" (string_of_mode mode) file in
+  let label = Printf.sprintf "%s_%s" mode_str file in
   let prog = Bench_utils.Target_progress.create
                ~label ~total:(List.length mutants)
                ~ordinal ~total_targets
@@ -217,7 +207,7 @@ let bench_file_mode
 
   (* compileモードなら，.c用のディレクトリを作成 *)
   if config.compile then
-    let c_dir = Printf.sprintf "%s/%s" log_dir (string_of_mode mode) in
+    let c_dir = Printf.sprintf "%s/%s" log_dir mode_str in
     if not (Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
     if not (Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
@@ -252,7 +242,7 @@ let bench_file_mode
               let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
               c_code, decl, tyenv
           in
-          let filename = Format.asprintf "%s/%s/%s%d.c" log_dir (string_of_mode mode) file idx in
+          let filename = Format.asprintf "%s/%s/%s%d.c" log_dir mode_str file idx in
           let oc = open_out filename in
           Printf.fprintf oc "%s" c_code;
           close_out oc;
@@ -301,12 +291,12 @@ let bench_file_mode
       (* 実行時間（従来の itr 回計測）を JSON に *)
       let times_sec_json = Bench_utils.J.list (List.map (fun t -> Bench_utils.J.float t) lst_elapsed_time) in
 
-      let mem = mem_json mode file idx ~compile:config.compile in
+      let mem = mem_json mode file idx ~compile:config.compile ~eager:config.eager ~hash:config.hash in
 
       (* 1ミュータントの JSON オブジェクト *)
       let mutant_json =
         Bench_utils.J.obj [
-          ("mode", Bench_utils.J.str (string_of_mode mode));
+          ("mode", Bench_utils.J.str mode_str);
           ("mutant_index", Bench_utils.J.int idx);
           ("after_mutate", Bench_utils.J.str after_mutate_str);
           ("after_insertion", Bench_utils.J.str after_insertion_str);
@@ -353,7 +343,7 @@ let bench_file_mode
 
   (* compileモードなら，build_run_benchでbenchmarking *)
   if config.compile then 
-    Pipeline.build_run_bench ~log_dir ~file ~mode_str:(string_of_mode mode) ~itr ~mutants_length:(List.length mutants) ~config;
+    Pipeline.build_run_bench ~log_dir ~file ~mode_str:mode_str ~itr ~mutants_length:(List.length mutants) ~config;
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Bench_utils.Target_progress.print ~final:false prog
@@ -361,6 +351,8 @@ let bench_file_mode
 let () =
   let files_ref = ref [] in
   let modes_ref = ref [] in
+  let list_ref = ref [] in
+  let hash_ref = ref [] in
   let itr_ref = ref 0 in
   let static = ref false in
   let dynamize = ref false in
@@ -368,17 +360,23 @@ let () =
   let specs = [
     ("-m", Arg.String (fun s -> modes_ref := mode_of_string s :: !modes_ref), " Select mode");
     ("-i", Arg.Int (fun i -> itr_ref := i), " Specify itration");
-    ("-c", Arg.Unit (fun () -> modes_ref := [SLC; SEC; ALC; AEC; BLC; BEC; STATICC] @ !modes_ref), " Benchmarking all compile mode");
+    ("-c", Arg.Unit (fun () -> modes_ref := [SC; AC; BC; STATICC] @ !modes_ref), " Benchmarking all compile mode");
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
     ("--grift", Arg.Unit (fun () -> grift := true), " Benchmarking on grift");
     ("--all", Arg.Unit (fun () -> dynamize := true; static := true; grift := true), " Benchmarking all (--static --dynamize --grift)");
-    ("--paper", Arg.Unit (fun () -> modes_ref := [SLC; ALC; STATICC] @ !modes_ref), " Banchmarking modes for paper (SLC, ALC, STATICC)")
+    ("--paper", Arg.Unit (fun () -> modes_ref := [SC; AC; STATICC] @ !modes_ref; list_ref := [false];), " Banchmarking modes for paper (SLC, ALC, STATICC)");
+    ("--eager", Arg.Unit (fun () -> list_ref := true :: !list_ref), " Run eager mode");
+    ("--lazy", Arg.Unit (fun () -> list_ref := false :: !list_ref), " Run lazy mode");
+    ("--hash", Arg.Unit (fun () -> hash_ref := true :: !hash_ref), " Run hash-consing mode");
+    ("--no-hash", Arg.Unit (fun () -> hash_ref := false :: !hash_ref), " Run no-hash-consing mode");
     ]
   in
   Arg.parse specs (fun f -> files_ref := f :: !files_ref) " Usage: ./bench [file...] [-m mode]";
 
   (* 指定がなければ全部、あればそれを対象にする *)
+  let list_modes = if !list_ref = [] then [true; false] else List.sort_uniq compare !list_ref in
+  let hash_modes = if !hash_ref = [] then [true; false] else List.sort_uniq compare !hash_ref in
   let files = if !files_ref = [] then files else !files_ref in
   let modes = if !modes_ref = [] then modes else !modes_ref in
   let itr = if !itr_ref = 0 then itr else !itr_ref in
@@ -392,14 +390,20 @@ let () =
 
   (* モード展開してターゲット配列を作る *)
   Format.fprintf Format.std_formatter "debug: making targets lists\n";
-  let targets : (string * mode * Syntax.ITGL.program list) list =
+  let targets : (string * mode * bool * bool * Syntax.ITGL.program list) list =
     List.concat_map (fun (file, muts) ->
-      List.map (fun m -> (file, m, muts)) modes
+      List.concat_map (fun m -> 
+        List.concat_map (fun eager -> 
+          List.map (fun hash -> 
+            (file, m, eager, hash, muts)
+          ) hash_modes
+        ) list_modes
+      ) modes
     ) prepared
   in
   Format.fprintf Format.std_formatter "debug: making targets lists done\n";
   Format.fprintf Format.std_formatter "debug: targets lists number is %d\n" (List.length targets);
-  Format.fprintf Format.std_formatter "debug: first target's mutants number is %d\n" (match targets with (_, _, h) :: _ -> List.length h | _ -> 0);
+  Format.fprintf Format.std_formatter "debug: first target's mutants number is %d\n" (match targets with (_, _, _, _, h) :: _ -> List.length h | _ -> 0);
   let total_targets = List.length targets in
 
   (* 2. ログディレクトリ準備 *)
@@ -416,7 +420,7 @@ let () =
   (* 3. 実行: 各ターゲットを順番に *)
   Format.fprintf Format.std_formatter "debug: main iteration\n";
   begin if !dynamize then
-    List.iteri (fun i (file, mode, mutants) ->
+    List.iteri (fun i (file, mode, eager, hash, mutants) ->
       if mode = STATICI || mode = STATICC then () else
       bench_file_mode
         ~log_dir
@@ -425,13 +429,16 @@ let () =
         ~total_targets
         ~file
         ~mode
+        ~eager
+        ~hash
         ~mutants
     ) targets
   else () end;
 
   begin if !static then 
-    let targets = List.map (fun (file, m, muts) -> (file ^ "_fs", m, [List.hd muts])) targets in
-    List.iteri (fun i (file, mode, mutants) ->
+    let targets = List.map (fun (file, m, eager, hash, muts) -> (file ^ "_fs", m, eager, hash, [List.hd muts])) targets in
+    List.iteri (fun i (file, mode, eager, hash, mutants) ->
+      if mode = STATICI || mode = STATICC then 
       bench_file_mode
         ~log_dir
         ~itr
@@ -439,6 +446,19 @@ let () =
         ~total_targets
         ~file
         ~mode
+        ~eager:true
+        ~hash:false
+        ~mutants
+      else
+      bench_file_mode
+        ~log_dir
+        ~itr
+        ~ordinal:(i + 1)
+        ~total_targets
+        ~file
+        ~mode
+        ~eager
+        ~hash
         ~mutants
     ) targets
   else () end;

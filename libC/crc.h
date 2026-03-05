@@ -54,7 +54,6 @@ crc *compose(crc*, crc*);
 crc *compose_funs(crc*, crc*);
 crc *compose_lists(crc*, crc*);
 
-// crc *normalize_crc(crc*);
 crc *normalize_tv_inj(crc*);
 crc *normalize_tv_proj(crc*);
 crc *normalize_tv_proj_inj(crc*);
@@ -66,6 +65,13 @@ extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
 extern crc crc_inj_AR;
 extern crc crc_inj_LI;
+
+crc* alloc_crc(crc*);
+
+#ifdef HASH
+void register_static_crc(crc*);
+void clear_crc_caches();
+#endif //HASH
 
 #endif
 

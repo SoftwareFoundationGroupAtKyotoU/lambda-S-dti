@@ -6,6 +6,7 @@ type t = {
   mutable intoB : bool;
   mutable eager : bool;
   mutable static : bool;
+  mutable hash : bool;
   mutable opt_file : string option;
 }
 
@@ -17,8 +18,9 @@ let default = {
   intoB = false;
   eager = false;
   static = false;
+  hash = false;
   opt_file = None;
 }
 
-let create ~alt ~intoB ~eager ~compile ~static ~opt_file () =
-  { default with alt; intoB; eager; compile; static; opt_file }
+let create ~alt ~intoB ~eager ~compile ~static ~hash ~opt_file () =
+  { default with alt; intoB; eager; compile; static; hash; opt_file }

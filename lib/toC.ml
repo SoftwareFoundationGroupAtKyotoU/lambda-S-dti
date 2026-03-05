@@ -114,48 +114,48 @@ let rec toC_crc ppf (c, x) =
       x
       toC_tag t
   | SeqInj (Fun _ as c1, Ar) ->
-    fprintf ppf "value %s_cfun;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_INJ;\n((crc*)%s)->g_inj = G_AR;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_cfun;"
+    fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_AR;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c1, x ^ "_cfun")
-      x x x x x
+      x x x x x x x
   | SeqInj (List _ as c1, Li) ->
-    fprintf ppf "value %s_clist;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_INJ;\n((crc*)%s)->g_inj = G_LI;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_clist;"
+    fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_LI;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c1, x ^ "_clist")
-      x x x x x
+      x x x x x x x
   | SeqProj (t, (r, p), Id) ->
-    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_%a;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = &crc_id;"
+    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_%a;\n%s_temp.p_proj = %d;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = &crc_id;\n%s = (value)alloc_crc(&%s_temp);"
       x x x
       toC_tag t
-      x (match p with Pos -> 1 | Neg -> 0) x r x
+      x (match p with Pos -> 1 | Neg -> 0) x r x x x
   | SeqProj (Ar, (r, p), (Fun _ as c2)) ->
-    fprintf ppf "value %s_cfun;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_AR;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_cfun;"
+    fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_AR;\n%s_temp.p_proj = %d;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c2, x ^ "_cfun")
-      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
+      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x x x
   | SeqProj (Li, (r, p), (List _ as c2)) ->
-    fprintf ppf "value %s_clist;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = SEQ_PROJ;\n((crc*)%s)->g_proj = G_LI;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.s = (crc*)%s_clist;"
+    fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_LI;\n%s_temp.p_proj = %d;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c2, x ^ "_clist")
-      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x
+      x x x x (match p with Pos -> 1 | Neg -> 0) x r x x x x
   | TvInj (tv, (r, p)) ->
-    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = TV_INJ;\n((crc*)%s)->p_inj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_inj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.tv = %s;"
-      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
+    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_INJ;\n%s_temp.p_inj = %d;\n%s_temp.crcdat.seq_tv.rid_inj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv)) x x
   | TvProj (tv, (r, p)) ->
-    fprintf ppf "%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = TV_PROJ;\n((crc*)%s)->p_proj = %d;\n((crc*)%s)->crcdat.seq_tv.rid_proj = %d;\n((crc*)%s)->crcdat.seq_tv.ptr.tv = %s;"
-      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv))
+    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_PROJ;\n%s_temp.p_proj = %d;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
+      x x x (match p with Pos -> 1 | Neg -> 0) x r x (c_of_ty (TyVar tv)) x x
   | Fun (c1, c2) ->
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = FUN;\n((crc*)%s)->crcdat.two_crc.c1 = (crc*)%s_c1;\n((crc*)%s)->crcdat.two_crc.c2 = (crc*)%s_c2;"
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s = {0};\n%s_temp.crckind = FUN;\n%s_temp.crcdat.two_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.two_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
       x
       toC_crc (c1, x ^ "_c1")
       x
       toC_crc (c2, x ^ "_c2")
-      x x x x x x
+      x x x x x x x x
   | List c ->
-    fprintf ppf "value %s_c;\n%a\n%s = (value)GC_MALLOC(sizeof(crc));\n((crc*)%s)->crckind = LIST;\n((crc*)%s)->crcdat.one_crc = (crc*)%s_c;" 
+    fprintf ppf "value %s_c;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = LIST;\n%s_temp.crcdat.one_crc = (crc*)%s_c;\n%s = (value)alloc_crc(&%s_temp);" 
       x
       toC_crc (c, x ^ "_c")
-      x x x x
+      x x x x x x
   | _ -> raise @@ ToC_bug "bad coercion" 
 
 (* ======================================== *)
@@ -605,11 +605,26 @@ let toC_crccontents ppf l =
 
 (*型定義全体を記述*)
 let toC_crcs ppf l =
-  if l = [] then fprintf ppf ""
+  let register_builtins ppf () =
+    fprintf ppf "\tregister_static_crc(&crc_id);\n";
+    fprintf ppf "\tregister_static_crc(&crc_inj_INT);\n";
+    fprintf ppf "\tregister_static_crc(&crc_inj_BOOL);\n";
+    fprintf ppf "\tregister_static_crc(&crc_inj_UNIT);\n";
+    fprintf ppf "\tregister_static_crc(&crc_inj_AR);\n";
+    fprintf ppf "\tregister_static_crc(&crc_inj_LI);\n"
+  in
+  if !is_static then fprintf ppf ""
+  else if l = [] then 
+    fprintf ppf "\n#ifdef HASH\nstatic void init_crcs() {\n%a}\n#endif\n\n"
+      register_builtins ()
   else 
-    fprintf ppf "%a%a\n\n"
+    fprintf ppf "%a%a\n#ifdef HASH\nstatic void init_crcs() {\n%a%a}\n#endif\n\n"
       toC_crcdecls l
       toC_crccontents l
+      register_builtins ()
+      (fun ppf decls ->
+         List.iter (fun (_, name) -> fprintf ppf "\tregister_static_crc(&%s);\n" name) decls
+      ) l
 
 (* ================================ *)
   
@@ -679,6 +694,7 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
   let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in
+  let init_crcs = if !is_static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
   fprintf ppf "%s\n%a%a%a%a%s%s%s%a%s"
     (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
       (if bench = 0 then "" else "../../"))
@@ -687,7 +703,7 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
     toC_crcs crcs
     toC_fundefs toplevel
     (if bench = 0 && not !is_static then "range *range_list;\n\n" else "")
-    (if bench = 0 then "int main() {\n" else asprintf "int mutant%d() {\n" bench)
+    (if bench = 0 then asprintf "int main() {\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     toC_exp f
     "}"

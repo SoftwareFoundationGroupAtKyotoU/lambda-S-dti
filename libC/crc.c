@@ -1,5 +1,10 @@
 #if !defined(CAST) && !defined(STATIC)
 
+#ifdef HASH
+#define CRC_HASH_SIZE 1048576
+#define CACHE_SIZE 65536
+#endif //HASH
+
 #include <stdio.h>
 #include <stdlib.h> 
 #include <gc.h>
@@ -15,161 +20,263 @@ crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = 
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
+#ifdef HASH
+#include <string.h>
+
+static crc* intern_table[CRC_HASH_SIZE] = {NULL};
+
+static uint32_t hash_crc(const crc *c) {
+    uint32_t h = c->crckind;
+    h = (h * 31) + c->g_proj;
+    h = (h * 31) + c->g_inj;
+    h = (h * 31) + c->p_proj;
+    h = (h * 31) + c->p_inj;
+    h = (h * 31) + c->botkind;
+    h = (h * 31) + c->crcdat.seq_tv.rid_proj;
+    h = (h * 31) + c->crcdat.seq_tv.rid_inj;
+    h = (h * 31) + (uintptr_t)c->crcdat.seq_tv.ptr.s;
+    return h;
+}
+
+static int eq_crc(const crc *a, const crc *b) {
+    if (a == b) return 1;
+    
+    if (a->crckind != b->crckind ||
+        a->g_proj  != b->g_proj  ||
+        a->g_inj   != b->g_inj   ||
+        a->p_proj  != b->p_proj  ||
+        a->p_inj   != b->p_inj   ||
+        a->botkind != b->botkind) {
+        return 0;
+    }
+
+    return a->crcdat.seq_tv.rid_proj == b->crcdat.seq_tv.rid_proj &&
+           a->crcdat.seq_tv.rid_inj  == b->crcdat.seq_tv.rid_inj  &&
+           a->crcdat.seq_tv.ptr.s    == b->crcdat.seq_tv.ptr.s;
+}
+
+static crc* intern_crc(crc *candidate) {
+    uint32_t hash = hash_crc(candidate);
+    uint32_t idx = hash % CRC_HASH_SIZE;
+    uint32_t start_idx = idx;
+    
+    while (intern_table[idx] != NULL) {
+        if (eq_crc(intern_table[idx], candidate)) {
+            return intern_table[idx];
+        }
+        idx = (idx + 1) % CRC_HASH_SIZE;
+        
+        if (idx == start_idx) {
+            printf("Fatal: intern_table is full! Increase CRC_HASH_SIZE.\n");
+            exit(1);
+        }
+    }
+    
+    crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
+    *new_c = *candidate;
+    intern_table[idx] = new_c;
+    
+    return new_c;
+}
+
+void register_static_crc(crc *c) {
+    uint32_t hash = hash_crc(c);
+    uint32_t idx = hash % CRC_HASH_SIZE;
+    uint32_t start_idx = idx;
+    
+    while (intern_table[idx] != NULL) {
+        if (intern_table[idx] == c) return;
+        idx = (idx + 1) % CRC_HASH_SIZE;
+        if (idx == start_idx) {
+            printf("Fatal: intern_table is full! Increase CRC_HASH_SIZE.\n");
+            exit(1);
+        }
+    }
+    intern_table[idx] = c;
+}
+
+typedef struct {
+    crc *c1;
+    crc *c2;
+    crc *result;
+} compose_cache_entry;
+
+static compose_cache_entry compose_cache[CACHE_SIZE] = {0};
+
+void clear_crc_caches() {
+    memset(intern_table, 0, sizeof(intern_table));
+    memset(compose_cache, 0, sizeof(compose_cache));
+}
+#endif //HASH
+
+crc* alloc_crc(crc *candidate) {
+	#ifdef HASH
+    return intern_crc(candidate);
+	#else
+    crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
+    *new_c = *candidate;
+    return new_c;
+	#endif
+}
+
+static inline crc* new_fun(crc *c1, crc *c2) {
+    crc temp = {0};
+    temp.crckind = FUN;
+    temp.crcdat.two_crc.c1 = c1;
+    temp.crcdat.two_crc.c2 = c2;
+    return alloc_crc(&temp);
+}
+
+static inline crc* new_list(crc *c) {
+    crc temp = {0};
+    temp.crckind = LIST;
+    temp.crcdat.one_crc = c;
+    return alloc_crc(&temp);
+}
+
 static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
-	crc *retc = (crc*)GC_MALLOC(sizeof(crc));
-	retc->crckind = BOT;
-	retc->botkind = is_occur;
-	retc->p_proj = p;
-	retc->crcdat.seq_tv.rid_proj = rid;
-	return retc;
+    crc temp = {0};
+    temp.crckind = BOT;
+    temp.botkind = is_occur;
+    temp.p_proj = p;
+    temp.crcdat.seq_tv.rid_proj = rid;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_seq_proj(const crc *base_proj, crc *s_new) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = SEQ_PROJ;
-    c->g_proj = base_proj->g_proj;
-    c->p_proj = base_proj->p_proj;
-    c->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-    c->crcdat.seq_tv.ptr.s = s_new;
-    return c;
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ;
+    temp.g_proj = base_proj->g_proj;
+    temp.p_proj = base_proj->p_proj;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = s_new;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_seq_inj(crc *s_new, const crc *base_inj) {
-	if (s_new == &crc_id) {
-		switch (base_inj->g_inj) {
-			case G_INT: return &crc_inj_INT;
-			case G_BOOL: return &crc_inj_BOOL;
-			case G_UNIT: return &crc_inj_UNIT;
-			case G_AR: return &crc_inj_AR;
-			case G_LI: return &crc_inj_LI;
-			default: {
-				printf("got G_NONE");
-				exit(1);
-			}
-		}
-	} else {
-		crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    	c->crckind = SEQ_INJ;
-    	c->g_inj = base_inj->g_inj;
-    	c->crcdat.seq_tv.ptr.s = s_new;
-    	return c;
-	}
+    if (s_new == &crc_id) {
+        switch (base_inj->g_inj) {
+            case G_INT: return &crc_inj_INT;
+            case G_BOOL: return &crc_inj_BOOL;
+            case G_UNIT: return &crc_inj_UNIT;
+            case G_AR: return &crc_inj_AR;
+            case G_LI: return &crc_inj_LI;
+            default: {
+                printf("got G_NONE");
+                exit(1);
+            }
+        }
+    }
+    crc temp = {0};
+    temp.crckind = SEQ_INJ;
+    temp.g_inj = base_inj->g_inj;
+    temp.crcdat.seq_tv.ptr.s = s_new;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_seq_proj_inj(const crc *base_proj, crc *s_new, const crc *base_inj) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = SEQ_PROJ_INJ;
-    c->g_proj = base_proj->g_proj;
-    c->p_proj = base_proj->p_proj;
-    c->g_inj = base_inj->g_inj;
-    c->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-    c->crcdat.seq_tv.ptr.s = s_new;
-    return c;
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ_INJ;
+    temp.g_proj = base_proj->g_proj;
+    temp.p_proj = base_proj->p_proj;
+    temp.g_inj = base_inj->g_inj;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = s_new;
+    return alloc_crc(&temp);
 }
 
 static inline crc *new_seq_proj_bot(const crc *base_proj, crc *bot) {
-	crc *retc = (crc*)GC_MALLOC(sizeof(crc));
-	retc->crckind = SEQ_PROJ_BOT;
-	retc->g_proj = base_proj->g_proj;
-	retc->p_proj = base_proj->p_proj;
-	retc->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-	retc->crcdat.seq_tv.ptr.s = bot;
-	return retc;
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ_BOT;
+    temp.g_proj = base_proj->g_proj;
+    temp.p_proj = base_proj->p_proj;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = bot;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_tv_proj(const crc *base_proj, ty *tv) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = TV_PROJ;
-    c->p_proj = base_proj->p_proj;
-    c->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-    c->crcdat.seq_tv.ptr.tv = tv;
-    return c;
+    crc temp = {0};
+    temp.crckind = TV_PROJ;
+    temp.p_proj = base_proj->p_proj;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.tv = tv;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_tv_inj(ty *tv, const crc *base_inj) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = TV_INJ;
-	c->p_inj = base_inj->p_inj;
-    c->crcdat.seq_tv.rid_inj = base_inj->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.tv = tv;
-    return c;
+    crc temp = {0};
+    temp.crckind = TV_INJ;
+    temp.p_inj = base_inj->p_inj;
+    temp.crcdat.seq_tv.rid_inj = base_inj->crcdat.seq_tv.rid_inj;
+    temp.crcdat.seq_tv.ptr.tv = tv;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_tv_proj_inj(const crc *base_proj, ty *tv, const crc *base_inj) {
-    crc *c = (crc*)GC_MALLOC(sizeof(crc));
-    c->crckind = TV_PROJ_INJ;
-    c->p_proj = base_proj->p_proj;
-    c->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-	c->p_inj = base_inj->p_inj;
-    c->crcdat.seq_tv.rid_inj = base_inj->crcdat.seq_tv.rid_inj;
-    c->crcdat.seq_tv.ptr.tv = tv;
-    return c;
+    crc temp = {0};
+    temp.crckind = TV_PROJ_INJ;
+    temp.p_proj = base_proj->p_proj;
+    temp.p_inj = base_inj->p_inj;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.rid_inj = base_inj->crcdat.seq_tv.rid_inj;
+    temp.crcdat.seq_tv.ptr.tv = tv;
+    return alloc_crc(&temp);
 }
 
 static inline crc* new_tv_proj_occur(const crc* base_proj, const uint8_t bot_p, const uint32_t bot_rid) {
-	crc *c = (crc*)GC_MALLOC(sizeof(crc));
-	c->crckind = TV_PROJ_OCCUR;
-	c->p_proj = base_proj->p_proj;
-	c->p_inj = bot_p;
-    c->crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
-    c->crcdat.seq_tv.rid_inj = bot_rid;
-	c->crcdat.seq_tv.ptr.tv = base_proj->crcdat.seq_tv.ptr.tv;
-	return c;
+    crc temp = {0};
+    temp.crckind = TV_PROJ_OCCUR;
+    temp.p_proj = base_proj->p_proj;
+    temp.p_inj = bot_p;
+    temp.crcdat.seq_tv.rid_proj = base_proj->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.rid_inj = bot_rid;
+    temp.crcdat.seq_tv.ptr.tv = base_proj->crcdat.seq_tv.ptr.tv;
+    return alloc_crc(&temp);
 }
 
-static inline crc *normalize_tv_inj_int(crc *c) {
-	*c = crc_inj_INT;
-	return &crc_inj_INT;
-}
-
-static inline crc *normalize_tv_inj_bool(crc *c) {
-	*c = crc_inj_BOOL;
-	return &crc_inj_BOOL;
-}
-
-static inline crc *normalize_tv_inj_unit(crc *c) {
-	*c = crc_inj_UNIT;
-	return &crc_inj_UNIT;
-}
-
+static inline crc *normalize_tv_inj_int(crc *c) { return &crc_inj_INT; }
+static inline crc *normalize_tv_inj_bool(crc *c) { return &crc_inj_BOOL; }
+static inline crc *normalize_tv_inj_unit(crc *c) { return &crc_inj_UNIT; }
 static inline crc *normalize_tv_inj_fun(crc *c) {
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
-	crc *cfun1 = &cs[0];
-	crc *cfun2 = &cs[1];
-	crc *cfun = &cs[2];
-	cfun1->crckind = TV_PROJ;
-	cfun1->p_proj = c->p_inj ^ 1;
-	cfun1->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	cfun1->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
-	cfun2->crckind = TV_INJ;
-	cfun2->p_proj = c->p_inj;
-	cfun2->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
-	cfun2->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
-	cfun->crckind = FUN;
-	cfun->crcdat.two_crc.c1 = cfun1;
-	cfun->crcdat.two_crc.c2 = cfun2;
-	c->crckind = SEQ_INJ;
-	c->g_inj = G_AR;
-	c->crcdat.seq_tv.ptr.s = cfun;
-	return c;
-}
+    crc temp1 = {0};
+    temp1.crckind = TV_PROJ;
+    temp1.p_proj = c->p_inj ^ 1;
+    temp1.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
+    temp1.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
+    crc *cfun1 = alloc_crc(&temp1);
 
+    crc temp2 = {0};
+    temp2.crckind = TV_INJ;
+    temp2.p_inj = c->p_inj;
+    temp2.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
+    temp2.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
+    crc *cfun2 = alloc_crc(&temp2);
+
+    crc *cfun = new_fun(cfun1, cfun2);
+
+    crc temp3 = {0};
+    temp3.crckind = SEQ_INJ;
+    temp3.g_inj = G_AR;
+    temp3.crcdat.seq_tv.ptr.s = cfun;
+    return alloc_crc(&temp3);
+}
 static inline crc *normalize_tv_inj_list(crc* c) {
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
-	crc *clist_ = &cs[0];
-	crc *clist = &cs[1];
-	clist_->crckind = TV_INJ;
-	clist_->p_inj = c->p_inj;
-	clist_->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
-	clist_->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
-	clist->crckind = LIST;
-	clist->crcdat.one_crc = clist_;
-	c->crckind = SEQ_INJ;
-	c->g_inj = G_LI;
-	c->crcdat.seq_tv.ptr.s = clist;
-	return c;
-}
+    crc temp1 = {0};
+    temp1.crckind = TV_INJ;
+    temp1.p_inj = c->p_inj;
+    temp1.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
+    temp1.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
+    crc *clist_ = alloc_crc(&temp1);
 
+    crc *clist = new_list(clist_);
+
+    crc temp2 = {0};
+    temp2.crckind = SEQ_INJ;
+    temp2.g_inj = G_LI;
+    temp2.crcdat.seq_tv.ptr.s = clist;
+    return alloc_crc(&temp2);
+}
 inline crc *normalize_tv_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_inj_int(c); // X! [X:=int] -> id;int!
@@ -181,65 +288,61 @@ inline crc *normalize_tv_inj(crc *c) {
 	}
 }
 
-static inline crc *normalize_tv_proj_int(crc *c) {
-	c->crckind = SEQ_PROJ;
-	c->g_proj = G_INT;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
+static inline crc *normalize_tv_proj_base(crc *c, ground_ty g) {
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ;
+    temp.g_proj = g;
+    temp.p_proj = c->p_proj;
+    temp.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = &crc_id;
+    return alloc_crc(&temp);
 }
-
-static inline crc *normalize_tv_proj_bool(crc *c) {
-	c->crckind = SEQ_PROJ;
-	c->g_proj = G_BOOL;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
-}
-
-static inline crc *normalize_tv_proj_unit(crc *c) {
-	c->crckind = SEQ_PROJ;
-	c->g_proj = G_UNIT;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
-}
-
+static inline crc *normalize_tv_proj_int(crc *c)  { return normalize_tv_proj_base(c, G_INT); }
+static inline crc *normalize_tv_proj_bool(crc *c) { return normalize_tv_proj_base(c, G_BOOL); }
+static inline crc *normalize_tv_proj_unit(crc *c) { return normalize_tv_proj_base(c, G_UNIT); }
 static inline crc *normalize_tv_proj_fun(crc *c) {
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
-	crc *cfun1 = &cs[0];
-	crc *cfun2 = &cs[1];
-	crc *cfun = &cs[2];
-	cfun1->crckind = TV_INJ;
-	cfun1->p_inj = c->p_proj ^ 1;
-	cfun1->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_proj;
-	cfun1->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
-	cfun2->crckind = TV_PROJ;
-	cfun2->p_proj = c->p_proj;
-	cfun2->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
-	cfun2->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
-	cfun->crckind = FUN;
-	cfun->crcdat.two_crc.c1 = cfun1;
-	cfun->crcdat.two_crc.c2 = cfun2;
-	c->crckind = SEQ_PROJ;
-	c->g_proj = G_AR;
-	c->crcdat.seq_tv.ptr.s = cfun;
-	return c;
-}
+    crc temp1 = {0};
+    temp1.crckind = TV_INJ;
+    temp1.p_inj = c->p_proj ^ 1;
+    temp1.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_proj;
+    temp1.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
+    crc *cfun1 = alloc_crc(&temp1);
 
+    crc temp2 = {0};
+    temp2.crckind = TV_PROJ;
+    temp2.p_proj = c->p_proj;
+    temp2.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp2.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
+    crc *cfun2 = alloc_crc(&temp2);
+
+    crc *cfun = new_fun(cfun1, cfun2);
+
+    crc temp3 = {0};
+    temp3.crckind = SEQ_PROJ;
+    temp3.g_proj = G_AR;
+    temp3.p_proj = c->p_proj;
+    temp3.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp3.crcdat.seq_tv.ptr.s = cfun;
+    return alloc_crc(&temp3);
+}
 static inline crc *normalize_tv_proj_list(crc *c) {
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
-	crc *clist_ = &cs[0];
-	crc *clist = &cs[1];
-	clist_->crckind = TV_PROJ;
-	clist_->p_proj = c->p_proj;
-	clist_->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
-	clist_->crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
-	clist->crckind = LIST;
-	clist->crcdat.one_crc = clist_;
-	c->crckind = SEQ_PROJ;
-	c->g_proj = G_LI;
-	c->crcdat.seq_tv.ptr.s = clist;
-	return c;
-}
+    crc temp1 = {0};
+    temp1.crckind = TV_PROJ;
+    temp1.p_proj = c->p_proj;
+    temp1.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp1.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
+    crc *clist_ = alloc_crc(&temp1);
 
+    crc *clist = new_list(clist_);
+
+    crc temp2 = {0};
+    temp2.crckind = SEQ_PROJ;
+    temp2.g_proj = G_LI;
+    temp2.p_proj = c->p_proj;
+    temp2.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp2.crcdat.seq_tv.ptr.s = clist;
+    return alloc_crc(&temp2);
+}
 inline crc *normalize_tv_proj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_int(c);				// X?p [X:=int] -> int?p;id
@@ -251,79 +354,73 @@ inline crc *normalize_tv_proj(crc *c) {
 	}
 }
 
-static inline crc *normalize_tv_proj_inj_int(crc *c) {
-	c->crckind = SEQ_PROJ_INJ;
-	c->g_proj = G_INT;
-	c->g_inj = G_INT;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
+static inline crc *normalize_tv_proj_inj_base(crc *c, ground_ty g) {
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ_INJ;
+    temp.g_proj = g;
+    temp.g_inj = g;
+    temp.p_proj = c->p_proj;
+    temp.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = &crc_id;
+    return alloc_crc(&temp);
 }
-
-static inline crc *normalize_tv_proj_inj_bool(crc *c) {
-	c->crckind = SEQ_PROJ_INJ;
-	c->g_proj = G_BOOL;
-	c->g_inj = G_BOOL;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
-}
-
-static inline crc *normalize_tv_proj_inj_unit(crc *c) {
-	c->crckind = SEQ_PROJ_INJ;
-	c->g_proj = G_UNIT;
-	c->g_inj = G_UNIT;
-	c->crcdat.seq_tv.ptr.s = &crc_id;
-	return c;
-}
-
+static inline crc *normalize_tv_proj_inj_int(crc *c)  { return normalize_tv_proj_inj_base(c, G_INT); }
+static inline crc *normalize_tv_proj_inj_bool(crc *c) { return normalize_tv_proj_inj_base(c, G_BOOL); }
+static inline crc *normalize_tv_proj_inj_unit(crc *c) { return normalize_tv_proj_inj_base(c, G_UNIT); }
 static inline crc *normalize_tv_proj_inj_fun(crc *c) {
-	ty *t1 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
-	ty *t2 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 3);
-	crc *cfun1 = &cs[0];
-	crc *cfun2 = &cs[1];
-	crc *cfun = &cs[2];
-	cfun1->crckind = TV_PROJ_INJ;
-	cfun1->p_proj = c->p_inj ^ 1;
-	cfun1->p_inj = c->p_proj ^ 1;
-	cfun1->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	cfun1->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_proj;
-	cfun1->crcdat.seq_tv.ptr.tv = t1;
-	cfun2->crckind = TV_PROJ_INJ;
-	cfun2->p_proj = c->p_proj;
-	cfun2->p_inj = c->p_inj;
-	cfun2->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
-	cfun2->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
-	cfun2->crcdat.seq_tv.ptr.tv = t2;
-	cfun->crckind = FUN;
-	cfun->crcdat.two_crc.c1 = cfun1;
-	cfun->crcdat.two_crc.c2 = cfun2;
-	c->crckind = SEQ_PROJ_INJ;
-	c->g_inj = G_AR;
-	c->g_proj = G_AR;
-	c->crcdat.seq_tv.ptr.s = cfun;
-	return c;
-}
+    ty *t1 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.left;
+    ty *t2 = c->crcdat.seq_tv.ptr.tv->tydat.tyfun.right;
 
+    crc temp1 = {0};
+    temp1.crckind = TV_PROJ_INJ;
+    temp1.p_proj = c->p_inj ^ 1;
+    temp1.p_inj = c->p_proj ^ 1;
+    temp1.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
+    temp1.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_proj;
+    temp1.crcdat.seq_tv.ptr.tv = t1;
+    crc *cfun1 = alloc_crc(&temp1);
+
+    crc temp2 = {0};
+    temp2.crckind = TV_PROJ_INJ;
+    temp2.p_proj = c->p_proj;
+    temp2.p_inj = c->p_inj;
+    temp2.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp2.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
+    temp2.crcdat.seq_tv.ptr.tv = t2;
+    crc *cfun2 = alloc_crc(&temp2);
+
+    crc *cfun = new_fun(cfun1, cfun2);
+
+    crc temp3 = {0};
+    temp3.crckind = SEQ_PROJ_INJ;
+    temp3.g_proj = G_AR;
+    temp3.g_inj = G_AR;
+    temp3.p_proj = c->p_proj;
+    temp3.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp3.crcdat.seq_tv.ptr.s = cfun;
+    return alloc_crc(&temp3);
+}
 static inline crc *normalize_tv_proj_inj_list(crc *c) {
-	ty *t = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
-	crc *cs = (crc*)GC_MALLOC(sizeof(crc) * 2);
-	crc *clist_ = &cs[0];
-	crc *clist = &cs[1];
-	clist_->crckind = TV_PROJ_INJ;
-	clist_->p_proj = c->p_proj;
-	clist_->p_inj = c->p_inj;
-	clist_->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
-	clist_->crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
-	clist_->crcdat.seq_tv.ptr.tv = t;
-	clist->crckind = LIST;
-	clist->crcdat.one_crc = clist_;
-	c->crckind = SEQ_PROJ_INJ;
-	c->g_inj = G_LI;
-	c->g_proj = G_LI;
-	c->crcdat.seq_tv.ptr.s = clist;
-	return c;
-}
+    crc temp1 = {0};
+    temp1.crckind = TV_PROJ_INJ;
+    temp1.p_proj = c->p_proj;
+    temp1.p_inj = c->p_inj;
+    temp1.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp1.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
+    temp1.crcdat.seq_tv.ptr.tv = c->crcdat.seq_tv.ptr.tv->tydat.tylist;
+    crc *clist_ = alloc_crc(&temp1);
 
+    crc *clist = new_list(clist_);
+
+    crc temp3 = {0};
+    temp3.crckind = SEQ_PROJ_INJ;
+    temp3.g_proj = G_LI;
+    temp3.g_inj = G_LI;
+    temp3.p_proj = c->p_proj;
+    temp3.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp3.crcdat.seq_tv.ptr.s = clist;
+    return alloc_crc(&temp3);
+}
 inline crc *normalize_tv_proj_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_inj_int(c);                    // ?pX!q [X:=int] -> int?p;id;int!
@@ -335,56 +432,27 @@ inline crc *normalize_tv_proj_inj(crc *c) {
 	}
 }
 
-static inline crc *normalize_tv_proj_occur_int(crc *c) {
-	c->crckind = SEQ_PROJ_BOT;
-	c->g_proj = G_INT;
-	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
-	bot->p_proj = c->p_inj;
-	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.s = bot;
-	return c;
-}
+static inline crc *normalize_tv_proj_occur_base(crc *c, ground_ty g) {
+    crc bot_temp = {0};
+    bot_temp.crckind = BOT;
+    bot_temp.botkind = 1;
+    bot_temp.p_proj = c->p_inj;
+    bot_temp.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
+    crc *bot = alloc_crc(&bot_temp);
 
-static inline crc *normalize_tv_proj_occur_bool(crc *c) {
-	c->crckind = SEQ_PROJ_BOT;
-	c->g_proj = G_BOOL;
-	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
-	bot->p_proj = c->p_inj;
-	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.s = bot;
-	return c;
+    crc temp = {0};
+    temp.crckind = SEQ_PROJ_BOT;
+    temp.g_proj = g;
+    temp.p_proj = c->p_proj;
+    temp.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_proj;
+    temp.crcdat.seq_tv.ptr.s = bot;
+    return alloc_crc(&temp);
 }
-
-static inline crc *normalize_tv_proj_occur_unit(crc *c) {
-	c->crckind = SEQ_PROJ_BOT;
-	c->g_proj = G_UNIT;
-	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
-	bot->p_proj = c->p_inj;
-	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.s = bot;
-	return c;
-}
-
-static inline crc *normalize_tv_proj_occur_fun(crc *c) {
-	c->crckind = SEQ_PROJ_BOT;
-	c->g_proj = G_AR;
-	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
-	bot->p_proj = c->p_inj;
-	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.s = bot;
-	return c;
-}
-
-static inline crc *normalize_tv_proj_occur_list(crc *c) {
-	c->crckind = SEQ_PROJ_BOT;
-	c->g_proj = G_LI;
-	crc *bot = new_bot(c->p_proj, c->crcdat.seq_tv.rid_proj, 1);
-	bot->p_proj = c->p_inj;
-	bot->crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
-	c->crcdat.seq_tv.ptr.s = bot;
-	return c;
-}
-
+static inline crc *normalize_tv_proj_occur_int(crc *c)  { return normalize_tv_proj_occur_base(c, G_INT); }
+static inline crc *normalize_tv_proj_occur_bool(crc *c) { return normalize_tv_proj_occur_base(c, G_BOOL); }
+static inline crc *normalize_tv_proj_occur_unit(crc *c) { return normalize_tv_proj_occur_base(c, G_UNIT); }
+static inline crc *normalize_tv_proj_occur_fun(crc *c)  { return normalize_tv_proj_occur_base(c, G_AR); }
+static inline crc *normalize_tv_proj_occur_list(crc *c) { return normalize_tv_proj_occur_base(c, G_LI); }
 inline crc *normalize_tv_proj_occur(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {
 		case BASE_INT: return normalize_tv_proj_occur_int(c);                    // ?p⊥Xq [X:=int] -> int?p;⊥q
@@ -396,30 +464,6 @@ inline crc *normalize_tv_proj_occur(crc *c) {
 	}
 }
 
-static inline crc *normalize_crc(crc *c) {
-	switch(c->crckind) {
-		case TV_INJ: {
-			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			return normalize_tv_inj(c);
-		}
-		case TV_PROJ: {
-			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			return normalize_tv_proj(c);
-		}
-		case TV_PROJ_INJ: {
-			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			return normalize_tv_proj_inj(c);
-		}
-		case TV_PROJ_OCCUR: {
-			c->crcdat.seq_tv.ptr.tv = ty_find(c->crcdat.seq_tv.ptr.tv);
-			return normalize_tv_proj_occur(c);
-		}
-		default:
-			printf("normalize_crc bad. crckind: %d", c->crckind);
-			exit(1);
-	}
-}
-
 inline crc *compose_funs(crc *c1, crc *c2) {
 	if (c1 == &crc_id) return c2;
 	if (c2 == &crc_id) return c1;
@@ -428,11 +472,7 @@ inline crc *compose_funs(crc *c1, crc *c2) {
 	if (cfun1 == &crc_id && cfun2 == &crc_id) { //s=>t;;s'=>t' -> id (if s=id and t=id)
 		return &crc_id;
 	} else {
-		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
-		retc->crckind = FUN;
-		retc->crcdat.two_crc.c1 = cfun1;
-		retc->crcdat.two_crc.c2 = cfun2;
-		return retc;
+		return new_fun(cfun1, cfun2);
 	}
 }
 
@@ -443,10 +483,7 @@ inline crc *compose_lists(crc *c1, crc *c2) {
 	if (clist == &crc_id) {
 		return &crc_id;
 	} else {
-		crc *retc = (crc*)GC_MALLOC(sizeof(crc));
-		retc->crckind = LIST;
-		retc->crcdat.one_crc = clist;
-		return retc;
+		return new_list(clist);
 	}
 }
 
@@ -545,7 +582,7 @@ inline void dti(const ground_ty g, ty *tv) {
 	}
 }
 
-crc* compose(crc *c1, crc *c2) {
+static crc* internal_compose(crc *c1, crc *c2) {
 	// printf("c1: %d, c2: %d\n", c1->crckind, c2->crckind);
 	if (c2 == &crc_id) return c1; // s;;id -> s
 	// if (c2->crckind == BOT) return c2; 
@@ -953,6 +990,29 @@ crc* compose(crc *c1, crc *c2) {
 	COMPOSE_BAD: 
 	printf("compose bad. c1: %d, c2: %d\n", c1->crckind, c2->crckind);
 	exit(1);
+}
+
+crc* compose(crc *c1, crc *c2) {
+	#ifdef HASH
+    if (c2 == &crc_id) return c1;
+    if (c1 == &crc_id) return c2;
+
+    uint32_t hash = (((uintptr_t)c1 >> 3) ^ ((uintptr_t)c2 >> 3)) % CACHE_SIZE;
+
+    if (compose_cache[hash].c1 == c1 && compose_cache[hash].c2 == c2) {
+        return compose_cache[hash].result;
+    }
+
+    crc *result = internal_compose(c1, c2);
+
+    compose_cache[hash].c1 = c1;
+    compose_cache[hash].c2 = c2;
+    compose_cache[hash].result = result;
+
+    return result;
+	#else //HASH
+    return internal_compose(c1, c2);
+	#endif //HASH
 }
 
 #endif
