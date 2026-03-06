@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Union
 
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
-    ratio_with_delta_ci, integer_xticks, save_fig,
+    ratio_with_delta_ci, integer_xticks, save_fig, get_plot_style
 )
 
 def _binomial_boundaries_between(n_total: int):
@@ -94,13 +94,22 @@ def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
             d = valid_data[c]
             marker = markers[i % len(markers)]
 
-            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=marker, capsize=5, markersize=3,
+            style = get_plot_style(c, i)
+
+            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=style["marker"], color=style["color"], capsize=5, markersize=3,
                     label=f'{c}/{base} Ratio (95% CI)')
         
         # 目盛はデータ点のみ(整数)、描画範囲は [0.5, 2^n+0.5]
         if all_ticks:
             integer_xticks(ax, list(all_ticks))
         ax.set_xlim(0.5, n_total + 0.5)
+
+        # Y軸を対数スケールにする (ベースを2や10にする)
+        ax.set_yscale('log', base=2)
+        
+        # 目盛りのラベルを指数表記ではなく「0.5, 1, 2」のようにするための設定
+        from matplotlib.ticker import FuncFormatter
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:g}'.format(y)))
 
         # 区切りの縦線（最後の 2^n+0.5 は描かない）
         for x in midlines:
@@ -115,15 +124,21 @@ def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
         if not is_multi:
             c = comps[0]
             d = valid_data[c]
+            style = get_plot_style(c, 0)
             bundle = sorted(zip(ns, ratios, cis), key=lambda x: x[1])
             xs = list(range(1, len(bundle) + 1))
             ys = [b[1] for b in bundle]; ycis = [b[2] for b in bundle]
 
             fig, ax = plt.subplots(figsize=(11, 6))
-            ax.errorbar(xs, ys, yerr=ycis, fmt='d', capsize=3, markersize=2, rasterized=True,
+            ax.errorbar(xs, ys, yerr=ycis, fmt=style["marker"], color=style["color"], capsize=3, markersize=2, rasterized=True,
                         label=f'{comp_label}/{base} Ratio (95% CI)')
             ax.axhline(1, color='gray', linestyle='--', label=f'{base} = 1 Baseline')
             integer_xticks(ax, xs)
+            # Y軸を対数スケールにする (ベースを2や10にする)
+            ax.set_yscale('log', base=2)
+            # 目盛りのラベルを指数表記ではなく「0.5, 1, 2」のようにするための設定
+            from matplotlib.ticker import FuncFormatter
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:g}'.format(y)))
             ax.set_xlabel(rcfg["xlabel"] + " (filtered & sorted)")
             ax.set_ylabel(rcfg["ylabel"])
             ax.set_title(f'{rcfg["title_prefix"]} (filtered & sorted): {bench}')

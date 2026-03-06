@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from typing import List, Dict, Any, Union
 
 from benchviz import (
-    load_config, ingest_latest_as_map, ensure_dir,
+    load_config, ingest_latest_as_map, ensure_dir, get_plot_style
 )
 
 from matplotlib.ticker import FixedLocator
@@ -92,12 +92,15 @@ def plot_scattered(base: str, comp: Union[str, List[str]], static: bool):
         # --- 3. プロット ---
         fig, ax = plt.subplots(figsize=(8, 6))
 
-        # Base の描画 (常に黒丸)
+        # Base の描画
         b_ns = sorted(base_data.keys())
         if b_ns:
             b_means = [base_data[n][0] for n in b_ns]
             b_cis = [base_data[n][1] for n in b_ns]
-            ax.errorbar(b_ns, b_means, yerr=b_cis, fmt='o', color='black',
+
+            base_style = get_plot_style(base, -1)
+
+            ax.errorbar(b_ns, b_means, yerr=b_cis, fmt=base_style["marker"], color=base_style["color"], 
                         capsize=5, markersize=4, alpha=0.7, 
                         label=f'{base} (Base)')
 
@@ -116,8 +119,10 @@ def plot_scattered(base: str, comp: Union[str, List[str]], static: bool):
             label_str = f'{c}'
             if not is_multi:
                 label_str += ' mode (95% CI)'
+
+            style = get_plot_style(c, i)
             
-            ax.errorbar(c_ns, c_means, yerr=c_cis, fmt=marker,
+            ax.errorbar(c_ns, c_means, yerr=c_cis, fmt=style["marker"], color=style["color"],
                         capsize=5, markersize=4, alpha=0.8,
                         label=label_str)
 
@@ -132,6 +137,7 @@ def plot_scattered(base: str, comp: Union[str, List[str]], static: bool):
         ax.xaxis.set_major_locator(FixedLocator(ticks))
         ax.set_xlim(min(ticks) - 0.5, max(ticks) + 0.5)
         ax.set_xticklabels([]); ax.tick_params(axis='x', length=0)
+        ax.set_ylim(bottom=0)
         ax.grid(True, axis='y', linestyle='--', alpha=0.35)
         fig.tight_layout()
         fig.savefig(os.path.join(out_dir, f'plot_{bench}_{base}-{comp_label}_confidence{fs}.png'), dpi=150)

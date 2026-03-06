@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Union
 from matplotlib.ticker import FixedLocator
 
 from benchviz import (
-    load_config, ingest_latest_as_map, ensure_dir
+    load_config, ingest_latest_as_map, ensure_dir, get_plot_style
 )
 
 def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_name: str, metric_label: str = None):
@@ -81,11 +81,12 @@ def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_nam
         # --- プロット ---
         fig, ax = plt.subplots(figsize=(8, 6))
 
-        # Base (常に黒丸)
+        # Base
         b_ns = sorted(base_data.keys())
         if b_ns:
             b_vals = [base_data[n] for n in b_ns]
-            ax.plot(b_ns, b_vals, 'o', color='black', alpha=0.7, label=f'{base} (Base)')
+            base_style = get_plot_style(base, -1)
+            ax.plot(b_ns, b_vals, marker=base_style["marker"], color=base_style["color"], linestyle='', alpha=0.7, label=f'{base} (Base)')
 
         # Comps
         for i, c in enumerate(comps):
@@ -96,8 +97,10 @@ def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_nam
             
             c_vals = [c_dict[n] for n in c_ns]
             marker = markers[i % len(markers)]
-            
-            ax.plot(c_ns, c_vals, marker=marker, linestyle='', alpha=0.8, label=str(c))
+
+            style = get_plot_style(c, i)
+
+            ax.plot(c_ns, c_vals, marker=style["marker"], color=style["color"], linestyle='', alpha=0.8, label=str(c))
 
         # 軸設定
         ticks = sorted(list(all_ns))
@@ -108,6 +111,7 @@ def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_nam
         
         ax.set_xticklabels([])
         ax.tick_params(axis='x', length=0)
+        ax.set_ylim(bottom=0)
 
         ax.set_xlabel("Pattern for Replacing Type Variables with Dyn (n)")
         ax.set_ylabel(metric_label)

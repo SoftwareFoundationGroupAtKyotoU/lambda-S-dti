@@ -20,13 +20,22 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    # ("BLC", ["ALC", "SLC"]),
     ("SLNC", ["SLHC", "ALNC", "ALHC"]),
     ("SLHC", ["ALHC"]),
     ("STATICENC", ["ALHC", "SLHC", "GRIFT", "GRIFTC"]),
     ("GRIFT", ["ALHC", "SLHC", "GRIFTC"]),
     ("GRIFTC", ["ALHC", "SLHC"]),
 ]
+
+STYLE_MAP = {
+    "SLNC": {"color": "tab:blue", "marker": "s"},
+    "ALNC": {"color": "tab:orange", "marker": "^"},
+    "SLHC": {"color": "tab:green", "marker": "d"},
+    "ALHC": {"color": "tab:purple", "marker": "<"},
+    "GRIFT": {"color": "tab:red", "marker": "v"},
+    "GRIFTC": {"color": "tab:brown", "marker": ">"},
+    "STATICENC": {"color": "tab:pink", "marker": "p"},
+}
 
 # =========================
 # 設定まわり
@@ -137,6 +146,23 @@ def check_pair_exists(log_dir: str, base: str, comp: Union[str, List[str]], stat
         has_comp = any(is_target_file(f, comp, static) for f in files)
 
     return has_base and has_comp
+
+def get_plot_style(comp_name: str, index: int) -> dict:
+    """コンポーネント名から固定の色とマーカーを取得する"""
+    if comp_name in STYLE_MAP:
+        return STYLE_MAP[comp_name]
+    
+    # 未定義の場合はmatplotlibのデフォルトサイクルから取得
+    if plt is None:
+        return {"color": "black", "marker": "o"}
+    
+    fallback_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    fallback_markers = ['o', 'h', 'D', '+', 'x']
+    return {
+        "color": fallback_colors[index % len(fallback_colors)],
+        "marker": fallback_markers[index % len(fallback_markers)]
+    }
+
 
 # =========================
 # 共通 I/O

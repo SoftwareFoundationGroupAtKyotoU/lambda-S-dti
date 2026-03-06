@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Union
 
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
-    ratio_with_delta_ci, integer_xticks, save_fig, robust_left_outliers_log10,
+    ratio_with_delta_ci, integer_xticks, save_fig, robust_left_outliers_log10, get_plot_style
 )
 
 def _get_promoted_bytes(slot, mode):
@@ -135,10 +135,11 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
                 continue
             d = valid_data[c]
             marker = markers[i % len(markers)]
+            style = get_plot_style(c, i)
 
             label_str = f'{c}/{base} Ratio (95% CI)'
 
-            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=marker,
+            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=style["marker"], color=style["color"],
                     capsize=5, markersize=3, label=label_str)
             s = valid_data[c]['stats']
         
@@ -160,11 +161,12 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
         if not is_multi:
             c = comps[0]
             d = valid_data[c]
+            style = get_plot_style(c, 0)
             bundle = sorted(zip(filt_ns, filt_ratio, filt_ci), key=lambda x: x[1])
             xs = list(range(1, len(bundle) + 1))
             ys = [b[1] for b in bundle]; ycis = [b[2] for b in bundle]
             fig, ax = plt.subplots(figsize=(11, 6))
-            ax.errorbar(xs, ys, yerr=ycis, fmt='d',
+            ax.errorbar(xs, ys, yerr=ycis, fmt=style["marker"], color=style["color"],
                         capsize=3, markersize=2, rasterized=True, label=f'{comp_label}/{bench} Ratio (95% CI)')
             ax.axhline(1, color='gray', linestyle='--', label=f'{base} = 1 Baseline')
             ax.set_xlim(0.5, len(xs) + 0.5); ax.set_xticks([])
