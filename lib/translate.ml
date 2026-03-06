@@ -177,10 +177,11 @@ module ITGL = struct
       let us1 = TyScheme (xys, u1) in
       let f2, u2 = translate_exp (Environment.add x us1 env) e2 in
       CC.LetExp (x, xys, f1, f2), u2
-    | LetExp (r, x, e1, e2) ->
-      let _, u1 = translate_exp env e1 in
-      let e = AppExp (r, FunIExp (r, x, u1, e2), e1) in
-      translate_exp env e
+    | LetExp (_, x, e1, e2) ->
+      let f1, u1 = translate_exp env e1 in
+      let us1 = TyScheme ([], u1) in
+      let f2, u2 = translate_exp (Environment.add x us1 env) e2 in
+      CC.LetExp (x, [], f1, f2), u2
     | NilExp (_, u) -> CC.NilExp u, TyList u
     | ConsExp (r, e1, e2) ->
       let f1, u1 = translate_exp env e1 in
