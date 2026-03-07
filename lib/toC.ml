@@ -318,13 +318,13 @@ let rec toC_exp ppf f = match f with
     | CApp (y, z) -> (* TODO *)
       if CrcManager.mem_inj z then
         let tag = CrcManager.find_inj z in
-        fprintf ppf "%s = (%s << 3) | G_%a;\n"
+        fprintf ppf "#ifdef PROFILE\ncast_count++;\n#endif\n%s = (%s << 3) | G_%a;\n"
           x
           y
           toC_tag tag
       else if CrcManager.mem_proj z then
         let (tag, rid, p) = CrcManager.find_proj z in
-        fprintf ppf "if ((uint8_t)(%s & 0b111) == G_%a) {\n%s = %s >> 3;\n} else {\nblame(%d, %d);\n}"
+        fprintf ppf "#ifdef PROFILE\ncast_count++;\n#endif\nif ((uint8_t)(%s & 0b111) == G_%a) {\n%s = %s >> 3;\n} else {\nblame(%d, %d);\n}"
           y
           toC_tag tag
           x
