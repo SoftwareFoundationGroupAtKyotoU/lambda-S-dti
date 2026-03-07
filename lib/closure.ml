@@ -135,7 +135,8 @@ module KNorm = struct
         | (u, f) :: t -> destruct_uandf t (u::ru) (fun x -> rf (f x))
         | [] -> ru, rf 
       in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in
-      f (Cls.AppTy (x, List.length @@ Environment.find x args, List.length tvs, us))
+      let (zs, outer_tvs_len) = Environment.find x args in
+      f (Cls.AppTy (x, List.length zs, outer_tvs_len, us))
     | CastExp (x, u1, u2, (r, p)) -> 
       let u1, udeclfun1 = ty_tv tvs u1 in 
       let u2, udeclfun2 = ty_tv tvs u2 in 
@@ -180,7 +181,7 @@ module KNorm = struct
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
       let fundef = Cls.FundefD { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f1' } in
       if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
-      let f2' = toCls_exp known' tvs (Environment.add x zs args) f2 in
+      let f2' = toCls_exp known' tvs (Environment.add x (zs, List.length tvs) args) f2 in
       if V.mem x (Cls.fv_exp f2') then
         Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'
@@ -211,7 +212,7 @@ module KNorm = struct
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
       let fundef = Cls.FundefM { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f1' } in
       if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
-      let f2' = toCls_exp known' tvs (Environment.add x zs args) f2 in
+      let f2' = toCls_exp known' tvs (Environment.add x (zs, List.length tvs) args) f2 in
       if V.mem x (Cls.fv_exp f2') then
         Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'

@@ -8,6 +8,7 @@
 #include "fun.h"
 #include "lst.h"
 #include "app.h"
+#include "ty.h"
 
 #include "capp.h"
 
@@ -441,6 +442,7 @@ value coerce(value v, crc *s) {
 			#endif
 		}
 		case TV_INJ: {
+			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
 			s = normalize_tv_inj(s);
 			if (s == &crc_inj_INT) return tag_value(v, G_INT);
 			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
@@ -513,6 +515,7 @@ value coerce(value v, crc *s) {
 		}
 
 		case TV_PROJ: { // v<X?p> = u<<d>><X?p>
+			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
 			s = normalize_tv_proj(s);
 			if (s->crckind != TV_PROJ) goto CASE_SEQ_PROJ;
 			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
@@ -521,6 +524,7 @@ value coerce(value v, crc *s) {
 		}
 
 		case TV_PROJ_INJ: { // v<?pX!> = u<<d>><?pX!>
+			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
 			s = normalize_tv_proj_inj(s);
 			if (s->crckind != TV_PROJ_INJ) goto CASE_SEQ_PROJ_INJ;
 			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
@@ -529,6 +533,7 @@ value coerce(value v, crc *s) {
 		}
 
 		case TV_PROJ_OCCUR: {
+			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
 			s = normalize_tv_proj_occur(s);
 			if (s->crckind != TV_PROJ_OCCUR) goto CASE_SEQ_PROJ_BOT;
 			dti(tag_of(v), s->crcdat.seq_tv.ptr.tv);
