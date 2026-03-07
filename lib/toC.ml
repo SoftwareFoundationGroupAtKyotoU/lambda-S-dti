@@ -289,12 +289,13 @@ let rec toC_exp ppf f = match f with
         y
         z
     | AppTy (y, k, n, tas) ->
-      fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a" (* TODO *)
+      let total_env_size = k + n + List.length tas in
+      fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a"
         x
-        (k + n + List.length tas)
+        total_env_size
         x
         y
-        toC_tas (y, k, n, x, tas)
+        toC_tas (y, k, total_env_size, x, tas)
     | Cast (y, u1, u2, (r, p)) -> 
       (*
       Insert(x, y:u1=>^(r, p)u2)
