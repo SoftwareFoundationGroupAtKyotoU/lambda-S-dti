@@ -1,2 +1,5 @@
 Dockerfile
 .git
+logs/*
+result/*
+result_C/*
