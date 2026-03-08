@@ -23,17 +23,20 @@
 
 ;; --- OCamlのロジックの翻訳（ここだけDyn変異の対象になる） ---
 
-(define (mklist [n : Int] [i : Int] [acc : (Rec List (-> (Tuple Bool (Tuple Int List))))])
-  : (Rec List (-> (Tuple Bool (Tuple Int List))))
-  (if (= i n)
-      acc
-      (mklist n (+ i 1) (cons i acc))))
+(define (mklist [n : Int])
+  : (Int -> ((Rec List (-> (Tuple Bool (Tuple Int List)))) -> (Rec List (-> (Tuple Bool (Tuple Int List))))))
+  (lambda ([i : Int])
+    (lambda ([acc : (Rec List (-> (Tuple Bool (Tuple Int List))))])
+      (if (= i n)
+          acc
+          (((mklist n) (+ i 1)) (cons i acc))))))
 
-(define (map [f : (Int -> Int)] [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))])
-  : (Rec List (-> (Tuple Bool (Tuple Int List))))
-  (if (is-empty lst)
-      (empty-list)
-      (cons (f (head lst)) (map f (tail lst)))))
+(define (map [f : (Int -> Int)])
+  : ((Rec List (-> (Tuple Bool (Tuple Int List)))) -> (Rec List (-> (Tuple Bool (Tuple Int List)))))
+  (lambda ([lst : (Rec List (-> (Tuple Bool (Tuple Int List))))])
+    (if (is-empty lst)
+        (empty-list)
+        (cons (f (head lst)) ((map f) (tail lst))))))
 
 (define (double [x : Int]) : Int
   (+ x x))
@@ -42,7 +45,9 @@
 (define (benchmark) : Unit
   (let ([n : Int (read-int)])
     (let ([xs : (Rec List (-> (Tuple Bool (Tuple Int List))))
-              (mklist n 0 (empty-list))])
+              ;; mklist n 0 (empty-list) のカリー化呼び出し
+              (((mklist n) 0) (empty-list))])
       (let ([mapped : (Rec List (-> (Tuple Bool (Tuple Int List))))
-                    (map double xs)])
+                    ;; map double xs のカリー化呼び出し
+                    ((map double) xs)])
         ()))))
