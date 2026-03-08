@@ -28,6 +28,7 @@ typedef struct crc {
 	uint8_t p_proj;
 	uint8_t p_inj;
 	uint8_t botkind; // 0 for BOT, 1 for OCCUR
+	uint8_t has_tv;
 	// padding: 2byte
 
 	// payload: 16byte
