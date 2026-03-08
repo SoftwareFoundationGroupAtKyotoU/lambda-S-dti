@@ -18,6 +18,7 @@ let files = [
   "fib";
   "fold";
   "fold_mono";
+  "incsum";
   "loop";
   "loop_mono";
   "map";

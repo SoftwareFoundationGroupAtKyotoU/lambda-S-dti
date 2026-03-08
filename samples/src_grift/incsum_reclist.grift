@@ -1,0 +1,52 @@
+;; リスト型の表現: 引数なしの関数を実行するとタプルが返る
+;; (Rec List (-> (Tuple Bool (Tuple Int List))))
+
+(define (empty-list) : (Rec List (-> (Tuple Bool (Tuple Int List))))
+  (letrec ([nil : (Rec List (-> (Tuple Bool (Tuple Int List))))
+                (lambda ()
+                  (tuple #t (tuple 0 nil)))])
+    nil))
+
+(define (cons [x : Int] [xs : (Rec List (-> (Tuple Bool (Tuple Int List))))])
+  : (Rec List (-> (Tuple Bool (Tuple Int List))))
+  (lambda () (tuple #f (tuple x xs))))
+
+(define (is-empty [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))]) : Bool
+  (tuple-proj (lst) 0))
+
+(define (head [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))]) : Int
+  (tuple-proj (tuple-proj (lst) 1) 0))
+
+(define (tail [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))])
+  : (Rec List (-> (Tuple Bool (Tuple Int List))))
+  (tuple-proj (tuple-proj (lst) 1) 1))
+
+;; --- OCamlのロジックの翻訳（ここからDyn変異の対象） ---
+
+;; 1. リストの生成 (Int -> List)
+(define (countdown [n : Int]) : (Rec List (-> (Tuple Bool (Tuple Int List))))
+  (if (<= n 0)
+      (empty-list)
+      (cons n (countdown (- n 1)))))
+
+;; 2. リストの変換 (List -> List)
+(define (inc-list [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))]) : (Rec List (-> (Tuple Bool (Tuple Int List))))
+  (if (is-empty lst)
+      (empty-list)
+      (cons (+ (head lst) 1) (inc-list (tail lst)))))
+
+;; 3. リストの集計 (List -> Int)
+(define (sum-list [lst : (Rec List (-> (Tuple Bool (Tuple Int List))))]) : Int
+  (if (is-empty lst)
+      0
+      (+ (head lst) (sum-list (tail lst)))))
+
+;; --- ベンチマークのエントリポイント ---
+(define (benchmark) : Unit
+  (let ([n : Int (read-int)])
+    (let ([xs : (Rec List (-> (Tuple Bool (Tuple Int List))))
+              (countdown n)])
+      (let ([ys : (Rec List (-> (Tuple Bool (Tuple Int List))))
+                (inc-list xs)])
+        (let ([res : Int (sum-list ys)])
+          ())))))

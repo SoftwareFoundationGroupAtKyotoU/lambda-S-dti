@@ -1,0 +1,50 @@
+;; リスト型の表現: (Tuple Bool Int Dyn)
+;; 代数的データ型(Variant)のメモリレイアウトをタプルでエミュレートする
+
+(define (empty-list) : (Tuple Bool Int Dyn)
+  ;; 空リスト: タグを #t にし、値はダミー(0, #f)を入れる
+  (tuple #t 0 #f))
+
+(define (cons [x : Int] [xs : (Tuple Bool Int Dyn)]) : (Tuple Bool Int Dyn)
+  ;; Consセル: タグを #f にし、要素と次のリストを格納
+  (tuple #f x xs))
+
+(define (is-empty [lst : (Tuple Bool Int Dyn)]) : Bool
+  (tuple-proj lst 0))
+
+(define (head [lst : (Tuple Bool Int Dyn)]) : Int
+  (tuple-proj lst 1))
+
+(define (tail [lst : (Tuple Bool Int Dyn)]) : (Tuple Bool Int Dyn)
+  ;; 取り出すときだけ Dyn から元のタプル型へキャスト(タグチェック)を行う
+  ;; これがGriftの本来の「漸進的型付け」のオーバーヘッドとなる
+  (ann (tuple-proj lst 2) (Tuple Bool Int Dyn)))
+
+;; --- 1引数関数によるパイプライン処理 ---
+
+;; 1. リストの生成
+(define (countdown [n : Int]) : (Tuple Bool Int Dyn)
+  (if (<= n 0)
+      (empty-list)
+      (cons n (countdown (- n 1)))))
+
+;; 2. リストの変換
+(define (inc-list [lst : (Tuple Bool Int Dyn)]) : (Tuple Bool Int Dyn)
+  (if (is-empty lst)
+      (empty-list)
+      (cons (+ (head lst) 1) (inc-list (tail lst)))))
+
+;; 3. リストの集計
+(define (sum-list [lst : (Tuple Bool Int Dyn)]) : Int
+  (if (is-empty lst)
+      0
+      (+ (head lst) (sum-list (tail lst)))))
+
+;; --- ベンチマークのエントリポイント ---
+(define (benchmark) : Unit
+  (let ([n : Int (read-int)])
+    (let ([xs : (Tuple Bool Int Dyn) (countdown n)])
+      (let ([ys : (Tuple Bool Int Dyn) (inc-list xs)])
+        (let ([res : Int (sum-list ys)])
+          ;; (print-int res) ; 必要に応じて結果を出力
+          ())))))

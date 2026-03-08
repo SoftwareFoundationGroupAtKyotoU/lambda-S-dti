@@ -21,10 +21,9 @@ except Exception:
 
 TARGET_PAIRS = [ # (base, comp)
     ("SLNC", ["SLHC", "ALNC", "ALHC"]),
-    ("SLHC", ["ALHC"]),
-    ("STATICENC", ["ALHC", "SLHC", "GRIFT", "GRIFTC"]),
-    ("GRIFT", ["ALHC", "SLHC", "GRIFTC"]),
-    ("GRIFTC", ["ALHC", "SLHC"]),
+    ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFT", "GRIFTC"]),
+    ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC"]),
+    ("GRIFT", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFTC"]),
 ]
 
 STYLE_MAP = {
@@ -57,7 +56,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
             "church_65532",
-            "evenodd", "fib", "fold", "loop", "map",
+            "evenodd", "fib", "fold", "loop", "map", "incsum",
             "mklist", "tak", "zipwith", 
             "map_mono", "fold_mono", "zipwith_mono", "loop_mono"
         ],
