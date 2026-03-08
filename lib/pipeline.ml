@@ -257,7 +257,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then 
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir 
       file 
       mode_str
@@ -297,9 +297,13 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "Generated C file: %s (Execution delegated)@." out_path *)
-    let i = Sys.command (build_clang_cmd opt_file ~config ~bench:false ~profile:false) in
+    let cmd = build_clang_cmd opt_file ~config ~bench:false ~profile:false in
+    if config.debug then fprintf err_formatter "@.%s@." cmd;
+    let i = Sys.command cmd in
     if i != 0 then raise @@ Compile_bad "clang fail";
-    let i = Sys.command ("../result/" ^ filename ^ ".out") in
+    let cmd = ("../result/" ^ filename ^ ".out") in
+    if config.debug then fprintf err_formatter "@.%s@." cmd;
+    let i = Sys.command cmd in
     if i != 0 then raise @@ Compile_bad ".out fail";
     ()
   | None ->
@@ -309,9 +313,13 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "%s" (Compiler.build_cmd_for_stdin ()); *)
-    let i = Sys.command (build_clang_cmd opt_file ~config ~bench:false ~profile:false) in
+    let cmd = build_clang_cmd opt_file ~config ~bench:false ~profile:false in
+    if config.debug then fprintf err_formatter "@.%s@." cmd;
+    let i = Sys.command cmd in
     if i != 0 then raise @@ Compile_bad "clang fail";
-    let i = Sys.command "result/stdin.out" in
+    let cmd = "result/stdin.out" in
+    if config.debug then fprintf err_formatter "@.%s@." cmd;
+    let i = Sys.command cmd in
     if i != 0 then raise @@ Compile_bad ".out fail";
     ()
 
