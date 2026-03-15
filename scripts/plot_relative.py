@@ -1,149 +1,111 @@
+# plot_relative.py
 import os
-import math
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Dict, Any, Union
+from typing import List, Union
+import matplotlib.ticker as ticker
 
 from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
-    ratio_with_delta_ci, integer_xticks, save_fig, get_plot_style
+    ratio_with_delta_ci, integer_xticks, save_fig, get_plot_style,
+    parse_comp_args, draw_binomial_boundaries,
+    setup_plot_style, format_comp_label, apply_decorations
 )
 
-def _binomial_boundaries_between(n_total: int):
+def apply_smart_log2_scale(ax):
     """
-    n_total が 2^n と仮定し、"区切りの縦線" を入れる位置を返す。
-    例) n=3, 累積 = [1,4,7,8] -> 線は [1.5, 4.5, 7.5]
+    Y軸を対数スケール（底2）にしつつ、値の幅が狭い場合は
+    自動で細かい目盛り（0.9, 1.0, 1.1など）を補完する
     """
-    if n_total <= 0:
-        return []
-    n = round(math.log2(n_total))
-    if (1 << n) != n_total:
-        n = int(math.log2(max(1, n_total)))
-    cum = 0
-    mids = []
-    for k in range(n + 1):
-        cum += math.comb(n, k)
-        if cum < (1 << n):        # 最後(2^n)は除外
-            mids.append(cum + 0.5)
-    return mids
+    ax.set_yscale('log', base=2)
+    ymin, ymax = ax.get_ylim()
+    
+    # 最大値と最小値の比率が4倍未満（例: 0.8 〜 1.2 など狭い範囲）の場合
+    if ymax / ymin < 4:
+        ax.yaxis.set_major_locator(ticker.AutoLocator())
+    else:
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=2))
+        
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: '{:g}'.format(y)))
 
 def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
-    if static:
-        fs = "_fs"
-    else :
-        fs = ""
+    setup_plot_style() # ★ 論文用スタイルを適用
 
-    # comp がリストの場合は "|" で結合して正規表現を作る
-    if isinstance(comp, list):
-        # ["ALC", "SLC"] -> "ALC|SLC"
-        comp_pattern = "|".join(comp)
-        # ラベル等が長くなりすぎないように調整（必要であれば）
-        comp_label = "|".join(comp) 
-        comps = comp
-        is_multi = True
-    else:
-        comp_pattern = comp
-        comp_label = comp
-        comps = [comp]
-        is_multi = False
-    if not comps:
-        return
+    comps, comp_label, fs, is_multi = parse_comp_args(comp, static)
+    if not comps: return
     
     cfg = load_config(base, comps, static)
     latest, date_dir, data = ingest_latest_as_map(base, comps, cfg)
     rcfg = cfg["relative"]
-
     out_dir = os.path.join(date_dir, rcfg["outdir"])
     ensure_dir(out_dir)
-
-    markers = ['d', 'o', '^', 's', 'v', 'X', 'P', '*']
 
     for bench, n_map in data.items():
         valid_data = {}
         for c in comps:
             ns, ratios, cis = [], [], []
             for n in sorted(n_map.keys()):
-                slot = n_map[n]
-                r = ratio_with_delta_ci(slot[f"{base}_times"], slot[f"{c}_times"])
-                if r is None:
-                    continue
-                ratio, ci, *_ = r
-                if not np.isfinite(ratio):
-                    continue
-                ns.append(n); ratios.append(ratio); cis.append(ci)
-
+                r = ratio_with_delta_ci(n_map[n][f"{base}_times"], n_map[n][f"{c}_times"])
+                if r and np.isfinite(r[0]):
+                    ns.append(n); ratios.append(r[0]); cis.append(r[1])
             if ns:
                 valid_data[c] = {'ns': ns, 'ratios': ratios, 'cis': cis}
 
-        if not valid_data:
-            continue
+        if not valid_data: continue
 
-        # === zigzag版（区切り線は半端位置に） ===
-        n_total = len(n_map)  # 2^n が保証されている
-        midlines = _binomial_boundaries_between(n_total)
-        all_ticks = set()
-        for d in valid_data.values():
-            all_ticks.update(d['ns'])
+        base_formatted = format_comp_label(base)
 
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.axhline(1, color='gray', linestyle='--', label=f'{base} = 1 Baseline')
+        # ==========================================
+        # === zigzag版 ===
+        # ==========================================
+        all_ticks = set().union(*(d['ns'] for d in valid_data.values()))
+        fig, ax = plt.subplots(figsize=(9, 4.8)) # ★ 縦を少し短く
+        
+        ax.axhline(1, color='gray', linestyle='--', label=f'Baseline ({base_formatted})')
 
         for i, c in enumerate(comps):
-            if c not in valid_data:
-                continue
+            if c not in valid_data: continue
             d = valid_data[c]
-            marker = markers[i % len(markers)]
-
             style = get_plot_style(c, i)
-
-            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=style["marker"], color=style["color"], capsize=5, markersize=3,
-                    label=f'{c}/{base} Ratio (95% CI)')
+            label_str = format_comp_label(c) # ★ ラベル変換
+            ax.errorbar(d['ns'], d['ratios'], yerr=d['cis'], fmt=style["marker"], color=style["color"], 
+                        capsize=5, label=label_str)
         
-        # 目盛はデータ点のみ(整数)、描画範囲は [0.5, 2^n+0.5]
-        if all_ticks:
-            integer_xticks(ax, list(all_ticks))
-        ax.set_xlim(0.5, n_total + 0.5)
-
-        # Y軸を対数スケールにする (ベースを2や10にする)
-        ax.set_yscale('log', base=2)
+        integer_xticks(ax, list(all_ticks))
         
-        # 目盛りのラベルを指数表記ではなく「0.5, 1, 2」のようにするための設定
-        from matplotlib.ticker import FuncFormatter
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:g}'.format(y)))
+        apply_smart_log2_scale(ax) # ★ 賢い対数スケールを適用
+        draw_binomial_boundaries(ax, len(n_map)) # ★ zigzag版には縦線を引く
 
-        # 区切りの縦線（最後の 2^n+0.5 は描かない）
-        for x in midlines:
-            ax.axvline(x=x, color='lightgray', linestyle=':', linewidth=0.9, zorder=0)
-
-        ax.set_xlabel(rcfg["xlabel"]); ax.set_ylabel(rcfg["ylabel"])
-        ax.set_title(f'{rcfg["title_prefix"]}: {bench} ({comp_label} relative to {base})')
-        ax.grid(True, axis='y', linestyle='--', alpha=0.35); ax.legend()
+        apply_decorations(ax, rcfg["xlabel"], rcfg["ylabel"], f'{rcfg["title_prefix"]}: {bench}')
+        
         save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp_label}_relative_zigzag{fs}.png'))
 
-        # 2) 比の昇順並べ替え
+        # ==========================================
+        # === ソート版 ===
+        # ==========================================
         if not is_multi:
             c = comps[0]
             d = valid_data[c]
             style = get_plot_style(c, 0)
-            bundle = sorted(zip(ns, ratios, cis), key=lambda x: x[1])
+            bundle = sorted(zip(d['ns'], d['ratios'], d['cis'], strict=False), key=lambda x: x[1])
             xs = list(range(1, len(bundle) + 1))
             ys = [b[1] for b in bundle]; ycis = [b[2] for b in bundle]
 
-            fig, ax = plt.subplots(figsize=(11, 6))
-            ax.errorbar(xs, ys, yerr=ycis, fmt=style["marker"], color=style["color"], capsize=3, markersize=2, rasterized=True,
-                        label=f'{comp_label}/{base} Ratio (95% CI)')
-            ax.axhline(1, color='gray', linestyle='--', label=f'{base} = 1 Baseline')
+            fig, ax = plt.subplots(figsize=(10, 4.8))
+            
+            label_str = format_comp_label(c)
+            ax.errorbar(xs, ys, yerr=ycis, fmt=style["marker"], color=style["color"], capsize=3, 
+                        label=label_str)
+            ax.axhline(1, color='gray', linestyle='--', label=f'Baseline ({base_formatted})')
+            
             integer_xticks(ax, xs)
-            # Y軸を対数スケールにする (ベースを2や10にする)
-            ax.set_yscale('log', base=2)
-            # 目盛りのラベルを指数表記ではなく「0.5, 1, 2」のようにするための設定
-            from matplotlib.ticker import FuncFormatter
-            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:g}'.format(y)))
-            ax.set_xlabel(rcfg["xlabel"] + " (filtered & sorted)")
-            ax.set_ylabel(rcfg["ylabel"])
-            ax.set_title(f'{rcfg["title_prefix"]} (filtered & sorted): {bench}')
-            ax.legend(); ax.grid(True, axis='y', alpha=0.3)
+            
+            apply_smart_log2_scale(ax) # ★ ソート版にも適用
+            # ★ ソート版には draw_binomial_boundaries を呼ばない
+
+            apply_decorations(ax, rcfg["xlabel"] + " (filtered & sorted)", rcfg["ylabel"], 
+                          f'{rcfg["title_prefix"]} (filtered & sorted): {bench}')
+            
             save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp_label}_relative_sorted{fs}.png'))
 
     print(f"Saved relative plots under: {out_dir}")
-    print(f"Done: {comp_label} vs {base}")

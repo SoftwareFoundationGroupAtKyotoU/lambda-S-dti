@@ -3,6 +3,7 @@ import os
 import re
 import json
 from typing import Dict, Any, List, Tuple, Optional, Union
+import math
 
 import numpy as np
 
@@ -324,6 +325,78 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
 
     return latest, date_dir, data_by_benchmark
 
+def setup_plot_style():
+    """論文用にフォントサイズやマーカーサイズを大きくし、見やすくする"""
+    if plt is None: return
+    plt.rcParams.update({
+        'font.size': 14,          # 全体のベースサイズ
+        'axes.titlesize': 15,     # タイトル
+        'axes.labelsize': 14,     # 軸ラベル
+        'xtick.labelsize': 13,    # X軸目盛り
+        'ytick.labelsize': 13,    # Y軸目盛り
+        'legend.fontsize': 12,    # 凡例
+        'lines.markersize': 5,    # マーカー
+        'lines.linewidth': 1.5    # 線の太さ
+    })
+
+def format_comp_label(name: str) -> str:
+    """
+    SLHCなどの文字列を論文用語に変換する。
+    1文字目: S(Id-Opt ON), A(Id-Opt OFF)
+    3文字目: H(HashCons ON), N(HashCons OFF)
+    ※2・4文字目(L, C等)は無視する。
+    """
+    if len(name) == 4:
+        id_opt = "ON" if name[0].upper() == 'S' else "OFF"
+        hc_opt = "ON" if name[2].upper() == 'H' else "OFF"
+        return f"Id-Opt: {id_opt}, HashCons: {hc_opt}"
+    return name
+
+# =========================
+# プロット補助 (追記・共通化モジュール)
+# =========================
+
+def parse_comp_args(comp: Union[str, List[str]], static: bool) -> Tuple[List[str], str, str, bool]:
+    """
+    引数の正規化と共通変数の生成を行う。
+    戻り値: (compsリスト, compラベル, fsサフィックス, 複数比較フラグ)
+    """
+    fs = "_fs" if static else ""
+    if isinstance(comp, list):
+        return comp, "|".join(comp), fs, True
+    return [comp], comp, fs, False
+
+def _binomial_boundaries_between(n_total: int) -> List[float]:
+    """n_total が 2^n と仮定し、"区切りの縦線" を入れる位置を返す。"""
+    if n_total <= 0:
+        return []
+    n = round(math.log2(n_total))
+    if (1 << n) != n_total:
+        n = int(math.log2(max(1, n_total)))
+    cum = 0
+    mids = []
+    for k in range(n + 1):
+        cum += math.comb(n, k)
+        if cum < (1 << n):
+            mids.append(cum + 0.5)
+    return mids
+
+def draw_binomial_boundaries(ax, n_total: int):
+    """2^n の境界線（縦の点線）をグラフに描画する"""
+    midlines = _binomial_boundaries_between(n_total)
+    for x in midlines:
+        ax.axvline(x=x, color='lightgray', linestyle=':', linewidth=0.9, zorder=0)
+
+HIDE_PLOT_TEXTS = True
+
+def apply_decorations(ax, xlabel: str, ylabel: str, title: str):
+    """タイトル、軸ラベル、凡例の描画を共通化し、フラグで一括ON/OFFする"""
+    if not HIDE_PLOT_TEXTS:
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title, pad=55)
+        ax.legend(bbox_to_anchor=(0.5, 1.02), loc='lower center', ncol=2, 
+                  frameon=True, borderaxespad=0., fontsize=11, handletextpad=0.5)
 
 # =========================
 # 統計ユーティリティ
