@@ -166,7 +166,7 @@ module CC = struct
     | ConsExp (f1, f2) -> 
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in
-      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Cons (x, y)
+      insert_let f2 @@ fun y -> insert_let f1 @@ fun x -> KNorm.Cons (x, y)
     | LetExp (x, tvs, f1, f2) -> 
       begin match f1 with
         | FunExp (x', _, f1) ->

@@ -139,12 +139,27 @@ let mem_json mode file idx ~compile ~eager ~hash =
   (* | SC | AC | BC ->  *)
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
-let parse_and_mutate (file : string) =
+let parse_and_mutate ~is_compare (file : string) =
+  (* is_compare が true なら compare用のディレクトリを、falseなら通常ディレクトリを見る *)
+  let target_path = 
+    if is_compare then Printf.sprintf "samples/church_compare/%s.ml" file
+    else Printf.sprintf "samples/src/%s.ml" file 
+  in
+  let _, lexeme = Pipeline.lex Format.std_formatter (Some target_path) in
+  let decl  = Parser.toplevel Lexer.main lexeme in
+  
+  (* is_compare が true ならミュータントを作らず、元の1つのプログラムだけ返す *)
+  let lst_mutated = 
+    if is_compare then [decl]
+    else Mutate.mutate_all decl 
+  in
+  (lst_mutated : Syntax.ITGL.program list)
+(* let parse_and_mutate (file : string) =
   let target_path = Printf.sprintf "samples/src/%s.ml" file in
   let _, lexeme = Pipeline.lex Format.std_formatter (Some target_path) in
   let decl  = Parser.toplevel Lexer.main lexeme in
   let lst_mutated = Mutate.mutate_all decl in
-  (lst_mutated : Syntax.ITGL.program list)
+  (lst_mutated : Syntax.ITGL.program list) *)
 
 (* -------- 1ファイル × 1モード（ターゲット）を実行 ------------------ *)
 let bench_file_mode
@@ -234,11 +249,15 @@ let bench_file_mode
           let c_code, decl, tyenv = 
             if config.intoB then 
               let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LB ~config in
+              let p, u = Typing.ITGL.type_of_program tyenv p in
+              let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
               let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
               let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
               c_code, decl, tyenv
             else
               let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LS ~config in
+              let p, u = Typing.ITGL.type_of_program tyenv p in
+              let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
               let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
               let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
               c_code, decl, tyenv
@@ -250,6 +269,8 @@ let bench_file_mode
           decl, tyenv
         end else 
           let _, tyenv, _, _ = Stdlib.pervasives_LB ~config in
+          let p, u = Typing.ITGL.type_of_program tyenv p in
+          let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
           let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
           let decl = Pipeline.CC.tv_renew decl in
           decl, tyenv
@@ -326,11 +347,13 @@ let bench_file_mode
       Bench_utils.Target_progress.tick prog;  (* ← 変異1件完了ごとに更新 *)
     )
     with
-    | Failure message -> Format.fprintf fmt "Failure: %s\n" message
+    | e -> 
+      Format.fprintf Format.std_formatter "\n[Error] %s 変換中にエラーが発生しました: %s\n" file (Printexc.to_string e)
+    (* | Failure message -> Format.fprintf fmt "Failure: %s\n" message
     | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
     | Syntax.Blame _ -> Format.fprintf fmt "evaluation blame \n"
     | Eval.Eval_bug _ -> Format.fprintf fmt "evaluation bug!! \n"
-    | _ -> Format.fprintf fmt "some error was happened\n"
+    | _ -> Format.fprintf fmt "some error was happened\n" *)
   ) mutants;
 
   Option.iter Out_channel.close oc_opt;
@@ -358,6 +381,7 @@ let () =
   let static = ref false in
   let dynamize = ref false in
   let grift = ref false in
+  let is_compare = ref false in
   let specs = [
     ("-m", Arg.String (fun s -> modes_ref := mode_of_string s :: !modes_ref), " Select mode");
     ("-i", Arg.Int (fun i -> itr_ref := i), " Specify itration");
@@ -371,6 +395,7 @@ let () =
     ("--lazy", Arg.Unit (fun () -> list_ref := false :: !list_ref), " Run lazy mode");
     ("--hash", Arg.Unit (fun () -> hash_ref := true :: !hash_ref), " Run hash-consing mode");
     ("--no-hash", Arg.Unit (fun () -> hash_ref := false :: !hash_ref), " Run no-hash-consing mode");
+    ("--compare", Arg.Unit (fun () -> is_compare := true), " Run church comparison mode without mutation");
     ]
   in
   Arg.parse specs (fun f -> files_ref := f :: !files_ref) " Usage: ./bench [file...] [-m mode]";
@@ -385,7 +410,7 @@ let () =
   (* 1. 前処理: 全ファイルを parse→mutate *)
   Format.fprintf Format.std_formatter "debug: parse->mutate\n";
   let prepared : (string * Syntax.ITGL.program list) list =
-    List.map (fun file -> (file, parse_and_mutate file)) files 
+    List.map (fun file -> (file, parse_and_mutate ~is_compare:!is_compare file)) files 
   in
     Format.fprintf Format.std_formatter "debug: parse->mutate done\n";
 
@@ -414,8 +439,15 @@ let () =
       (tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday (tm.tm_hour) (tm.tm_min) (tm.tm_sec)
   in
   let log_base_dir = "logs" in
-  let log_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
+  let ts_dir = Printf.sprintf "%s/%s" log_base_dir timestamp in
+  
+  (* `--compare` の場合はタイムスタンプの下にさらに `compare` ディレクトリを掘る *)
+  let log_dir = 
+    (* if !is_compare then Printf.sprintf "%s/compare" ts_dir else  *)
+    ts_dir in
+
   if not (Sys.file_exists log_base_dir) then Core_unix.mkdir log_base_dir;
+  if not (Sys.file_exists ts_dir) then Core_unix.mkdir ts_dir;
   if not (Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
 
   (* 3. 実行: 各ターゲットを順番に *)

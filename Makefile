@@ -97,6 +97,42 @@ report: check-python check-uv
 	@uv run python scripts/report_ratio_extremes.py
 	@echo "✅ Graphs generated."
 
+# report_confidence.py (相対時間の長いTop 30) を実行するターゲット
+# デフォルト値を設定（コマンドラインから上書き可能）
+BASE ?= STATICENC
+COMP ?= ALHC
+report-longest: check-python check-uv
+	@if [ ! -f scripts/requirements.txt ]; then \
+		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
+	fi
+	@uv venv
+	@uv pip install -q -r scripts/requirements.txt
+	@uv run python scripts/report_confidence.py --base $(BASE) --comp $(COMP)
+	@echo "✅ Longest execution time report generated."
+
+# report_absolute_times.py (絶対時間の長いTop 30) を実行するターゲット
+# デフォルト値を設定（コマンドラインから上書き可能）
+TARGET ?= SLHC
+TOP ?= 30
+METRICS ?= mem cast inference
+
+report-absolute: check-python check-uv
+	@if [ ! -f scripts/requirements.txt ]; then \
+		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
+	fi
+	@uv venv
+	@uv pip install -q -r scripts/requirements.txt
+	@uv run python scripts/report_absolute_times.py --target $(TARGET) --top $(TOP) --metrics $(METRICS)
+	@echo "✅ Absolute longest execution time report generated."
+
+plot_caption: check-python check-uv
+	@uv run python scripts/plot_caption.py
+	@echo "✅ 縦並びの凡例画像を生成しました。"
+
+plot_caption_horiz: check-python check-uv
+	@uv run python scripts/plot_caption.py --horizontal
+	@echo "✅ 横並びの凡例画像を生成しました。"
+
 # お掃除
 clean:
 	@dune clean || true

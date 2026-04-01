@@ -21,10 +21,14 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    ("SLNC", ["SLHC", "ALNC", "ALHC"]),
-    ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFT", "GRIFTC"]),
-    ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC"]),
-    ("GRIFT", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFTC"]),
+    # ("SLNC", ["SLHC", "ALNC", "ALHC"]),
+    # ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFT", "GRIFTC"]),
+    # ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC"]),
+    # ("GRIFT", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFTC"]),
+    # ("GRIFTC", ["SLHC"]),
+    # ("STATICENC", ["GRIFTC", "SLHC"]),
+    # ("SLNC", ["SLHC"]),
+    ("SLHC", ["ALNC"]),
 ]
 
 STYLE_MAP = {
@@ -40,6 +44,27 @@ STYLE_MAP = {
 # =========================
 # 設定まわり
 # =========================
+def format_comp_label(name: str) -> str:
+    """
+    SLHCなどの文字列を論文用語に変換する。
+    1文字目: S(Id-Opt ON), A(Id-Opt OFF)
+    3文字目: H(HashCons ON), N(HashCons OFF)
+    ※2・4文字目(L, C等)は無視する。
+    """
+    # if len(name) == 4:
+    #     # id_opt = "ON" if name[0].upper() == 'S' else "OFF"
+    #     hc_opt = "ON" if name[2].upper() == 'H' else "OFF"
+    #     return f"Gradti (HashCons: {hc_opt})"
+    # if name == "STATICENC"
+    if name == "SLHC":
+        return "Polymorphic"
+        # return "Gradti"
+    if name == "ALNC":
+        return "Molymorphic"
+    if name == "GRIFTC":
+        return "Grift (C backend)"
+    return name
+
 def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
     """baseとcompを受け取って、そのペア専用の設定辞書を返す"""
     if static:
@@ -338,19 +363,6 @@ def setup_plot_style():
         'lines.markersize': 5,    # マーカー
         'lines.linewidth': 1.5    # 線の太さ
     })
-
-def format_comp_label(name: str) -> str:
-    """
-    SLHCなどの文字列を論文用語に変換する。
-    1文字目: S(Id-Opt ON), A(Id-Opt OFF)
-    3文字目: H(HashCons ON), N(HashCons OFF)
-    ※2・4文字目(L, C等)は無視する。
-    """
-    if len(name) == 4:
-        id_opt = "ON" if name[0].upper() == 'S' else "OFF"
-        hc_opt = "ON" if name[2].upper() == 'H' else "OFF"
-        return f"Id-Opt: {id_opt}, HashCons: {hc_opt}"
-    return name
 
 # =========================
 # プロット補助 (追記・共通化モジュール)
