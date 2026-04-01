@@ -78,6 +78,7 @@ run_test "example1_fail.ml" "$(printf "Blame on the expression side:\nFile \"exa
 run_test "example2.ml" "2" "skip_static"
 run_test "example3.ml" "false" "skip_static"
 # --- original tests ---
+run_test "church_4.ml" "4"
 run_test "cast-abort.ml" "$(printf "Blame on the expression side:\nFile \"cast-abort.ml\", line 2, character 10 -- line 2, character 15")" "skip_static"
 run_test "many_coerce.ml" "4" "skip_static"
 run_test "repeat_f_dyn.ml" "4" "skip_static"
