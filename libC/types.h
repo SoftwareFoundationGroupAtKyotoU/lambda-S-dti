@@ -47,9 +47,15 @@ extern range *range_list;
 #endif //STATIC
 
 #ifdef PROFILE
-extern int current_inference;
-extern int current_cast;
-extern int current_longest;
+extern int current_inference; // dti関数の呼び出し回数
+extern int current_cast;      // cast/coerce関数およびハードコードされたcastの総回数
+extern int current_longest;   // longest proxy chain 
+extern int current_compose;   // compose関数の呼び出し回数
+extern int compose_cached;    // compose memo cacheにヒットした回数
+extern int current_alloc;     // alloc関数の呼び出し回数。実行時にどれだけのcoercionを生成しようとしたか
+extern int new_crc_num;       // 新しいコアーションを実際に生成した回数
+extern int alloc_hash;        // coercion hash tableにヒットした回数
+extern int find_ty_num;       // ty_findでポインタをたどった回数
 #endif //PROFILE
 
 #endif //TYPES_H

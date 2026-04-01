@@ -20,6 +20,15 @@ crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .has_tv = 0, .crcdat =
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .has_tv = 0, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .has_tv = 0, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
+static inline crc* create_new_crc(crc* candidate) {
+	#ifdef PROFILE
+	new_crc_num++;
+	#endif
+	crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
+    *new_c = *candidate;
+	return new_c;
+}
+
 #ifdef HASH
 #include <string.h>
 
@@ -55,18 +64,16 @@ static int eq_crc(const crc *a, const crc *b) {
            a->crcdat.seq_tv.ptr.s    == b->crcdat.seq_tv.ptr.s;
 }
 
-// static int intern_num;
-// static int new_crc;
-
 static crc* intern_crc(crc *candidate) {
-	// intern_num++;
-	// printf("intern_num: %d. ", intern_num);
     uint32_t hash = hash_crc(candidate);
     uint32_t idx = hash % CRC_HASH_SIZE;
     uint32_t start_idx = idx;
     
     while (intern_table[idx] != NULL) {
         if (eq_crc(intern_table[idx], candidate)) {
+			#ifdef PROFILE
+			alloc_hash++;
+			#endif
             return intern_table[idx];
         }
         idx = (idx + 1) % CRC_HASH_SIZE;
@@ -75,12 +82,8 @@ static crc* intern_crc(crc *candidate) {
             break;
         }
     }
-
-	// new_crc++;
-	// printf("new_crc: %d. ", new_crc);
     
-    crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
-    *new_c = *candidate;
+    crc *new_c = create_new_crc(candidate);
     intern_table[idx] = new_c;
     
     return new_c;
@@ -117,6 +120,9 @@ void clear_crc_caches() {
 #endif //HASH
 
 crc* alloc_crc(crc *candidate) {
+	#ifdef PROFILE
+	current_alloc++;
+	#endif
     #ifdef HASH
 	switch(candidate->crckind) {
 		case TV_INJ: {
@@ -152,17 +158,13 @@ crc* alloc_crc(crc *candidate) {
 	}
 
     if (candidate->has_tv) {
-        crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
-        *new_c = *candidate;
-        return new_c;
+        return create_new_crc(candidate);
     }
 
     return intern_crc(candidate);
     
     #else // HASH
-    crc *new_c = (crc*)GC_MALLOC(sizeof(crc));
-    *new_c = *candidate;
-    return new_c;
+   	return create_new_crc(candidate);
     #endif // HASH
 }
 
@@ -1088,11 +1090,11 @@ static crc* internal_compose(crc *c1, crc *c2) {
 	exit(1);
 }
 
-// static int compose_num;
 
 crc* compose(crc *c1, crc *c2) {
-	// compose_num++;
-	// printf("compose_num: %d. ", compose_num);
+	#ifdef PROFILE
+	current_compose++;
+	#endif //PROFILE
 	#ifdef HASH
     if (c2 == &crc_id) return c1;
     if (c1 == &crc_id) return c2;
@@ -1104,6 +1106,9 @@ crc* compose(crc *c1, crc *c2) {
     uint32_t hash = (((uintptr_t)c1 >> 3) ^ ((uintptr_t)c2 >> 3)) % CACHE_SIZE;
 
     if (compose_cache[hash].c1 == c1 && compose_cache[hash].c2 == c2) {
+		#ifdef PROFILE
+		compose_cached++;
+		#endif //PROFILE
         return compose_cache[hash].result;
     }
 

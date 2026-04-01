@@ -10,16 +10,19 @@ ty tyunit = { .tykind = BASE_UNIT };
 ty tyar = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
 ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
 
-ty *newty() {
+inline ty *newty() {
 	ty *retty = (ty*)GC_MALLOC(sizeof(ty));
 	retty->tykind = TYVAR;
 	return retty;
 }
 
 #ifndef CAST
-ty *ty_find(ty *t) {
+inline ty *ty_find(ty *t) {
     ty *root = t;
     while (root->tykind == SUBSTITUTED) {
+        #ifdef PROFILE
+        find_ty_num++;
+        #endif
         root = root->tydat.tv;
     }
 
