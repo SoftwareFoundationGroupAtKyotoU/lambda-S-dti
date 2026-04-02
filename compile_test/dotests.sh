@@ -88,6 +88,10 @@ run_test "repeat.ml" "4"
 # run_test "cast_coercion_difference.ml" "$(printf "Blame on the expression side:\nFile \"cast_coercion_difference.ml\", line 1, character 28 -- line 1, character 33")" "skip_static"
 # run_test "dummy_label.ml"
 # run_test "occur_check.ml"
+# --- issue 1 ---
+# run_test "anoter_name.ml" "skip_static"
+# --- issue 2 ---
+# run_test "dyn_empty_list.ml" "skip_static"
 
 
 # --- 判定結果 ---
