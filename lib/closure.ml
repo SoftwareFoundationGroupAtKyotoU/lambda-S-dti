@@ -136,6 +136,13 @@ module KNorm = struct
         | [] -> ru, rf 
       in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in
       let (zs, outer_tvs_len) = Environment.find x args in
+      (* let (zs, outer_tvs_len) = 
+        try Environment.find x args 
+        with Not_found -> 
+          (* x がトップレベルの関数（id_listなど）であれば環境は空で正常 *)
+          if V.mem x known then ([], 0)
+          else raise @@ Closure_bug (Format.asprintf "AppTy: environment for %s is not found!" x)
+      in *)
       f (Cls.AppTy (x, List.length zs, outer_tvs_len, us))
     | CastExp (x, u1, u2, (r, p)) -> 
       let u1, udeclfun1 = ty_tv tvs u1 in 
@@ -146,6 +153,26 @@ module KNorm = struct
     | CoercionExp c -> Cls.Coercion (toCls_crc tvs c)
     | LetExp (x, f1, f2) -> 
       let f1 = toCls_exp known tvs args f1 in
+      (* let rec get_env args exp = match exp with
+        | Cls.Var y | Cls.Cast (y, _, _, _) | Cls.CApp (y, _) -> 
+            (try Some (Environment.find y args) with Not_found -> None)
+        | Cls.Let (_, _, body) | Cls.SetTy (_, body) -> 
+            get_env args body
+        | Cls.AppTy (y, _, _, tas) ->
+            (try 
+               let (zs, outer_tvs) = Environment.find y args in
+               (* AppTyは環境に型変数を追加するため、追加した分だけ k の位置をずらす必要がある。
+                  List.length zs が k として使われるため、ダミー変数を入れて長さを水増しする *)
+               let dummies = List.init (List.length tas) (fun _ -> "dummy_for_tas") in
+               Some (zs @ dummies, outer_tvs)
+             with Not_found -> None)
+        | _ -> None
+      in
+      let args' = match get_env args f1 with
+        | Some env_data -> Environment.add x env_data args
+        | None -> args
+      in
+      let f2 = toCls_exp known tvs args' f2 in *)
       let f2 = toCls_exp known tvs args f2 in
       begin match f1 with
       | Cls.Coercion (Cls.SeqInj (Cls.Id, (I | B | U as g))) -> CrcManager.register_inj x g

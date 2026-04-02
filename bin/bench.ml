@@ -84,7 +84,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
   match mode with
   | SI ->
     let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate tyenv (Pipeline.CC.tv_renew decl) in
+    let translated = Translate.CC.translate tyenv (Fresh_tv.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
@@ -93,7 +93,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     |> snd
   | AI ->
     let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate_alt tyenv (Pipeline.CC.tv_renew decl) in
+    let translated = Translate.CC.translate_alt tyenv (Fresh_tv.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
     Format.pp_print_flush fmt ();
@@ -102,7 +102,7 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     |> snd
   | BI -> 
     let env = Syntax.Environment.empty in
-    let translated = Pipeline.CC.tv_renew decl in
+    let translated = Fresh_tv.CC.tv_renew decl in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
     Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
     Format.pp_print_flush fmt ();
@@ -272,7 +272,7 @@ let bench_file_mode
           let p, u = Typing.ITGL.type_of_program tyenv p in
           let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
           let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
-          let decl = Pipeline.CC.tv_renew decl in
+          let decl = Fresh_tv.CC.tv_renew decl in
           decl, tyenv
       in
 
