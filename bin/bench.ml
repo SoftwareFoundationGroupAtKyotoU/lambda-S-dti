@@ -246,22 +246,7 @@ let bench_file_mode
       (* compileモードなら，コンパイルして.cに書き込み *)
       let decl, tyenv = 
         if config.compile then begin
-          let c_code, decl, tyenv = 
-            if config.intoB then 
-              let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LB ~config in
-              let p, u = Typing.ITGL.type_of_program tyenv p in
-              let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
-              let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
-              let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
-              c_code, decl, tyenv
-            else
-              let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LS ~config in
-              let p, u = Typing.ITGL.type_of_program tyenv p in
-              let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
-              let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
-              let c_code = Pipeline.cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf:fmt ~bench:idx in
-              c_code, decl, tyenv
-          in
+          let c_code, decl, tyenv = Pipeline.compile_for_bench ppf p ~config ~bench_idx:idx ~bench_ppf:fmt in
           let filename = Format.asprintf "%s/%s/%s%d.c" log_dir mode_str file idx in
           let oc = open_out filename in
           Printf.fprintf oc "%s" c_code;

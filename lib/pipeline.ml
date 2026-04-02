@@ -244,6 +244,22 @@ let cc_compile ppf programs tyenv kfunenvs ~config ~bench_ppf ~bench =
   let c_code = toC ppf p ~config ~bench in
   c_code
 
+let compile_for_bench ppf p ~config ~bench_idx ~bench_ppf =
+  if config.intoB then 
+    let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LB ~config in
+    let p, u = Typing.ITGL.type_of_program tyenv p in
+    let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
+    let _, decl, _ = translate_to_CC ppf tyenv p ~config ~bench_ppf in
+    let c_code = cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf ~bench:bench_idx in
+    c_code, decl, tyenv
+  else
+    let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LS ~config in
+    let p, u = Typing.ITGL.type_of_program tyenv p in
+    let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
+    let _, decl, _ = translate_to_CC ppf tyenv p ~config ~bench_ppf in
+    let c_code = cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf ~bench:bench_idx in
+    c_code, decl, tyenv
+
 let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
   opt_file ~config ~bench ~profile =
   let intoB = config.intoB in
