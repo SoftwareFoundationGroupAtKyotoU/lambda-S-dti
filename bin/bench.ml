@@ -352,7 +352,7 @@ let bench_file_mode
 
   (* compileモードなら，build_run_benchでbenchmarking *)
   if config.compile then 
-    Pipeline.build_run_bench ~log_dir ~file ~mode_str:mode_str ~itr ~mutants_length:(List.length mutants) ~config;
+    Builder.build_run_bench ~log_dir ~file ~mode_str:mode_str ~itr ~mutants_length:(List.length mutants) ~config;
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Bench_utils.Target_progress.print ~final:false prog
