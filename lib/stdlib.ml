@@ -10,11 +10,11 @@ let is_B = ref false *)
 
 let is_some_type = tysc_of_ty @@ TyFun (TyDyn, TyBool)
 
-module CC = struct 
+(* module CC = struct 
   open Syntax.CC
 
   let is_some t = 
-    FunV (fun _ -> function
+    FunBV (fun _ -> function
     | Tagged (t', _) when t = t' -> BoolV true
     | Tagged _ -> BoolV false
     | _ -> raise @@ Stdlib_bug "untagged value"
@@ -49,32 +49,43 @@ module CC = struct
     | UnitV -> let i = read_int () in IntV i
     | _ -> raise @@ Stdlib_bug "read_int: unexpected value"
     )
-end
+end *)
 
-module LS1 = struct 
-  open Syntax.LS1
+module CC = struct 
+  open Syntax.CC
 
   let is_some t ~config = 
-    if config.alt then
+    if config.intoB then
+      FunBV (fun _ -> function
+      | Tagged (t', _) when t = t' -> BoolV true
+      | Tagged _ -> BoolV false
+      | _ -> raise @@ Stdlib_bug "untagged value"
+      )
+    else if config.alt then
       FunAV (fun _ -> 
         (function
         | CoerceV (_, CSeq (_, CInj t')) when t = t' -> BoolV true
         | CoerceV _ -> BoolV false
         | _ -> raise @@ Stdlib_bug "not dyn value"),
         (function
-        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.LS1.coerce ~debug:config.debug (BoolV true) c'
-        | CoerceV _, CoercionV c' -> Eval.LS1.coerce ~debug:config.debug (BoolV false) c'
+        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.CC.coerce ~debug:config.debug (BoolV true) c'
+        | CoerceV _, CoercionV c' -> Eval.CC.coerce ~debug:config.debug (BoolV false) c'
         | _ -> raise @@ Stdlib_bug "not dyn value")
       )
     else
       FunSV (fun _ -> function
-      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.LS1.coerce ~debug:config.debug (BoolV true) c'
-      | CoerceV _, CoercionV c' -> Eval.LS1.coerce ~debug:config.debug (BoolV false) c'
+      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.CC.coerce ~debug:config.debug (BoolV true) c'
+      | CoerceV _, CoercionV c' -> Eval.CC.coerce ~debug:config.debug (BoolV false) c'
       | _ -> raise @@ Stdlib_bug "not dyn value"
       )
 
   let lib_exit ~config = 
-    if config.alt then
+    if config.intoB then
+      FunBV (fun _ -> function
+      | IntV i -> raise @@ Stdlib_exit i
+      | _ -> raise @@ Stdlib_bug "exit: unexpected value"
+      )
+    else if config.alt then
       FunAV (fun _ -> 
       (function
       | IntV i -> raise @@ Stdlib_exit i
@@ -90,7 +101,12 @@ module LS1 = struct
       )
 
   let lib_print_bool ~config = 
-    if config.alt then 
+    if config.intoB then
+      FunBV (fun _ -> function
+      | BoolV b -> print_string @@ string_of_bool b; UnitV
+      | _ -> raise @@ Stdlib_bug "print_bool: unexpected value"
+      )
+    else if config.alt then 
       FunAV (fun _ -> 
         (function
         | BoolV b -> 
@@ -100,19 +116,24 @@ module LS1 = struct
         (function
         | BoolV b, CoercionV c -> 
           print_string @@ string_of_bool b;
-          Eval.LS1.coerce ~debug:config.debug UnitV c
+          Eval.CC.coerce ~debug:config.debug UnitV c
         | _ -> raise @@ Stdlib_bug "print_bool: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | BoolV b, CoercionV c -> 
         print_string @@ string_of_bool b; 
-        Eval.LS1.coerce ~debug:config.debug UnitV c
+        Eval.CC.coerce ~debug:config.debug UnitV c
       | _ -> raise @@ Stdlib_bug "print_bool: unexpected value"
       )
 
   let lib_print_int ~config = 
-    if config.alt then
+    if config.intoB then
+      FunBV (fun _ -> function
+      | IntV i -> print_int i; UnitV
+      | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
+      )
+    else if config.alt then
       FunAV (fun _ -> 
         (function
         | IntV i -> 
@@ -122,19 +143,24 @@ module LS1 = struct
         (function
         | IntV i, CoercionV c -> 
           print_int i;
-          Eval.LS1.coerce ~debug:config.debug UnitV c
+          Eval.CC.coerce ~debug:config.debug UnitV c
         | _ -> raise @@ Stdlib_bug "print_int: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | IntV i, CoercionV c -> 
         print_int i;
-        Eval.LS1.coerce ~debug:config.debug UnitV c
+        Eval.CC.coerce ~debug:config.debug UnitV c
       | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
       )
 
   let lib_print_newline ~config = 
-    if config.alt then
+    if config.intoB then
+      FunBV (fun _ -> function
+      | UnitV -> print_newline (); UnitV
+      | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
+      )
+    else if config.alt then
       FunAV (fun _ -> 
         (function
         | UnitV -> 
@@ -144,19 +170,24 @@ module LS1 = struct
         (function
         | UnitV, CoercionV c -> 
           print_newline (); 
-          Eval.LS1.coerce ~debug:config.debug UnitV c
+          Eval.CC.coerce ~debug:config.debug UnitV c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | UnitV, CoercionV c -> 
         print_newline (); 
-        Eval.LS1.coerce ~debug:config.debug UnitV c
+        Eval.CC.coerce ~debug:config.debug UnitV c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 
   let lib_read_int ~config =
-    if config.alt then
+    if config.intoB then
+      FunBV (fun _ -> function
+      | UnitV -> let i = read_int () in IntV i
+      | _ -> raise @@ Stdlib_bug "read_int: unexpected value"
+      )
+    else if config.alt then
       FunAV (fun _ -> 
         (function
         | UnitV -> 
@@ -166,14 +197,14 @@ module LS1 = struct
         (function
         | UnitV, CoercionV c -> 
           let i = read_int () in
-          Eval.LS1.coerce ~debug:config.debug (IntV i) c
+          Eval.CC.coerce ~debug:config.debug (IntV i) c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | UnitV, CoercionV c -> 
         let i = read_int () in
-        Eval.LS1.coerce ~debug:config.debug (IntV i) c
+        Eval.CC.coerce ~debug:config.debug (IntV i) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 end
@@ -346,89 +377,22 @@ module KNorm = struct
       )
 end
 
-let pervasives_LB ~config = 
-  let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty), Environment.empty in
-  let implementations_direct = [
-    "exit", [], CC.lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit ~config;
-    "is_bool", [], CC.is_some B, is_some_type, KNorm.is_some B ~config;
-    "is_int", [], CC.is_some I, is_some_type, KNorm.is_some I ~config;
-    "is_unit", [], CC.is_some U, is_some_type, KNorm.is_some U ~config;
-    "is_fun", [], CC.is_some Ar, is_some_type, KNorm.is_some Ar ~config;
-    "is_list", [], CC.is_some Li, is_some_type, KNorm.is_some Li ~config;
+let implementations_direct ~config = [
+    "exit", [], CC.lib_exit ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit ~config;
+    "is_bool", [], CC.is_some B ~config, is_some_type, KNorm.is_some B ~config;
+    "is_int", [], CC.is_some I ~config, is_some_type, KNorm.is_some I ~config;
+    "is_unit", [], CC.is_some U ~config, is_some_type, KNorm.is_some U ~config;
+    "is_fun", [], CC.is_some Ar ~config, is_some_type, KNorm.is_some Ar ~config;
+    "is_list", [], CC.is_some Li ~config, is_some_type, KNorm.is_some Li ~config;
     "max_int", [], IntV max_int, tysc_of_ty TyInt, IntV max_int;
     "min_int", [], IntV min_int, tysc_of_ty TyInt, IntV min_int;
-    "print_bool", [], CC.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool ~config;
-    "print_int", [], CC.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int ~config;
-    "print_newline", [], CC.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline ~config;
-    "read_int", [], CC.lib_read_int, tysc_of_ty @@ TyFun (TyUnit, TyInt), KNorm.lib_read_int ~config;
-  ] in
-  let env, tyenv, kfunenvs, kenv =
-    List.fold_left
-      (fun (env, tyenv, (tvsenv, alphaenv, betaenv), kenv) (x, xs, v, u, kv) ->
-         Environment.add x (xs, v) env, Environment.add x u tyenv, (Environment.add x [] tvsenv, Environment.add x x alphaenv, Environment.add x x betaenv), Environment.add x kv kenv)
-      (env, tyenv, kfunenvs, kenv)
-      implementations_direct
-  in 
-  let implementations_eval = [
-    "let not b = if b then false else true;;";
-    "let succ x = x + 1;;";
-    "let prec x = x - 1;;";
-    "let min x y = if x < y then x else y;;";
-    "let max x y = if x > y then x else y;;";
-    "let abs x = if x < 0 then -x else x;;";
-    "let ignore x = ();;";
-  ] in
-  let env, tyenv, kfunenvs', kenv =
-    List.fold_left
-      (fun (env, tyenv, kfunenvs, kenv) str ->
-        let e = Parser.toplevel Lexer.main @@ Lexing.from_string str in
-        let e, u = Typing.ITGL.type_of_program tyenv e in
-        let tyenv, e, _ = Typing.ITGL.normalize tyenv e u in
-        let new_tyenv, f, _ = Translate.ITGL.translate ~intoB:config.intoB tyenv e in
-        let _ = Typing.CC.type_of_program tyenv f in
-        let env, _, _ = Eval.CC.eval_program env f in
-        let kf, kfunenvs = KNormal.kNorm_funs_LB kfunenvs f in
-        let kenv, _, _ = Eval.KNorm.eval_program kenv kf in
-        env, new_tyenv, kfunenvs, kenv)
-      (env, tyenv, kfunenvs, kenv)
-      implementations_eval
-  in
-  let kfunenvs = 
-    if config.compile then
-      let kfunenvs = List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [] t, Environment.add x x a, Environment.add x x b) kfunenvs ["succ"; "prec"; "min"; "max"] in
-      (* C言語で既に定義されている関数 *)
-      let kfunenvs = List.fold_left (fun (t, a, b) -> fun (x, y) -> Environment.add y [] t, Environment.add x y a, Environment.add y y b) kfunenvs ["abs", "abs_ml"; "not", "not_ml"] in
-      (* 多相性のある関数 *)
-      List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [0, ref None] t, Environment.add x x a, Environment.add x x b) kfunenvs ["ignore"]
-    else 
-      kfunenvs'
-  in
-  env, tyenv, kfunenvs, kenv
+    "print_bool", [], CC.lib_print_bool ~config, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool ~config;
+    "print_int", [], CC.lib_print_int ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int ~config;
+    "print_newline", [], CC.lib_print_newline ~config, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline ~config;
+    "read_int", [], CC.lib_read_int ~config, tysc_of_ty @@ TyFun (TyUnit, TyInt), KNorm.lib_read_int ~config;
+  ]
 
-let pervasives_LS ~config = 
-  let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty), Environment.empty in
-  let implementations_direct = [
-    "exit", [], LS1.lib_exit ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_exit ~config;
-    "is_bool", [], LS1.is_some B ~config, is_some_type, KNorm.is_some B ~config;
-    "is_int", [], LS1.is_some I ~config, is_some_type, KNorm.is_some I ~config;
-    "is_unit", [], LS1.is_some U ~config, is_some_type, KNorm.is_some U ~config;
-    "is_fun", [], LS1.is_some Ar ~config, is_some_type, KNorm.is_some Ar ~config;
-    "is_list", [], LS1.is_some Li ~config, is_some_type, KNorm.is_some Li ~config;
-    "max_int", [], IntV max_int, tysc_of_ty TyInt, IntV max_int;
-    "min_int", [], IntV min_int, tysc_of_ty TyInt, IntV min_int;
-    "print_bool", [], LS1.lib_print_bool ~config, tysc_of_ty @@ TyFun (TyBool, TyUnit), KNorm.lib_print_bool ~config;
-    "print_int", [], LS1.lib_print_int ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit), KNorm.lib_print_int ~config;
-    "print_newline", [], LS1.lib_print_newline ~config, tysc_of_ty @@ TyFun (TyUnit, TyUnit), KNorm.lib_print_newline ~config;
-    "read_int", [], LS1.lib_read_int ~config, tysc_of_ty @@ TyFun (TyUnit, TyInt), KNorm.lib_read_int ~config;
-  ] in
-  let env, tyenv, kfunenvs, kenv =
-    List.fold_left
-      (fun (env, tyenv, (tvsenv, alphaenv, betaenv), kenv) (x, xs, v, u, kv) ->
-         Environment.add x (xs, v) env, Environment.add x u tyenv, (Environment.add x [] tvsenv, Environment.add x x alphaenv, Environment.add x x betaenv), Environment.add x kv kenv)
-      (env, tyenv, kfunenvs, kenv)
-      implementations_direct
-  in 
-  let implementations_eval = [
+let implementations_eval = [
     "let not b = if b then false else true;;";
     "let succ x = x + 1;;";
     "let prec x = x - 1;;";
@@ -436,7 +400,17 @@ let pervasives_LS ~config =
     "let max x y = if x > y then x else y;;";
     "let abs x = if x < 0 then -x else x;;";
     "let ignore x = ();;";
-  ] in
+  ]
+
+let pervasives ~config = 
+  let env, tyenv, kfunenvs, kenv = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty), Environment.empty in
+  let env, tyenv, kfunenvs, kenv =
+    List.fold_left
+      (fun (env, tyenv, (tvsenv, alphaenv, betaenv), kenv) (x, xs, v, u, kv) ->
+         Environment.add x (xs, v) env, Environment.add x u tyenv, (Environment.add x [] tvsenv, Environment.add x x alphaenv, Environment.add x x betaenv), Environment.add x kv kenv)
+      (env, tyenv, kfunenvs, kenv)
+      (implementations_direct ~config)
+  in
   let env, tyenv, kfunenvs', kenv =
     List.fold_left
       (fun (env, tyenv, kfunenvs, kenv) str ->
@@ -446,10 +420,11 @@ let pervasives_LS ~config =
         let new_tyenv, f, _ = Translate.ITGL.translate ~intoB:config.intoB tyenv e in
         let _ = Typing.CC.type_of_program tyenv f in
         let f = 
-          if config.alt then Translate.CC.translate_alt tyenv f
+          if config.intoB then f
+          else if config.alt then Translate.CC.translate_alt tyenv f
           else Translate.CC.translate tyenv f
-        in let env, _, _ = Eval.LS1.eval_program env f in
-        let kf, kfunenvs = KNormal.kNorm_funs_LS kfunenvs f in
+        in let env, _, _ = Eval.CC.eval_program env f in
+        let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
         let kenv, _, _ = Eval.KNorm.eval_program kenv kf in
         env, new_tyenv, kfunenvs, kenv)
       (env, tyenv, kfunenvs, kenv)
@@ -458,7 +433,9 @@ let pervasives_LS ~config =
   let kfunenvs = 
     if config.compile then
       let kfunenvs = List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [] t, Environment.add x x a, Environment.add x x b) kfunenvs ["not"; "succ"; "prec"; "min"; "max"] in
+      (* C言語で既に定義されている関数 *)
       let kfunenvs = List.fold_left (fun (t, a, b) -> fun (x, y) -> Environment.add y [] t, Environment.add x y a, Environment.add y y b) kfunenvs ["abs", "abs_ml"] in
+      (* 多相性のある関数 *)
       List.fold_left (fun (t, a, b) -> fun x -> Environment.add x [0, ref None] t, Environment.add x x a, Environment.add x x b) kfunenvs ["ignore"]
     else 
       kfunenvs'

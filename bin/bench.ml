@@ -86,18 +86,18 @@ let bench mode fmt itr decl = (* TODO: configに書き換え *)
     let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate tyenv (Fresh_tv.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
     Format.pp_print_flush fmt ();
-    Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
     |> split_pairs
     |> snd
   | AI ->
     let env = Syntax.Environment.empty in
     let translated = Translate.CC.translate_alt tyenv (Fresh_tv.CC.tv_renew decl) in
     Pipeline.log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.LS1.pp_program translated;
+    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
     Format.pp_print_flush fmt ();
-    Bench_utils.measure_execution_time (fun () -> Eval.LS1.eval_program env translated) itr
+    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
     |> split_pairs
     |> snd
   | BI -> 
@@ -124,12 +124,12 @@ let mem_json mode file idx ~compile ~eager ~hash =
   | SI ->
       let translated = Translate.CC.translate tyenv (Pipeline.CC.tv_renew decl) in
       let run () = 
-        ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+        ignore (Eval.CC.eval_program Syntax.Environment.empty translated) in
       Bench_utils.measure_mem_to_json ~label run
   | AI ->
       let translated = Translate.CC.translate_alt tyenv (Pipeline.CC.tv_renew decl) in
       let run () = 
-        ignore (Eval.LS1.eval_program Syntax.Environment.empty translated) in
+        ignore (Eval.CC.eval_program Syntax.Environment.empty translated) in
       Bench_utils.measure_mem_to_json ~label run
   | BI ->
       let translated = Pipeline.CC.tv_renew decl in
@@ -253,7 +253,7 @@ let bench_file_mode
           close_out oc;
           decl, tyenv
         end else 
-          let _, tyenv, _, _ = Stdlib.pervasives_LB ~config in
+          let _, tyenv, _, _ = Stdlib.pervasives ~config in
           let p, u = Typing.ITGL.type_of_program tyenv p in
           let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
           let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
@@ -291,8 +291,8 @@ let bench_file_mode
         if config.intoB then 
           Format.asprintf "%a" Pp.CC.pp_program decl
         else
-          let translated = Pipeline.translate_to_LS1 ppf tyenv decl ~config in
-          Format.asprintf "%a" Pp.LS1.pp_program translated
+          let translated = Pipeline.cps_translation ppf tyenv decl ~config in
+          Format.asprintf "%a" Pp.CC.pp_program translated
       in
 
       (* 実行時間（従来の itr 回計測）を JSON に *)

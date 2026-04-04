@@ -93,23 +93,26 @@ module CC = struct
       let e2, env = tv_renew_exp e2 env in
       let e3, env = tv_renew_exp e3 env in
       IfExp (e1, e2, e3), env
-    | FunExp (x, u, e) ->
+    | FunBExp ((x, u), e) ->
       let u, env = tv_renew_ty u env in
       let e, env = tv_renew_exp e env in
-      FunExp (x, u, e), env
-    | FixExp (x, y, u1, u2, e) ->
+      FunBExp ((x, u), e), env
+    | FixBExp ((x, y, u1, u2), e) ->
       let u1, env = tv_renew_ty u1 env in
       let u2, env = tv_renew_ty u2 env in
       let e, env = tv_renew_exp e env in
-      FixExp (x, y, u1, u2, e), env
-    | AppExp (e1, e2) ->
+      FixBExp ((x, y, u1, u2), e), env
+    | AppMExp (e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
-      AppExp (e1, e2), env
-    | CAppExp (e, c) ->
-      let e, env = tv_renew_exp e env in
+      AppMExp (e1, e2), env
+    | CAppExp (e1, e2) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      CAppExp (e1, e2), env
+    | CoercionExp c -> 
       let c, env = tv_renew_coercion c env in
-      CAppExp (e, c), env
+      CoercionExp c, env
     | CastExp (e, u1, u2, r_p) -> 
       let e, env = tv_renew_exp e env in
       let u1, env = tv_renew_ty u1 env in
@@ -131,7 +134,8 @@ module CC = struct
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
       ConsExp (e1, e2), env
-    and tv_renew_ms ms env = match ms with
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "fresh_tv"
+  and tv_renew_ms ms env = match ms with
     | (mf, e) :: ms ->
       let mf, env = tv_renew_mf mf env in
       let e, env = tv_renew_exp e env in

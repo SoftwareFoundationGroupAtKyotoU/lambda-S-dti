@@ -4,7 +4,7 @@ open Config
 
 exception Compile_bad of string
 
-(* helpers *)
+(* --- helpers --- *)
 let print_title ppf title = 
   fprintf ppf "***** %s *****@." title
 
@@ -38,45 +38,31 @@ let translate_to_CC ppf tyenv e ~config ~bench_ppf =
   fprintf bench_ppf "%a@." Pp.CC.pp_program f;
   new_tyenv, f, u'
 
-let translate_to_LS1 ppf tyenv f ~config =
+let cps_translation ppf tyenv f ~config =
   print_title ppf "CPS-translation";
-  (* TODO: tlanslation into LS1 should return type u'''? *)
+  (* TODO: cps-tlanslation should return type u'''? *)
   let f(*, u'''*) = 
     (* NOTE: when generating C, alternative translation is done in closure conversion *)
     if config.alt && not config.compile then Translate.CC.translate_alt tyenv f
     else Translate.CC.translate tyenv f 
   in 
-  fprintf ppf "f: %a@." Pp.LS1.pp_program f;
+  fprintf ppf "f: %a@." Pp.CC.pp_program f;
   f(*, u'''*) 
 
-let eval ppf env f u ~eval_fn ~pp_val ~res_ppf =
+let eval ppf env f u ~config ~res_ppf =
   print_title ppf "Eval";
-  let env, x, v = eval_fn env f in 
+  let env, x, v = Eval.CC.eval_program ~debug:config.debug env f in 
   fprintf res_ppf "%a : %a = %a@."
     pp_print_string x
     Pp.pp_ty2 u
-    pp_val v;
+    Pp.CC.pp_value2 v;
   env 
 
-let eval_LB ppf env f u ~config ~res_ppf =
-  let debug = config.debug in
-  eval ppf env f u
-    ~eval_fn:(Eval.CC.eval_program ~debug)
-    ~res_ppf
-    ~pp_val:Pp.CC.pp_value2
-
-let eval_LS ppf env f u ~config ~res_ppf =
-  let debug = config.debug in
-  eval ppf env f u
-    ~eval_fn:(Eval.LS1.eval_program ~debug)
-    ~res_ppf
-    ~pp_val:Pp.LS1.pp_value2
-
-let kNorm_funs ppf (tvsenv, alphaenv, betaenv) f ~alpha_fn ~norm_fn ~pp = 
+let kNorm_funs ppf (tvsenv, alphaenv, betaenv) f ~config = 
   print_title ppf "k-Normalization";
-  let f, alphaenv = alpha_fn alphaenv f in
-  fprintf ppf "alpha: %a@." pp f;
-  let f, tvsenv = norm_fn tvsenv f in
+  let f, alphaenv = KNormal.CC.alpha_program alphaenv f in
+  fprintf ppf "alpha: %a@." Pp.CC.pp_program f;
+  let f, tvsenv = KNormal.CC.k_normalize_program tvsenv f ~static:config.static in
   fprintf ppf "k_normalize: %a@." Pp.KNorm.pp_program f;
   let rec iter betaenv f =
     let fbeta, betaenv = KNormal.KNorm.beta_program betaenv f in
@@ -90,19 +76,6 @@ let kNorm_funs ppf (tvsenv, alphaenv, betaenv) f ~alpha_fn ~norm_fn ~pp =
   let kf, kfunenvs = iter betaenv f in
   fprintf ppf "kf: %a@." Pp.KNorm.pp_program kf;
   kf, kfunenvs
-
-let kNormal_LB ppf envs f ~config = 
-  let static = config.static in
-  kNorm_funs ppf envs f
-    ~alpha_fn:KNormal.CC.alpha_program
-    ~norm_fn:(KNormal.CC.k_normalize_program ~static)
-    ~pp:Pp.CC.pp_program
-
-let kNormal_LS ppf envs f = 
-  kNorm_funs ppf envs f
-    ~alpha_fn:KNormal.LS1.alpha_program
-    ~norm_fn:KNormal.LS1.k_normalize_program
-    ~pp:Pp.LS1.pp_program
 
 let keval ppf kenv kf u ~config ~res_ppf =
   let debug = config.debug in
@@ -129,7 +102,7 @@ let toC ppf p ~config ~bench =
   fprintf ppf "%s@." c_code;
   c_code
 
-(* 公開API *)
+(* --- public API --- *)
 let lex ppf file =
   print_title ppf "Lexer";
   match file with
@@ -158,25 +131,27 @@ let parse_cc ppf lexbuf tyenv ~config =
   new_tyenv, f, u 
 
 let rec read_eval ppf lexbuf env tyenv kfunenvs kenv 
-  ~config ~res_ppf
-  ~translation_fn ~eval_fn ~kNormal_fn =  
-  let read_eval = read_eval ~config ~res_ppf ~translation_fn ~eval_fn ~kNormal_fn in
+  ~config ~res_ppf =  
+  let read_eval = read_eval ~config ~res_ppf in
   flush stderr;
   flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then fprintf std_formatter "# @?";
   begin try 
     let new_tyenv, f, u = parse_cc ppf lexbuf tyenv ~config in
     (* CPS-Translation when intoB is false *)
-    let f(*, u'''*) = translation_fn ppf tyenv f in
+    let f = 
+      if config.intoB then f
+      else cps_translation ppf tyenv f ~config
+    in
     (* assert (Typing.is_equal u u'''); *)
     let env, kfunenvs, kenv = 
       if not config.kNorm then
         (* Evaluation *)
-        let env = eval_fn ppf env f u in
+        let env = eval ppf env f u ~config ~res_ppf in
         env, kfunenvs, kenv
       else
         (* k-Normalization *)
-        let kf, kfunenvs = kNormal_fn ppf kfunenvs f in
+        let kf, kfunenvs = kNorm_funs ppf kfunenvs f ~config in
         (* Evaluation on kNormalized term *)
         let kenv = keval ppf kenv kf u ~config ~res_ppf in
         env, kfunenvs, kenv
@@ -200,18 +175,6 @@ let rec read_eval ppf lexbuf env tyenv kfunenvs kenv
   end;
   read_eval ppf lexbuf env tyenv kfunenvs kenv
 
-let read_eval_LB ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf =
-  read_eval ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf
-    ~eval_fn: (eval_LB ~config ~res_ppf)
-    ~translation_fn: (fun _ _ f -> f)
-    ~kNormal_fn: (kNormal_LB ~config)
-  
-let read_eval_LS ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf =
-  read_eval ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf
-    ~eval_fn: (eval_LS ~config ~res_ppf)
-    ~translation_fn: (translate_to_LS1 ~config)
-    ~kNormal_fn: kNormal_LS
-
 let cc_compile ppf programs tyenv kfunenvs ~config ~bench_ppf ~bench =
   let bundle_programs progs =
     let rec to_exp ps = match ps with
@@ -225,40 +188,28 @@ let cc_compile ppf programs tyenv kfunenvs ~config ~bench_ppf ~bench =
     Syntax.CC.Exp (to_exp (List.rev progs))
   in
   let f = bundle_programs programs in
+  let f = 
+    if config.intoB then f
+    else 
+      let f = cps_translation ppf tyenv f ~config in
+      fprintf bench_ppf "%a@." Pp.CC.pp_program f;
+      f
+  in
   log_section bench_ppf "after Translation";
   fprintf ppf "========== Compilation ==========@.";
-  let kf, _ = 
-    if config.intoB then 
-      (* k-Normalization *)
-      let _ = fprintf bench_ppf "%a@." Pp.CC.pp_program f in
-      kNormal_LB ppf kfunenvs f ~config
-    else 
-      (* CPS-translation *)
-      let f = translate_to_LS1 ppf tyenv f ~config in
-      fprintf bench_ppf "%a@." Pp.LS1.pp_program f;
-      (* k-Normalization *)
-      kNormal_LS ppf kfunenvs f
-  in
+  let kf, _ = kNorm_funs ppf kfunenvs f ~config in
   (* Closure-conversion *)
   let p = closure ppf kf Stdlib.venv ~config in
   let c_code = toC ppf p ~config ~bench in
   c_code
 
 let compile_for_bench ppf p ~config ~bench_idx ~bench_ppf =
-  if config.intoB then 
-    let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LB ~config in
-    let p, u = Typing.ITGL.type_of_program tyenv p in
-    let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
-    let _, decl, _ = translate_to_CC ppf tyenv p ~config ~bench_ppf in
-    let c_code = cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf ~bench:bench_idx in
-    c_code, decl, tyenv
-  else
-    let _, tyenv, kfunenvs, _ = Stdlib.pervasives_LS ~config in
-    let p, u = Typing.ITGL.type_of_program tyenv p in
-    let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
-    let _, decl, _ = translate_to_CC ppf tyenv p ~config ~bench_ppf in
-    let c_code = cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf ~bench:bench_idx in
-    c_code, decl, tyenv
+  let _, tyenv, kfunenvs, _ = Stdlib.pervasives ~config in
+  let p, u = Typing.ITGL.type_of_program tyenv p in
+  let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
+  let _, decl, _ = translate_to_CC ppf tyenv p ~config ~bench_ppf in
+  let c_code = cc_compile ppf [decl] tyenv kfunenvs ~config ~bench_ppf ~bench:bench_idx in
+  c_code, decl, tyenv
 
 let rec read_compile ppf lexbuf tyenv kfunenvs opt_file ~config =
   let read_compile = read_compile ~config in

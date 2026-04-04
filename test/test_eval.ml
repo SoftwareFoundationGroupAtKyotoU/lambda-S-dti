@@ -6,9 +6,9 @@ open Lambda_S_dti
 open Syntax
 open Config
 
-let config = create ~alt:false ~intoB:true ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
+let config = create ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
 
-let test_cases = List.map (fun l -> List.map (fun (a, b, c, _, _, _) -> (a, b, c)) l) Testcases.tests
+let test_cases = List.map (fun l -> List.map (fun (a, b, _, d, _, _) -> (a, b, d)) l) Testcases.tests
 
 let id x = x
 
@@ -17,13 +17,15 @@ let run env tyenv program =
   let e = parse @@ program ^ ";;" in
   let e, u = Typing.ITGL.type_of_program tyenv e in
   let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-  let new_tyenv, f, u' = Translate.ITGL.translate ~intoB:true tyenv e in
+  let new_tyenv, f, u' = Translate.ITGL.translate ~intoB:false tyenv e in
   assert (Typing.is_equal u u');
   let u'' = Typing.CC.type_of_program tyenv f in
   assert (Typing.is_equal u u'');
+  let f(*, u'''*) = Translate.CC.translate tyenv f in
+  (* assert (Typing.is_equal u u'''); *)
   try
-    let env, _, v = Eval.CC.eval_program env f in
-    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.CC.pp_value2 v
+    let env, _, v = Eval.LS1.eval_program env f in
+    env, new_tyenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.LS1.pp_value2 v
   with
   | Blame (_, Pos) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
   | Blame (_, Neg) -> env, tyenv, asprintf "%a" Pp.pp_ty2 u, "blame-"
@@ -38,7 +40,7 @@ let test_examples =
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
            env, tyenv
         )
-        (let env, tyenv, _, _ = Stdlib.pervasives ~config in env, tyenv)
+        (let env, tyenv, _, _ = Stdlib.pervasives_LS ~config in env, tyenv)
         cases
   in
   List.mapi test test_cases

@@ -246,20 +246,29 @@ module CC = struct
     | UConst as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, subst_exp s f1, subst_exp s f2)
     | IfExp (f1, f2, f3) -> IfExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
-    | FunExp (x1, u1, f) -> FunExp (x1, subst_type s u1, subst_exp s f)
-    | FixExp (x, y, u1, u2, f) ->
-      FixExp (x, y, subst_type s u1, subst_type s u2, subst_exp s f)
+    | FunBExp ((x1, u1), f) -> FunBExp ((x1, subst_type s u1), subst_exp s f)
+    | FixBExp ((x, y, u1, u2), f) ->
+      FixBExp ((x, y, subst_type s u1, subst_type s u2), subst_exp s f)
+    | FunSExp ((x1, u1), k, f) -> FunSExp ((x1, subst_type s u1), k, subst_exp s f)
+    | FixSExp ((x, y, u1, u2), k, f) ->
+      FixSExp ((x, y, subst_type s u1, subst_type s u2), k, subst_exp s f)
+    | FunAExp ((x1, u1), k, (f1, f2)) -> FunAExp ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
+    | FixAExp ((x, y, u1, u2), k, (f1, f2)) ->
+      FixAExp ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
     | NilExp u -> NilExp (subst_type s u)
     | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
-    | AppExp (f1, f2) -> AppExp (subst_exp s f1, subst_exp s f2)
+    | AppMExp (f1, f2) -> AppMExp (subst_exp s f1, subst_exp s f2)
+    | AppDExp (f1, (f2, f3)) -> AppDExp (subst_exp s f1, (subst_exp s f2, subst_exp s f3))
     | CastExp (f, u1, u2, r_p) -> CastExp (subst_exp s f, subst_type s u1, subst_type s u2, r_p)
+    | CoercionExp c -> CoercionExp (subst_coercion s c)
+    | CAppExp (f1, f2) -> CAppExp (subst_exp s f1, subst_exp s f2)
+    | CSeqExp (f1, f2) -> CSeqExp (subst_exp s f1, subst_exp s f2)
     | MatchExp (f, ms) -> 
       MatchExp (subst_exp s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
     | LetExp (y, ys, f1, f2) ->
       (* Remove substitutions captured by let exp s *)
       let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
       LetExp (y, ys, subst_exp s f1, subst_exp s f2)
-    | CAppExp _ -> raise @@ Eval_bug "CC.subst_type CAppExp"
 
   let eval_binop op v1 v2 =
     begin match op, v1, v2 with
@@ -285,7 +294,9 @@ module CC = struct
       let xs, v = Environment.find x env in
       let us = List.map nu_to_fresh us in
       begin match v with
-        | FunV proc -> FunV (fun _ -> proc (xs, us))
+        | FunBV proc -> FunBV (fun _ -> proc (xs, us))
+        | FunSV proc -> FunSV (fun _ -> proc (xs, us))
+        | FunAV proc -> FunAV (fun _ -> proc (xs, us))
         | _ -> v
       end
     | IConst i -> IntV i
@@ -295,27 +306,65 @@ module CC = struct
       let v1 = eval env f1 in
       let v2 = eval env f2 in
       eval_binop op v1 v2
-    | FunExp (x, _, f') ->
-      FunV (
+    | FunBExp ((x, _), f') ->
+      FunBV (
         fun (xs, ys) -> fun v ->
           eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'
       )
-    | FixExp (x, y, _, _, f') ->
+    | FixBExp ((x, y, _, _), f') ->
       let f (xs, ys) v =
         let f' = subst_exp (Utils.List.zip xs ys) f' in
         let rec f _ v =
-          let env = Environment.add x (xs, FunV f) env in
+          let env = Environment.add x (xs, FunBV f) env in
           let env = Environment.add y ([], v) env in
           eval env f'
         in f ([], []) v
-      in FunV f
-    | AppExp (f1, f2) ->
+      in FunBV f
+    | FunSExp ((x, _), k, f') ->
+      FunSV (
+        fun (xs, ys) -> fun (v, w) ->
+          eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'
+      )
+    | FixSExp ((x, y, _, _), k, f') ->
+      let f (xs, ys) (v, w) =
+        let f' = subst_exp (Utils.List.zip xs ys) f' in
+        let rec f _ (v, w) =
+          let env = Environment.add x (xs, FunSV f) env in
+          let env = Environment.add y ([], v) env in
+          let env = Environment.add k ([], w) env in
+          eval env f'
+        in f ([], []) (v, w)
+      in FunSV f
+    | FunAExp ((x, _), k, (f', f'')) ->
+      FunAV (
+        fun (xs, ys) -> 
+          (fun v -> eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'),
+          (fun (v, w) -> eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'')
+      )
+    | FixAExp ((x, y, _, _), k, (f', f'')) ->
+      let f (xs, ys) =
+        let f' = subst_exp (Utils.List.zip xs ys) f' in
+        let f'' = subst_exp (Utils.List.zip xs ys) f'' in
+        let rec f1' v =
+          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
+          let env = Environment.add y ([], v) env in
+          eval env f'
+        and f2' (v, w) =
+          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
+          let env = Environment.add y ([], v) env in
+          let env = Environment.add k ([], w) env in
+          eval env f''
+        in (f1', f2')
+      in FunAV f
+    | AppMExp (f1, f2) ->
       let v1 = eval env f1 in
       let v2 = eval env f2 in
-      begin match v1 with
-        | FunV proc -> proc ([], []) v2
-        | _ -> raise @@ Eval_bug "app: application of non procedure value"
-      end
+      eval_app_valM env v1 v2 ~debug:debug
+    | AppDExp (f1, (f2, f3)) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      let v3 = eval env f3 in
+      eval_app_valD env v1 v2 v3 ~debug:debug
     | IfExp (f1, f2, f3) ->
       let v1 = eval env f1 in
       begin match v1 with
@@ -337,7 +386,21 @@ module CC = struct
     | CastExp (f, u1, u2, r_p) ->
       let v = eval env f in
       cast ~debug:debug v u1 u2 r_p
-    | CAppExp _ -> raise @@ Eval_bug "CC.subst_type CAppExp"
+    | CAppExp (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      begin match v2 with
+        | CoercionV c -> coerce ~debug:debug v1 c
+        | _ -> raise @@ Eval_bug "capp: application of non coercion value"
+      end
+    | CSeqExp (f1, f2) ->
+      let v1 = eval env f1 in
+      let v2 = eval env f2 in
+      begin match v1, v2 with
+        | CoercionV c1, CoercionV c2 -> CoercionV (compose c1 c2 ~debug:debug)
+        | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
+      end
+    | CoercionExp c -> CoercionV c
   and match_mf ?(debug=false) env v mf = match v, mf with
     | _, MatchVar (id, _) ->
       let env = Environment.add id ([], v) env in
@@ -352,8 +415,8 @@ module CC = struct
     | UnitV, MatchULit -> true, env
     (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
     | _, MatchWild _ -> true, env
-    (* | (ConsV (v1, v2), CList s), MatchCons _ -> 
-      match_mf ~debug:debug env (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf lazy *)
+    | CoerceV (ConsV (v1, v2), CList s), MatchCons _ -> 
+      match_mf ~debug:debug env (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf (* lazy *)
     | _ -> false, env 
   and eval_next ?(debug=false) env v ms = match ms with
     | (mf, f) :: ms ->
@@ -391,8 +454,8 @@ module CC = struct
     | TyFun (u11, u12), TyFun (u21, u22) -> 
       if u11 = u21 && u12 = u22 then v 
       else begin match v with
-      | FunV proc ->
-        FunV (
+      | FunBV proc ->
+        FunBV (
           fun (xs, ys) x ->
             let subst = subst_type @@ Utils.List.zip xs ys in
             let arg = cast x (subst u21) (subst u11) (r, neg p) in
@@ -459,192 +522,9 @@ module CC = struct
         | _ -> raise @@ Eval_bug "cannot instantiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)
-
-  let eval_program ?(debug=false) env p =
-    match p with
-    | Exp f ->
-      let v = eval env f ~debug:debug in
-      env, "-", v
-    | LetDecl (x, xs, f) ->
-      let v = eval env f ~debug:debug in
-      let env = Environment.add x (xs, v) env in
-      env, x, v
-end
-
-module LS1 = struct
-  open Syntax.LS1
-
-  let rec subst_exp s = function
-    | Var (x, ys) ->
-      let subst_type = function
-        | Ty u -> Ty (subst_type s u)
-        | TyNu -> TyNu
-      in
-      Var (x, List.map subst_type ys)
-    | IConst _
-    | BConst _
-    | UConst as f -> f
-    | BinOp (op, f1, f2) -> BinOp (op, subst_exp s f1, subst_exp s f2)
-    | IfExp (f1, f2, f3) -> IfExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
-    | FunSExp ((x1, u1), k, f) -> FunSExp ((x1, subst_type s u1), k, subst_exp s f)
-    | FixSExp ((x, y, u1, u2), k, f) ->
-      FixSExp ((x, y, subst_type s u1, subst_type s u2), k, subst_exp s f)
-    | AppDExp (f1, f2, f3) -> AppDExp (subst_exp s f1, subst_exp s f2, subst_exp s f3)
-    | CAppExp (f1, f2) -> CAppExp (subst_exp s f1, subst_exp s f2)
-    | CSeqExp (f1, f2) -> CSeqExp (subst_exp s f1, subst_exp s f2)
-    | MatchExp (f, ms) -> 
-      MatchExp (subst_exp s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
-    | LetExp (y, ys, f1, f2) ->
-      (* Remove substitutions captured by let exp s *)
-      let s = List.filter (fun (x, _) -> not @@ List.memq x ys) s in
-      LetExp (y, ys, subst_exp s f1, subst_exp s f2)
-    | CoercionExp c -> CoercionExp (subst_coercion s c)
-    | NilExp u -> NilExp (subst_type s u)
-    | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
-    | FunAExp ((x1, u1), k, (f1, f2)) -> FunAExp ((x1, subst_type s u1), k, (subst_exp s f1, subst_exp s f2))
-    | FixAExp ((x, y, u1, u2), k, (f1, f2)) ->
-      FixAExp ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
-    | AppMExp (f1, f2) -> AppMExp (subst_exp s f1, subst_exp s f2)
-
-  let eval_binop op v1 v2 =
-    begin match op, v1, v2 with
-      | Plus, IntV i1, IntV i2 -> IntV (i1 + i2)
-      | Minus, IntV i1, IntV i2 -> IntV (i1 - i2)
-      | Mult, IntV i1, IntV i2 -> IntV (i1 * i2)
-      | Div, IntV i1, IntV i2 -> IntV (i1 / i2)
-      | Mod, IntV i1, IntV i2 -> IntV (i1 mod i2)
-      | Eq, IntV i1, IntV i2 -> BoolV (i1 = i2)
-      | Neq, IntV i1, IntV i2 -> BoolV (i1 <> i2)
-      | Lt, IntV i1, IntV i2 -> BoolV (i1 < i2)
-      | Lte, IntV i1, IntV i2 -> BoolV (i1 <= i2)
-      | Gt, IntV i1, IntV i2 -> BoolV (i1 > i2)
-      | Gte, IntV i1, IntV i2 -> BoolV (i1 >= i2)
-      | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
-    end
-
-  let rec eval ?(debug=false) (env: (tyvar list * value) Environment.t) f =
-    if debug then fprintf err_formatter "eval <-- %a\n" Pp.LS1.pp_exp f;
-    let eval = eval ~debug:debug in
-    match f with
-    | Var (x, us) ->
-      let xs, v = Environment.find x env in
-      let us = List.map nu_to_fresh us in
-      begin match v with
-        | FunSV proc -> FunSV (fun _ -> proc (xs, us))
-        | FunAV proc -> FunAV (fun _ -> proc (xs, us))
-        | _ -> v
-      end
-    | IConst i -> IntV i
-    | BConst b -> BoolV b
-    | UConst -> UnitV
-    | BinOp (op, f1, f2) ->
-      let v1 = eval env f1 in
-      let v2 = eval env f2 in
-      eval_binop op v1 v2
-    | FunSExp ((x, _), k, f') ->
-      FunSV (
-        fun (xs, ys) -> fun (v, w) ->
-          eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'
-      )
-    | FixSExp ((x, y, _, _), k, f') ->
-      let f (xs, ys) (v, w) =
-        let f' = subst_exp (Utils.List.zip xs ys) f' in
-        let rec f _ (v, w) =
-          let env = Environment.add x (xs, FunSV f) env in
-          let env = Environment.add y ([], v) env in
-          let env = Environment.add k ([], w) env in
-          eval env f'
-        in f ([], []) (v, w)
-      in FunSV f
-    | AppDExp (f1, f2, f3) ->
-      let v1 = eval env f1 in
-      let v2 = eval env f2 in
-      let v3 = eval env f3 in
-      eval_app_val env v1 v2 v3 ~debug:debug
-    | IfExp (f1, f2, f3) ->
-      let v1 = eval env f1 in
-      begin match v1 with
-        | BoolV true -> eval env f2
-        | BoolV false -> eval env f3
-        | _ -> raise @@ Eval_bug "if: non boolean value"
-      end
-    | LetExp (x, xs, f1, f2) ->
-      let v1 = eval env f1 in
-      eval (Environment.add x (xs, v1) env) f2
-    | CAppExp (f1, f2) ->
-      let v1 = eval env f1 in
-      let v2 = eval env f2 in
-      begin match v2 with
-        | CoercionV c -> coerce ~debug:debug v1 c
-        | _ -> raise @@ Eval_bug "capp: application of non coercion value"
-      end
-    | CSeqExp (f1, f2) ->
-      let v1 = eval env f1 in
-      let v2 = eval env f2 in
-      begin match v1, v2 with
-        | CoercionV c1, CoercionV c2 -> CoercionV (compose c1 c2 ~debug:debug)
-        | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
-      end
-    | CoercionExp c -> CoercionV c
-    | MatchExp (f, ms) ->
-      let v = eval env f in
-      eval_next ~debug:debug env v ms
-    | NilExp _ -> NilV
-    | ConsExp (f1, f2) ->
-      let v2 = eval env f2 in
-      let v1 = eval env f1 in
-      ConsV (v1, v2)
-    | AppMExp (f1, f2) ->
-      let v1 = eval env f1 in
-      let v2 = eval env f2 in
-      eval_app_val_alt env v1 v2 ~debug:debug
-    | FunAExp ((x, _), k, (f', f'')) ->
-      FunAV (
-        fun (xs, ys) -> 
-          (fun v -> eval (Environment.add x ([], v) env) @@ subst_exp (Utils.List.zip xs ys) f'),
-          (fun (v, w) -> eval (Environment.add x ([], v) (Environment.add k ([], w) env)) @@ subst_exp (Utils.List.zip xs ys) f'')
-      )
-    | FixAExp ((x, y, _, _), k, (f', f'')) ->
-      let f (xs, ys) =
-        let f' = subst_exp (Utils.List.zip xs ys) f' in
-        let f'' = subst_exp (Utils.List.zip xs ys) f'' in
-        let rec f1' v =
-          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
-          let env = Environment.add y ([], v) env in
-          eval env f'
-        and f2' (v, w) =
-          let env = Environment.add x (xs, FunAV (fun _ -> (f1', f2'))) env in
-          let env = Environment.add y ([], v) env in
-          let env = Environment.add k ([], w) env in
-          eval env f''
-        in (f1', f2')
-      in FunAV f
-  and match_mf ?(debug=false) env v mf = match v, mf with
-    | _, MatchVar (id, _) ->
-      let env = Environment.add id ([], v) env in
-      true, env
-    | ConsV (v1, v2), MatchCons (mf1, mf2) ->
-      let b1, env = match_mf ~debug:debug env v1 mf1 in
-      let b2, env = match_mf ~debug:debug env v2 mf2 in
-      b1&&b2, env 
-    | NilV, MatchNil _ -> true, env
-    | IntV i1, MatchILit i2 -> if i1 = i2 then (true, env) else (false, env)
-    | BoolV b1, MatchBLit b2 -> if b1 = b2 then (true, env) else (false, env)
-    | UnitV, MatchULit -> true, env
-    (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
-    | _, MatchWild _ -> true, env
-    | CoerceV (ConsV (v1, v2), CList s), MatchCons _ -> 
-      match_mf ~debug:debug env (ConsV (coerce ~debug:debug v1 s, coerce ~debug:debug v2 (CList s))) mf (* lazy *)
-    | _ -> false, env 
-  and eval_next ?(debug=false) env v ms = match ms with
-    | (mf, f) :: ms ->
-      let b, env' = match_mf ~debug:debug env v mf in
-      if b then eval ~debug:debug env' f
-      else eval_next ~debug:debug env v ms
-    | [] -> raise @@ Eval_bug "Didn't match"
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "coerce <-- %a<%a>\n" Pp.LS1.pp_value v Pp.pp_coercion c;
+    print_debug "coerce <-- %a<%a>\n" Pp.CC.pp_value v Pp.pp_coercion c;
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
@@ -652,22 +532,23 @@ module LS1 = struct
       | CId _ -> v
       | CFail (_, (r, p), _) -> raise @@ Blame (r, p)
       | c when is_d c -> CoerceV (v, c)
-      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.LS1.pp_value v Pp.pp_coercion c)
-  and eval_app_val ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+      | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.CC.pp_value v Pp.pp_coercion c)
+  and eval_app_valD ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
     | FunSV proc -> proc ([], []) (v2, v3) 
     | FunAV proc -> snd (proc ([], [])) (v2, v3)
     | CoerceV (v1, CFun (s, t)) -> 
       begin match v3 with
         | CoercionV c -> 
           let k = CoercionV (compose t c ~debug:debug) in
-          eval_app_val env v1 (coerce v2 s ~debug:debug) k ~debug:debug
+          eval_app_valD env v1 (coerce v2 s ~debug:debug) k ~debug:debug
         | _ -> raise @@ Eval_bug "app: application of non coercion value"
       end
     | _ -> raise @@ Eval_bug "app: application of non procedure value"
-  and eval_app_val_alt ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+  and eval_app_valM ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
+    | FunBV proc -> proc ([], []) v2
     | FunAV proc -> fst (proc ([], [])) v2
-    | CoerceV (v1, CFun (s, t)) -> eval_app_val env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
-    | _ -> raise @@ Eval_bug (asprintf "app: application of non procedure value: %a" Pp.LS1.pp_value v1)
+    | CoerceV (v1, CFun (s, t)) -> eval_app_valD env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
+    | _ -> raise @@ Eval_bug (asprintf "app: application of non procedure value: %a" Pp.CC.pp_value v1)
 
   let eval_program ?(debug=false) env p =
     match p with

@@ -76,18 +76,18 @@ module CC = struct
     in
     let x, y, z = Var ("x", []), Var ("y", []), Var ("z", []) in
     List.map test [
-      "x y z", AppExp (AppExp (x, y), z);
-      "x (y z)", AppExp (x, AppExp (y, z));
+      "x y z", AppMExp (AppMExp (x, y), z);
+      "x (y z)", AppMExp (x, AppMExp (y, z));
       "x * y + z * x", BinOp (Plus, BinOp (Mult, x, y), BinOp (Mult, z, x));
       "(x + y) * (z + x)", BinOp (Mult, BinOp (Plus, x, y), BinOp (Plus, z, x));
       "(fun (x: ?) -> x)<(? -> ?)!>",
-      CAppExp (FunExp ("x", TyDyn, x), CInj Ar);
-      "x<int!>", CAppExp (x, CInj I);
-      "x<int!><bool?p>", CAppExp (CAppExp (x, CInj I), CProj (B, (r, Pos)));
+      CAppExp (FunBExp (("x", TyDyn), x), CoercionExp (CInj Ar));
+      "x<int!>", CAppExp (x, CoercionExp (CInj I));
+      "x<int!><bool?p>", CAppExp (CAppExp (x, CoercionExp (CInj I)), CoercionExp (CProj (B, (r, Pos))));
       "(fun (x: ?) -> x) (fun (y: ?) -> y)",
-      AppExp (FunExp ("x", TyDyn, x), FunExp ("y", TyDyn, y));
-      "x y<int!>", CAppExp (AppExp (x, y), CInj I);
-      "x (y<int!>)", AppExp (x, CAppExp (y, CInj I));
+      AppMExp (FunBExp (("x", TyDyn), x), FunBExp (("y", TyDyn), y));
+      "x y<int!>", CAppExp (AppMExp (x, y), CoercionExp (CInj I));
+      "x (y<int!>)", AppMExp (x, CAppExp (y, CoercionExp (CInj I)));
     ]
 
   let suite = [

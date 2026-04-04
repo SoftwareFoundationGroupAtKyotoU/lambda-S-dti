@@ -21,16 +21,12 @@ let start file =
   let ppf = if config.debug then err_formatter else Utils.Format.empty_formatter in
 
   let channel, lexbuf = Pipeline.lex ppf file in
+
+  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives ~config in
   
   try
-    if config.intoB then 
-      let env, tyenv, kfunenvs, kenv = Stdlib.pervasives_LB ~config in
-      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~config
-      else Pipeline.read_eval_LB ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf:std_formatter
-    else 
-      let env, tyenv, kfunenvs, kenv = Stdlib.pervasives_LS ~config in
-      if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~config
-      else Pipeline.read_eval_LS ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf:std_formatter
+    if config.compile then Pipeline.read_compile ppf lexbuf tyenv kfunenvs config.opt_file ~config
+    else Pipeline.read_eval ppf lexbuf env tyenv kfunenvs kenv ~config ~res_ppf:std_formatter
   with
     | Lexer.Eof ->
       (* Exiting normally *)

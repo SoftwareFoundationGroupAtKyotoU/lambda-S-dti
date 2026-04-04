@@ -94,7 +94,7 @@ module ITGL = struct
 
   let coerce f r u1 u2 = (* this is not same as ldti about blame label r *)
     if u1 = u2 then f (* Omit identity coercion for better performance *)
-    else CC.CAppExp (f, make_s_coercion (r, Pos) u1 u2)
+    else CC.CAppExp (f, CC.CoercionExp (make_s_coercion (r, Pos) u1 u2))
   
   let rec translate_mf env mf = match mf with 
     | MatchILit _ -> env, mf, TyInt
@@ -150,7 +150,7 @@ module ITGL = struct
     | FunEExp (_, x, u1, e)
     | FunIExp (_, x, u1, e) ->
       let f, u2 = translate_exp (Environment.add x (tysc_of_ty u1) env) e in
-      CC.FunExp (x, u1, f), TyFun (u1, u2)
+      CC.FunBExp ((x, u1), f), TyFun (u1, u2)
     | FixEExp (_, x, y, u1, u2, e)
     | FixIExp (_, x, y, u1, u2, e) ->
       (* NOTE: Disallow to use x polymorphically in e *)
@@ -158,13 +158,13 @@ module ITGL = struct
       let env = Environment.add y (tysc_of_ty u1) env in
       let f, u2' = translate_exp env e in
       let r = range_of_exp e in
-      CC.FixExp (x, y, u1, u2, c f r u2' u2), TyFun (u1, u2)
+      CC.FixBExp ((x, y, u1, u2), c f r u2' u2), TyFun (u1, u2)
     | AppExp (_, e1, e2) ->
       let f1, u1 = translate_exp env e1 in
       let f2, u2 = translate_exp env e2 in
       let r1, r2 = range_of_exp e1, range_of_exp e2 in
       (* Format.fprintf std_formatter "u1: %a, u2: %a\n" Pp.pp_ty u1 Pp.pp_ty u2; *)
-      CC.AppExp (c f1 r1 u1 (TyFun (dom u1, cod u1)), c f2 r2 u2 (dom u1)), cod u1
+      CC.AppMExp (c f1 r1 u1 (TyFun (dom u1, cod u1)), c f2 r2 u2 (dom u1)), cod u1
     | MatchExp (r, e, ms) -> 
       let f, u = translate_exp env e in
       let msu, (u_match, u_exp) = translate_ms ~intoB env ms in
@@ -228,7 +228,7 @@ module CC = struct
       let v = !counter in
       counter := v + 1;
       let id = "k"^string_of_int !counter in
-      id, LS1.Var (id, [])
+      id, Var (id, [])
     in body
 
   let rec translate_mf env = function
@@ -242,125 +242,133 @@ module CC = struct
       env, MatchCons (mf1, mf2)
 
   let rec translate_exp env = function
-    | Var (x, ys) -> LS1.Var (x, ys)
-    | IConst i -> LS1.IConst i(*, TyInt*)
-    | BConst b -> LS1.BConst b(*, TyBool*)
-    | UConst -> LS1.UConst
-    | FunExp (x, u, f) ->
+    | Var (x, ys) -> Var (x, ys)
+    | IConst i -> IConst i(*, TyInt*)
+    | BConst b -> BConst b(*, TyBool*)
+    | UConst -> UConst
+    | FunBExp ((x, u), f) ->
       let env = Environment.add x (tysc_of_ty u) env in
       let id, k = fresh_CVar () in 
-      LS1.FunSExp ((x, u), id, translate_exp_k env k f)
-    | FixExp (x, y, u1, u, f) -> 
+      FunSExp ((x, u), id, translate_exp_k env k f)
+    | FixBExp ((x, y, u1, u), f) -> 
       let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
       let id, k = fresh_CVar () in 
-      LS1.FixSExp ((x, y, u1, u), id, translate_exp_k env k f)
-    | CAppExp (f, c) -> translate_exp_k env (LS1.CoercionExp c) f
-    | AppExp (f1, f2) as f -> (*new*)
+      FixSExp ((x, y, u1, u), id, translate_exp_k env k f)
+    | CAppExp (f1, f2) -> translate_exp_k env f2 f1
+    | AppMExp (f1, f2) as f -> (*new*)
       let u = Typing.CC.type_of_program env (Exp f) in
-      LS1.AppDExp (translate_exp env f1, translate_exp env f2, (LS1.CoercionExp (CId u)))
-    | BinOp (op, f1, f2) -> LS1.BinOp (op, translate_exp env f1, translate_exp env f2) (*new*)
-    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp env f1, translate_exp env f2, translate_exp env f3) (*new*)
+      AppDExp (translate_exp env f1, (translate_exp env f2, (CoercionExp (CId u))))
+    | BinOp (op, f1, f2) -> BinOp (op, translate_exp env f1, translate_exp env f2) (*new*)
+    | IfExp (f1, f2, f3) -> IfExp (translate_exp env f1, translate_exp env f2, translate_exp env f3) (*new*)
     | MatchExp (f, ms) -> 
       let f = translate_exp env f in
       let ms = List.map (fun (mf, f) -> let env, mf = translate_mf env mf in mf, translate_exp env f) ms in
-      LS1.MatchExp (f, ms)
+      MatchExp (f, ms)
     | LetExp (x, ys, f1, f2) -> (*new*)
       let u = Typing.CC.type_of_program env (Exp f1) in
-      LS1.LetExp (x, ys, translate_exp env f1, translate_exp (Environment.add x (TyScheme (ys, u)) env) f2)
-    | NilExp u -> LS1.NilExp u
-    | ConsExp (f1, f2) -> LS1.ConsExp (translate_exp env f1, translate_exp env f2) 
+      LetExp (x, ys, translate_exp env f1, translate_exp (Environment.add x (TyScheme (ys, u)) env) f2)
+    | NilExp u -> NilExp u
+    | ConsExp (f1, f2) -> ConsExp (translate_exp env f1, translate_exp env f2) 
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
   and translate_exp_k env k = function
-    | Var (x, ys) -> LS1.CAppExp (LS1.Var (x, ys), k)
-    | IConst i -> LS1.CAppExp (LS1.IConst i, k)
-    | BConst b -> LS1.CAppExp (LS1.BConst b, k)
-    | UConst -> LS1.CAppExp (LS1.UConst, k)
-    | FunExp (x, u, f) -> 
+    | Var (x, ys) -> CAppExp (Var (x, ys), k)
+    | IConst i -> CAppExp (IConst i, k)
+    | BConst b -> CAppExp (BConst b, k)
+    | UConst -> CAppExp (UConst, k)
+    | FunBExp ((x, u), f) -> 
       let env = Environment.add x (tysc_of_ty u) env in
       let id, k' = fresh_CVar () in 
-      LS1.CAppExp (LS1.FunSExp ((x, u), id, translate_exp_k env k' f), k)
-    | FixExp (x, y, u1, u, f) -> 
+      CAppExp (FunSExp ((x, u), id, translate_exp_k env k' f), k)
+    | FixBExp ((x, y, u1, u), f) -> 
       let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
       let id, k' = fresh_CVar () in 
-      LS1.CAppExp (LS1.FixSExp ((x, y, u1, u), id, translate_exp_k env k' f), k)
-    | BinOp (op, f1, f2) -> LS1.CAppExp (LS1.BinOp (op, translate_exp env f1, translate_exp env f2), k)
-    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp env f1, translate_exp_k env k f2, translate_exp_k env k f3)
-    | AppExp (f1, f2) -> LS1.AppDExp (translate_exp env f1, translate_exp env f2, k)
-    | CAppExp (f, c) -> let id, k' = fresh_CVar () in LS1.LetExp (id, [], LS1.CSeqExp (LS1.CoercionExp c, k), translate_exp_k env k' f)
+      CAppExp (FixSExp ((x, y, u1, u), id, translate_exp_k env k' f), k)
+    | BinOp (op, f1, f2) -> CAppExp (BinOp (op, translate_exp env f1, translate_exp env f2), k)
+    | IfExp (f1, f2, f3) -> IfExp (translate_exp env f1, translate_exp_k env k f2, translate_exp_k env k f3)
+    | AppMExp (f1, f2) -> AppDExp (translate_exp env f1, (translate_exp env f2, k))
+    | CAppExp (f1, f2) -> 
+      let id, k' = fresh_CVar () in 
+      LetExp (id, [], CSeqExp (f2, k), translate_exp_k env k' f1)
     | MatchExp (f, ms) -> 
       let f = translate_exp env f in
       let ms = List.map (fun (mf, f) -> let env, mf = translate_mf env mf in mf, translate_exp_k env k f) ms in
-      LS1.MatchExp (f, ms)
+      MatchExp (f, ms)
     | LetExp (x, ys, f1, f2) -> 
       let u = Typing.CC.type_of_program env (Exp f1) in
-      LS1.LetExp (x, ys, translate_exp env f1, translate_exp_k (Environment.add x (TyScheme (ys, u)) env) k f2)
-    | NilExp u -> LS1.CAppExp (LS1.NilExp u, k)
+      LetExp (x, ys, translate_exp env f1, translate_exp_k (Environment.add x (TyScheme (ys, u)) env) k f2)
+    | NilExp u -> CAppExp (NilExp u, k)
     | ConsExp (f1, f2) ->
-      LS1.CAppExp (LS1.ConsExp (translate_exp env f1, translate_exp env f2), k)
+      CAppExp (ConsExp (translate_exp env f1, translate_exp env f2), k)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
 
   let translate env = function
-    | Exp f -> LS1.Exp (translate_exp env f)
-    | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp env f)
+    | Exp f -> Exp (translate_exp env f)
+    | LetDecl (x, ys, f) -> LetDecl (x, ys, translate_exp env f)
 
   let rec translate_exp_alt env = function
-    | Var (x, ys) -> LS1.Var (x, ys)
-    | IConst i -> LS1.IConst i(*, TyInt*)
-    | BConst b -> LS1.BConst b(*, TyBool*)
-    | UConst -> LS1.UConst
-    | FunExp (x, u, f) ->
+    | Var (x, ys) -> Var (x, ys)
+    | IConst i -> IConst i(*, TyInt*)
+    | BConst b -> BConst b(*, TyBool*)
+    | UConst -> UConst
+    | FunBExp ((x, u), f) ->
       let env = Environment.add x (tysc_of_ty u) env in
       let id, k = fresh_CVar () in 
-      LS1.FunAExp ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
-    | FixExp (x, y, u1, u, f) -> 
+      FunAExp ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | FixBExp ((x, y, u1, u), f) -> 
       let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
       let id, k = fresh_CVar () in 
-      LS1.FixAExp ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
-    | CAppExp (f, c) -> translate_exp_k_alt env (LS1.CoercionExp c) f
-    | AppExp (f1, f2) -> (*new*)
-      LS1.AppMExp (translate_exp_alt env f1, translate_exp_alt env f2)
-    | BinOp (op, f1, f2) -> LS1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2) (*new*)
-    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp_alt env f1, translate_exp_alt env f2, translate_exp_alt env f3) (*new*)
+      FixAExp ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k f))
+    | CAppExp (f1, f2) -> translate_exp_k_alt env f2 f1
+    | AppMExp (f1, f2) -> (*new*)
+      AppMExp (translate_exp_alt env f1, translate_exp_alt env f2)
+    | BinOp (op, f1, f2) -> BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2) (*new*)
+    | IfExp (f1, f2, f3) -> IfExp (translate_exp_alt env f1, translate_exp_alt env f2, translate_exp_alt env f3) (*new*)
     | MatchExp (f, ms) -> 
       let f = translate_exp_alt env f in
       let ms = List.map (fun (mf, f) -> let env, mf = translate_mf env mf in mf, translate_exp_alt env f) ms in
-      LS1.MatchExp (f, ms)
+      MatchExp (f, ms)
     | LetExp (x, ys, f1, f2) -> (*new*)
       let u = Typing.CC.type_of_program env (Exp f1) in
-      LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
-    | NilExp u -> LS1.NilExp u
-    | ConsExp (f1, f2) -> LS1.ConsExp (translate_exp_alt env f1, translate_exp_alt env f2)  
+      LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
+    | NilExp u -> NilExp u
+    | ConsExp (f1, f2) -> ConsExp (translate_exp_alt env f1, translate_exp_alt env f2)  
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
   and translate_exp_k_alt env k = function
-    | Var (x, ys) -> LS1.CAppExp (LS1.Var (x, ys), k)
-    | IConst i -> LS1.CAppExp (LS1.IConst i, k)
-    | BConst b -> LS1.CAppExp (LS1.BConst b, k)
-    | UConst -> LS1.CAppExp (LS1.UConst, k)
-    | FunExp (x, u, f) -> 
+    | Var (x, ys) -> CAppExp (Var (x, ys), k)
+    | IConst i -> CAppExp (IConst i, k)
+    | BConst b -> CAppExp (BConst b, k)
+    | UConst -> CAppExp (UConst, k)
+    | FunBExp ((x, u), f) -> 
       let env = Environment.add x (tysc_of_ty u) env in
       let id, k' = fresh_CVar () in 
-      LS1.CAppExp (LS1.FunAExp ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
-    | FixExp (x, y, u1, u, f) -> 
+      CAppExp (FunAExp ((x, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | FixBExp ((x, y, u1, u), f) -> 
       let env = Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env) in
       let id, k' = fresh_CVar () in 
-      LS1.CAppExp (LS1.FixAExp ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
-    | BinOp (op, f1, f2) -> LS1.CAppExp (LS1.BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2), k)
-    | IfExp (f1, f2, f3) -> LS1.IfExp (translate_exp_alt env f1, translate_exp_k_alt env k f2, translate_exp_k_alt env k f3)
-    | AppExp (f1, f2) -> LS1.AppDExp (translate_exp_alt env f1, translate_exp_alt env f2, k)
-    | CAppExp (f, c) -> let id, k' = fresh_CVar () in LS1.LetExp (id, [], LS1.CSeqExp (LS1.CoercionExp c, k), translate_exp_k_alt env k' f)
+      CAppExp (FixAExp ((x, y, u1, u), id, (translate_exp_alt env f, translate_exp_k_alt env k' f)), k)
+    | BinOp (op, f1, f2) -> CAppExp (BinOp (op, translate_exp_alt env f1, translate_exp_alt env f2), k)
+    | IfExp (f1, f2, f3) -> IfExp (translate_exp_alt env f1, translate_exp_k_alt env k f2, translate_exp_k_alt env k f3)
+    | AppMExp (f1, f2) -> AppDExp (translate_exp_alt env f1, (translate_exp_alt env f2, k))
+    | CAppExp (f1, f2) -> 
+      let id, k' = fresh_CVar () in 
+      LetExp (id, [], CSeqExp (f2, k), translate_exp_k_alt env k' f1)
     | MatchExp (f, ms) -> 
       let f = translate_exp_alt env f in
       let ms = List.map (fun (mf, f) -> let env, mf = translate_mf env mf in mf, translate_exp_k_alt env k f) ms in
-      LS1.MatchExp (f, ms)
+      MatchExp (f, ms)
     | LetExp (x, ys, f1, f2) -> 
       let u = Typing.CC.type_of_program env (Exp f1) in
-      LS1.LetExp (x, ys, translate_exp_alt env f1, translate_exp_k_alt (Environment.add x (TyScheme (ys, u)) env) k f2)
-    | NilExp u -> LS1.CAppExp (LS1.NilExp u, k)
+      LetExp (x, ys, translate_exp_alt env f1, translate_exp_k_alt (Environment.add x (TyScheme (ys, u)) env) k f2)
+    | NilExp u -> CAppExp (NilExp u, k)
     | ConsExp (f1, f2) ->
-      LS1.CAppExp (LS1.ConsExp (translate_exp_alt env f1, translate_exp_alt env f2), k)
+      CAppExp (ConsExp (translate_exp_alt env f1, translate_exp_alt env f2), k)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
 
   let translate_alt env = function
-    | Exp f -> LS1.Exp (translate_exp_alt env f)
-    | LetDecl (x, ys, f) -> LS1.LetDecl (x, ys, translate_exp_alt env f)
+    | Exp f -> Exp (translate_exp_alt env f)
+    | LetDecl (x, ys, f) -> LetDecl (x, ys, translate_exp_alt env f)
 end

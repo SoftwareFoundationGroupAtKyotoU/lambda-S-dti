@@ -7,6 +7,7 @@ let suite = "test">:::[
     "test_S_k">::: Test_S_k.suite;
     "test_A_k">::: Test_A_k.suite;
     "test_B_k">::: Test_B_k.suite;
+    (* "test_eval">::: Test_eval.suite; *)
     "test_pp">::: Test_pp.suite;
     "test_typing">::: Test_typing.suite;
   ]

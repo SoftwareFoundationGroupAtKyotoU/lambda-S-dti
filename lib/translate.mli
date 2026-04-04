@@ -10,6 +10,6 @@ end
 module CC : sig
 	open Syntax.CC
 
-	val translate : tysc Environment.t -> program -> LS1.program
-	val translate_alt : tysc Environment.t -> program -> LS1.program
+	val translate : tysc Environment.t -> program -> program
+	val translate_alt : tysc Environment.t -> program -> program
 end

@@ -521,13 +521,13 @@ module CC = struct
         u2
       else
         raise @@ Type_bug "if"
-    | FunExp (x, u1, f) ->
+    | FunBExp ((x, u1), f) ->
       let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) f in
       TyFun (u1, u2)
-    | FixExp (x, y, u1, u, f) ->
+    | FixBExp ((x, y, u1, u), f) ->
       let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env)) f in
       TyFun (u1, u2)
-    | AppExp (f1, f2) ->
+    | AppMExp (f1, f2) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       begin match u1, u2 with
@@ -535,8 +535,8 @@ module CC = struct
           u12
         | _ -> raise @@ Type_bug (Format.asprintf "app::: u1:%a, u2:%a" Pp.pp_ty u1 Pp.pp_ty u2)
       end
-    | CAppExp (f, c) ->
-      let u = type_of_exp env f in 
+    | CAppExp (f1, CoercionExp c) ->
+      let u = type_of_exp env f1 in 
       let (u1, u2) = type_of_coercion c in 
       if u = u1 then
         if is_consistent u1 u2 then
@@ -545,6 +545,7 @@ module CC = struct
           raise @@ Type_bug "not consistent"
       else
         raise @@ Type_bug "invalid source type"
+    | CAppExp _ -> raise @@ Type_bug "CappExp f2 is not CoercionExp"
     | CastExp (f, TyVar (_, { contents = Some u1 }), u2, r_p)
     | CastExp (f, u1, TyVar (_, { contents = Some u2 }), r_p) ->
       type_of_exp env @@ CastExp (f, u1, u2, r_p)
@@ -574,6 +575,7 @@ module CC = struct
       let u1 = type_of_exp env f1 in
       if (TyList u1) = u2 then u2
       else raise @@ Type_bug (asprintf "cons: %a=%a" pp_ty (TyList u1) pp_ty u2)
+    | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "yet"
   and type_of_ms env u_match = function
     | (mf, f) :: t ->
       let u_match', env' = type_of_matchform env mf in
