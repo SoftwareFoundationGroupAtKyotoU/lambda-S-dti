@@ -22,5 +22,5 @@ let default = {
   opt_file = None;
 }
 
-let create ~alt ~intoB ~eager ~compile ~static ~hash ~opt_file () =
-  { default with alt; intoB; eager; compile; static; hash; opt_file }
+let create ~kNorm ~alt ~intoB ~eager ~compile ~static ~hash ~opt_file () =
+  { default with kNorm; alt; intoB; eager; compile; static; hash; opt_file }

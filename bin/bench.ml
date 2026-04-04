@@ -177,14 +177,14 @@ let bench_file_mode
 
   (* modeに応じたconfigの生成 *)
   let config = match mode with
-  | SI -> Config.create ~alt:false ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | SC -> Config.create ~alt:false ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | AI -> Config.create ~alt:true ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | AC -> Config.create ~alt:true ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | BI -> Config.create ~alt:false ~intoB:true ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | BC -> Config.create ~alt:false ~intoB:true ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | STATICI -> Config.create ~alt:false ~intoB:true ~eager ~compile:false ~static:true ~hash ~opt_file:(Some file) ()
-  | STATICC -> Config.create ~alt:false ~intoB:true ~eager ~compile:true ~static:true ~hash ~opt_file:(Some file) ()
+  | SI -> Config.create ~kNorm:false ~alt:false ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | SC -> Config.create ~kNorm:false ~alt:false ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | AI -> Config.create ~kNorm:false ~alt:true ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | AC -> Config.create ~kNorm:false ~alt:true ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | BI -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
+  | BC -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
+  | STATICI -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:false ~static:true ~hash ~opt_file:(Some file) ()
+  | STATICC -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:true ~static:true ~hash ~opt_file:(Some file) ()
   in
 
   Format.fprintf Format.std_formatter "debug: bench_file_mode\n";

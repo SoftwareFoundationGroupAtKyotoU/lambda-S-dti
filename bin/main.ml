@@ -10,9 +10,9 @@ let start file =
   (* NOTE: when compiling, -k does not need *)
   if config.compile && config.kNorm then config.kNorm <- false;
   if not (config.compile) && config.eager then failwith "-e interpreter is yet";
-  (* NOTE: if -s, let alt be false, and intoB and eager be true *)
+  (* NOTE: if --static, let alt be false, and intoB and eager be true *)
   if config.static then begin
-    if not config.compile then failwith "-s interpreter is yet";
+    if not config.compile then failwith "--static interpreter is yet"; (* because -e should be true for compiler *)
     config.alt <- false;
     config.intoB <- true;
     config.eager <- true;
