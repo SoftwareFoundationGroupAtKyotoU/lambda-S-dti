@@ -77,41 +77,6 @@ let split_pairs lst =
     (fun (a, b) (as_list, bs_list) -> (a :: as_list, b :: bs_list))
     lst ([], [])
 
-let bench mode fmt itr decl = (* TODO: configに書き換え *)
-  let tyenv = Syntax.Environment.empty in
-  let _ = Typing.CC.type_of_program tyenv decl in
-  (* Format.fprintf fmt "mutated program's type is %a\n" Pp.pp_ty u; *)
-  match mode with
-  | SI ->
-    let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate tyenv (Fresh_tv.CC.tv_renew decl) in
-    Pipeline.log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
-    Format.pp_print_flush fmt ();
-    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
-    |> split_pairs
-    |> snd
-  | AI ->
-    let env = Syntax.Environment.empty in
-    let translated = Translate.CC.translate_alt tyenv (Fresh_tv.CC.tv_renew decl) in
-    Pipeline.log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
-    Format.pp_print_flush fmt ();
-    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
-    |> split_pairs
-    |> snd
-  | BI -> 
-    let env = Syntax.Environment.empty in
-    let translated = Fresh_tv.CC.tv_renew decl in
-    Pipeline.log_section fmt "after Translation (λS∀mp)";
-    Format.fprintf fmt "%a@." Pp.CC.pp_program translated;
-    Format.pp_print_flush fmt ();
-    Bench_utils.measure_execution_time (fun () -> Eval.CC.eval_program env translated) itr
-    |> split_pairs
-    |> snd
-  | STATICI -> raise @@ Failure "yet"
-  | SC | AC | BC | STATICC -> raise @@ Failure "bench Compiler"
-
 (* メモリ計測（設定に応じて）を JSON に *)
 let mem_json mode file idx ~compile ~eager ~hash =
   let mode_str = full_mode_name mode eager hash in
@@ -222,11 +187,12 @@ let bench_file_mode
   in
 
   (* compileモードなら，.c用のディレクトリを作成 *)
-  if config.compile then
+  if config.compile then begin
     let c_dir = Printf.sprintf "%s/%s" log_dir mode_str in
     if not (Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
     let bench_dir = Printf.sprintf "%s/bench" log_dir in
-    if not (Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
+    if not (Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir
+  end;
   
   let counter = ref 0 in
   List.iteri (fun i p ->
@@ -242,39 +208,45 @@ let bench_file_mode
         Printf.fprintf oc "\n(%d):\n" !counter
       ) oc_opt;
 
-      (* Coercion / Cast insertion *)
-      (* compileモードなら，コンパイルして.cに書き込み *)
-      let decl, tyenv = 
-        if config.compile then begin
-          let c_code, decl, tyenv = Pipeline.compile_for_bench ppf p ~config ~bench_idx:idx ~bench_ppf:fmt in
-          let filename = Format.asprintf "%s/%s/%s%d.c" log_dir mode_str file idx in
-          let oc = open_out filename in
-          Printf.fprintf oc "%s" c_code;
-          close_out oc;
-          decl, tyenv
-        end else 
-          let _, tyenv, _, _ = Stdlib.pervasives ~config in
-          let p, u = Typing.ITGL.type_of_program tyenv p in
-          let tyenv, p, _ = Typing.ITGL.normalize tyenv p u in
-          let _, decl, _ = Pipeline.translate_to_CC ppf tyenv p ~config ~bench_ppf:fmt in
-          let decl = Fresh_tv.CC.tv_renew decl in
-          decl, tyenv
-      in
+      (* JSON 出力用に各種文字列へ *)
+      let after_mutate_str      = Format.asprintf "%a" Pp.ITGL.pp_program p in
 
-      (* 実行時間のBenchmarking *)
-      let lst_elapsed_time =
-        try 
-          if not config.compile then bench mode fmt itr decl
-          else []
-        with
-        | Syntax.Blame _ -> Format.fprintf fmt "blame"; []
-        | Typing.Type_error str -> Format.fprintf fmt "type error %s \n" str; []
-        | Typing.Type_bug str -> Format.fprintf fmt "type bug %s \n" str; []
-        | Translate.Translation_bug str -> Format.fprintf fmt "translation %s in bench\n" str; []
-        | KNormal.KNormal_error str -> Format.fprintf fmt "knorm_error %s in bench\n" str; []
-        | KNormal.KNormal_bug str -> Format.fprintf fmt "knorm_bug %s in bench\n" str; []
-        | ToC.ToC_bug str -> Format.fprintf fmt "toc_bug %s in bench\n" str; []
-        | _ -> Format.fprintf fmt "some error happened in bench\n"; []
+      let initial_state = { (Pipeline.init_state () ~config) with Pipeline.program = p } in
+
+      let lst_elapsed_time, after_translation_str =
+        let cc_state = 
+          initial_state
+          |> Pipeline.typing_ITGL ppf
+          |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:fmt ~bench:idx
+        in
+        let ast_str = Format.asprintf "%a" Pp.CC.pp_program cc_state.Pipeline.program in
+
+        let elapsed_time = 
+          if config.compile then begin
+            (* --- Compilation --- *)
+            let toC_state =
+              cc_state
+              |> Pipeline.kNorm_funs ppf ~config
+              |> Pipeline.closure ppf ~config
+            in
+            let c_code = Pipeline.toC ppf toC_state ~config ~bench:idx in
+            let filename = Format.asprintf "%s/%s/%s%d.c" log_dir mode_str file idx in
+            let oc = open_out filename in
+            Printf.fprintf oc "%s" c_code;
+            close_out oc;
+            []
+          end else begin
+            (* --- Evaluation --- *)
+            (* Bench_utils.measure_execution_time (fun () -> 
+              ignore (Pipeline.eval Utils.Format.empty_formatter cc_state ~config)
+            ) itr
+            |> split_pairs
+            |> snd *)
+            raise @@ Failure "interpreter yet"
+            (* TODO: test files now require their inputs *)
+          end
+        in
+        elapsed_time, ast_str
       in
 
       (* File output of benchmarking score *)
@@ -283,17 +255,6 @@ let bench_file_mode
         | [] -> Printf.fprintf oc "\n"
         | _  -> List.iter (fun t -> Printf.fprintf oc "%f\n" t) lst_elapsed_time
       ) oc_opt;
-
-      (* JSON 出力用に各種文字列へ *)
-      let after_mutate_str      = Format.asprintf "%a" Pp.ITGL.pp_program p in
-      let after_insertion_str   = Format.asprintf "%a" Pp.CC.pp_program decl in
-      let after_translation_str =
-        if config.intoB then 
-          Format.asprintf "%a" Pp.CC.pp_program decl
-        else
-          let translated = Pipeline.cps_translation ppf tyenv decl ~config in
-          Format.asprintf "%a" Pp.CC.pp_program translated
-      in
 
       (* 実行時間（従来の itr 回計測）を JSON に *)
       let times_sec_json = Bench_utils.J.list (List.map (fun t -> Bench_utils.J.float t) lst_elapsed_time) in
@@ -306,7 +267,6 @@ let bench_file_mode
           ("mode", Bench_utils.J.str mode_str);
           ("mutant_index", Bench_utils.J.int idx);
           ("after_mutate", Bench_utils.J.str after_mutate_str);
-          ("after_insertion", Bench_utils.J.str after_insertion_str);
           ("after_translation", Bench_utils.J.str after_translation_str);
           ("times_sec", times_sec_json);
           ("mem", (match mem with None -> `Null | Some j -> j));
@@ -333,12 +293,7 @@ let bench_file_mode
     )
     with
     | e -> 
-      Format.fprintf Format.std_formatter "\n[Error] %s 変換中にエラーが発生しました: %s\n" file (Printexc.to_string e)
-    (* | Failure message -> Format.fprintf fmt "Failure: %s\n" message
-    | Translate.Translation_bug str -> Format.fprintf fmt "translation_bug: %s\n" str
-    | Syntax.Blame _ -> Format.fprintf fmt "evaluation blame \n"
-    | Eval.Eval_bug _ -> Format.fprintf fmt "evaluation bug!! \n"
-    | _ -> Format.fprintf fmt "some error was happened\n" *)
+      Format.fprintf Format.std_formatter "\n[Error] %s 変換中にエラーが発生しました: %s@." file (Printexc.to_string e)
   ) mutants;
 
   Option.iter Out_channel.close oc_opt;

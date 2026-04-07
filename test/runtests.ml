@@ -1,7 +1,7 @@
 open OUnit2
 
 let suite = "test">:::[
-    "test_eval">::: Test_eval.suite;
+    "test_interpreter">::: Test_interpreter.suite;
     "test_pp">::: Test_pp.suite;
     "test_typing">::: Test_typing.suite;
   ]

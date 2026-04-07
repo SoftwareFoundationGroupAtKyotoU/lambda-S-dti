@@ -4,7 +4,7 @@ open Config
 exception Build_bad of string
 
 let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
-  opt_file ~config ~bench ~profile =
+  ~config ~bench ~profile () =
   let intoB = config.intoB in
   let static = config.static in
   let eager = config.eager in
@@ -31,7 +31,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       file 
       mode_str
       (if profile then "_profile" else "")
-  else match opt_file with
+  else match config.opt_file with
   | Some filename -> 
     asprintf "clang ../result_C/%s_out.c %s%s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
       filename
@@ -48,7 +48,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       hash_var
       static_var
 
-let build_run c_code opt_file ~config = match opt_file with
+let build_run c_code ~config = match config.opt_file with
   | Some filename ->
     (* ファイル入力モード *)
     let out_path = "../result_C/" ^ filename ^ "_out.c" in
@@ -56,7 +56,7 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "Generated C file: %s (Execution delegated)@." out_path *)
-    let cmd = build_clang_cmd opt_file ~config ~bench:false ~profile:false in
+    let cmd = build_clang_cmd ~config ~bench:false ~profile:false () in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad "clang fail";
@@ -72,7 +72,7 @@ let build_run c_code opt_file ~config = match opt_file with
     Printf.fprintf oc "%s" c_code;
     close_out oc;
     (* print_debug "%s" (Compiler.build_cmd_for_stdin ()); *)
-    let cmd = build_clang_cmd opt_file ~config ~bench:false ~profile:false in
+    let cmd = build_clang_cmd ~config ~bench:false ~profile:false () in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad "clang fail";
@@ -116,7 +116,7 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   Printf.fprintf oc "%s\n%s\n%s\n%s"
     (asprintf "#include <stdio.h>\n#include <gc.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n" mutants_length)
-    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic int gc_counts[MUTANTS_LENGTH], cast_counts[MUTANTS_LENGTH], inference_counts[MUTANTS_LENGTH], longest[MUTANTS_LENGTH];\nint i;\nint gc_num, gc_tmp, current_cast, current_inference, current_longest;\n"
+    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic int gc_counts[MUTANTS_LENGTH], cast_counts[MUTANTS_LENGTH], inference_counts[MUTANTS_LENGTH], longest[MUTANTS_LENGTH];\nint i;\nint gc_num, gc_tmp, current_inference, current_cast, current_longest, current_compose, compose_cached, current_alloc, new_crc_num, alloc_hash, find_ty_num;\n"
     "int main(){\nGC_INIT();\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
@@ -129,11 +129,11 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   Printf.fprintf oc "return update_jsonl_file_profile(\"%s/%s_%s.jsonl\", gc_counts, cast_counts, inference_counts, longest, MUTANTS_LENGTH);\n}" log_dir mode_str file;
   close_out oc;
   (* build *)
-  let cmd = build_clang_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false in
+  let cmd = build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false () in
   fprintf std_formatter "@.%s@." cmd;
   let i = Sys.command cmd in
   if i != 0 then raise @@ Build_bad "clang(for time) fail";
-  let cmd = build_clang_cmd None ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true in
+  let cmd = build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true () in
   fprintf std_formatter "@.%s@." cmd;
   let i = Sys.command cmd in
   if i != 0 then raise @@ Build_bad "clang(for profile) fail";

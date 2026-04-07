@@ -8,31 +8,32 @@ open Config
 
 let id x = x
 
-let run env tyenv kfunenvs kenv program ~config =
-  let parse str = Parser.toplevel Lexer.main @@ Lexing.from_string str in
-  let e = parse @@ program ^ ";;" in
-  let e, u = Typing.ITGL.type_of_program tyenv e in
-  let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
-  let new_tyenv, f, u' = Translate.ITGL.translate ~intoB:config.intoB tyenv e in
-  assert (Typing.is_equal u u');
-  let u'' = Typing.CC.type_of_program tyenv f in
-  assert (Typing.is_equal u u'');
-  let f =
-    if config.intoB then f
-    else if config.alt then Translate.CC.translate_alt tyenv f
-    else Translate.CC.translate tyenv f
+let run state program ~config =
+  let ppf = Utils.Format.empty_formatter in
+  let lexbuf = Lexing.from_string (program ^ ";;") in
+  let cc_state =
+    state 
+    |> Pipeline.parse ppf lexbuf
+    |> Pipeline.typing_ITGL ppf
+    |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:Utils.Format.empty_formatter ~bench:0
   in
   try
     if config.kNorm then
-      let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
-      let kenv, _, kv = Eval.KNorm.eval_program kenv kf in
-      env, new_tyenv, kfunenvs, kenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.KNorm.pp_value2 kv
+      let state, _, kv = 
+        cc_state
+        |> Pipeline.kNorm_funs ppf ~config
+        |> Pipeline.keval ppf ~config
+      in
+      state |> Pipeline.change_state_program (), asprintf "%a" Pp.pp_ty2 state.ty, asprintf "%a" Pp.KNorm.pp_value2 kv
     else
-      let env, _, v = Eval.CC.eval_program env f in
-      env, new_tyenv, kfunenvs, kenv, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.CC.pp_value2 v
+      let state, _, v = 
+        cc_state
+        |> Pipeline.eval ppf ~config
+      in
+      state |> Pipeline.change_state_program (), asprintf "%a" Pp.pp_ty2 state.ty, asprintf "%a" Pp.CC.pp_value2 v
   with
-  | Blame (_, Pos) -> env, tyenv, kfunenvs, kenv, asprintf "%a" Pp.pp_ty2 u, "blame+"
-  | Blame (_, Neg) -> env, tyenv, kfunenvs, kenv, asprintf "%a" Pp.pp_ty2 u, "blame-"
+  | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame+"
+  | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame-"
 
 let config_B = create ~kNorm:false ~alt:false ~intoB:true  ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
 let config_S = create ~kNorm:false ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
@@ -49,16 +50,17 @@ let ext_S_k (a, b, _, _, _, f) = (a, b, f)
 let ext_A_k (a, b, _, _, _, f) = (a, b, f)
 
 let test_examples config ext =
+  let state = Pipeline.init_state () ~config in
   let test i cases =
     (string_of_int i) >:: fun ctxt ->
       ignore @@ List.fold_left
-        (fun (env, tyenv, kfunenvs, kenv) (program, expected_ty, expected_value) ->
-           let env, tyenv, kfunenvs, kenv, actual_ty, actual_value = run env tyenv kfunenvs kenv program ~config in
+        (fun state (program, expected_ty, expected_value) ->
+           let state, actual_ty, actual_value = run state program ~config in
            assert_equal ~ctxt:ctxt ~printer:id expected_ty actual_ty;
            assert_equal ~ctxt:ctxt ~printer:id expected_value actual_value;
-           env, tyenv, kfunenvs, kenv
+           state
         )
-        (Stdlib.pervasives ~config)
+        state
         cases
   in
   List.mapi test (List.map (fun l -> List.map ext l) Testcases.tests)

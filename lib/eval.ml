@@ -101,7 +101,7 @@ let rec subst_coercion s = function
 | CFail _ as c -> c
 
 let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
-  if debug then fprintf err_formatter "compose <-- %a；%a\n" Pp.pp_coercion c1 Pp.pp_coercion c2;
+  if debug then fprintf err_formatter "compose <-- %a；%a@." Pp.pp_coercion c1 Pp.pp_coercion c2;
   let compose = compose ~debug:debug in
   match normalize_coercion c1, normalize_coercion c2 with
   (* id{star} ;;; t *)
@@ -115,7 +115,7 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
   | CTvInj (tv, p), CId TyDyn -> CTvInj (tv, p)
   | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Ar, _), c2) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
@@ -124,7 +124,7 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     end
   | CTvInj ((_, uref as tv), p), CSeq (CProj (Li, _), c2) ->
     let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
     uref := Some (TyList x1);
     begin match x1 with
       | TyVar tv1 ->
@@ -133,13 +133,13 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     end
   | CTvInj ((_, uref as tv), _), CSeq (CProj (t, _), c2) -> 
     let u = type_of_tag t in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
     uref := Some u;
     compose (CId u) c2
   | CTvInj ((a1, uref as tv1), _), CTvProj ((a2, _ as tv2), _) -> 
     if a1 = a2 then CId (TyVar tv1)
     else begin 
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv1) Pp.pp_ty (TyVar tv2);
+      if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv1) Pp.pp_ty (TyVar tv2);
       uref := Some (TyVar tv2); 
       CId (TyVar tv2)
     end
@@ -175,7 +175,7 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     else CFail (t, p, t')
   | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), (r, p)) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
@@ -184,7 +184,7 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     end
   | CSeq (c1, CInj Li), CTvProj ((_, uref as tv), p) ->
     let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
     uref := Some (TyList x1);
     begin match x1 with
       | TyVar tv1 ->
@@ -193,7 +193,7 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
     end
   | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
     let u = type_of_tag t in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a\n" Pp.pp_ty (TyVar tv) Pp.pp_ty u;
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
     uref := Some u;
     compose c1 (CId u)
   | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p, q) ->
@@ -287,7 +287,7 @@ module CC = struct
     end
 
   let rec eval ?(debug=false) (env: (tyvar list * value) Environment.t) f =
-    if debug then fprintf err_formatter "eval <-- %a\n" Pp.CC.pp_exp f;
+    if debug then fprintf err_formatter "eval <-- %a@." Pp.CC.pp_exp f;
     let eval = eval ~debug:debug in
     match f with
     | Var (x, us) ->
@@ -426,7 +426,7 @@ module CC = struct
     | [] -> raise @@ Eval_bug "Didn't match"
   and cast ?(debug=false) v u1 u2 (r, p) =
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "cast <-- %a: %a => %a\n" Pp.CC.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
+    print_debug "cast <-- %a: %a => %a@." Pp.CC.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
     let cast = cast ~debug:debug in
     match u1, u2 with
     (* When type variables are instantiated *)
@@ -500,21 +500,21 @@ module CC = struct
         match v with
         | Tagged (B | I | U as t, v) ->
           let u = type_of_tag t in
-          print_debug "DTI: %a is instantiated to %a\n"
+          print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
           v
         | Tagged (Ar, v) ->
           let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
-          print_debug "DTI: %a is instantiated to %a\n"
+          print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
           cast v (TyFun (TyDyn, TyDyn)) u (r, p)
         | Tagged (Li, v) ->
           let u = TyList (Typing.fresh_tyvar ()) in
-          print_debug "DTI: %a is instantiated to %a\n"
+          print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
@@ -524,7 +524,7 @@ module CC = struct
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "coerce <-- %a<%a>\n" Pp.CC.pp_value v Pp.pp_coercion c;
+    print_debug "coerce <-- %a<%a>@." Pp.CC.pp_value v Pp.pp_coercion c;
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
@@ -535,7 +535,11 @@ module CC = struct
       | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.CC.pp_value v Pp.pp_coercion c)
   and eval_app_valD ?(debug=false) env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
     | FunSV proc -> proc ([], []) (v2, v3) 
-    | FunAV proc -> snd (proc ([], [])) (v2, v3)
+    | FunAV proc -> 
+      begin match v3 with
+      | CoercionV (CId _) -> fst (proc ([], [])) v2
+      | _ -> snd (proc ([], [])) (v2, v3)
+      end
     | CoerceV (v1, CFun (s, t)) -> 
       begin match v3 with
         | CoercionV c -> 
@@ -543,12 +547,12 @@ module CC = struct
           eval_app_valD env v1 (coerce v2 s ~debug:debug) k ~debug:debug
         | _ -> raise @@ Eval_bug "app: application of non coercion value"
       end
-    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+    | _ -> raise @@ Eval_bug (asprintf "app_valD: application of non procedure value: %a" Pp.CC.pp_value v1)
   and eval_app_valM ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
     | FunBV proc -> proc ([], []) v2
     | FunAV proc -> fst (proc ([], [])) v2
     | CoerceV (v1, CFun (s, t)) -> eval_app_valD env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
-    | _ -> raise @@ Eval_bug (asprintf "app: application of non procedure value: %a" Pp.CC.pp_value v1)
+    | _ -> raise @@ Eval_bug (asprintf "app_valM: application of non procedure value: %a" Pp.CC.pp_value v1)
 
   let eval_program ?(debug=false) env p =
     match p with
@@ -588,7 +592,7 @@ module KNorm = struct
       LetRecBExp (x, tvs, arg, subst_exp s f1, subst_exp s f2)
 
   let rec eval_exp ?(debug=false) kenv f = 
-    if debug then fprintf err_formatter "keval <-- %a\n" Pp.KNorm.pp_exp f;
+    if debug then fprintf err_formatter "keval <-- %a@." Pp.KNorm.pp_exp f;
     let eval_exp = eval_exp ~debug:debug in
     match f with
     | Var x -> 
@@ -749,7 +753,7 @@ module KNorm = struct
       in eval_exp (Environment.add x v1 kenv) f2
   and cast ?(debug=false) v u1 u2 (r, p) = 
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "cast <-- %a: %a => %a\n" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
+    print_debug "cast <-- %a: %a => %a@." Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2;
     let cast = cast ~debug:debug in
     match u1, u2 with
     (* When tyvars are instantiated *)
@@ -802,14 +806,14 @@ module KNorm = struct
       begin match v with
         | Tagged ((B | I | U as t), v) ->
           let u = type_of_tag t in
-          print_debug "DTI: %a is instantiated to %a\n"
+          print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;
           x := Some u;
           v
         | Tagged (Ar, v) -> 
           let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
-          print_debug "DTI: %a is instantiated to %a\n"
+          print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;
           x := Some u;
@@ -819,7 +823,7 @@ module KNorm = struct
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a: %a => %a" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2)
   and coerce ?(debug=false) v c =
     let print_debug f = Utils.Format.make_print_debug debug f in
-    print_debug "coerce <-- %a<%a>\n" Pp.KNorm.pp_value v Pp.pp_coercion c;
+    print_debug "coerce <-- %a<%a>@." Pp.KNorm.pp_value v Pp.pp_coercion c;
     let coerce = coerce ~debug:debug in
     match v with
     | CoerceV (v, c') -> coerce v (compose c' c ~debug:debug)
@@ -866,12 +870,12 @@ module KNorm = struct
           eval_app_valD kenv v1 (coerce v2 s ~debug:debug) k
         | _ -> raise @@ Eval_bug "app: application of non coercion value"
       end
-    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+    | _ -> raise @@ Eval_bug "app_valD: application of non procedure value"
   and eval_app_valM ?(debug=false) env v1 v2 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)
     | FunAV proc -> fst (proc ([], [])) v2
     | FunBV proc -> proc ([], []) v2
     | CoerceV (v1, CFun (s, t)) -> eval_app_valD env v1 (coerce v2 s ~debug:debug) (CoercionV t) ~debug:debug
-    | _ -> raise @@ Eval_bug "app: application of non procedure value"
+    | _ -> raise @@ Eval_bug "app_valM: application of non procedure value"
 
   let eval_program ?(debug=false) kenv = function
     | Exp f -> let v = eval_exp kenv f ~debug:debug in kenv, "-", v
