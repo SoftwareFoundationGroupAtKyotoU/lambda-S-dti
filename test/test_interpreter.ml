@@ -35,12 +35,12 @@ let run state program ~config =
   | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame+"
   | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame-"
 
-let config_B = create ~kNorm:false ~alt:false ~intoB:true  ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
-let config_S = create ~kNorm:false ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
-let config_A = create ~kNorm:false ~alt:true  ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
-let config_B_k = create ~kNorm:true ~alt:false ~intoB:true  ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
-let config_S_k = create ~kNorm:true ~alt:false ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
-let config_A_k = create ~kNorm:true ~alt:true  ~intoB:false ~eager:false ~compile:false ~static:false ~hash:false ~opt_file:None ()
+let config_B = create ~intoB:true ~eager:true ()
+let config_S = create ()
+let config_A = create ~alt:true ()
+let config_B_k = create ~kNorm:true ~intoB:true ~eager:true ()
+let config_S_k = create ~kNorm:true ()
+let config_A_k = create ~kNorm:true ~alt:true ()
 
 let ext_B (a, b, c, _, _, _) = (a, b, c)
 let ext_S (a, b, _, d, _, _) = (a, b, d)
