@@ -494,8 +494,8 @@ module CC = struct
   (*let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t*)
 
   let gt_value v1 v2 = match v1, v2 with
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunAV _ | CoercionV _ | Tagged _ | CoerceV _), (NilV | ConsV _) -> true
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunAV _ | CoercionV _), (Tagged _ | CoerceV _) -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunAV _ | NilV | CoercionV _ | Tagged _ | CoerceV _), ConsV _ -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunAV _ | NilV | CoercionV _), (Tagged _ | CoerceV _) -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
@@ -510,9 +510,9 @@ module CC = struct
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
     | FunBV _ | FunSV _ | FunAV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v, c) ->
+    | CoerceV (v1, c) as v ->
       fprintf ppf "%a<<%a>>"
-        pp_value v
+        (with_paren (gt_value v v1) pp_value) v1
         pp_coercion c
     | CoercionV c -> 
       fprintf ppf "%a"
@@ -532,9 +532,9 @@ module CC = struct
     | IntV i -> pp_print_int ppf i
     | UnitV -> pp_print_string ppf "()"
     | FunBV _ | FunSV _ | FunAV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v, c) ->
+    | CoerceV (v1, c) as v ->
       fprintf ppf "%a<<%a>>"
-        pp_value2 v
+        (with_paren (gt_value v v1) pp_value2) v1
         pp_coercion2 c
     | CoercionV c -> 
       fprintf ppf "%a"
@@ -680,8 +680,8 @@ module KNorm = struct
           pp_exp e
 
   let gt_value v1 v2 = match v1, v2 with
-    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | CoercionV _ | CoerceV _), (NilV | ConsV _) -> true
-    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | CoercionV _), CoerceV _ -> true
+    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | NilV | CoercionV _ | CoerceV _), ConsV _ -> true
+    | (IntV _ | FunSV _ | FunAV _ | FunBV _ | NilV | CoercionV _), CoerceV _ -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with

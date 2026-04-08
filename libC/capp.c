@@ -180,7 +180,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
     				    dest = &new_lst->t;
     				    curr_src = ((lst*)curr_src)->t;
     				}
-    				*dest = (lst*)NULL;
+    				*dest = (value)NULL;
     				return retv;
 					#else
 					#ifdef PROFILE

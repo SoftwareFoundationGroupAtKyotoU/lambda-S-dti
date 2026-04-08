@@ -139,17 +139,17 @@ let bench_file_mode
     ~(mutants:Syntax.ITGL.program list)
   =
   let mode_str = full_mode_name mode eager hash in
-
+  try begin
   (* modeに応じたconfigの生成 *)
   let config = match mode with
-  | SI -> Config.create ~kNorm:false ~alt:false ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | SC -> Config.create ~kNorm:false ~alt:false ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | AI -> Config.create ~kNorm:false ~alt:true ~intoB:false ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | AC -> Config.create ~kNorm:false ~alt:true ~intoB:false ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | BI -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:false ~static:false ~hash ~opt_file:(Some file) ()
-  | BC -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:true ~static:false ~hash ~opt_file:(Some file) ()
-  | STATICI -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:false ~static:true ~hash ~opt_file:(Some file) ()
-  | STATICC -> Config.create ~kNorm:false ~alt:false ~intoB:true ~eager ~compile:true ~static:true ~hash ~opt_file:(Some file) ()
+  | SI -> Config.create ~eager ~hash ~opt_file:(Some file) ()
+  | SC -> Config.create ~eager ~hash ~opt_file:(Some file) ~compile:true ()
+  | AI -> Config.create ~eager ~hash ~opt_file:(Some file) ~alt:true ()
+  | AC -> Config.create ~eager ~hash ~opt_file:(Some file) ~alt:true ~compile:true ()
+  | BI -> Config.create ~eager ~hash ~opt_file:(Some file) ~intoB:true ()
+  | BC -> Config.create ~eager ~hash ~opt_file:(Some file) ~intoB:true ~compile:true ()
+  | STATICI -> Config.create ~eager ~hash ~opt_file:(Some file) ~static:true()
+  | STATICC -> Config.create ~eager ~hash ~opt_file:(Some file) ~static:true ~compile:true ()
   in
 
   Format.fprintf Format.std_formatter "debug: bench_file_mode\n";
@@ -311,6 +311,10 @@ let bench_file_mode
 
   (* ターゲットの進捗バーを確定（改行しない） *)
   Bench_utils.Target_progress.print ~final:false prog
+  
+  end
+  with 
+  | Failure msg -> Format.eprintf "[Skip] %s@." msg
 
 let () =
   let files_ref = ref [] in

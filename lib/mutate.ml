@@ -398,7 +398,7 @@ let mutate_prog_with_indices (idxs:int list) (p : program) : program =
     | Exp t     -> Exp (mutate_term_with_indices idxs t)
     | LetDecl (x,t) -> LetDecl (x, mutate_term_with_indices idxs t)
   in
-  let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.default) in
+  let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.create ~compile:true ()) in
   let p, u = Typing.ITGL.type_of_program tyenv mutated in 
   let _, p, _ = Typing.ITGL.normalize tyenv p u in
   p
@@ -425,7 +425,7 @@ let mutate_all (p:program) : program list =
   let t =
     match p with Exp t | LetDecl (_, t) -> t
   in
-  let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.default) in
+  let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.create ~compile:true ()) in
   let p, u = Typing.ITGL.type_of_program tyenv p in
   let _, p, _ = Typing.ITGL.normalize tyenv p u in 
   Format.fprintf Format.std_formatter "program's type is %a\n" Pp.pp_ty u;

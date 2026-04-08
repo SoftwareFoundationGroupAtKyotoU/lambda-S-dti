@@ -71,7 +71,6 @@ let rec repl ppf lexbuf programs ~config ~state =
 let start file ~(config:Config.t) =
   let ppf = if config.debug then err_formatter else Utils.Format.empty_formatter in
   let channel, lexbuf = Pipeline.lex ppf file in
-  let config = Config.adjust config file in
   let state = Pipeline.init_state () ~config in
   try
     repl ppf lexbuf [] ~config ~state
@@ -96,24 +95,43 @@ let () =
     asprintf "Usage: %s <options> [file]\n" program ^
     "Options: "
   in
-  let file = ref None in
-  let config = { Config.default with opt_file = None } in
+  let file_ref = ref None in
+  let debug_ref = ref false in
+  let kNorm_ref = ref false in
+  let alt_ref = ref false in
+  let compile_ref = ref false in
+  let intoB_ref = ref false in
+  let eager_ref = ref false in
+  let hash_ref = ref false in
+  let static_ref = ref false in
   let options = Arg.align [
-      ("-d", Arg.Unit (fun () -> config.debug <- true), " Enable debug mode");
-      ("-k", Arg.Unit (fun () -> config.kNorm <- true), " Evaluate on k-Normal form");
-      ("-a", Arg.Unit (fun () -> config.alt <- true), " Use alternative translation");
-      ("-c", Arg.Unit (fun () -> config.compile <- true), " Compile the program to C code");
-      ("-b", Arg.Unit (fun () -> config.intoB <- true), " Translate into LB");
-      ("-e", Arg.Unit (fun () -> config.eager <- true), " Eager list coercion-/cast-composition");
-      ("-h", Arg.Unit (fun () -> config.hash <- true), " hash-consing / compose-memo on");
-      ("--static", Arg.Unit (fun () -> config.static <- true), " Evaluate or compile only fully statically program");
+      ("-d", Arg.Unit (fun () -> debug_ref := true), " Enable debug mode");
+      ("-k", Arg.Unit (fun () -> kNorm_ref := true), " Evaluate on k-Normal form");
+      ("-a", Arg.Unit (fun () -> alt_ref := true), " Use alternative translation");
+      ("-c", Arg.Unit (fun () -> compile_ref := true), " Compile the program to C code");
+      ("-b", Arg.Unit (fun () -> intoB_ref := true), " Translate into LB");
+      ("-e", Arg.Unit (fun () -> eager_ref := true), " Eager list coercion-/cast-composition");
+      ("-h", Arg.Unit (fun () -> hash_ref := true), " hash-consing / compose-memo on");
+      ("--static", Arg.Unit (fun () -> static_ref := true), " Evaluate or compile only fully statically program");
     ]
   in
-  let parse_argv arg = match !file with
-  | None -> file := Some arg
+  let parse_argv arg = match !file_ref with
+  | None -> file_ref := Some arg
   | Some _ -> raise @@ Arg.Bad "error: only one file can be specified"
   in
   Arg.parse options parse_argv usage;
-  start !file ~config
+  let config = Config.create 
+    ~debug:!debug_ref 
+    ~kNorm:!kNorm_ref 
+    ~alt:!alt_ref 
+    ~compile:!compile_ref 
+    ~intoB:!intoB_ref 
+    ~eager:!eager_ref 
+    ~hash:!hash_ref 
+    ~static:!static_ref 
+    ~opt_file:!file_ref 
+    ()
+  in
+  start !file_ref ~config
 
 (* clang logs/20260102-12:50:40/bench/zipwithSEC.c -D EAGER libC/*.c benchC/bench_json.c logs/20260102-12:50:40/SEC/zipwith*.c -o result/stdin.out -lgc -lcjson -O2 *)

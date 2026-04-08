@@ -764,12 +764,13 @@ module KNorm = struct
     (* IdStar: ? => ? ... ok*)
     | TyDyn, TyDyn -> v
     (* Succeed / Fail: ? => U *)
-    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) as u2) -> 
+    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) | TyList TyDyn as u2) -> 
       begin match v, u2 with
         | Tagged (B, v), TyBool -> v (* bool => ? => bool ... ok *)
         | Tagged (I, v), TyInt -> v (* int => ? => int ... ok *)
         | Tagged (U, v), TyUnit -> v (* unit => ? => unit ... ok *)
         | Tagged (Ar, v), TyFun (TyDyn, TyDyn) -> v (* ?->? => ? => ?->? ... ok *)
+        | Tagged (Li, v), TyList TyDyn -> v
         | Tagged _, _ -> raise @@ Blame (r, p)
         | _ -> raise @@ Eval_bug "untagged value"
       end
@@ -786,21 +787,37 @@ module KNorm = struct
           )
         | _ -> raise @@ Eval_bug "non procedual value"
       end
+    | TyList u1, TyList u2 -> 
+      if u1 = u2 then v 
+      else begin match v with
+      | NilV -> NilV
+      | ConsV (h, t) -> ConsV (cast h u1 u2 (r, p), cast t (TyList u1) (TyList u2) (r, p))
+      | _ -> raise @@ Eval_bug "non list value"
+      end
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
+    | TyList TyDyn, TyDyn -> Tagged (Li, v)
     (* Ground *)
     | (TyFun _ as u1), (TyDyn as u2) ->
       let dfun = TyFun (TyDyn, TyDyn) in
       let v = cast v u1 dfun (r, p) in
       cast v dfun u2 (r, p)
+    | TyList _, TyDyn ->
+      let dlist = TyList TyDyn in
+      let v = cast v u1 dlist (r, p) in
+      cast v dlist TyDyn (r, p)
     (* Expand *)
-    | (TyDyn as u1), (TyFun _ as u2) ->
+    | TyDyn, TyFun _ ->
       let dfun = TyFun (TyDyn, TyDyn) in
       let v = cast v u1 dfun (r, p) in 
       cast v dfun u2 (r, p)
+    | TyDyn, TyList _ ->
+      let dlist = TyList TyDyn in
+      let v = cast v TyDyn dlist (r, p) in
+      cast v dlist u2 (r, p)
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({contents = None} as x)) as u') ->
       begin match v with
@@ -818,6 +835,13 @@ module KNorm = struct
             Pp.pp_ty u;
           x := Some u;
           cast v (TyFun (TyDyn, TyDyn)) u (r, p)
+        | Tagged (Li, v) ->
+          let u = TyList (Typing.fresh_tyvar ()) in
+          print_debug "DTI: %a is instantiated to %a@."
+            Pp.pp_ty u'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyList TyDyn) u (r, p)
         | _ -> raise @@ Eval_bug "cannot instamtiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a: %a => %a" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2)
