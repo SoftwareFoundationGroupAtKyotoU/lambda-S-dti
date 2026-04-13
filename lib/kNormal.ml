@@ -21,6 +21,15 @@ let rec alpha_mf idenv = function
     let mf1, idenv = alpha_mf idenv mf1 in
     let mf2, idenv = alpha_mf idenv mf2 in
     MatchCons (mf1, mf2), idenv
+  | MatchTuple mfs ->
+    let rec iter idenv l r = match l with
+    | h :: t ->
+      let mf, idenv = alpha_mf idenv h in
+      iter idenv t (mf :: r)
+    | [] -> 
+      MatchTuple (List.rev r), idenv
+    in
+    iter idenv mfs []
 
 let rec k_normalize_mf tvsenv f = function
   | MatchILit _ | MatchNil _ | MatchWild _  as mf -> mf, tvsenv, fun f -> f
@@ -36,6 +45,16 @@ let rec k_normalize_mf tvsenv f = function
     let y = genvar "_var" in
     let mf2, tvsenv, decl_var2 = k_normalize_mf tvsenv (KNorm.LetExp (y, f, Tl y)) mf2 in
     MatchCons (mf1, mf2), tvsenv, fun f -> decl_var1 (decl_var2 f)
+  | MatchTuple mfs -> 
+    let rec iter tvsenv l i mfs decl_vars = match l with
+    | h :: t ->
+      let x = genvar "_var" in
+      let mf, tvsenv, decl_var = k_normalize_mf tvsenv (KNorm.LetExp (x, f, KNorm.Tget (x, i))) h in
+      iter tvsenv t (i + 1) (mf :: mfs) (decl_var :: decl_vars)
+    | [] -> 
+      MatchTuple (List.rev mfs), tvsenv, fun f -> List.fold_left (fun f decl_var -> decl_var f) f decl_vars
+    in
+    iter tvsenv mfs 0 [] []
 
 module CC = struct
   open Syntax.CC
@@ -97,6 +116,8 @@ module CC = struct
     | ConsExp (f1, f2) -> ConsExp (alpha_exp idenv f1, alpha_exp idenv f2)
     | MatchExp (f, ms) -> 
       MatchExp (alpha_exp idenv f, List.map (fun (mf, f) -> let mf, idenv = alpha_mf idenv mf in (mf, alpha_exp idenv f)) ms)
+    | TupleExp fs -> 
+      TupleExp (List.map (fun f -> alpha_exp idenv f) fs)
 
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
@@ -186,7 +207,7 @@ module CC = struct
         | Var _ | BConst _ | IfExp _ | AppMExp _ | AppDExp _ | LetExp _ | CastExp _ | CAppExp _ | MatchExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunBExp _ | FixBExp _ | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ -> raise @@ KNormal_bug "if-cond type should bool"
+        | IConst _ | UConst | FunBExp _ | FixBExp _ | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _ -> raise @@ KNormal_bug "if-cond type should bool"
       end
     | FunBExp ((x, _), f) -> 
       let tent_var = genvar "_var" in
@@ -235,6 +256,14 @@ module CC = struct
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in
       insert_let f2 @@ fun y -> insert_let f1 @@ fun x -> KNorm.Cons (x, y)
+    | TupleExp fs ->
+      let rec make_tuple fs l = match fs with
+      | f :: fs -> 
+        let f = k_normalize_exp tvsenv f in
+        insert_let f @@ fun x -> (make_tuple fs (x :: l))
+      | [] -> KNorm.Tuple (List.rev l)
+      in
+      make_tuple fs []
     | LetExp (x, tvs, f1, f2) -> 
       begin match f1 with
         | FunBExp ((x', _), f1) ->
@@ -319,8 +348,10 @@ module KNorm = struct
     | Div (x, y) -> Div (find x idenv, find y idenv)
     | Mod (x, y) -> Mod (find x idenv, find y idenv)
     | Cons (x, y) -> Cons (find x idenv, find y idenv)
+    | Tuple xs -> Tuple (List.map (fun x -> find x idenv) xs)
     | Hd x -> Hd (find x idenv)
     | Tl x -> Tl (find x idenv)
+    | Tget (x, i) -> Tget (find x idenv, i)
     | IfEqExp (x, y, f1, f2) ->
       IfEqExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
     | IfLteExp (x, y, f1, f2) ->

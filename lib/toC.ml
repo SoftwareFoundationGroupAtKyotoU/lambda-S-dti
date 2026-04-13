@@ -6,7 +6,7 @@ open Utils.Error
 open Static_manage
 
 exception ToC_bug of string
-(* exception ToC_error of string *)
+exception ToC_error of string
 
 (*main関数かどうかを判定*)
 let is_main = ref false
@@ -40,6 +40,7 @@ let c_of_ty = function
   | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
   | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
   | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun or list"
+  | TyTuple _ -> raise @@ ToC_error "tuple yet"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function
@@ -103,6 +104,8 @@ let toC_tag ppf = function
   | U -> pp_print_string ppf "UNIT"
   | Ar -> pp_print_string ppf "AR"
   | Li -> pp_print_string ppf "LI"
+  | Tp _ -> raise @@ ToC_error "tuple yet"
+
 
 let rec toC_crc ppf (c, x) = 
   if CrcManager.mem c then 
@@ -167,6 +170,7 @@ let rec toC_mf ppf (x, mf) = match mf with
         x
         toC_mf (asprintf "hd((lst*)%s)" x, mf1)
         toC_mf (asprintf "tl((lst*)%s)" x, mf2)
+  | MatchTuple _ -> raise @@ ToC_error "tuple yet"
   | MatchWild _ -> 
     fprintf ppf "1"
 
@@ -454,6 +458,7 @@ let toC_tycontent ppf (u, name) = match u with
     fprintf ppf "static ty %s = { .tykind = TYLIST, .tydat.tylist = %s };"
       name
       (c_of_ty u)
+  | TyTuple _ -> raise @@ ToC_error "tuple yet"
   | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
 
 let toC_tycontents ppf l = 

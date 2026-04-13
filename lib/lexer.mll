@@ -42,6 +42,7 @@ rule main = parse
 | ")" { Parser.RPAREN (range_of lexbuf) }
 | "[" { Parser.LBRACKET (range_of lexbuf)}
 | "]" { Parser.RBRACKET (range_of lexbuf)}
+| "," { Parser.COMMA (range_of lexbuf) }
 | ":" { Parser.COLON (range_of lexbuf) }
 | ";" { Parser.SEMI (range_of lexbuf) }
 | "::" { Parser.COLCOL (range_of lexbuf)}

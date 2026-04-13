@@ -28,6 +28,7 @@ let rec is_equal u1 u2 = match u1, u2 with
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_equal u11 u21) && (is_equal u12 u22)
   | TyList u1, TyList u2 -> is_equal u1 u2
+  | TyTuple us1, TyTuple us2 -> List.fold_left2 (fun b u1 u2 -> b && u1 = u2) true us1 us2
   | _ -> false
 
 let type_of_binop = function
@@ -43,6 +44,7 @@ let rec is_static_type = function
   | TyFun (u1, u2) -> (is_static_type u1) && (is_static_type u2)
   | TyDyn -> false
   | TyList u -> is_static_type u
+  | TyTuple us -> List.fold_left (fun b u -> b && is_static_type u) true us
   | _ -> true
 
 (* Substitutions for type variables *)
@@ -56,6 +58,7 @@ let subst_type (s: substitutions) (u: ty) =
   let rec subst u ((a', _), u' as s0) = match u with
     | TyFun (u1, u2) -> TyFun (subst u1 s0, subst u2 s0)
     | TyList u -> TyList (subst u s0)
+    | TyTuple us -> TyTuple (List.map (fun u -> subst u s0) us)
     | TyVar (a, { contents = None }) when a = a' -> u'
     | TyVar (_, { contents = Some u }) -> subst u s0
     | _ as u -> u
@@ -106,6 +109,20 @@ module ITGL = struct
       else let y = fresh_tyvar () in
       unify @@ CEqual (TyVar x, TyList y);
       unify @@ CConsistent (y, u)
+    (* (U11,...,U1n) ~ (U21,...,U2m) *)
+    | CConsistent (TyTuple us1, TyTuple us2) as c ->
+      begin try 
+        List.iter2 (fun u1 u2 -> unify @@ CConsistent (u1, u2)) us1 us2
+      with
+        Invalid_argument _ -> raise @@ Type_error (asprintf "cannot solve a constraint because of the difference of the tuple length: %a" pp_constr c)
+      end
+    (* (U1,...,Un) ~ X or X ~ (U1,...,Un) *)
+    | CConsistent (TyTuple us, TyVar x) | CConsistent (TyVar x, TyTuple us) as c ->
+      if TV.mem x (ftv_ty (TyTuple us)) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
+      else 
+        let ys = List.map (fun _ -> fresh_tyvar ()) us in
+        unify @@ CEqual (TyVar x, TyTuple ys);
+        List.iter2 (fun y u -> unify @@ CConsistent (y, u)) ys us
     (* U ~ X or X ~ U *)
     | CConsistent (u, TyVar x) | CConsistent (TyVar x, u) ->
       unify @@ CEqual (TyVar x, u)
@@ -128,6 +145,13 @@ module ITGL = struct
     (* [T1] = [T2] *)
     | CEqual (TyList t1, TyList t2) ->
       unify @@ CEqual (t1, t2)
+    (* (U11,...,U1n) = (U21,...,U2n) *)
+    | CEqual (TyTuple ts1, TyTuple ts2) as c ->
+      begin try 
+        List.iter2 (fun t1 t2 -> unify @@ CEqual (t1, t2)) ts1 ts2
+      with
+        Invalid_argument _ -> raise @@ Type_error (asprintf "cannot solve a constraint because of the difference of the tuple length: %a" pp_constr c)
+      end
     (* T = X or X = T *)
     | CEqual (t, TyVar (_, tref as tv)) (*when not (is_tyvar t)*) | CEqual (TyVar (_, tref as tv), t) as c ->
       if TV.mem tv (ftv_ty t) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
@@ -145,7 +169,7 @@ module ITGL = struct
    * to allow more type variables are generalized by let. *)
   let rec is_value env e = 
     let rec is_base_value env u e = match e, u with 
-      | _, (TyVar _ | TyDyn | TyFun _ | TyList _) -> 
+      | _, (TyVar _ | TyDyn | TyFun _ | TyList _ | TyTuple _) -> 
         raise @@ Type_bug (asprintf "invalid base value: %a" pp_exp e)
       | Var (_, x, ys), u ->
         begin try
@@ -198,6 +222,24 @@ module ITGL = struct
       | AscExp (_, e, TyList _) -> is_list_value env e
       | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_list_value env @@ AscExp (r, e, u)
       | _ -> false
+    in let rec is_tuple_value env = function
+      | Var (_, x, ys) ->  
+        begin try
+          let TyScheme (xs, u') = Environment.find x env in
+          let s = Utils.List.zip xs !ys in
+          begin match subst_type s u' with
+          | TyTuple _ -> true
+          | _ -> false
+          end
+        with Not_found ->
+          raise @@ Type_bug (asprintf "variable '%s' not found in the environment" x)
+        end
+      (* | NilExp _ -> true
+      | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2 *)
+      | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_value env e) true es
+      | AscExp (_, e, TyTuple _) -> is_tuple_value env e
+      | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_tuple_value env @@ AscExp (r, e, u)
+      | _ -> false
     in let rec is_tyvar_value env a = function
       | Var (_, x, ys) ->
         begin try
@@ -226,9 +268,11 @@ module ITGL = struct
     | FixIExp _ 
     | NilExp _ -> true
     | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2
+    | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_value env e) true es
     | AscExp (_, e, (TyInt | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
     | AscExp (_, e, TyList _) -> is_list_value env e
+    | AscExp (_, e, TyTuple _) -> is_tuple_value env e
     | AscExp (_, e, TyDyn) -> is_value env e
     | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_value env @@ AscExp (r, e, u)
     | AscExp (_, e, TyVar (a, { contents = None })) -> is_tyvar_value env a e
@@ -255,6 +299,8 @@ module ITGL = struct
       TyFun (u1, u2)
     | TyList u1, TyList u2 ->
       TyList (type_of_meet u1 u2)
+    | TyTuple us1, TyTuple us2 ->
+      TyTuple (List.map2 (fun u1 u2 -> type_of_meet u1 u2) us1 us2)
     | u1, u2 -> raise @@ Type_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
   let rec type_of_mf env mf ids = match mf with
@@ -271,6 +317,14 @@ module ITGL = struct
       let u1, env, ids = type_of_mf env mf1 ids in
       unify @@ CConsistent (TyList u1, u2);
       type_of_meet (TyList u1) u2, env, ids
+    | MatchTuple mfs ->
+      let rec iter env ids l r = match l with
+      | h :: t ->
+        let u, env, ids = type_of_mf env h ids in
+        iter env ids t (u :: r)
+      | [] -> TyTuple (List.rev r), env, ids
+      in
+      iter env ids mfs []
     (* | MatchAsc (mf, u) ->
       let u', env, ids = type_of_matchform env mf ids in
       unify @@ CConsistent (u', u);
@@ -356,6 +410,8 @@ module ITGL = struct
       let u1 = type_of_exp env e1 in
       unify @@ CConsistent (TyList u1, u2);
       type_of_meet (TyList u1) u2
+    | TupleExp (_, es) ->
+      TyTuple (List.map (fun e -> type_of_exp env e) es)
   and type_of_ms env ms u_match u_exp = match ms with
     | (mf, e) :: ms ->
       let u, env', _ = type_of_mf env mf [] in
@@ -380,6 +436,7 @@ module ITGL = struct
     | TyVar (_, { contents = Some u }) -> normalize_type u
     | TyFun (u1, u2) -> TyFun (normalize_type u1, normalize_type u2)
     | TyList u -> TyList (normalize_type u)
+    | TyTuple us -> TyTuple (List.map (fun u -> normalize_type u) us)
     | _ as u -> u
 
   let normalize_tyenv =
@@ -391,6 +448,7 @@ module ITGL = struct
     | MatchVar (x, u) -> MatchVar (x, normalize_type u)
     | MatchNil u -> MatchNil (normalize_type u)
     | MatchCons (mf1, mf2) -> MatchCons (normalize_matchform mf1, normalize_matchform mf2)
+    | MatchTuple mfs -> MatchTuple (List.map (fun mf -> normalize_matchform mf) mfs)
     (* | MatchAsc (mf, u) -> MatchAsc (normalize_matchform mf, normalize_type u) *)
 
   let rec normalize_exp = function
@@ -420,6 +478,7 @@ module ITGL = struct
       LetExp (r, y, normalize_exp e1, normalize_exp e2)
     | NilExp (r, u) -> NilExp (r, normalize_type u)
     | ConsExp (r, e1, e2) -> ConsExp (r, normalize_exp e1, normalize_exp e2)
+    | TupleExp (r, es) -> TupleExp (r, List.map (fun e -> normalize_exp e) es)
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)
@@ -442,6 +501,7 @@ let rec meet u1 u2 = match u1, u2 with
   | TyDyn, u | u, TyDyn -> u
   | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
   | TyList u1, TyList u2 -> TyList (meet u1 u2)
+  | TyTuple us1, TyTuple us2 -> TyTuple (List.map2 (fun u1 u2 -> meet u1 u2) us1 us2)
   | _ ->
     raise @@ Type_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
@@ -458,6 +518,9 @@ let rec type_of_coercion = function
   | CList c ->
     let u1, u2 = type_of_coercion c in
     (TyList u1, TyList u2)
+  | CTuple cs ->
+    let us1, us2 = List.split (List.map (fun c -> type_of_coercion c) cs) in
+    (TyTuple us1, TyTuple us2) 
   | CId u -> (u, u)
   | CSeq (c1, c2) ->
     let (u11, u12) = type_of_coercion c1 in
@@ -481,6 +544,14 @@ module CC = struct
       let u2, env = type_of_matchform env mf2 in
       let u1, env = type_of_matchform env mf1 in
       meet (TyList u1) u2, env
+    | MatchTuple mfs ->
+      let rec iter env l r = match l with
+      | h :: t ->
+        let u, env = type_of_matchform env h in
+        iter env t (u :: r)
+      | [] -> TyTuple (List.rev r), env
+      in
+      iter env mfs []
     (* | MatchAsc (mf, u) ->
       let u', env, ids = type_of_matchform env mf ids in
       unify @@ CConsistent (u', u);
@@ -575,6 +646,7 @@ module CC = struct
       let u1 = type_of_exp env f1 in
       if (TyList u1) = u2 then u2
       else raise @@ Type_bug (asprintf "cons: %a=%a" pp_ty (TyList u1) pp_ty u2)
+    | TupleExp es -> TyTuple (List.map (fun e -> type_of_exp env e) es)
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "yet"
   and type_of_ms env u_match = function
     | (mf, f) :: t ->

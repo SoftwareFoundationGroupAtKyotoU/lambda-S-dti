@@ -70,6 +70,7 @@ let rec count_fun_params (t : exp) : int =
       count_fun_params e1 + count_fun_params e2 + count_fun_params e3
   | MatchExp (_, e, ms) ->
     count_fun_params e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fun_params e) ms)
+  | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let rec count_fix_nodes (t : exp) : int =
   match t with
@@ -89,6 +90,7 @@ let rec count_fix_nodes (t : exp) : int =
       count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
   | MatchExp (_, e, ms) ->
     count_fix_nodes e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fix_nodes e) ms)
+  | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let (*rec*) count_tapp_nodes ((*t*)_ : exp) : int = 0
   (*match t with
@@ -173,6 +175,7 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list =
   | MatchExp (_, e, ms) ->
     let c1, f1, l1 = collect_links c fixc e in
     List.fold_left (fun (c, f, l) -> fun (_, e) -> let c, f, l' = collect_links c f e in c, f, l @ l') (c1, f1, l1) ms
+  | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let build_link_map (ls:link list) : (int * (int * int) list) list =
   let tbl : (int, (int * int) list) Hashtbl.t = Hashtbl.create 17 in
@@ -383,6 +386,7 @@ let rec apply
   (* | CAppExp (r, s, e1) ->
       let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
       (lamc1, fixc1, tappc1, CAppExp (r, s, e1')) *)
+  | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 
 (* ---------- 公開 API ---------- *)

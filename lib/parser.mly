@@ -33,6 +33,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
+%token <Utils.Error.range> COMMA
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -43,6 +44,7 @@ exception Parser_bug of string
 (* Ref: https://caml.inria.fr/pub/docs/manual-ocaml/expr.html *)
 %right SEMI
 %right prec_if
+%right RARROW
 %right LOR
 %right LAND
 %left  EQ NEQ LT LTE GT GTE
@@ -136,27 +138,28 @@ MatchExpr :
     }
 
 MatchCondExpr :
-  | m=MatchFormExpr RARROW e=Expr { [(m, e)] }
-  | m=MatchFormExpr RARROW e=NotMatchExpr VBAR ms=MatchCondExpr { (m, e) :: ms }
+  | m=MatchForm RARROW e=Expr { [(m, e)] }
+  | m=MatchForm RARROW e=NotMatchExpr VBAR ms=MatchCondExpr { (m, e) :: ms }
 
-MatchFormExpr :
-  | m1=MatchFormLitExpr COLCOL m2=MatchFormExpr { MatchCons (m1, m2) }
-  | m=MatchFormLitExpr { m }
+MatchForm :
+  | m1=LitMatchForm COMMA ms=separated_nonempty_list(COMMA, LitMatchForm) { MatchTuple (m1 :: ms) }
+  | m1=MatchForm COLCOL m2=MatchForm { MatchCons (m1, m2) }
+  | m=LitMatchForm { m }
 
-MatchFormLitExpr :
+LitMatchForm :
   | x=ID { MatchVar (x.value, Typing.fresh_tyvar ()) }
   | i=INTV { MatchILit i.value }
   | TRUE   { MatchBLit true }
   | FALSE  { MatchBLit false }
   | LPAREN RPAREN { MatchULit }
-  | LBRACKET ms=separated_list(SEMI, MatchFormLitExpr) RBRACKET {
+  | LBRACKET ms=separated_list(SEMI, LitMatchForm) RBRACKET {
     let rec makelist l = match l with
       | h :: t -> MatchCons (h, makelist t)
       | [] -> MatchNil (Typing.fresh_tyvar ())
     in makelist ms 
     }
   // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
-  | LPAREN m=MatchFormExpr RPAREN { m }
+  | LPAREN m=MatchForm RPAREN { m }
   | UNDER { MatchWild (Typing.fresh_tyvar ()) }
 
 NotMatchExpr :
@@ -202,23 +205,27 @@ SeqExpr :
       let r = join_range start (range_of_exp e3) in
       IfExp (r, e1, e2, e3)
   }
-  | e1=SeqExpr LOR e2=SeqExpr {
+  | e1=BinOpExpr COMMA es=separated_nonempty_list(COMMA, BinOpExpr) {
+      let r = List.fold_left (fun r e -> join_range r (range_of_exp e)) (range_of_exp e1) es in
+      TupleExp (r, e1 :: es)
+    }
+  | e=BinOpExpr { e }
+  
+BinOpExpr : 
+  | e1=BinOpExpr LOR e2=BinOpExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       let t, f = BConst (r, true), BConst (r, false) in
       IfExp (r, e1, t, IfExp (r, e2, t, f))
     }
-  | e1=SeqExpr LAND e2=SeqExpr {
+  | e1=BinOpExpr LAND e2=BinOpExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       let t, f = BConst (r, true), BConst (r, false) in
       IfExp (r, e1, IfExp (r, e2, t, f), f)
     }
-  | e1=SeqExpr op=Op e2=SeqExpr {
+  | e1=BinOpExpr op=Op e2=BinOpExpr {
       BinOp (join_range (range_of_exp e1) (range_of_exp e2), op, e1, e2)
     }
-  | e=ConsExpr { e }
-
-ConsExpr :
-  | e1=ConsExpr COLCOL e2=ConsExpr {
+  | e1=BinOpExpr COLCOL e2=BinOpExpr {
       ConsExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
     }
   | UnaryExpr { $1 }
@@ -269,16 +276,16 @@ SimpleExpr :
 
 ListElms :
   | /* empty */ { fun r -> NilExp(r, Typing.fresh_tyvar ()) }
-  | e=ConsExpr { fun r ->
+  | e=BinOpExpr { fun r ->
       ConsExp(range_of_exp e, e, NilExp(r, Typing.fresh_tyvar ()))
     }
-  | e=ConsExpr SEMI l=ListElms { fun r ->
+  | e=BinOpExpr SEMI l=ListElms { fun r ->
       ConsExp(range_of_exp e, e, l r)
     }
 
 Type :
-  | u1=SimpleType RARROW u2=Type { TyFun (u1, u2) }
-  | LBRACKET u=Type RBRACKET { TyList u }
+  | u1=Type RARROW u2=Type { TyFun (u1, u2) }
+  | u1=SimpleType STAR us=separated_nonempty_list(STAR, SimpleType) { TyTuple (u1 :: us) }
   | SimpleType { $1 }
 
 SimpleType :
@@ -294,4 +301,5 @@ SimpleType :
         tyvenv := Environment.add x.value u !tyvenv;
         u
     }
+  | LBRACKET u=Type RBRACKET { TyList u }
   | LPAREN u=Type RPAREN { u }

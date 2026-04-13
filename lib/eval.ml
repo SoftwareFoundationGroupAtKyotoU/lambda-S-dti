@@ -21,6 +21,7 @@ let rec subst_mf s = function
   | MatchVar (x, u) -> MatchVar (x, subst_type s u)
   | MatchNil u -> MatchNil (subst_type s u)
   | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
+  | MatchTuple mfs -> MatchTuple (List.map (fun mf -> subst_mf s mf) mfs)
 
 let rec normalize_coercion c = match c with
   | CId TyDyn -> c
@@ -69,6 +70,15 @@ let rec normalize_coercion c = match c with
       | CId u -> CId (TyList u)
       | _ -> CList s'
     end
+  | CTuple ss ->
+    let rec check_id l r = match l with
+    | CId u :: t -> check_id t (u :: r)
+    | _ :: _ -> (false, r) (* r is dummy *)
+    | [] -> (true, List.rev r)
+    in
+    let (is_id, id_u) = check_id ss [] in
+    if is_id then CId (TyTuple id_u)
+    else CTuple ss
   | CTvProj ((i, {contents = Some (TyFun (u1, u2))}), (r, p)) -> 
     normalize_coercion (CSeq (CProj (Ar, (r, p)), CFun (CTvInj ((i, ref (Some u1)), (r, neg p)), CTvProj ((i, ref (Some u2)), (r, p)))))
   | CTvInj ((i, {contents = Some (TyFun (u1, u2))}), (r, p)) ->
@@ -96,6 +106,7 @@ let rec subst_coercion s = function
   normalize_coercion (CTvProjInj ((a, {contents = Some u}), p, q))
 | CFun (c1, c2) -> CFun (subst_coercion s c1, subst_coercion s c2)
 | CList c -> CList (subst_coercion s c)
+| CTuple cs -> CTuple (List.map (fun c -> subst_coercion s c) cs)
 | CId u -> CId (subst_type s u)
 | CSeq (c1, c2) -> CSeq (subst_coercion s c1, subst_coercion s c2)
 | CFail _ as c -> c
@@ -131,6 +142,17 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
         compose (CList (CTvInj (tv1, p))) c2
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
+  | CTvInj ((_, uref as tv), p), CSeq (CProj ((Tp n), _), c2) ->
+    let xs = List.map (fun _ -> fresh_tyvar ()) (make_dyn_list n) in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyTuple xs);
+    uref := Some (TyTuple xs);
+    let rec make_c1 l r = match l with
+    | TyVar tv :: t -> 
+      make_c1 t (CTvInj (tv, p) :: r)
+    | _ :: _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    | [] -> CTuple (List.rev r)
+    in
+    compose (make_c1 xs []) c2
   | CTvInj ((_, uref as tv), _), CSeq (CProj (t, _), c2) -> 
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
@@ -191,6 +213,17 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
         compose c1 (CList (CTvProj (tv1, p)))
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
+  | CSeq (c1, CInj (Tp n)), CTvProj ((_, uref as tv), p) ->
+    let xs = List.map (fun _ -> fresh_tyvar ()) (make_dyn_list n) in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyTuple xs);
+    uref := Some (TyTuple xs);
+    let rec make_c2 l r = match l with
+    | TyVar tv :: t -> 
+      make_c2 t (CTvProj (tv, p) :: r)
+    | _ :: _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
+    | [] -> CTuple (List.rev r)
+    in
+    compose c1 (make_c2 xs [])
   | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
@@ -229,6 +262,16 @@ let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
       | CId u -> CId (TyList u)
       | _ -> CList c
     end
+  | CTuple ss1, CTuple ss2 ->
+    let ss = List.map2 (fun s1 s2 -> compose s1 s2) ss1 ss2 in
+    let rec check_id l r = match l with
+    | CId u :: t -> check_id t (u :: r)
+    | _ :: _ -> (false, r) (* r is dummy *)
+    | [] -> (true, List.rev r)
+    in
+    let (is_id, id_u) = check_id ss [] in
+    if is_id then CId (TyTuple id_u)
+    else CTuple ss
   | _ -> raise @@ Eval_bug "cannot compose coercions"
 
 module CC = struct
@@ -257,6 +300,7 @@ module CC = struct
       FixAExp ((x, y, subst_type s u1, subst_type s u2), k, (subst_exp s f1, subst_exp s f2))
     | NilExp u -> NilExp (subst_type s u)
     | ConsExp (f1, f2) -> ConsExp (subst_exp s f1, subst_exp s f2)
+    | TupleExp fs -> TupleExp (List.map (fun f -> subst_exp s f) fs)
     | AppMExp (f1, f2) -> AppMExp (subst_exp s f1, subst_exp s f2)
     | AppDExp (f1, (f2, f3)) -> AppDExp (subst_exp s f1, (subst_exp s f2, subst_exp s f3))
     | CastExp (f, u1, u2, r_p) -> CastExp (subst_exp s f, subst_type s u1, subst_type s u2, r_p)
@@ -383,6 +427,7 @@ module CC = struct
       let v2 = eval env f2 in
       let v1 = eval env f1 in
       ConsV (v1, v2)
+    | TupleExp fs -> TupleV (List.map (fun f -> eval env f) fs)
     | CastExp (f, u1, u2, r_p) ->
       let v = eval env f in
       cast ~debug:debug v u1 u2 r_p
@@ -413,6 +458,15 @@ module CC = struct
     | IntV i1, MatchILit i2 -> if i1 = i2 then (true, env) else (false, env)
     | BoolV b1, MatchBLit b2 -> if b1 = b2 then (true, env) else (false, env)
     | UnitV, MatchULit -> true, env
+    | TupleV vs, MatchTuple mfs ->
+      let rec iter env vs mfs b = match vs, mfs with
+      | v :: vs, mf :: mfs ->
+        let b', env = match_mf ~debug:debug env v mf in
+        iter env vs mfs (b && b')
+      | _ :: _, [] | [], _ :: _ -> false, env
+      | [], [] -> b, env
+      in
+      iter env vs mfs true
     (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
     | _, MatchWild _ -> true, env
     | CoerceV (ConsV (v1, v2), CList s), MatchCons _ -> 
@@ -450,6 +504,12 @@ module CC = struct
         | Tagged _, _ -> raise @@ Blame (r, p)
         | _ -> raise @@ Eval_bug "untagged value"
       end
+    | TyDyn, TyTuple us when us = make_dyn_list (List.length us) ->
+      begin match v with
+      | Tagged (Tp n, v) when n = List.length us -> v
+      | Tagged _ -> raise @@ Blame (r, p)
+      | _ -> raise @@ Eval_bug "untagged value"
+      end
     (* AppCast *)
     | TyFun (u11, u12), TyFun (u21, u22) -> 
       if u11 = u21 && u12 = u22 then v 
@@ -471,12 +531,25 @@ module CC = struct
       | ConsV (h, t) -> ConsV (cast h u1 u2 (r, p), cast t (TyList u1) (TyList u2) (r, p))
       | _ -> raise @@ Eval_bug "non list value"
       end
+    | TyTuple us1, TyTuple us2 ->
+      if us1 = us2 then v
+      else begin match v with
+      | TupleV vs ->
+        let rec cast_list vs us1 us2 res = match vs, us1, us2 with
+        | v :: vs, u1 :: us1, u2 :: us2 -> cast_list vs us1 us2 ((cast v u1 u2 (r, p)) :: res)
+        | [], [], [] -> TupleV (List.rev res)
+        | _ -> raise @@ Eval_bug "tuple length is wrong"
+        in 
+        cast_list vs us1 us2 []
+      | _ -> raise @@ Eval_bug "non tuple value"
+      end
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
+    | TyTuple us, TyDyn when us = make_dyn_list (List.length us) -> Tagged (Tp (List.length us), v)
     (* Ground *)
     | TyFun _, TyDyn ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -486,6 +559,10 @@ module CC = struct
       let dlist = TyList TyDyn in
       let v = cast v u1 dlist (r, p) in
       cast v dlist TyDyn (r, p)
+    | TyTuple us, TyDyn ->
+      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let v = cast v u1 dtuple (r, p) in
+      cast v dtuple TyDyn (r, p)
     (* Expand *)
     | TyDyn, TyFun _ ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -495,6 +572,10 @@ module CC = struct
       let dlist = TyList TyDyn in
       let v = cast v TyDyn dlist (r, p) in
       cast v dlist u2 (r, p)
+    | TyDyn, TyTuple us ->
+      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let v = cast v TyDyn dtuple (r, p) in
+      cast v dtuple u2 (r, p)
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({ contents = None } as x)) as x') -> begin
         match v with
@@ -519,6 +600,14 @@ module CC = struct
             Pp.pp_ty u;
           x := Some u;
           cast v (TyList TyDyn) u (r, p)
+        | Tagged (Tp n, v) ->
+          let dtuple_con = make_dyn_list n in
+          let u = TyTuple (List.map (fun _ -> fresh_tyvar ()) dtuple_con) in
+          print_debug "DTI: %a is instantiated to %a@."
+            Pp.pp_ty x'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyTuple dtuple_con) u (r, p)
         | _ -> raise @@ Eval_bug "cannot instantiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)
@@ -574,7 +663,7 @@ module KNorm = struct
       | TyNu -> TyNu
     in function
     | Var _ | IConst _ | Nil as f -> f
-    | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Hd _ | Tl _ as f -> f
+    | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ as f -> f
     | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp s f1, subst_exp s f2)
     | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp s f1, subst_exp s f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
@@ -638,6 +727,8 @@ module KNorm = struct
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
       ConsV (v1, v2)
+    | Tuple xs ->
+      TupleV (List.map (fun x -> Environment.find x kenv) xs)
     | Hd x ->
       let v = Environment.find x kenv in
       begin match v with
@@ -650,8 +741,15 @@ module KNorm = struct
       begin match v with
       | ConsV (_, v2) -> v2
       | CoerceV (ConsV (_, v2), s) -> coerce ~debug:debug v2 s
-      | _ -> raise @@ Eval_bug "hd: not list value"
+      | _ -> raise @@ Eval_bug "tl: not list value"
       end
+    | Tget (x, i) ->
+      let v = Environment.find x kenv in
+      begin match v with
+      | TupleV vs -> List.nth vs i
+      | CoerceV (TupleV vs, CTuple ss) -> coerce ~debug:debug (List.nth vs i) (List.nth ss i)
+      | _ -> raise @@ Eval_bug "tget: not tuple value"
+      end 
     | IfEqExp (x1, x2, f1, f2) ->
       let v1 = Environment.find x1 kenv in
       let v2 = Environment.find x2 kenv in
@@ -774,6 +872,12 @@ module KNorm = struct
         | Tagged _, _ -> raise @@ Blame (r, p)
         | _ -> raise @@ Eval_bug "untagged value"
       end
+    | TyDyn, TyTuple us when us = make_dyn_list (List.length us) ->
+      begin match v with
+      | Tagged (Tp n, v) when n = List.length us -> v
+      | Tagged _ -> raise @@ Blame (r, p)
+      | _ -> raise @@ Eval_bug "untagged value"
+      end
     (* AppCast *)
     | TyFun (u11, u12), TyFun (u21, u22) ->
       begin match v with
@@ -794,12 +898,25 @@ module KNorm = struct
       | ConsV (h, t) -> ConsV (cast h u1 u2 (r, p), cast t (TyList u1) (TyList u2) (r, p))
       | _ -> raise @@ Eval_bug "non list value"
       end
+    | TyTuple us1, TyTuple us2 ->
+      if us1 = us2 then v
+      else begin match v with
+      | TupleV vs ->
+        let rec cast_list vs us1 us2 res = match vs, us1, us2 with
+        | v :: vs, u1 :: us1, u2 :: us2 -> cast_list vs us1 us2 ((cast v u1 u2 (r, p)) :: res)
+        | [], [], [] -> TupleV (List.rev res)
+        | _ -> raise @@ Eval_bug "tuple length is wrong"
+        in 
+        cast_list vs us1 us2 []
+      | _ -> raise @@ Eval_bug "non tuple value"
+      end
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
+    | TyTuple us, TyDyn when us = make_dyn_list (List.length us) -> Tagged (Tp (List.length us), v)
     (* Ground *)
     | (TyFun _ as u1), (TyDyn as u2) ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -809,6 +926,10 @@ module KNorm = struct
       let dlist = TyList TyDyn in
       let v = cast v u1 dlist (r, p) in
       cast v dlist TyDyn (r, p)
+    | TyTuple us, TyDyn ->
+      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let v = cast v u1 dtuple (r, p) in
+      cast v dtuple TyDyn (r, p)
     (* Expand *)
     | TyDyn, TyFun _ ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -818,6 +939,10 @@ module KNorm = struct
       let dlist = TyList TyDyn in
       let v = cast v TyDyn dlist (r, p) in
       cast v dlist u2 (r, p)
+    | TyDyn, TyTuple us ->
+      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let v = cast v TyDyn dtuple (r, p) in
+      cast v dtuple u2 (r, p)
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({contents = None} as x)) as u') ->
       begin match v with
@@ -842,6 +967,14 @@ module KNorm = struct
             Pp.pp_ty u;
           x := Some u;
           cast v (TyList TyDyn) u (r, p)
+        | Tagged (Tp n, v) ->
+          let dtuple_con = make_dyn_list n in
+          let u = TyTuple (List.map (fun _ -> fresh_tyvar ()) dtuple_con) in
+          print_debug "DTI: %a is instantiated to %a@."
+            Pp.pp_ty u'
+            Pp.pp_ty u;
+          x := Some u;
+          cast v (TyTuple dtuple_con) u (r, p)
         | _ -> raise @@ Eval_bug "cannot instamtiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a: %a => %a" Pp.KNorm.pp_value v Pp.pp_ty u1 Pp.pp_ty u2)
@@ -866,6 +999,15 @@ module KNorm = struct
       b1&&b2, kenv 
     | NilV, MatchNil _ -> true, kenv
     | IntV i1, MatchILit i2 -> if i1 = i2 then (true, kenv) else (false, kenv)
+    | TupleV vs, MatchTuple mfs ->
+      let rec iter kenv vs mfs b = match vs, mfs with
+      | v :: vs, mf :: mfs ->
+        let b', kenv = match_mf ~debug:debug kenv v mf in
+        iter kenv vs mfs (b && b')
+      | _ :: _, [] | [], _ :: _ -> false, kenv
+      | [], [] -> b, kenv
+      in
+      iter kenv vs mfs true
     (* | IntV i, MatchBLit b -> if i = 1 && b then (true, kenv) else if i = 0 && not b then (false, kenv) else raise @@ Eval_bug "MatchBLit didn't match"
     | IntV 0, MatchULit -> true, kenv *)
     (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)

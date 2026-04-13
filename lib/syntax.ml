@@ -31,6 +31,7 @@ type ty =
   | TyUnit
   | TyFun of ty * ty
   | TyList of ty
+  | TyTuple of ty list
   (* | TyCoercion of ty * ty *)
 and tyvar = int * ty option ref
 (* int value is used to identify type variables.
@@ -47,6 +48,7 @@ let rec is_ground = function
   | TyInt | TyBool | TyUnit -> true (* base type *)
   | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
   | TyList TyDyn -> true
+  | TyTuple us -> List.fold_left (fun b u -> b && u = TyDyn) true us
   | TyVar (_, { contents = Some u }) -> is_ground u
   | _ -> false
 
@@ -65,7 +67,17 @@ let rec is_consistent u1 u2 = match u1, u2 with
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_consistent u11 u21) && (is_consistent u12 u22)
   | TyList u1, TyList u2 -> is_consistent u1 u2
+  | TyTuple us1, TyTuple us2 ->
+    begin try
+      List.fold_left2 (fun b u1 u2 -> b && is_consistent u1 u2) true us1 us2
+    with Invalid_argument _ -> false end
   | _ -> false
+
+let make_dyn_list n =
+  let rec iter i r =
+    if i = 0 then r
+    else iter (i - 1) (TyDyn :: r)
+  in iter n []
 
 (* Set of type variables used for let polymorphism *)
 (* Module for a set of type variables. *)
@@ -85,6 +97,7 @@ let rec ftv_ty: ty -> TV.t = function
   | TyVar (_, { contents = Some u }) -> ftv_ty u
   | TyFun (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
   | TyList u -> ftv_ty u
+  | TyTuple us -> TV.big_union (List.map ftv_ty us)
   | _ -> TV.empty
 
 let ftv_tysc: tysc -> TV.t = function
@@ -103,12 +116,14 @@ type matchform = (*match式でmatchさせることのできる形の種類を定
   | MatchULit
   | MatchNil of ty                (*空列とmatchするMatchEmptyList*)
   | MatchCons of matchform * matchform  (*リストとmatchするMatchList*)
+  | MatchTuple of matchform list
   | MatchWild of ty
 
 let rec fv_matchform = function
   | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
   | MatchVar (x, _) -> V.singleton x
   | MatchCons (mf1, mf2) -> V.big_union [fv_matchform mf1; fv_matchform mf2]
+  | MatchTuple mfs -> V.big_union (List.map fv_matchform mfs)
 
 let rec tv_matchform : matchform -> TV.t = function
   | MatchVar (_, u) -> ftv_ty u
@@ -116,19 +131,21 @@ let rec tv_matchform : matchform -> TV.t = function
   | MatchNil u -> ftv_ty u
   (* | MatchAsc (mf, u) -> TV.union (tv_matchform mf) (ftv_ty u) *)
   | MatchCons (mf1, mf2) -> TV.union (tv_matchform mf1) (tv_matchform mf2)
+  | MatchTuple mfs -> TV.big_union (List.map tv_matchform mfs)
 
 let rec ftv_matchform : matchform -> TV.t = function
   | MatchVar _ | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
   | MatchNil _ -> TV.empty
   (* | MatchAsc (mf, u) -> TV.union (ftv_matchform mf) (ftv_ty u) *)
   | MatchCons (mf1, mf2) -> TV.union (ftv_matchform mf1) (ftv_matchform mf2)
+  | MatchTuple mfs -> TV.big_union (List.map ftv_matchform mfs)
 
 type polarity = Pos | Neg
 
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Ar | Li
+type tag = I | B | U | Ar | Li | Tp of int
 
 let type_of_tag = function
   | I -> TyInt
@@ -136,6 +153,7 @@ let type_of_tag = function
   | U -> TyUnit
   | Ar -> TyFun (TyDyn, TyDyn)
   | Li -> TyList TyDyn
+  | Tp n -> TyTuple (make_dyn_list n)
 
 let rec tag_of_ty = function
   | TyInt -> I
@@ -143,6 +161,8 @@ let rec tag_of_ty = function
   | TyUnit -> U
   | TyFun (TyDyn, TyDyn) -> Ar
   | TyList TyDyn -> Li
+  | TyTuple us ->
+    if List.fold_left (fun b u -> b && u = TyDyn) true us then Tp (List.length us) else assert false
   | TyVar (_, {contents = Some u}) -> tag_of_ty u
   | _ -> assert false
   (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
@@ -155,6 +175,7 @@ type coercion =
   | CTvProjInj of tyvar * (range * polarity) * (range * polarity)
   | CFun of coercion * coercion
   | CList of coercion
+  | CTuple of coercion list
   | CId of ty
   | CSeq of coercion * coercion
   | CFail of tag * (range * polarity) * tag
@@ -163,8 +184,10 @@ let is_d = function
   | CSeq (CId _, CInj _)
   | CSeq (CFun _, CInj _)
   | CSeq (CList _, CInj _)
-  | CFun _ 
-  | CList _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
+  | CSeq (CTuple _, CInj _)
+  | CFun _
+  | CList _
+  | CTuple _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
   | _ -> false
 
 let rec ftv_coercion = function
@@ -172,6 +195,7 @@ let rec ftv_coercion = function
   | CTvInj (tv, _) | CTvProj (tv, _) | CTvProjInj (tv, _, _) -> TV.singleton tv
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CList c -> ftv_coercion c
+  | CTuple cs -> TV.big_union (List.map ftv_coercion cs)
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
@@ -202,6 +226,7 @@ module ITGL = struct
     | LetExp of range * id * exp * exp
     | NilExp of range * ty
     | ConsExp of range * exp * exp
+    | TupleExp of range * exp list
 
   let range_of_exp = function
     | Var (r, _, _)
@@ -219,7 +244,8 @@ module ITGL = struct
     | MatchExp (r, _, _)
     | LetExp (r, _, _, _) 
     | NilExp (r, _) 
-    | ConsExp (r, _, _) -> r
+    | ConsExp (r, _, _)
+    | TupleExp (r, _) -> r
     
   (* for polymorphic let declaration *)
   let rec tv_exp: exp -> TV.t = function
@@ -239,6 +265,7 @@ module ITGL = struct
     | LetExp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | NilExp (_, u) -> ftv_ty u
     | ConsExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
+    | TupleExp (_, es) -> TV.big_union (List.map tv_exp es)
 
   let rec ftv_exp: exp -> TV.t = function
     | Var _
@@ -257,6 +284,7 @@ module ITGL = struct
     | LetExp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | NilExp _ -> TV.empty
     | ConsExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
+    | TupleExp (_, es) -> TV.big_union (List.map ftv_exp es)
 
   type program =
     | Exp of exp
@@ -285,6 +313,7 @@ module CC = struct
     | NilExp of ty
     | ConsExp of exp * exp
     | MatchExp of exp * (matchform * exp) list
+    | TupleExp of exp list
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
@@ -332,6 +361,7 @@ module CC = struct
     | ConsExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | MatchExp (f, ms) ->
       TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
+    | TupleExp es -> TV.big_union (List.map ftv_exp es)
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
@@ -350,6 +380,7 @@ module CC = struct
     | CoercionV of coercion
     | NilV
     | ConsV of value * value
+    | TupleV of value list
     | Tagged of tag * value
     | CoerceV of value * coercion
 end
@@ -367,6 +398,8 @@ module KNorm = struct
     | Cons of id * id
     | Hd of id
     | Tl of id
+    | Tuple of id list
+    | Tget of id * int
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
     | AppMExp of id * id
@@ -383,9 +416,10 @@ module KNorm = struct
     | LetRecBExp of id * tyvar list * id * exp * exp
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x  -> V.singleton x
+    | Var x | Hd x | Tl x  | Tget (x, _) -> V.singleton x
     | IConst _ | Nil -> V.empty
     | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
+    | Tuple xs -> V.of_list xs
     | IfEqExp (x, y, f1, f2) | IfLteExp (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | MatchExp (x, ms) -> 
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
@@ -412,6 +446,7 @@ module KNorm = struct
     | IntV of int
     | NilV
     | ConsV of value * value
+    | TupleV of value list
     | Tagged of tag * value
     | CoerceV of value * coercion
     | CoercionV of coercion

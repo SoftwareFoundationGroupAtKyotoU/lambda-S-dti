@@ -20,6 +20,15 @@ let rec tv_renew_ty u env = match u with
   | TyList u -> 
     let u, env = tv_renew_ty u env in
     TyList u, env
+  | TyTuple us ->
+    let rec iter env l r = match l with
+    | h :: t ->
+      let u, env = tv_renew_ty h env in
+      iter env t (u :: r)
+    | [] -> 
+      TyTuple (List.rev r), env
+    in
+    iter env us []
 
 let rec tv_renew_coercion c env = match c with
   | CInj _ | CProj _ | CFail _ -> c, env
@@ -54,6 +63,15 @@ let rec tv_renew_coercion c env = match c with
   | CList c ->
     let c, env = tv_renew_coercion c env in
     CList c, env
+  | CTuple cs ->
+    let rec iter env l r = match l with
+    | h :: t ->
+      let c, env = tv_renew_coercion h env in
+      iter env t (c :: r)
+    | [] -> 
+      CTuple (List.rev r), env
+    in
+    iter env cs []
   | CSeq (c1, c2) ->
     let c1, env = tv_renew_coercion c1 env in
     let c2, env = tv_renew_coercion c2 env in
@@ -71,6 +89,15 @@ let rec tv_renew_mf mf env = match mf with
     let mf1, env = tv_renew_mf mf1 env in
     let mf2, env = tv_renew_mf mf2 env in
     MatchCons (mf1, mf2), env
+  | MatchTuple mfs ->
+    let rec iter env l r = match l with
+    | h :: t ->
+      let mf, env = tv_renew_mf h env in
+      iter env t (mf :: r)
+    | [] -> 
+      MatchTuple (List.rev r), env
+    in
+    iter env mfs []
   | MatchWild u -> 
     let u, env = tv_renew_ty u env in
     MatchWild u, env
@@ -134,6 +161,15 @@ module CC = struct
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
       ConsExp (e1, e2), env
+    | TupleExp es ->
+      let rec iter env l r = match l with
+      | h :: t ->
+        let e, env = tv_renew_exp h env in
+        iter env t (e :: r)
+      | [] -> 
+        TupleExp (List.rev r), env
+      in
+      iter env es []
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "fresh_tv"
   and tv_renew_ms ms env = match ms with
     | (mf, e) :: ms ->

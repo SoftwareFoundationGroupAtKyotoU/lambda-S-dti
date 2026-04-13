@@ -51,8 +51,12 @@ let ext_A_k (a, b, _, _, _, f) = (a, b, f)
 
 let test_examples config ext =
   let state = Pipeline.init_state () ~config in
-  let test i cases =
-    (string_of_int i) >:: fun ctxt ->
+  let create_test i cases =
+    let test_name = match cases with
+      | (program, _, _) :: _ -> Printf.sprintf "[%d] %s" i program
+      | [] -> string_of_int i
+    in
+    test_name >:: fun ctxt ->
       ignore @@ List.fold_left
         (fun state (program, expected_ty, expected_value) ->
            let state, actual_ty, actual_value = run state program ~config in
@@ -63,7 +67,13 @@ let test_examples config ext =
         state
         cases
   in
-  List.mapi test (List.map (fun l -> List.map ext l) Testcases.tests)
+  let create_suite (category_name, category_cases) =
+    let extracted_cases = List.map (fun l -> List.map ext l) category_cases in
+    category_name >::: List.mapi create_test extracted_cases
+  in
+
+  (* すべてのカテゴリを処理してリストにする *)
+  List.map create_suite Testcases.suites
 
 let suite = [
   "test_B"   >::: test_examples config_B ext_B;

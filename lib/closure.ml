@@ -47,6 +47,7 @@ module KNorm = struct
           | _ -> raise @@ Closure_bug "not tyvar was created"
         in
         (newu, fun x -> ufun' (Cls.SetTy (newtv, x)))
+    | TyTuple _ -> raise @@ Closure_error "tuple yet"
 
   let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
@@ -120,8 +121,10 @@ module KNorm = struct
     | Mod (x, y) -> Cls.Mod (x, y)
     | Nil -> Cls.Nil
     | Cons (x, y) -> Cls.Cons (x, y)
+    | Tuple _ -> raise @@ Closure_error "tuple yet"
     | Hd x -> Cls.Hd x
     | Tl x -> Cls.Tl x
+    | Tget _ -> raise @@ Closure_error "tuple yet"
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs args f1, toCls_exp known tvs args f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs args f1, toCls_exp known tvs args f2)

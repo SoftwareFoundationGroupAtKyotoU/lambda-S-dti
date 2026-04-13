@@ -36,6 +36,7 @@ let rec meet u1 u2 = match u1, u2 with
   | TyDyn, u | u, TyDyn -> u
   | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
   | TyList u1, TyList u2 -> TyList (meet u1 u2)
+  | TyTuple us1, TyTuple us2 -> TyTuple (List.map2 (fun u1 u2 -> meet u1 u2) us1 us2)
   | _ ->
     raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
@@ -77,14 +78,30 @@ module ITGL = struct
       | CId u -> CId (TyList u)
       | _ -> CList s
       end
+    | TyTuple us1, TyTuple us2 ->
+      let ss = List.map2 (fun u1 u2 -> make_s_coercion (r, p) u1 u2) us1 us2 in
+      let rec check_id l r = match l with
+      | CId u :: t -> check_id t (u :: r)
+      | _ :: _ -> (false, r) (* r is dummy *)
+      | [] -> (true, List.rev r)
+      in
+      let (is_id, id_u) = check_id ss [] in
+      if is_id then CId (TyTuple id_u)
+      else CTuple ss
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
     | TyList _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyList TyDyn), CInj Li)
+    | TyTuple us as u, TyDyn ->
+      let n = List.length us in
+      CSeq (make_s_coercion (r, p) u (TyTuple (make_dyn_list n)), CInj (Tp n))
     | TyVar tv, TyDyn -> CTvInj (tv, (r, p))
     | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
     | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion (r, p) (TyFun (TyDyn, TyDyn)) u)
     | TyDyn, (TyList _ as u) -> CSeq (CProj (Li, (r, p)), make_s_coercion (r, p) (TyList TyDyn) u)
+    | TyDyn, (TyTuple us as u) ->
+      let n = List.length us in
+      CSeq (CProj (Tp n, (r, p)), make_s_coercion (r, p) (TyTuple (make_dyn_list n)) u)
     | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
     | _ -> raise @@ Translation_bug (Format.asprintf "cannot exist such coercion: %a and %a in %a" Pp.pp_ty u1 Pp.pp_ty u2 Utils.Error.pp_range r)
 
@@ -107,6 +124,16 @@ module ITGL = struct
       let env, mf2, u2 = translate_mf env mf2 in
       let env, mf1, u1 = translate_mf env mf1 in
       env, MatchCons (mf1, mf2), meet (TyList u1) u2
+    | MatchTuple mfs ->
+      let rec iter env l r = match l with
+      | h :: t ->
+        let env, mf, u = translate_mf env h in
+        iter env t ((mf, u) :: r)
+      | [] -> 
+        let mfs, us = List.split (List.rev r) in
+        env, MatchTuple mfs, TyTuple us
+      in
+      iter env mfs []
 
   let rec translate_exp ~intoB env f = 
     let translate_exp = translate_exp ~intoB in
@@ -189,6 +216,9 @@ module ITGL = struct
       let u_elm = meet u1 (elm u2) in (* TyDyn であれば TyList TyDyn にする *)
       let u_list = TyList u_elm in
       CC.ConsExp (c f1 r u1 u_elm, c f2 r u2 u_list), u_list
+    | TupleExp (_, es) ->
+      let fs, us = List.split (List.map (fun e -> translate_exp env e) es) in
+      CC.TupleExp fs, TyTuple us
   and translate_ms ~intoB env = function
     | (mf, e) :: t -> 
       if t = [] then
@@ -240,6 +270,15 @@ module CC = struct
       let env, mf1 = translate_mf env mf1 in
       let env, mf2 = translate_mf env mf2 in
       env, MatchCons (mf1, mf2)
+    | MatchTuple mfs ->
+      let rec iter env l r = match l with
+      | h :: t ->
+        let env, mf = translate_mf env h in
+        iter env t (mf :: r)
+      | [] -> 
+        env, MatchTuple (List.rev r)
+      in
+      iter env mfs []
 
   let rec translate_exp env = function
     | Var (x, ys) -> Var (x, ys)
@@ -269,6 +308,7 @@ module CC = struct
       LetExp (x, ys, translate_exp env f1, translate_exp (Environment.add x (TyScheme (ys, u)) env) f2)
     | NilExp u -> NilExp u
     | ConsExp (f1, f2) -> ConsExp (translate_exp env f1, translate_exp env f2) 
+    | TupleExp fs -> TupleExp (List.map (fun f -> translate_exp env f) fs)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
   and translate_exp_k env k = function
@@ -300,6 +340,7 @@ module CC = struct
     | NilExp u -> CAppExp (NilExp u, k)
     | ConsExp (f1, f2) ->
       CAppExp (ConsExp (translate_exp env f1, translate_exp env f2), k)
+    | TupleExp fs -> CAppExp (TupleExp (List.map (fun f -> translate_exp env f) fs), k)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
 
@@ -334,6 +375,7 @@ module CC = struct
       LetExp (x, ys, translate_exp_alt env f1, translate_exp_alt (Environment.add x (TyScheme (ys, u)) env) f2)
     | NilExp u -> NilExp u
     | ConsExp (f1, f2) -> ConsExp (translate_exp_alt env f1, translate_exp_alt env f2)  
+    | TupleExp fs -> TupleExp (List.map (fun f -> translate_exp_alt env f) fs)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
   and translate_exp_k_alt env k = function
@@ -365,6 +407,7 @@ module CC = struct
     | NilExp u -> CAppExp (NilExp u, k)
     | ConsExp (f1, f2) ->
       CAppExp (ConsExp (translate_exp_alt env f1, translate_exp_alt env f2), k)
+    | TupleExp fs -> CAppExp (TupleExp (List.map (fun f -> translate_exp_alt env f) fs), k)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunAExp _ | FixAExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
 
