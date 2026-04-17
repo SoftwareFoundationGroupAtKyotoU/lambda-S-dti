@@ -21,11 +21,12 @@ module KNorm = struct
   
   let rec ty_tv tvs u = match u with
     | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn as u -> (u, fun x -> x)
+    | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> (u, fun x -> x)
     | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
     | TyFun (u1, u2) ->
       let u1, ufun1 = ty_tv tvs u1 in
       let u2, ufun2 = ty_tv tvs u2 in
-      if not (exist_tv (TV.elements (Syntax.ftv_ty u1)) tvs) && not (exist_tv (TV.elements (Syntax.ftv_ty u2)) tvs) then begin
+      if not (exist_tv (TV.elements (ftv_ty u1)) tvs) && not (exist_tv (TV.elements (ftv_ty u2)) tvs) then begin
         TyManager.register u;
         (u, fun x -> x)
       end else 
@@ -37,7 +38,7 @@ module KNorm = struct
         (newu, fun x -> ufun1 (ufun2 (Cls.SetTy (newtv, x))))
     | TyList u' -> 
       let u', ufun' = ty_tv tvs u' in
-      if not (exist_tv (TV.elements (Syntax.ftv_ty u)) tvs) then begin
+      if not (exist_tv (TV.elements (ftv_ty u)) tvs) then begin
         TyManager.register u;
         (u, fun x -> x)
       end else
@@ -47,7 +48,18 @@ module KNorm = struct
           | _ -> raise @@ Closure_bug "not tyvar was created"
         in
         (newu, fun x -> ufun' (Cls.SetTy (newtv, x)))
-    | TyTuple _ -> raise @@ Closure_error "tuple yet"
+    | TyTuple us ->
+      let us, ufuns = List.split @@ List.map (fun u -> ty_tv tvs u) us in
+      if not @@ List.fold_left (fun b u -> b || exist_tv (TV.elements (ftv_ty u)) tvs) false us then begin
+        TyManager.register u;
+        (u, fun x -> x)
+      end else
+        let newu = Typing.fresh_tyvar () in
+        let newtv = match newu with
+          | TyVar (i, u) -> u := Some (TyTuple us); (i, u)
+          | _ -> raise @@ Closure_bug "not tyvar was created"
+        in
+        (newu, fun x -> List.fold_left (fun x ufun -> ufun x) (Cls.SetTy (newtv, x)) (List.rev ufuns))
 
   let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
@@ -63,28 +75,33 @@ module KNorm = struct
     let is_static c = 
       let cached = CrcManager.mem c in
       let constant = match c with
-      | Cls.Id | Cls.SeqInj (Cls.Id, _) -> true
+      | Cls.CId
+      | Cls.CSeqInj (Cls.CId, I) 
+      | Cls.CSeqInj (Cls.CId, B) 
+      | Cls.CSeqInj (Cls.CId, U) 
+      | Cls.CSeqInj (Cls.CId, Ar) 
+      | Cls.CSeqInj (Cls.CId, Li) -> true
       | _ -> false
       in
       cached || constant
     in
     match c with
-    | CId _ -> Cls.Id
+    | CId _ -> Cls.CId
     | CSeq (CProj (g, (r, p)), c') ->
       let c' = toCls_crc tvs c' in
       let r = RangeManager.range_id r in
-      let c = Cls.SeqProj (g, (r, p), c') in
+      let c = Cls.CSeqProj (g, (r, p), c') in
       if is_static c' then CrcManager.register c;
       c
-    | CSeq (CId _, CInj g) -> Cls.SeqInj (Cls.Id, g)
+    | CSeq (CId _, CInj g) -> Cls.CSeqInj (Cls.CId, g)
     | CSeq (c', CInj g) ->
       let c' = toCls_crc tvs c' in
-      let c = Cls.SeqInj (c', g) in
+      let c = Cls.CSeqInj (c', g) in
       if is_static c' then CrcManager.register c;
       c
     | CTvInj (tv, (r, p)) ->
       let r = RangeManager.range_id r in
-      let c = Cls.TvInj (tv, (r, p)) in
+      let c = Cls.CTvInj (tv, (r, p)) in
       if not (List.mem tv tvs) then begin
         TyManager.register (TyVar tv);
         CrcManager.register c
@@ -92,7 +109,7 @@ module KNorm = struct
       c
     | CTvProj (tv, (r, p)) ->
       let r = RangeManager.range_id r in
-      let c = Cls.TvProj (tv, (r, p)) in
+      let c = Cls.CTvProj (tv, (r, p)) in
       if not (List.mem tv tvs) then begin
         TyManager.register (TyVar tv);
         CrcManager.register c
@@ -101,13 +118,18 @@ module KNorm = struct
     | CFun (c1, c2) ->
       let c1 = toCls_crc tvs c1 in
       let c2 = toCls_crc tvs c2 in
-      let c = Cls.Fun (c1, c2) in
+      let c = Cls.CFun (c1, c2) in
       if is_static c1 && is_static c2 then CrcManager.register c;
       c
     | CList c' ->
       let c' = toCls_crc tvs c' in
-      let c = Cls.List c' in
+      let c = Cls.CList c' in
       if is_static c' then CrcManager.register c;
+      c
+    | CTuple cs ->
+      let cs = List.map (fun c -> toCls_crc tvs c) cs in
+      let c = Cls.CTuple cs in
+      if List.fold_left (fun b c -> b && is_static c) true cs then CrcManager.register c;
       c
     | _ -> raise @@ Closure_bug "bad coercion"
 
@@ -121,10 +143,10 @@ module KNorm = struct
     | Mod (x, y) -> Cls.Mod (x, y)
     | Nil -> Cls.Nil
     | Cons (x, y) -> Cls.Cons (x, y)
-    | Tuple _ -> raise @@ Closure_error "tuple yet"
+    | Tuple xs -> Cls.Tuple xs
     | Hd x -> Cls.Hd x
     | Tl x -> Cls.Tl x
-    | Tget _ -> raise @@ Closure_error "tuple yet"
+    | Tget (x, i) -> Tget (x, i)
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs args f1, toCls_exp known tvs args f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs args f1, toCls_exp known tvs args f2)
@@ -178,8 +200,8 @@ module KNorm = struct
       let f2 = toCls_exp known tvs args' f2 in *)
       let f2 = toCls_exp known tvs args f2 in
       begin match f1 with
-      | Cls.Coercion (Cls.SeqInj (Cls.Id, (I | B | U as g))) -> CrcManager.register_inj x g
-      | Cls.Coercion (Cls.SeqProj ((I | B | U as g), (rid, p), Cls.Id)) -> CrcManager.register_proj x (g, rid, p)
+      | Cls.Coercion (Cls.CSeqInj (Cls.CId, (I | B | U as g))) -> CrcManager.register_inj x g
+      | Cls.Coercion (Cls.CSeqProj ((I | B | U as g), (rid, p), Cls.CId)) -> CrcManager.register_proj x (g, rid, p)
       | Cls.Var y when CrcManager.mem_inj y -> CrcManager.register_inj x (CrcManager.find_inj y)
       | Cls.Var y when CrcManager.mem_proj y -> CrcManager.register_proj x (CrcManager.find_proj y)
       | _ -> ()
@@ -268,8 +290,10 @@ module Cls = struct
     | Div (x, y) -> Div (replace x, replace y)
     | Mod (x, y) -> Mod (replace x, replace y)
     | Cons (x, y) -> Cons (replace x, replace y)
+    | Tuple xs -> Tuple (List.map (fun x -> replace x) xs)
     | Hd x -> Hd (replace x)
     | Tl x -> Tl (replace x)
+    | Tget (x, i) -> Tget (replace x, i)
     | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
     | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
     | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)
@@ -286,7 +310,7 @@ module Cls = struct
     | Cast _ -> raise @@ Closure_bug "Cast appear in replace"
 
   let rec to_alt ids = function
-    | Let (x, Coercion Id, f) -> 
+    | Let (x, Coercion CId, f) -> 
       let f = to_alt (V.add x ids) f in
       if V.mem x (fv_exp f) then raise @@ Closure_error "to_alt: id appear"
       else f
@@ -333,80 +357,3 @@ let toCls_program kf venv ~alt =
   let p = KNorm.toCls kf venv in
   let p = Cls.altCls p alt in
   p
-
-(*
-let quad:int->int = fun (x:int) ->
-  let dbl:int->int = fun (_var16:int) ->
-    _var16 + _var16
-  in (let _var14:int = dbl x in dbl _var14)
-in (let _var15:int = 123 in quad _var15)
-
-toplevel:=[]
-g [] [] e
-  LetFunExp(_,quad,int->int,[],[x,int],e1=LetExp(),e2=LetExp())
-  env'=[quad,int->int], known'=[quad]
-  g [x,int;quad,int->int] [quad] e1
-    LetFunExp(_,dbl,int->int,[],[_var16,int],e1=BinOp(),e2=LetExp())
-    env'=[dbl,int->int;x,int;quad,int->int], known'=[dbl,quad]
-    g [_var16,int;dbl,int->int;x,int;quad,int->int] [dbl,quad] e1
-    e1'=BinOp(_,Plus,_var16,_var16)
-    zs=[_var16]-[_var16]=[]
-    known'=known', e1'=e1'
-    zs=[], zts=[]
-    toplevel:={name=(quad,int->int);args=[_var16,int];formal_fv=[];body=e1'}::[]
-    g [dbl,int->int;x,int;quad,int->int] [dbl,quad] e2
-      LetExp(_,_var14,int,[],e1=AppExp(),e2=AppExp())
-      g env known e1=AppDir(_,L(dbl),x)
-      g env known e2=AppDir(_,L(dbl),_var14)
-    e2'=Let(_,_var14,int,[],AppDir(_,L(dbl),x),AppDir(_,L(dbl),_var14))
-  e1'=Let(_,_var14,int,[],AppDir(_,L(dbl),x),AppDir(_,L(dbl),_var14))
-  zs=[x]-[x]=[] (*_var14はLetのfv、dblはAppDirの一つ目なので、含まれない*)
-  known'=known', e1'=e1'
-  zs=[],zts=[]
-  toplevel:={name=(dbl,int->int);args=[x,int];formal_fv=[];body=e1'}::!toplevel
-  g [quad,int->int] [quad] e2
-    LetExp(_,_var15,[],e1=IConst(),e2=AppExp())
-    g env known e1=Int(_,123)
-    g env known e2=AppDir(_,L(quad),_var15)
-  e2'=Let(_,_var15,[],Int(_,123),AppDir(_,L(quad),_var15))
-e'=Let(_,_var15,[],Int(_,123),AppDir(_,L(quad),_var15))
-
-let make_adder = fun (x:int) -> 
-  let adder = fun (y:int) -> 
-    x + y 
-  in adder 
-in (let _var17 = 3 in (let _var18 = make_adder _var17 in (let _var19 = 7 in _var18 _var19)))
-
-toplevel:=[]
-g [] [] e
-  LetExp(_,make_adder,[],FunExp(_,x,int,e1=LetExp()),e2=LetExp())
-  env'=[make_adder,int->int], known'=[make_adder]
-  g [x,int;make_adder,int->int] [make_adder] e1
-    LetExp(_,adder,[],FunExp(_,y,int,e1=BinOp()),e2=Var())
-    env'=[adder,int->int;x,int;make_adder,int->int], known'=[adder,make_adder]
-    g [y,int;adder,int->int;x,int;make_adder,int->int] [adder,make_adder] e1
-    e1'=BinOp(_,Plus,x,y)
-    zs=[x,y]-[y]=[x]
-    g [y,int;adder,int->int;x,int;make_adder,int->int] [make_adder] e1
-    e1'=BinOp(_,Plus,x,y)
-    known'=known, e1'=e1'
-    zs=[x,y]-[adder,y]=[x], zts=[x,int]
-    toplevel:={name=(adder,int->int);args=[y,int];formal_fv=[x,int];body=e1'}::[]
-    g [adder,int->int;x,int;make_adder,int->int] [make_adder] e2
-    e2'=Var(_,adder)
-  e1'=MakeCls((adder,int->int),{entry=L(adder);actual_fv=[x]},Var(_,adder))
-  zs=[x]-[x]=[] (*adderはMakeClsのfvなので、含まれない*)
-  known'=known', e1'=e1'
-  zs=[],zts=[]
-  toplevel:={name=(make_adder,int->int);args=[x,int];formal_fv=[];body=e1'}::!toplevel
-  g [quad,int->int] [quad] e2
-    LetExp(_,_var15,[],e1=IConst(),e2=AppExp())
-    g env known e1=Int(_,123)
-    g env known e2=AppDir(_,quad,_var15)
-  e2'=Let(_,_var15,[],Int(_,123),AppDir(_,quad,_var15))
-e'=Let(_,_var15,[],Int(_,123),AppDir(_,quad,_var15))
-*)
-      
-
-
-  

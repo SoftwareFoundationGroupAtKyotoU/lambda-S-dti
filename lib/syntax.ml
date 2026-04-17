@@ -467,13 +467,14 @@ module Cls = struct
   type ftv = { ftvs : tyarg list; offset : int }
 
   type coercion =
-    | Id
-    | SeqInj of coercion * tag
-    | SeqProj of tag * (int * polarity) * coercion
-    | TvInj of tyvar * (int * polarity)
-    | TvProj of tyvar * (int * polarity)
-    | Fun of coercion * coercion
-    | List of coercion
+    | CId
+    | CSeqInj of coercion * tag
+    | CSeqProj of tag * (int * polarity) * coercion
+    | CTvInj of tyvar * (int * polarity)
+    | CTvProj of tyvar * (int * polarity)
+    | CFun of coercion * coercion
+    | CList of coercion
+    | CTuple of coercion list
 
   type exp =
     | Var of id
@@ -485,8 +486,10 @@ module Cls = struct
     | Div of id * id
     | Mod of id * id
     | Cons of id * id
+    | Tuple of id list
     | Hd of id
     | Tl of id
+    | Tget of id * int
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list
@@ -509,9 +512,10 @@ module Cls = struct
     | FundefM of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x  -> V.singleton x
+    | Var x | Hd x | Tl x | Tget (x, _) -> V.singleton x
     | Int _ | Nil -> V.empty
     | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
+    | Tuple xs -> V.of_list xs
     | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | Match (x, ms) -> 
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)

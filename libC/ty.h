@@ -6,17 +6,16 @@
 
 typedef struct ty {
 	enum tykind : uint8_t {
-		#ifndef STATIC
 		DYN, //0
-		#endif
 		BASE_INT, //1
 		BASE_BOOL, //2
 		BASE_UNIT, //3
 		TYFUN, //4
 		TYLIST, //5
-		TYVAR, //6
+		TYTUPLE, //6
+		TYVAR, //7
 		#ifndef CAST
-		SUBSTITUTED,
+		SUBSTITUTED, //8
 		#endif
 	} tykind;
 	union tydat {
@@ -26,12 +25,14 @@ typedef struct ty {
 			ty *right;
 		} tyfun;
 		ty *tylist;
+		struct tytuple {
+			uint16_t arity;
+			ty **tys;
+		} tytuple;
 	} tydat;
 } ty;
 
-#ifndef STATIC
 extern ty tydyn;
-#endif
 extern ty tyint;
 extern ty tybool;
 extern ty tyunit;
@@ -42,8 +43,8 @@ ty *(newty)();
 
 #ifndef CAST
 ty *(ty_find)(ty*);
-#endif
+#endif //CAST
 
-#endif
+#endif //STATIC
 
-#endif
+#endif //TY_H

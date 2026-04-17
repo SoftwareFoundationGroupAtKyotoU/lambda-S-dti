@@ -31,7 +31,8 @@ let c_of_ty = function
   | TyFun (_, _) as u -> "&" ^ TyManager.find u
   | TyList TyDyn -> "&tyli"
   | TyList _ as u -> "&" ^ TyManager.find u
-  | TyVar (i, { contents = None }) as u -> 
+  | TyTuple _ as u -> "&" ^ TyManager.find u
+  | TyVar (i, { contents = None }) as u ->
     begin try 
       "&" ^ TyManager.find u
     with Not_found ->
@@ -39,8 +40,8 @@ let c_of_ty = function
     end
   | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
   | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
-  | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun or list"
-  | TyTuple _ -> raise @@ ToC_error "tuple yet"
+  | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
+  | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function
@@ -104,45 +105,69 @@ let toC_tag ppf = function
   | U -> pp_print_string ppf "UNIT"
   | Ar -> pp_print_string ppf "AR"
   | Li -> pp_print_string ppf "LI"
-  | Tp _ -> raise @@ ToC_error "tuple yet"
-
+  | Tp _ -> pp_print_string ppf "TP"
 
 let rec toC_crc ppf (c, x) = 
   if CrcManager.mem c then 
     fprintf ppf "%s = (value)&%s;" x (CrcManager.find c)
   else match c with
-  | Id -> fprintf ppf "%s = (value)&crc_id;" x
-  | SeqInj (Id, t) ->
-    fprintf ppf "%s = (value)&crc_inj_%a;"
-      x
-      toC_tag t
-  | SeqInj (Fun _ as c1, Ar) ->
+  | CId -> fprintf ppf "%s = (value)&crc_id;" x
+  | CSeqInj (CId, (I | B | U | Ar | Li as t)) ->
+    fprintf ppf "%s = (value)&crc_inj_%a;" x toC_tag t
+  | CSeqInj (CId, Tp arity) ->
+    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_TP;\n%s_temp.arity_inj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.ptr.s = &crc_id;\n%s = (value)alloc_crc(&%s_temp);"
+      x x x x arity x x x x
+  | CSeqInj (CFun _ as c1, Ar) ->
     fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_AR;\n%s_temp.has_tv = ((crc*)%s_cfun)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
       x toC_crc (c1, x ^ "_cfun") x x x x x x x x x
-  | SeqInj (List _ as c1, Li) ->
+  | CSeqInj (CList _ as c1, Li) ->
     fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_LI;\n%s_temp.has_tv = ((crc*)%s_clist)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
       x toC_crc (c1, x ^ "_clist") x x x x x x x x x
-  | SeqProj (t, (r, p), Id) ->
+  | CSeqInj (CTuple _ as c1, Tp arity) ->
+    fprintf ppf "value %s_ctuple;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_TP;\n%s_temp.arity_inj = %d;\n%s_temp.has_tv = ((crc*)%s_ctuple)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_ctuple;\n%s = (value)alloc_crc(&%s_temp);"
+      x toC_crc (c1, x ^ "_ctuple") x x x x arity x x x x x x
+  | CSeqProj ((I | B | U | Ar | Li as t), (r, p), CId) ->
     fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_%a;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = &crc_id;\n%s = (value)alloc_crc(&%s_temp);"
       x x x toC_tag t x (match p with Pos -> 1 | Neg -> 0) x x r x x x
-  | SeqProj (Ar, (r, p), (Fun _ as c2)) ->
+  | CSeqProj (Tp arity, (r, p), CId) ->
+    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_TP;\n%s_temp.arity_proj = %d;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)&crc_id;\n%s = (value)alloc_crc(&%s_temp);"
+      x x x x arity x (match p with Pos -> 1 | Neg -> 0) x x r x x x
+  | CSeqProj (Ar, (r, p), (CFun _ as c2)) ->
     fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_AR;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_cfun)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
       x toC_crc (c2, x ^ "_cfun") x x x x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
-  | SeqProj (Li, (r, p), (List _ as c2)) ->
+  | CSeqProj (Li, (r, p), (CList _ as c2)) ->
     fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_LI;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_clist)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
       x toC_crc (c2, x ^ "_clist") x x x x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
-  | TvInj (tv, (r, p)) ->
+  | CSeqProj (Tp arity, (r, p), (CTuple _ as c2)) ->
+    fprintf ppf "value %s_ctuple;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_TP;\n%s_temp.arity_proj = %d;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_ctuple)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_ctuple;\n%s = (value)alloc_crc(&%s_temp);"
+      x toC_crc (c2, x ^ "_ctuple") x x x x arity x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
+  | CTvInj (tv, (r, p)) ->
     fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_INJ;\n%s_temp.p_inj = %d;\n%s_temp.has_tv = 1;\n%s_temp.crcdat.seq_tv.rid_inj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
       x x x (match p with Pos -> 1 | Neg -> 0) x x r x (c_of_ty (TyVar tv)) x x
-  | TvProj (tv, (r, p)) ->
+  | CTvProj (tv, (r, p)) ->
     fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_PROJ;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 1;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
       x x x (match p with Pos -> 1 | Neg -> 0) x x r x (c_of_ty (TyVar tv)) x x
-  | Fun (c1, c2) ->
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = FUN;\n%s_temp.has_tv = ((crc*)%s_c1)->has_tv | ((crc*)%s_c2)->has_tv;\n%s_temp.crcdat.two_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.two_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
+  | CFun (c1, c2) ->
+    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = FUN;\n%s_temp.has_tv = ((crc*)%s_c1)->has_tv | ((crc*)%s_c2)->has_tv;\n%s_temp.crcdat.fun_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.fun_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
       x toC_crc (c1, x ^ "_c1") x toC_crc (c2, x ^ "_c2") x x x x x x x x x x x
-  | List c ->
-    fprintf ppf "value %s_c;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = LIST;\n%s_temp.has_tv = ((crc*)%s_c)->has_tv;\n%s_temp.crcdat.one_crc = (crc*)%s_c;\n%s = (value)alloc_crc(&%s_temp);" 
+  | CList c ->
+    fprintf ppf "value %s_c;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = LIST;\n%s_temp.has_tv = ((crc*)%s_c)->has_tv;\n%s_temp.crcdat.lst_crc = (crc*)%s_c;\n%s = (value)alloc_crc(&%s_temp);" 
       x toC_crc (c, x ^ "_c") x x x x x x x x
+  | CTuple cs ->
+    let arity = List.length cs in
+    let toC_sep ppf () = fprintf ppf "\n" in
+    let counter = ref 0 in
+    let toC_elem ppf c = 
+      let i = !counter in
+      counter := !counter + 1;
+      fprintf ppf "value %s_c%d;\n%a\n%s_crcs[%d] = (crc*)%s_c%d;" x i toC_crc (c, Printf.sprintf "%s_c%d" x i) x i x i
+    in
+    fprintf ppf "crc **%s_crcs = (crc**)GC_MALLOC(sizeof(crc*) * %d);\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = TUPLE;\n%s_temp.has_tv = 0;\n"
+      x arity (pp_print_list toC_elem ~pp_sep:toC_sep) cs x x x;
+    for i = 0 to arity - 1 do
+       fprintf ppf "%s_temp.has_tv |= ((crc*)%s_c%d)->has_tv;\n" x x i
+    done;
+    fprintf ppf "%s_temp.crcdat.tpl_crc.arity = %d;\n%s_temp.crcdat.tpl_crc.crcs = %s_crcs;\n%s = (value)alloc_crc(&%s_temp);" x arity x x x x
   | _ -> raise @@ ToC_bug "bad coercion"
 
 (* ======================================== *)
@@ -170,7 +195,18 @@ let rec toC_mf ppf (x, mf) = match mf with
         x
         toC_mf (asprintf "hd((lst*)%s)" x, mf1)
         toC_mf (asprintf "tl((lst*)%s)" x, mf2)
-  | MatchTuple _ -> raise @@ ToC_error "tuple yet"
+  | MatchTuple mfs ->
+    let counter = ref (-1) in
+    let toC_mfi ppf mi =
+      if !is_eager then
+        toC_mf ppf (counter := !counter + 1; asprintf "((tpl*)%s)->fields[%d]" x !counter, mi)
+      else
+        toC_mf ppf (counter := !counter + 1; asprintf "tget((tpl*)%s, %d)" x !counter, mi)
+    in
+    let toC_sep ppf () = fprintf ppf " && " in
+    let toC_list ppf ms = pp_print_list toC_mfi ppf ms ~pp_sep:toC_sep in
+    fprintf ppf "%a"
+      toC_list mfs
   | MatchWild _ -> 
     fprintf ppf "1"
 
@@ -193,21 +229,18 @@ let rec toC_exp ppf f = match f with
       fprintf ppf "%s = 0;\n" (* Insert(x, []) ~> x.l = (lst* )NULL; *)
         x
     | Cons (y, z) -> (* Insert(x, y::z) ~> TODO *)
-      if !is_eager then
-        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n((lst*)%s)->h = %s;\n((lst*)%s)->t = %s;\n"
-          x
-          x
-          y
-          x
-          z
-      else
-        fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n%s((lst*)%s)->lstdat.unwrap_l.h = %s;\n((lst*)%s)->lstdat.unwrap_l.t = %s;\n"
-          x
-          (if !is_B then asprintf "((lst*)%s)->lstkind = UNWRAPPED_LIST;\n" x else "")
-          x
-          y
-          x
-          z
+      fprintf ppf "%s = (value)GC_MALLOC(sizeof(lst));\n((lst*)%s)->h = %s;\n((lst*)%s)->t = %s;\n"
+        x
+        x
+        y
+        x
+        z
+    | Tuple ys ->
+      let arity = List.length ys in
+      let counter = ref (-1) in
+      let toC_sep ppf () = fprintf ppf "\n" in
+      let toC_list ppf ys = pp_print_list (fun ppf y -> counter := !counter + 1; fprintf ppf "((tpl_raw*)%s)->fields[%d] = %s;" x !counter y) ppf ys ~pp_sep:toC_sep in
+      fprintf ppf "%s = (value)GC_MALLOC(sizeof(tpl_raw) + sizeof(value) * %d);\n((tpl_raw*)%s)->hdr.arity = %d;\n%a\n" x arity x arity toC_list ys;
     | Add (y, z) ->
       fprintf ppf "%s = %s + %s;\n" (* Insert (x, y+z) ~> x.i_b_u = y.i_b_u + z.i_b_u; *)
         x
@@ -239,7 +272,7 @@ let rec toC_exp ppf f = match f with
           x
           y
       else
-        fprintf ppf "%s = (value)hd((lst*)%s);\n"
+        fprintf ppf "%s = hd((lst*)%s);\n"
           x
           y
     | Tl y -> (* TODO *)
@@ -248,9 +281,20 @@ let rec toC_exp ppf f = match f with
           x
           y
       else
-        fprintf ppf "%s = (value)tl((lst*)%s);\n"
+        fprintf ppf "%s = tl((lst*)%s);\n"
           x
           y
+    | Tget (y, i) ->
+      if !is_eager then
+        fprintf ppf "%s = ((tpl*)%s)->fields[%d];\n"
+          x
+          y
+          i
+      else
+        fprintf ppf "%s = tget((tpl*)%s, %d);\n"
+          x
+          y
+          i
     | AppDDir (y, (z1, z2)) ->
       fprintf ppf "%s = fun_%s(0, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
         x
@@ -373,7 +417,7 @@ let rec toC_exp ppf f = match f with
         toC_exp f
         toC_exp (Match (x, t))
     | [] -> 
-      fprintf ppf "{\ndid_not_match();\n}\n"
+      fprintf ppf "{\nprintf(\"didn't match\");\nexit(1);\n}\n"
     end
   | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
     let env_size = List.length vs + List.length ftv + n in
@@ -421,7 +465,7 @@ let rec toC_exp ppf f = match f with
     end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
-  | Var _ | Int _ | Nil | Cons _ | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Hd _ | Tl _ | AppDDir _ | AppDCls _ | AppMDir _ | AppMCls _ | Cast _ | AppTy _ | CApp _ | Coercion _ | CSeq _ as f ->
+  | Var _ | Int _ | Nil | Cons _ | Tuple _ | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Hd _ | Tl _ | Tget _ | AppDDir _ | AppDCls _ | AppMDir _ | AppMCls _ | Cast _ | AppTy _ | CApp _ | Coercion _ | CSeq _ as f ->
     fprintf ppf "value retv;\n%areturn %s;\n"
       toC_exp (Insert ("retv", f))
       (if !is_main then "0" else "retv")
@@ -458,8 +502,12 @@ let toC_tycontent ppf (u, name) = match u with
     fprintf ppf "static ty %s = { .tykind = TYLIST, .tydat.tylist = %s };"
       name
       (c_of_ty u)
-  | TyTuple _ -> raise @@ ToC_error "tuple yet"
-  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
+  | TyTuple us ->
+    let arity = List.length us in
+    let tys_str = String.concat ", " (List.map (fun u -> "(ty*)" ^ c_of_ty u) us) in
+    fprintf ppf "static ty *%s_tys[] = { %s };\n" name tys_str;
+    fprintf ppf "static ty %s = { .tykind = TYTUPLE, .tydat.tytuple = { .arity = %d, .tys = %s_tys } };"
+      name arity name  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
 
 let toC_tycontents ppf l = 
   let toC_sep ppf () = fprintf ppf "\n" in
@@ -546,55 +594,66 @@ let toC_crcdecls ppf l =
     toC_list l
     
 let rec check_has_tv = function
-  | Id -> 0
-  | SeqInj (c', _) | SeqProj (_, _, c') | List c' -> check_has_tv c'
-  | TvInj _ | TvProj _ -> 1
-  | Fun (c1, c2) -> (check_has_tv c1) lor (check_has_tv c2)
+  | CId -> false
+  | CSeqInj (c', _) | CSeqProj (_, _, c') | CList c' -> check_has_tv c'
+  | CTvInj _ | CTvProj _ -> true
+  | CFun (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
+  | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
 
 (* コアーションの定義 *)
 let toC_crccontent ppf (c, name) = 
-  let has_tv_val = check_has_tv c in (* ★追加: 計算しておく *)
+  let has_tv_val = if check_has_tv c then 1 else 0 in
   let c_of_crc c = match c with
-  | Id -> "&crc_id"
-  | SeqInj (Id, g) -> Format.asprintf "&crc_inj_%a" toC_tag g
+  | CId -> "&crc_id"
+  | CSeqInj (CId, g) -> Format.asprintf "&crc_inj_%a" toC_tag g
   | _ -> "&" ^ CrcManager.find c 
   in match c with
-  | SeqInj (c', g) ->
-    fprintf ppf "static crc %s = { .crckind = SEQ_INJ, .g_inj = G_%a, .has_tv = %d, .crcdat.seq_tv = { .ptr.s = %s } };"
+  | CSeqInj (c', g) ->
+    let arity_str = match g with Tp arity -> Format.asprintf ", .arity_inj = %d" arity | _ -> "" in
+    fprintf ppf "static crc %s = { .crckind = SEQ_INJ, .g_inj = G_%a%s, .has_tv = %d, .crcdat.seq_tv = { .ptr.s = (crc*)%s } };"
       name
       toC_tag g
+      arity_str
       has_tv_val
       (c_of_crc c')
-  | SeqProj (g, (rid, p), c') -> 
-    fprintf ppf "static crc %s = { .crckind = SEQ_PROJ, .g_proj = G_%a, .p_proj = %d,  .has_tv = %d, .crcdat.seq_tv = { .rid_proj = %d, .ptr.s = %s } };"
+  | CSeqProj (g, (rid, p), c') -> 
+    let arity_str = match g with Tp arity -> Format.asprintf ", .arity_proj = %d" arity | _ -> "" in
+    fprintf ppf "static crc %s = { .crckind = SEQ_PROJ, .g_proj = G_%a%s, .p_proj = %d,  .has_tv = %d, .crcdat.seq_tv = { .rid_proj = %d, .ptr.s = (crc*)%s } };"
       name
       toC_tag g
+      arity_str
       (match p with Pos -> 1 | Neg -> 0)
       has_tv_val
       rid
       (c_of_crc c')
-  | TvInj (tv, (rid, p)) ->
+  | CTuple cs ->
+    let arity = List.length cs in
+    let crcs_str = String.concat ", " (List.map (fun c -> "(crc*)" ^ c_of_crc c) cs) in
+    fprintf ppf "static crc *%s_crcs[] = { %s };\n" name crcs_str;
+    fprintf ppf "static crc %s = { .crckind = TUPLE, .has_tv = %d, .crcdat.tpl_crc = { .arity = %d, .crcs = %s_crcs } };"
+      name has_tv_val arity name
+  | CTvInj (tv, (rid, p)) ->
     fprintf ppf "static crc %s = { .crckind = TV_INJ, .p_inj = %d, .has_tv = %d, .crcdat.seq_tv = { .rid_inj = %d, .ptr.tv = %s } };"
       name
       (match p with Pos -> 1 | Neg -> 0)
       has_tv_val
       rid
       (c_of_ty (TyVar tv))
-  | TvProj (tv, (rid, p)) ->
+  | CTvProj (tv, (rid, p)) ->
     fprintf ppf "static crc %s = { .crckind = TV_PROJ, .p_proj = %d, .has_tv = %d, .crcdat.seq_tv = { .rid_proj = %d, .ptr.tv = %s } };"
       name
       (match p with Pos -> 1 | Neg -> 0)
       has_tv_val
       rid
       (c_of_ty (TyVar tv))
-  | Fun (c1, c2) -> 
-    fprintf ppf "static crc %s = { .crckind = FUN, .has_tv = %d, .crcdat.two_crc = { .c1 = %s, .c2 = %s } };"
+  | CFun (c1, c2) -> 
+    fprintf ppf "static crc %s = { .crckind = FUN, .has_tv = %d, .crcdat.fun_crc = { .c1 = %s, .c2 = %s } };"
       name
       has_tv_val
       (c_of_crc c1)
       (c_of_crc c2)
-  | List c' ->
-    fprintf ppf "static crc %s = { .crckind = LIST, .has_tv = %d, .crcdat.one_crc = %s };"
+  | CList c' ->
+    fprintf ppf "static crc %s = { .crckind = LIST, .has_tv = %d, .crcdat.lst_crc = %s };"
       name
       has_tv_val
       (c_of_crc c')

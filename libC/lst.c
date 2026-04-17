@@ -1,65 +1,51 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-__attribute__((noreturn)) void did_not_match() {
-	printf("didn't match");
-	exit(1);
-}
-
 #if !defined(EAGER) && !defined(STATIC)
+#include <stdlib.h>
 #include "lst.h"
 #include "capp.h"
 #include "ty.h"
 #include "crc.h"
 
-#ifdef CAST
+static inline uintptr_t is_wrapped(lst* l) {
+	return l->t & 0b1;
+}
+
+static inline uintptr_t erase_1bit_tag(uintptr_t x) {
+	return x & ~0b1;
+}
+
 int is_NULL(lst *l) {
-	while (l != NULL && l->lstkind == WRAPPED_LIST) {
-		l = l->lstdat.wrap_l.w;
+	while (l != NULL && is_wrapped(l)) {
+		l = l->w;
 	}
 	return (l == NULL);
 }
 
 value hd(lst *l) {
-	if (l->lstkind == WRAPPED_LIST) {
-		return cast(hd(l->lstdat.wrap_l.w), l->lstdat.wrap_l.u1->tydat.tylist, l->lstdat.wrap_l.u2->tydat.tylist, l->rid, l->polarity);\
+	if (is_wrapped(l)) {
+		#ifdef CAST
+		ty *u1 = (ty*)erase_1bit_tag(l->wrap_info.u1_tag);
+		ty *u2 = (ty*)erase_1bit_tag(l->wrap_info.u2_p);
+		return cast(hd(l->w), u1->tydat.tylist, u2->tydat.tylist, l->wrap_info.rid, l->wrap_info.u2_p & 0b1);
+		#else
+		return coerce(l->w->h, ((crc*)erase_1bit_tag(l->c_tag))->crcdat.lst_crc);
+		#endif
 	} else {
-		return l->lstdat.unwrap_l.h;
+		return l->h;
 	}
 }
 
 value tl(lst *l) {
-	if (l->lstkind == WRAPPED_LIST) {
-		return cast(tl(l->lstdat.wrap_l.w), l->lstdat.wrap_l.u1, l->lstdat.wrap_l.u2, l->rid, l->polarity);
+	if (is_wrapped(l)) {
+		#ifdef CAST
+		ty *u1 = (ty*)erase_1bit_tag(l->wrap_info.u1_tag);
+		ty *u2 = (ty*)erase_1bit_tag(l->wrap_info.u2_p);
+		return cast(tl(l->w), u1, u2, l->wrap_info.rid, l->wrap_info.u2_p & 0b1);
+		#else
+		return coerce(l->w->t, (crc*)erase_1bit_tag(l->c_tag));
+		#endif
 	} else {
-		return l->lstdat.unwrap_l.t;
+		return l->t;
 	}
 }
-#else
-
-int is_NULL(lst *l) {
-	while (l != NULL && (l->lstdat.wrap_l.c & 0b1)) {
-		l = l->lstdat.wrap_l.w;
-	}
-	return (l == NULL);
-}
-
-value hd(lst *l) {
-	if (l->lstdat.wrap_l.c & 0b1) {
-		return coerce(l->lstdat.wrap_l.w->lstdat.unwrap_l.h, ((crc*)(l->lstdat.wrap_l.c & ~0b1))->crcdat.one_crc);
-	} else {
-		return l->lstdat.unwrap_l.h;
-	}
-}
-
-value tl(lst *l) {
-	if (l->lstdat.wrap_l.c & 0b1) {
-		return coerce(l->lstdat.wrap_l.w->lstdat.unwrap_l.t, (crc*)(l->lstdat.wrap_l.c & ~0b1));
-	} else {
-		return l->lstdat.unwrap_l.t;
-	}
-}
-
-#endif
 
 #endif

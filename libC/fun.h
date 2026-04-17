@@ -31,17 +31,17 @@ typedef struct fun {
  * [ env[0] = (void*)x   ]
  * [ env[1] = (void*)ty1 ] <-- ty* ty1 = (ty*)env[1] として取り出す
  *
- * (C) WRAPされたクロージャ
+ * (C) WRAPされたクロージャ (CASTオフ時)
  * [ funcM / funcD = fun_wrapped_call_funcM / fun_wrapped_call_funcD ]
  * [ env[0] = (void*)元の関数(fun*)  ]
  * [ env[1] = (void*)コアーション(crc*) ]
  * 
- * (D) WRAPされたクロージャ (CASTオン時)
+ * (D) WRAPされたクロージャ (CASTオン時): (\x. ...): t1 =>^r_p t2
  * [ funcM = fun_wrapped_call_funcM ]
  * [ env[0] = (void*)元の関数(fun*)  ]
- * [ env[1] = (void*)t1(ty*) ]         <-- ポインタなのでそのまま入る
- * [ env[2] = (void*)t2(ty*) ]         <-- ポインタなのでそのまま入る
- * [ env[3] = (void*)(uintptr_t)rid ]  <-- 整数は uintptr_t を経由してポインタ幅に合わせる
+ * [ env[1] = (void*)t1(ty*) ]
+ * [ env[2] = (void*)t2(ty*) ]
+ * [ env[3] = (void*)(uintptr_t)rid ]
  * [ env[4] = (void*)(uintptr_t)polarity ]
  */
 

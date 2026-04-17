@@ -816,17 +816,32 @@ end
 module Cls = struct
   open Syntax.Cls
 
+  let gt_coercion c1 c2 = match c1, c2 with
+    | (CTvInj _ | CTvProj _ | CId | CFun _ | CList _ | CTuple _), (CSeqInj _ | CSeqProj _) -> true
+    | _ -> false
+
+  let gte_coercion c1 c2 = match c1, c2 with
+    | CFun _, CFun _ -> true
+    | CTuple _, CTuple _ -> true
+    (* | CList _, CList _ is intentionally ommited *)
+    | _ -> gt_coercion c1 c2
+
   let rec pp_coercion ppf = function
-  | Id -> fprintf ppf "id"
-  (* | Fail _ -> fprintf ppf "⊥" *)
-  | SeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
-  | SeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
-  (* | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2 *)
-  | TvInj (tv, _) -> fprintf ppf "%a!" pp_ty (TyVar tv)
-  | TvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
-  (* | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv) *)
-  | Fun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
-  | List c -> fprintf ppf "[%a]" pp_coercion c
+    | CId -> fprintf ppf "id"
+    (* | Fail _ -> fprintf ppf "⊥" *)
+    | CSeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
+    | CSeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
+    (* | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2 *)
+    | CTvInj (tv, _) -> fprintf ppf "%a!" pp_ty (TyVar tv)
+    | CTvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
+    (* | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv) *)
+    | CFun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
+    | CList c -> fprintf ppf "[%a]" pp_coercion c
+    | CTuple cs as c ->
+      let pp_sep ppf () = fprintf ppf "*" in
+      let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
+      fprintf ppf "%a"
+        pp_list cs
 
   let pp_let_tyabses ppf tyvars =
     if List.length tyvars = 0 then
@@ -855,8 +870,14 @@ module Cls = struct
     | Div (x, y) -> fprintf ppf "%s / %s" x y
     | Mod (x, y) -> fprintf ppf "%s mod %s" x y
     | Cons (x, y) -> fprintf ppf "%s :: %s" x y
+    | Tuple xs ->
+      let pp_sep ppf () = fprintf ppf ", " in
+      let pp_list ppf vars = pp_print_list pp_print_string ppf vars ~pp_sep:pp_sep in
+      fprintf ppf "(%a)"
+        pp_list xs
     | Hd x -> fprintf ppf "hd(%s)" x
     | Tl x -> fprintf ppf "tl(%s)" x
+    | Tget (x, i) -> fprintf ppf "tget(%s, %i)" x i
     | IfEq (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -895,6 +916,13 @@ module Cls = struct
       fprintf ppf "set _tylist%d = TYLIST(%a) in %a"
         i
         pp_ty u
+        pp_exp f
+    | SetTy ((i, { contents = Some (TyTuple us) }), f) ->
+      let pp_sep ppf () = fprintf ppf ", " in
+      let pp_list ppf tys = pp_print_list pp_ty ppf tys ~pp_sep:pp_sep in
+      fprintf ppf "set _tylist%d = TYTUPLE(%a) in %a"
+        i
+        pp_list us
         pp_exp f
     | SetTy _ -> raise @@ Syntax_error
     | Cast (x, u1, u2, _) ->

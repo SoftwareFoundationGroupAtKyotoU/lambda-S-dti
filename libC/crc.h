@@ -22,14 +22,17 @@ typedef struct crc {
 		TV_PROJ_OCCUR, //9
 		FUN, //10
 		LIST, //11
+		TUPLE, //12
 	} crckind;
+	uint8_t p_proj  : 1;
+    uint8_t p_inj   : 1;
+    uint8_t botkind : 1; // 0 for BOT, 1 for OCCUR
+    uint8_t has_tv  : 1;
+	
 	ground_ty g_proj;
 	ground_ty g_inj;
-	uint8_t p_proj;
-	uint8_t p_inj;
-	uint8_t botkind; // 0 for BOT, 1 for OCCUR
-	uint8_t has_tv;
-	// padding: 2byte
+	uint16_t arity_proj;
+	uint16_t arity_inj;
 
 	// payload: 16byte
 	union crcdat {
@@ -41,19 +44,24 @@ typedef struct crc {
 				ty *tv; // for TV_
 			} ptr;
 		} seq_tv;
-		struct two_crc { // for FUN
+		struct fun_crc { // for FUN
 			crc *c1;
 			crc *c2;
-		} two_crc;
-		crc *one_crc; // for LIST
+		} fun_crc;
+		crc *lst_crc; // for LIST
+		struct tpl_crc { // for TUPLE
+			uint16_t arity;
+			crc **crcs;
+		} tpl_crc;
 	} crcdat;
 } crc;
 
-void dti(const ground_ty g, ty *tv);
+void dti(const ground_ty g, const uint16_t arity, ty *tv);
 
 crc *compose(crc*, crc*);
 crc *compose_funs(crc*, crc*);
 crc *compose_lists(crc*, crc*);
+crc *compose_tuples(crc*, crc*);
 
 crc *normalize_tv_inj(crc*);
 crc *normalize_tv_proj(crc*);

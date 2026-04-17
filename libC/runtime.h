@@ -11,6 +11,7 @@
 #include "crc.h"
 #include "fun.h"
 #include "lst.h"
+#include "tpl.h"
 
 #include "app.h"
 #include "capp.h"

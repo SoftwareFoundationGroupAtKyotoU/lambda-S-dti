@@ -35,6 +35,6 @@ inline ty *ty_find(ty *t) {
 
     return root;
 }
-#endif
+#endif //CAST
 
-#endif
+#endif //STATIC

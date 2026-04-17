@@ -26,6 +26,7 @@ typedef enum ground_ty : uint8_t {
 	G_UNIT,
 	G_AR,
 	G_LI,
+	G_TP,
 } ground_ty;
 
 typedef struct ty ty;
@@ -38,6 +39,11 @@ typedef struct fun fun;
 
 typedef struct lst lst;
 
+#if defined(EAGER) || defined(STATIC)
+typedef struct tpl_raw tpl;
+#else
+typedef struct tpl_header tpl;
+#endif
 #if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;
 #endif //not CAST && not STATIC

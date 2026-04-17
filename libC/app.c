@@ -59,8 +59,8 @@ value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
     value inner_f_val = (value)inner_f;
 
 	// Coercion 適用し、return
-    crc *c1 = c->crcdat.two_crc.c1;
-    crc *c2 = c->crcdat.two_crc.c2;
+    crc *c1 = c->crcdat.fun_crc.c1;
+    crc *c2 = c->crcdat.fun_crc.c2;
     crc *_arg2_crc = compose(c2, (crc*)arg2);
     value _arg1 = coerce(arg1, c1);
 	#ifdef ALT
