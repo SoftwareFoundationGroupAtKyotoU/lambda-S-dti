@@ -34,6 +34,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
+%token <Utils.Error.range> REF SUBSTITUTE BANG
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -43,6 +44,7 @@ exception Parser_bug of string
 
 (* Ref: https://caml.inria.fr/pub/docs/manual-ocaml/expr.html *)
 %right SEMI
+%right SUBSTITUTE
 %right prec_if
 %right RARROW
 %right LOR
@@ -201,6 +203,10 @@ SeqExpr :
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
     }
+  | e1=SeqExpr SUBSTITUTE e2=SeqExpr {
+      let r = join_range (range_of_exp e1) (range_of_exp e2) in
+      SubstExp (r, e1, e2)
+    }
   | start=IF e1=SeqExpr THEN e2=SeqExpr ELSE e3=SeqExpr %prec prec_if {
       let r = join_range start (range_of_exp e3) in
       IfExp (r, e1, e2, e3)
@@ -249,6 +255,14 @@ UnaryExpr :
       let r = join_range start_r (range_of_exp e) in
       let zero = IConst (dummy_range, 0) in
       BinOp (r, Minus, zero, e)
+    }
+  | start_r=REF e=UnaryExpr {
+      let r = join_range start_r (range_of_exp e) in
+      RefExp (r, e)
+    }
+  | start_r=BANG e=UnaryExpr {
+      let r = join_range start_r (range_of_exp e) in
+      DerefExp (r, e)
     }
   | AppExpr { $1 }
 

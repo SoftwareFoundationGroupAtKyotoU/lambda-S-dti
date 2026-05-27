@@ -32,6 +32,7 @@ type ty =
   | TyFun of ty * ty
   | TyList of ty
   | TyTuple of ty list
+  | TyRef of ty
   (* | TyCoercion of ty * ty *)
 and tyvar = int * ty option ref
 (* int value is used to identify type variables.
@@ -49,6 +50,7 @@ let rec is_ground = function
   | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
   | TyList TyDyn -> true
   | TyTuple us -> List.fold_left (fun b u -> b && u = TyDyn) true us
+  | TyRef TyDyn -> true
   | TyVar (_, { contents = Some u }) -> is_ground u
   | _ -> false
 
@@ -71,6 +73,7 @@ let rec is_consistent u1 u2 = match u1, u2 with
     begin try
       List.fold_left2 (fun b u1 u2 -> b && is_consistent u1 u2) true us1 us2
     with Invalid_argument _ -> false end
+  | TyRef u1, TyRef u2 -> is_consistent u1 u2
   | _ -> false
 
 let make_dyn_list n =
@@ -98,6 +101,7 @@ let rec ftv_ty: ty -> TV.t = function
   | TyFun (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
   | TyList u -> ftv_ty u
   | TyTuple us -> TV.big_union (List.map ftv_ty us)
+  | TyRef u -> ftv_ty u
   | _ -> TV.empty
 
 let ftv_tysc: tysc -> TV.t = function
@@ -145,7 +149,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Ar | Li | Tp of int
+type tag = I | B | U | Ar | Li | Tp of int | Rf
 
 let type_of_tag = function
   | I -> TyInt
@@ -154,6 +158,7 @@ let type_of_tag = function
   | Ar -> TyFun (TyDyn, TyDyn)
   | Li -> TyList TyDyn
   | Tp n -> TyTuple (make_dyn_list n)
+  | Rf -> TyRef TyDyn
 
 let rec tag_of_ty = function
   | TyInt -> I
@@ -163,6 +168,7 @@ let rec tag_of_ty = function
   | TyList TyDyn -> Li
   | TyTuple us ->
     if List.fold_left (fun b u -> b && u = TyDyn) true us then Tp (List.length us) else assert false
+  | TyRef TyDyn -> Rf
   | TyVar (_, {contents = Some u}) -> tag_of_ty u
   | _ -> assert false
   (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
@@ -176,6 +182,7 @@ type coercion =
   | CFun of coercion * coercion
   | CList of coercion
   | CTuple of coercion list
+  | CRef of ty
   | CId of ty
   | CSeq of coercion * coercion
   | CFail of tag * (range * polarity) * tag
@@ -185,9 +192,11 @@ let is_d = function
   | CSeq (CFun _, CInj _)
   | CSeq (CList _, CInj _)
   | CSeq (CTuple _, CInj _)
+  | CSeq (CRef _, CInj _)
   | CFun _
   | CList _
-  | CTuple _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
+  | CTuple _
+  | CRef _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
   | _ -> false
 
 let rec ftv_coercion = function
@@ -196,6 +205,7 @@ let rec ftv_coercion = function
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CList c -> ftv_coercion c
   | CTuple cs -> TV.big_union (List.map ftv_coercion cs)
+  | CRef u -> ftv_ty u
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
@@ -227,6 +237,9 @@ module ITGL = struct
     | NilExp of range * ty
     | ConsExp of range * exp * exp
     | TupleExp of range * exp list
+    | RefExp of range * exp
+    | DerefExp of range * exp
+    | SubstExp of range * exp * exp
 
   let range_of_exp = function
     | Var (r, _, _)
@@ -245,8 +258,11 @@ module ITGL = struct
     | LetExp (r, _, _, _) 
     | NilExp (r, _) 
     | ConsExp (r, _, _)
-    | TupleExp (r, _) -> r
-    
+    | TupleExp (r, _)
+    | RefExp (r, _) 
+    | DerefExp (r, _)
+    | SubstExp (r, _, _) -> r
+
   (* for polymorphic let declaration *)
   let rec tv_exp: exp -> TV.t = function
     | Var _
@@ -266,6 +282,9 @@ module ITGL = struct
     | NilExp (_, u) -> ftv_ty u
     | ConsExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | TupleExp (_, es) -> TV.big_union (List.map tv_exp es)
+    | RefExp (_, e) -> tv_exp e
+    | DerefExp (_, e) -> tv_exp e
+    | SubstExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
 
   let rec ftv_exp: exp -> TV.t = function
     | Var _
@@ -285,6 +304,9 @@ module ITGL = struct
     | NilExp _ -> TV.empty
     | ConsExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | TupleExp (_, es) -> TV.big_union (List.map ftv_exp es)
+    | RefExp (_, e) -> ftv_exp e
+    | DerefExp (_, e) -> ftv_exp e
+    | SubstExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
 
   type program =
     | Exp of exp

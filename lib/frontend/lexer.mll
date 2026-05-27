@@ -19,6 +19,7 @@ let reservedWords = [
   ("mod", fun r -> Parser.MOD r);
   ("match", fun r -> Parser.MATCH r);
   ("with", fun r -> Parser.WITH r);
+  ("ref", fun r -> Parser.REF r);
 ]
 
 let range_of lexbuf =
@@ -49,12 +50,14 @@ rule main = parse
 | ";;" { Parser.SEMISEMI (range_of lexbuf) }
 | "'" { Parser.QUOTE (range_of lexbuf) }
 | "=" { Parser.EQ (range_of lexbuf) }
+| ":=" { Parser.SUBSTITUTE (range_of lexbuf) }
 | "<>" { Parser.NEQ (range_of lexbuf) }
 | "->" { Parser.RARROW (range_of lexbuf) }
 | "+" { Parser.PLUS (range_of lexbuf) }
 | "-" { Parser.MINUS (range_of lexbuf) }
 | "*" { Parser.STAR (range_of lexbuf) }
 | "/" { Parser.DIV (range_of lexbuf) }
+| "!" { Parser.BANG (range_of_lexbuf) }
 | "?" { Parser.QUESTION (range_of lexbuf) }
 | "<" { Parser.LT (range_of lexbuf) }
 | "<=" { Parser.LTE (range_of lexbuf) }
