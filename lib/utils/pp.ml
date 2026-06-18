@@ -1,41 +1,56 @@
 open Format
-
 open Syntax
 
 exception Syntax_error
 
+(* === utils === *)
+
 let with_paren flag ppf_e ppf e =
   fprintf ppf (if flag then "(%a)" else "%a") ppf_e e
 
-let rec gt_ty (u1: ty) u2 = match u1, u2 with
-  | TyVar (_, { contents = Some u1 }), u2
-  | u1, TyVar (_, { contents = Some u2 }) -> gt_ty u1 u2
-  | _, TyFun _ -> true
+(* === pp for ty === *)
+
+let rec gt_ty u1 u2 = match u1, u2 with
+  | TyVar (_, { contents = Some u1 }), u2 | u1, TyVar (_, { contents = Some u2 }) -> gt_ty u1 u2
+  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyList _ | TyRef _ | TyTuple _ ), TyFun _ -> true
+  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyList _ | TyRef _), TyTuple _  -> true
+  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit), (TyList _ | TyRef _) -> true
   | _ -> false
 
 let gte_ty u1 u2 = match u1, u2 with
+  | TyFun _, TyFun _ -> true
+  | TyList _, TyList _ -> true
   | TyTuple _, TyTuple _ -> true
+  | TyRef _, TyRef _ -> true
   | _ -> gt_ty u1 u2
 
+(* util for pp_ty and pp_ty2 *)
+let pp_ty_main ppf ~pp_tyvar u =
+  let rec pp_ty ppf = function
+    | TyDyn -> pp_print_string ppf "?"
+    | TyVar (_, { contents = Some u }) -> pp_ty ppf u
+    | TyVar tv -> pp_tyvar ppf tv
+    | TyInt -> pp_print_string ppf "int"
+    | TyBool -> pp_print_string ppf "bool"
+    | TyUnit -> pp_print_string ppf "unit"
+    | TyFun (u1, u2) as u ->
+      fprintf ppf "%a -> %a"
+        (with_paren (gte_ty u u1) pp_ty) u1
+        pp_ty u2
+    | TyList u' as u -> fprintf ppf "%a list" (with_paren (gt_ty u u') pp_ty) u'
+    | TyTuple us as u ->
+      let pp_sep ppf () = fprintf ppf " * " in
+      let pp_list ppf types = pp_print_list (fun ppf u' -> (with_paren (gte_ty u u') pp_ty) ppf u') ppf types ~pp_sep:pp_sep in
+      fprintf ppf "%a"
+        pp_list us
+    | TyRef u' as u -> fprintf ppf "%a ref" (with_paren (gt_ty u u') pp_ty) u'
+  in
+  pp_ty ppf u
+
 (** Pretty-printer for types. Show the raw index of a type variable (e.g., 'x123->'x124). *)
-let rec pp_ty ppf = function
-  | TyDyn -> pp_print_string ppf "?"
-  | TyVar (a, { contents = None }) -> fprintf ppf "'x%d" a
-  | TyVar (_, { contents = Some u }) -> pp_ty ppf u
-  | TyInt -> pp_print_string ppf "int"
-  | TyBool -> pp_print_string ppf "bool"
-  | TyUnit -> pp_print_string ppf "unit"
-  | TyFun (u1, u2) as u ->
-    fprintf ppf "%a -> %a"
-      (with_paren (gt_ty u u1) pp_ty) u1
-      pp_ty u2
-  | TyList u -> 
-    fprintf ppf "[%a]" pp_ty u
-  | TyTuple us as u ->
-    let pp_sep ppf () = fprintf ppf " * " in
-    let pp_list ppf types = pp_print_list (fun ppf u' -> (with_paren (gte_ty u u') pp_ty) ppf u') ppf types ~pp_sep:pp_sep in
-    fprintf ppf "%a"
-      pp_list us
+let pp_ty ppf u =
+  let pp_tyvar ppf (a, _) = fprintf ppf "'x%d" a in
+  pp_ty_main ppf ~pp_tyvar u
 
 (** Pretty-printer for types. Type variables are renamed (e.g., 'a->'b). *)
 let pp_ty2 ppf u =
@@ -54,25 +69,9 @@ let pp_ty2 ppf u =
     in
     pp_tyvar_of_index ppf @@ index_of_tyvar 0 !tyvars
   in
-  let rec pp_ty ppf = function
-    | TyDyn -> pp_print_string ppf "?"
-    | TyVar (_, { contents = Some u }) -> pp_ty ppf u
-    | TyVar x -> pp_tyvar ppf x
-    | TyInt -> pp_print_string ppf "int"
-    | TyBool -> pp_print_string ppf "bool"
-    | TyUnit -> pp_print_string ppf "unit"
-    | TyFun (u1, u2) as u ->
-      fprintf ppf "%a -> %a"
-        (with_paren (gt_ty u u1) pp_ty) u1
-        pp_ty u2
-    | TyList u ->
-      fprintf ppf "[%a]" pp_ty u
-    | TyTuple us as u ->
-      let pp_sep ppf () = fprintf ppf " * " in
-      let pp_list ppf types = pp_print_list (fun ppf u' -> (with_paren (gte_ty u u') pp_ty) ppf u') ppf types ~pp_sep:pp_sep in
-      fprintf ppf "%a"
-        pp_list us
-  in pp_ty ppf u
+  pp_ty_main ppf ~pp_tyvar u
+
+(* === pp for binop === *)
 
 let gt_binop op1 op2 = match op1, op2 with
   | (Plus | Minus | Mult | Div | Mod), (Eq | Neq | Lt | Lte | Gt | Gte)
@@ -142,6 +141,7 @@ let pp_tag ppf = function
     in
     fprintf ppf "(%a)"
       pp_dyn_tuple n
+  | Rf -> pp_print_string ppf "{?}"
 
 let gte_matchform mf1 mf2 = match mf1, mf2 with
   | MatchCons _, MatchCons _ -> true
@@ -224,6 +224,7 @@ let rec pp_coercion ppf = function
     fprintf ppf "⊥{%a,p,%a}"
       pp_tag t1
       pp_tag t2
+  | CRef _ -> raise Syntax_error
 
 let pp_coercion2 ppf c = 
   let pp_ty = pp_ty2 in
@@ -275,6 +276,7 @@ let pp_coercion2 ppf c =
     fprintf ppf "⊥{%a,p,%a}"
       pp_tag t1
       pp_tag t2
+  | CRef _ -> raise Syntax_error
   in
   pp_coercion ppf c
 
@@ -367,6 +369,7 @@ module ITGL = struct
       let pp_list ppf exps = pp_print_list pp_exp ppf exps ~pp_sep:pp_sep in
       fprintf ppf "(%a)"
         pp_list es
+    | _ -> raise Syntax_error
       
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 

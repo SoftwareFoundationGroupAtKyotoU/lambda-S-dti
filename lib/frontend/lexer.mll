@@ -17,6 +17,7 @@ let reservedWords = [
   ("bool", fun r -> Parser.BOOL r);
   ("unit", fun r -> Parser.UNIT r);
   ("mod", fun r -> Parser.MOD r);
+  ("list", fun r -> Parser.LIST r);
   ("match", fun r -> Parser.MATCH r);
   ("with", fun r -> Parser.WITH r);
   ("ref", fun r -> Parser.REF r);
@@ -57,7 +58,7 @@ rule main = parse
 | "-" { Parser.MINUS (range_of lexbuf) }
 | "*" { Parser.STAR (range_of lexbuf) }
 | "/" { Parser.DIV (range_of lexbuf) }
-| "!" { Parser.BANG (range_of_lexbuf) }
+| "!" { Parser.BANG (range_of lexbuf) }
 | "?" { Parser.QUESTION (range_of lexbuf) }
 | "<" { Parser.LT (range_of lexbuf) }
 | "<=" { Parser.LTE (range_of lexbuf) }

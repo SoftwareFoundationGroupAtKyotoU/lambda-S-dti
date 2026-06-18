@@ -31,7 +31,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE
 %token <Utils.Error.range> INT BOOL UNIT QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
-%token <Utils.Error.range> COLCOL LBRACKET RBRACKET
+%token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
@@ -297,9 +297,17 @@ ListElms :
       ConsExp(range_of_exp e, e, l r)
     }
 
-Type :
+Type:
   | u1=Type RARROW u2=Type { TyFun (u1, u2) }
-  | u1=SimpleType STAR us=separated_nonempty_list(STAR, SimpleType) { TyTuple (u1 :: us) }
+  | TupleType { $1 }
+  
+TupleType :
+  | u1=PostType STAR us=separated_nonempty_list(STAR, SimpleType) { TyTuple (u1 :: us) }
+  | PostType { $1 }
+
+PostType :
+  | u=PostType LIST { TyList u }
+  | u=PostType REF { TyRef u }
   | SimpleType { $1 }
 
 SimpleType :
@@ -315,5 +323,5 @@ SimpleType :
         tyvenv := Environment.add x.value u !tyvenv;
         u
     }
-  | LBRACKET u=Type RBRACKET { TyList u }
+  // | LBRACKET u=Type RBRACKET { TyList u }
   | LPAREN u=Type RPAREN { u }
