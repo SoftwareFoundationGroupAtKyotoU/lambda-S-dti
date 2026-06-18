@@ -114,7 +114,6 @@ let pp_tyarg ppf = function
   | Ty u -> pp_ty ppf u
   | TyNu -> pp_print_string ppf "ν"
 
-
 let pp_print_tas ppf tas =
   let pp_sep ppf () = fprintf ppf "," in
   let pp_list ppf types = pp_print_list pp_tyarg ppf types ~pp_sep:pp_sep in

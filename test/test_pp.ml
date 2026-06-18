@@ -74,8 +74,8 @@ let test_pp_ty2 =
 module ITGL = struct
   open Pp.ITGL
 
-  let test_pp_program =
-    let test (e) =
+  let test_exact =
+    let test e =
       e >:: fun ctxt ->
         assert_equal ~ctxt:ctxt ~printer:id e @@ asprintf "%a" pp_program @@ parse (e ^ ";;")
     in
@@ -140,11 +140,42 @@ module ITGL = struct
       "match x with | y -> 1";
       
       "let x = 1 + 2";
-      "let rec f (x: int) : int = f x";
+      (* TODO: "let rec f (x: int) : int = f x"; *)
+    ]
+
+  let test_desugar =
+    let test (input, expected) =
+      input >:: fun ctxt ->
+        assert_equal ~ctxt:ctxt ~printer:id expected @@ asprintf "%a" pp_program @@ parse (input ^ ";;")
+    in
+    List.map test [
+      "true || false", "if true then true else if false then true else false";
+      "true && false", "if true then if false then true else false else false";
+
+      "-1", "0 - 1";
+      "-x", "0 - x";
+      "+1", "1";
+      "+x", "x";
+
+      "() ; 2", "let _ = (() : unit) in 2";
+      "1 ; 2 ; 3", "let _ = (1 : unit) in let _ = (2 : unit) in 3";
+
+      "[1]", "1 :: []";
+      "[1; 2; 3]", "1 :: 2 :: 3 :: []";
+
+      (* TODO: "fun x y -> x", "fun (x: 'x265) -> fun (y: 'x264) -> x"; *)
+      "fun (x: int) (y: bool) -> x", "fun (x: int) -> fun (y: bool) -> x";
+
+      (* TODO: "let f x y = x", "let f = fun (x: 'x308) -> fun (y: 'x307) -> x"; *)
+      "let f (x: int) (y: bool) : int = x", "let f = fun (x: int) -> fun (y: bool) -> (x : int)";
+      
+      (* TODO: "let rec f x y = x", "let f = fix f (x: 'x312): 'x313 -> 'x311 = fun (y: 'x313) -> x"; *)
+      "let rec f (x: int) (y: bool) : int = x", "let f = fix f (x: int): bool -> int = fun (y: bool) -> x";
     ]
 
   let suite = [
-    "test_pp_program">::: test_pp_program;
+    "test_pp_program_exact">::: test_exact;
+    "test_pp_program_desugar">::: test_desugar;
   ]
 end
 
