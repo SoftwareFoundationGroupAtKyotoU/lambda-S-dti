@@ -47,6 +47,37 @@ module ITGL = struct
       "let id x = x in let did (x:?) = x in let succ x = x + 1 in (fun (x:?) -> x 1) (id (did succ))", "?";
       "let id x = x in let did (x:?) = x in let succ x = x + 1 in (fun (x:?) -> x true) (id (did succ))", "?";
       "let rec f x (y:bool) z: int = 1 in f", "'a -> bool -> 'b -> int";
+      (* list *)
+      "[]", "'a list";
+      "1 :: []", "int list";
+      "true :: false :: []", "bool list";
+      "[1; 2; 3]", "int list";
+      "fun x -> x :: []", "'a -> 'a list";
+      "fun x y -> x :: y", "'a -> 'a list -> 'a list";
+      "let id x = x in [id 1; 2]", "int list";
+      "(1 : ?) :: []", "'a list";
+      "1 :: (([] : ?) : int list)", "int list";
+      (* tuple *)
+      "(1, true)", "int * bool";
+      "((1, 2), 3)", "(int * int) * int";
+      "fun x y -> (x, y)", "'a -> 'b -> 'a * 'b";
+      "((1 : ?), false)", "? * bool";
+      (* ref *)
+      "ref 1", "int ref";
+      "!(ref true)", "bool";
+      "let x = ref 1 in x := 2", "unit";
+      "let x = ref 1 in x := 2; !x", "int";
+      "fun x -> x := !x + 1", "int ref -> unit";
+      "ref (1 : ?)", "? ref";
+      "!(ref (1 : ?))", "?";
+      (* value restrection *)
+      "let id = fun x -> x in (id 1, id true)", "int * bool";
+      "let empty = [] in (1 :: empty, true :: empty)", "int list * bool list";
+      "let r = ref [] in r := [1]; !r", "int list";
+      (* complex *)
+      "ref []", "'a list ref";
+      "[(1, true); (2, false)]", "(int * bool) list";
+      "let x = ref [1; 2] in !x", "int list";
     ]
 
   let test_type_of_program_errors =
@@ -79,6 +110,25 @@ module ITGL = struct
       "x";
       "let f (x:'a) = x in f (); f true";
       "let rec f (x:'a) = x in f (); f true";
+      (* list *)
+      "1 :: true";
+      "1 :: [true]";
+      "[1; true]";
+      "let f (x: int list) = x in f [true]";
+      (* tuple *)
+      "let f (x: int * int) = x in f (1, true)";
+      "let f (x: int * int) = x in f 1";
+      (* ref *)
+      "!1";
+      "1 := 2";
+      "let x = ref 1 in x := true";
+      "let x = ref 1 in x := !x + true";
+      (* value restriction *)
+      "let f = (fun x -> x) (fun y -> y) in (f 1, f true)";
+      (* TODO: "let r = ref [] in let _ = (r := [1]) in (r := [true])"; *)
+      "let r = ref [] in let x = (r := [1]) in (r := [true])";
+      "let r = ref [] in (1 :: !r, true :: !r)";
+      "let r = ref (fun x -> x) in r := (fun x -> x + 1); !r true";
     ]
 
   let suite = [

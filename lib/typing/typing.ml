@@ -1,5 +1,4 @@
 open Format
-
 open Pp
 open Syntax
 
@@ -61,6 +60,7 @@ let subst_type (s: substitutions) (u: ty) =
     | TyFun (u1, u2) -> TyFun (subst u1 s0, subst u2 s0)
     | TyList u -> TyList (subst u s0)
     | TyTuple us -> TyTuple (List.map (fun u -> subst u s0) us)
+    | TyRef u -> TyRef (subst u s0)
     | TyVar (a, { contents = None }) when a = a' -> u'
     | TyVar (_, { contents = Some u }) -> subst u s0
     | _ as u -> u
@@ -102,10 +102,10 @@ module ITGL = struct
       unify @@ CEqual (TyVar x, TyFun (x1, x2));
       unify @@ CConsistent (x1, u1);
       unify @@ CConsistent (x2, u2)
-    (* [U1] ~ [U2] *)
+    (* U1 list ~ U2 list *)
     | CConsistent (TyList u1, TyList u2) -> 
       unify @@ CConsistent (u1, u2)
-    (* [U] ~ X or X ~ [U] *)
+    (* U list ~ X or X ~ U list *)
     | CConsistent (TyList u, TyVar x) | CConsistent (TyVar x, TyList u) as c ->
       if TV.mem x (ftv_ty (TyList u)) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
       else let y = fresh_tyvar () in
@@ -125,6 +125,15 @@ module ITGL = struct
         let ys = List.map (fun _ -> fresh_tyvar ()) us in
         unify @@ CEqual (TyVar x, TyTuple ys);
         List.iter2 (fun y u -> unify @@ CConsistent (y, u)) ys us
+    (* U1 ref ~ U2 ref *)
+    | CConsistent (TyRef u1, TyRef u2) -> 
+      unify @@ CConsistent (u1, u2)
+    (* U ref ~ X or X ~ U ref *)
+    | CConsistent (TyRef u, TyVar x) | CConsistent (TyVar x, TyRef u) as c ->
+      if TV.mem x (ftv_ty (TyRef u)) then raise @@ Type_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
+      else let y = fresh_tyvar () in
+      unify @@ CEqual (TyVar x, TyRef y);
+      unify @@ CConsistent (y, u)
     (* U ~ X or X ~ U *)
     | CConsistent (u, TyVar x) | CConsistent (TyVar x, u) ->
       unify @@ CEqual (TyVar x, u)
@@ -169,7 +178,7 @@ module ITGL = struct
   (** Returns true if a given expression is a "value" under the given environment.
    * The definition of "value" slightly differs that in the paper
    * to allow more type variables are generalized by let. *)
-  let rec is_value env e = 
+  let rec is_pure_value env e = 
     let rec is_base_value env u e = match e, u with 
       | _, (TyVar _ | TyDyn | TyFun _ | TyList _ | TyTuple _) -> 
         raise @@ Type_bug (asprintf "invalid base value: %a" pp_exp e)
@@ -220,7 +229,7 @@ module ITGL = struct
           raise @@ Type_bug (asprintf "variable '%s' not found in the environment" x)
         end
       | NilExp _ -> true
-      | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2
+      | ConsExp (_, e1, e2) -> is_pure_value env e1 && is_list_value env e2
       | AscExp (_, e, TyList _) -> is_list_value env e
       | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_list_value env @@ AscExp (r, e, u)
       | _ -> false
@@ -238,7 +247,7 @@ module ITGL = struct
         end
       (* | NilExp _ -> true
       | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2 *)
-      | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_value env e) true es
+      | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_pure_value env e) true es
       | AscExp (_, e, TyTuple _) -> is_tuple_value env e
       | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_tuple_value env @@ AscExp (r, e, u)
       | _ -> false
@@ -269,14 +278,14 @@ module ITGL = struct
     | FixEExp _
     | FixIExp _ 
     | NilExp _ -> true
-    | ConsExp (_, e1, e2) -> is_value env e1 && is_list_value env e2
-    | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_value env e) true es
+    | ConsExp (_, e1, e2) -> is_pure_value env e1 && is_list_value env e2
+    | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_pure_value env e) true es
     | AscExp (_, e, (TyInt | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
     | AscExp (_, e, TyList _) -> is_list_value env e
     | AscExp (_, e, TyTuple _) -> is_tuple_value env e
-    | AscExp (_, e, TyDyn) -> is_value env e
-    | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_value env @@ AscExp (r, e, u)
+    | AscExp (_, e, TyDyn) -> is_pure_value env e
+    | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_pure_value env @@ AscExp (r, e, u)
     | AscExp (_, e, TyVar (a, { contents = None })) -> is_tyvar_value env a e
     | _ -> false
 
@@ -303,6 +312,7 @@ module ITGL = struct
       TyList (type_of_meet u1 u2)
     | TyTuple us1, TyTuple us2 ->
       TyTuple (List.map2 (fun u1 u2 -> type_of_meet u1 u2) us1 us2)
+    | TyRef u1, TyRef u2 -> TyRef (type_of_meet u1 u2)
     | u1, u2 -> raise @@ Type_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
   let rec type_of_mf env mf ids = match mf with
@@ -399,7 +409,7 @@ module ITGL = struct
       u_exp
     | LetExp (r, x, e1, e2) ->
       let u1 = type_of_exp env e1 in
-      if is_value env e1 then
+      if is_pure_value env e1 then
         let xs = closure_tyvars1 u1 env e1 in
         let us1 = TyScheme (xs, u1) in
         type_of_exp (Environment.add x us1 env) e2
@@ -413,7 +423,36 @@ module ITGL = struct
       type_of_meet (TyList u1) u2
     | TupleExp (_, es) ->
       TyTuple (List.map (fun e -> type_of_exp env e) es)
-    | _ -> raise @@ Type_bug "yet"
+    | RefExp (_, e) -> TyRef (type_of_exp env e)
+    | DerefExp (_, e) ->
+      let rec cont = function
+        | TyVar (_, { contents = Some u }) -> cont u
+        | TyVar (_, { contents = None }) as u -> 
+          let x = fresh_tyvar () in
+          unify @@ CEqual (u, TyRef x);
+          x
+        | TyRef u -> u
+        | TyDyn -> TyDyn
+        | _ -> raise @@ Type_error "expression in deref does not have reference type"
+      in
+      let u = type_of_exp env e in
+      cont u
+    | SubstExp (_, e1, e2) ->
+      let rec unify_cont_unit u1 u2 = match u1 with
+        | TyVar (_, { contents = Some u1 }) -> unify_cont_unit u1 u2
+        | TyVar (_, { contents = None }) as u1 ->
+          let x = fresh_tyvar () in
+          unify @@ CEqual (u1, TyRef x);
+          unify @@ CConsistent (x, u2);
+          TyUnit
+        | TyRef u1 -> unify @@ CConsistent (u1, u2); TyUnit
+        | TyDyn -> unify @@ CConsistent (TyDyn, u2); TyUnit
+        | _ -> raise @@ Type_error "expression in left of subst does not have reference type"
+      in
+      let u1 = type_of_exp env e1 in
+      let u2 = type_of_exp env e2 in
+      unify_cont_unit u1 u2
+    (* | _ -> raise @@ Type_bug "yet" *)
   and type_of_ms env ms u_match u_exp = match ms with
     | (mf, e) :: ms ->
       let u, env', _ = type_of_mf env mf [] in
@@ -439,6 +478,7 @@ module ITGL = struct
     | TyFun (u1, u2) -> TyFun (normalize_type u1, normalize_type u2)
     | TyList u -> TyList (normalize_type u)
     | TyTuple us -> TyTuple (List.map (fun u -> normalize_type u) us)
+    | TyRef u -> TyRef (normalize_type u)
     | _ as u -> u
 
   let normalize_tyenv =
@@ -481,7 +521,10 @@ module ITGL = struct
     | NilExp (r, u) -> NilExp (r, normalize_type u)
     | ConsExp (r, e1, e2) -> ConsExp (r, normalize_exp e1, normalize_exp e2)
     | TupleExp (r, es) -> TupleExp (r, List.map (fun e -> normalize_exp e) es)
-    | _ -> raise @@ Type_bug "yet"
+    | RefExp (r, e) -> RefExp (r, normalize_exp e)
+    | DerefExp (r, e) -> DerefExp (r, normalize_exp e)
+    | SubstExp (r, e1, e2) -> SubstExp (r, normalize_exp e1, normalize_exp e2)
+    (* | _ -> raise @@ Type_bug "yet" *)
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)

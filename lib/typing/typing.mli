@@ -26,7 +26,7 @@ val tag_of_ty : ty -> tag
 module ITGL : sig
   open Syntax.ITGL
 
-  val is_value : tysc Environment.t -> exp -> bool
+  val is_pure_value : tysc Environment.t -> exp -> bool
   val type_of_program : tysc Environment.t -> program -> (program * ty)
 
   val closure_tyvars1 : ty -> tysc Environment.t -> exp -> tyvar list

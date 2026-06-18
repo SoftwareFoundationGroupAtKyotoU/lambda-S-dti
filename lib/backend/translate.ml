@@ -197,7 +197,7 @@ module ITGL = struct
       let f, u = translate_exp env e in
       let msu, (u_match, u_exp) = translate_ms ~intoB env ms in
       CC.MatchExp (c f r u u_match, List.map (fun (mf, f, u) -> mf, c f r u u_exp) msu), u_exp
-    | LetExp (_, x, e1, e2) when Typing.ITGL.is_value env e1 ->
+    | LetExp (_, x, e1, e2) when Typing.ITGL.is_pure_value env e1 ->
       let f1, u1 = translate_exp env e1 in
       let xs = Typing.ITGL.closure_tyvars1 u1 env e1 in
       let ys = closure_tyvars2 f1 env u1 e1 in
@@ -249,7 +249,7 @@ module ITGL = struct
     | LetDecl (x, e) ->
       let f, u = translate_exp ~intoB env e in
       let tvs = 
-        if Typing.ITGL.is_value env e then
+        if Typing.ITGL.is_pure_value env e then
           let xs = closure_tyvars_let_decl1 e u env in
           let ys = closure_tyvars_let_decl2 f env u e in
           xs @ ys
