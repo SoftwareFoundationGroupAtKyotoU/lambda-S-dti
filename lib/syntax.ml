@@ -351,6 +351,11 @@ module CC = struct
     | ConsExp of exp * exp
     | MatchExp of exp * (matchform * exp) list
     | TupleExp of exp list
+    | RefExp of exp * ty
+    | DerefExp of exp
+    | DerefAnotExp of exp * ty
+    | SubstExp of exp * exp
+    | SubstAnotExp of exp * exp * ty
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
@@ -399,6 +404,11 @@ module CC = struct
     | MatchExp (f, ms) ->
       TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | TupleExp es -> TV.big_union (List.map ftv_exp es)
+    | RefExp (f, u) -> TV.union (ftv_exp f) (ftv_ty u)
+    | DerefExp f -> ftv_exp f
+    | DerefAnotExp (f, u) -> TV.union (ftv_exp f) (ftv_ty u)
+    | SubstExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | SubstAnotExp (f1, f2, u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)

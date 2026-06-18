@@ -8,7 +8,7 @@ exception Translation_bug of string
 
 let tag_of_ty = Typing.tag_of_ty
 
-(* These functions (dom, cod, meet) only can be used for normalized types *)
+(* These functions (dom, cod, elm, cont, meet) only can be used for normalized types *)
 let dom = function
   | TyVar (_, { contents = Some _ }) ->
     raise @@ Translation_bug "dom: instantiated tyvar is given"
@@ -25,6 +25,21 @@ let cod = function
   | _ as u ->
     raise @@ Translation_bug (asprintf "failed to match: cod(%a)" pp_ty u)
 
+let elm = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "elm: instantiated tyvar is given"
+  | TyList u -> u
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Translation_bug (asprintf "failed to match: elm(%a)" pp_ty u)
+
+let cont = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "cont: instantiated tyvar is given"
+  | TyRef u -> u
+  | TyDyn -> TyDyn
+  | _ as u ->
+    raise @@ Translation_bug (asprintf "failed to match: cont(%a)" pp_ty u)
+
 let rec meet u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some _ }), _
   | _, TyVar (_, { contents = Some _ }) ->
@@ -40,13 +55,6 @@ let rec meet u1 u2 = match u1, u2 with
   | TyRef u1, TyRef u2 -> TyRef (meet u1 u2)
   | _ ->
     raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
-
-let elm = function
-  | TyVar (_, { contents = Some _ }) ->
-    raise @@ Translation_bug "elm: instantiated tyvar is given"
-  | TyList u -> u
-  | TyDyn -> TyDyn
-  | _ as u -> raise @@ Translation_bug (asprintf "failed to match: elm(%a)" pp_ty u)
 
 module ITGL = struct
   open Syntax.ITGL
@@ -89,6 +97,7 @@ module ITGL = struct
       let (is_id, id_u) = check_id ss [] in
       if is_id then CId (TyTuple id_u)
       else CTuple ss
+    | TyRef _, TyRef u2 -> CRef u2
     | TyDyn, TyDyn -> CId TyDyn
     | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
     | TyFun _ as u, TyDyn -> CSeq (make_s_coercion (r, p) u (TyFun (TyDyn, TyDyn)), CInj Ar)
@@ -228,7 +237,21 @@ module ITGL = struct
     | TupleExp (_, es) ->
       let fs, us = List.split (List.map (fun e -> translate_exp env e) es) in
       CC.TupleExp fs, TyTuple us
-    | _ -> raise @@ Translation_bug "yet"
+    | RefExp (_, e) ->
+      let f, u = translate_exp env e in
+      CC.RefExp (f, u), TyRef u
+    | DerefExp (r, e) ->
+      let f, u = translate_exp env e in
+      let u' = cont u in
+      if Typing.is_static_type u (*|| intoB*) then CC.DerefExp f, u'
+      else CC.DerefAnotExp (c f r u (TyRef u'), u'), u'
+    | SubstExp (r, e1, e2) ->
+      let f1, u1 = translate_exp env e1 in
+      let f2, u2 = translate_exp env e2 in
+      let u1' = cont u1 in
+      if Typing.is_static_type u1 && u1' = u2 (*|| intoB*) then CC.SubstExp (f1, f2), TyUnit
+      else CC.SubstAnotExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', u1'), TyUnit
+    (* | _ -> raise @@ Translation_bug "yet" *)
   and translate_ms ~intoB env = function
     | (mf, e) :: t -> 
       if t = [] then
@@ -339,6 +362,7 @@ module CC = struct
     | TupleExp fs -> TupleExp (List.map (fun f -> translate_exp env f) fs)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
+    | _ -> raise @@ Translation_bug "yet"
   and translate_exp_k env k = function
     | Var (x, ys) -> CAppExp (Var (x, ys), k)
     | IConst i -> CAppExp (IConst i, k)
@@ -380,6 +404,7 @@ module CC = struct
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
     | FunTyExp _ -> raise @@ Translation_bug "CC.translate_k FunTyExp "
+    | _ -> raise @@ Translation_bug "yet"
 
   let translate env = function
     | Exp f -> Exp (translate_exp env f)
@@ -424,6 +449,7 @@ module CC = struct
     | TupleExp fs -> TupleExp (List.map (fun f -> translate_exp_alt env f) fs)
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
+    | _ -> raise @@ Translation_bug "yet"
   and translate_exp_k_alt env k = function
     | Var (x, ys) -> CAppExp (Var (x, ys), k)
     | IConst i -> CAppExp (IConst i, k)
@@ -465,7 +491,8 @@ module CC = struct
     | CastExp _ -> raise @@ Translation_bug "CC.translate cast"
     | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "translate"
     | FunTyExp _ -> raise @@ Translation_bug "CC.translate_k FunTyExp "
-
+    | _ -> raise @@ Translation_bug "yet"
+  
   let translate_alt env = function
     | Exp f -> Exp (translate_exp_alt env f)
     | LetDecl (x, f) -> LetDecl (x, translate_exp_alt env f)

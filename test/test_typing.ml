@@ -19,8 +19,23 @@ module ITGL = struct
     let test (program, expected) =
       program >:: fun ctxt ->
         let e = parse @@ program ^ ";;" in
-        let _, u = Typing.ITGL.type_of_program tyenv e in
-        let u = Typing.ITGL.normalize_type u in
+        let e, u = Typing.ITGL.type_of_program tyenv e in
+        let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
+        let _, f_b, u_b = Translate.ITGL.translate ~intoB:true tyenv e in
+        let _, f_s, u_s = Translate.ITGL.translate ~intoB:false tyenv e in
+        let u_b' = Typing.CC.type_of_program tyenv f_b in
+        let u_s' = Typing.CC.type_of_program tyenv f_s in
+        let assert_ty_equal msg expected_ty actual_ty =
+          assert_equal ~ctxt
+            ~printer:(fun t -> asprintf "%a" Pp.pp_ty2 t)
+            expected_ty
+            actual_ty
+            ~msg
+        in
+        assert_ty_equal "ITGL u_b" u u_b;
+        assert_ty_equal "ITGL u_s" u u_s;
+        assert_ty_equal "CC u_b'" u u_b';
+        assert_ty_equal "CC u_s'" u u_s';
         assert_equal ~ctxt:ctxt ~printer:id expected @@ asprintf "%a" Pp.pp_ty2 u
     in
     List.map test [

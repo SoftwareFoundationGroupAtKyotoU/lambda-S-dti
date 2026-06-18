@@ -40,9 +40,9 @@ let type_of_tag = type_of_tag
 let tag_of_ty = tag_of_ty
 
 let rec is_static_type = function
+  | TyDyn -> false
   | TyVar (_, { contents = Some u }) -> is_static_type u
   | TyFun (u1, u2) -> (is_static_type u1) && (is_static_type u2)
-  | TyDyn -> false
   | TyList u -> is_static_type u
   | TyTuple us -> List.fold_left (fun b u -> b && is_static_type u) true us
   | TyRef u -> is_static_type u
@@ -536,21 +536,6 @@ module ITGL = struct
     normalize_type u
 end
 
-let rec meet u1 u2 = match u1, u2 with
-  | TyVar (_, { contents = Some _ }), _
-  | _, TyVar (_, { contents = Some _ }) ->
-    raise @@ Type_bug "meet: instantiated tyvar is given"
-  | TyBool, TyBool -> TyBool
-  | TyInt, TyInt -> TyInt
-  | TyUnit, TyUnit -> TyUnit
-  | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
-  | TyDyn, u | u, TyDyn -> u
-  | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
-  | TyList u1, TyList u2 -> TyList (meet u1 u2)
-  | TyTuple us1, TyTuple us2 -> TyTuple (List.map2 (fun u1 u2 -> meet u1 u2) us1 us2)
-  | _ ->
-    raise @@ Type_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
-
 let rec type_of_coercion = function
   | CInj t -> (type_of_tag t, TyDyn)
   | CProj (t, _) -> (TyDyn, type_of_tag t)
@@ -567,6 +552,7 @@ let rec type_of_coercion = function
   | CTuple cs ->
     let us1, us2 = List.split (List.map (fun c -> type_of_coercion c) cs) in
     (TyTuple us1, TyTuple us2) 
+  | CRef u -> (TyDyn, TyRef u) (* TyDyn for dummy *)
   | CId u -> (u, u)
   | CSeq (c1, c2) ->
     let (u11, u12) = type_of_coercion c1 in
@@ -574,7 +560,7 @@ let rec type_of_coercion = function
     if u12 = u21 then (u11, u22)
     else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
   | CFail _ -> assert false (* TODO *)
-  | _ -> raise @@ Type_bug "yet"
+  (* | _ -> raise @@ Type_bug "yet" *)
 
 module CC = struct
   open Syntax.CC
@@ -590,7 +576,8 @@ module CC = struct
     | MatchCons (mf1, mf2) ->
       let u2, env = type_of_matchform env mf2 in
       let u1, env = type_of_matchform env mf1 in
-      meet (TyList u1) u2, env
+      assert (TyList u1 = u2);
+      u2, env
     | MatchTuple mfs ->
       let rec iter env l r = match l with
       | h :: t ->
@@ -658,7 +645,7 @@ module CC = struct
     | CAppExp (f1, CoercionExp c) ->
       let u = type_of_exp env f1 in 
       let (u1, u2) = type_of_coercion c in 
-      if u = u1 then
+      if u = u1 || (match c with CRef _ -> true | _ -> false) then (* we can't create types from CRef *)
         if is_consistent u1 u2 then
           u2
         else
@@ -708,9 +695,42 @@ module CC = struct
       let u1 = type_of_exp env f1 in
       if (TyList u1) = u2 then u2
       else raise @@ Type_bug (asprintf "cons: %a=%a" pp_ty (TyList u1) pp_ty u2)
-    | TupleExp es -> TyTuple (List.map (fun e -> type_of_exp env e) es)
+    | TupleExp fs -> TyTuple (List.map (fun f -> type_of_exp env f) fs)
+    | RefExp (f, u) ->
+      let u' = type_of_exp env f in
+      assert (u = u');
+      TyRef u
+    | DerefExp f -> 
+      let u = type_of_exp env f in
+      begin match u with
+      | TyRef u when is_static_type u -> u
+      | TyRef _ -> raise @@ Type_bug "NonAnotated deref with non-static type"
+      | _ -> raise @@ Type_bug "deref"
+      end
+    | DerefAnotExp (f, u) ->
+      let u' = type_of_exp env f in
+      begin match u' with
+      | TyRef u' when u = u' && not @@ is_static_type u -> u
+      | TyRef _ -> raise @@ Type_bug "Anotated deref with static type"
+      | _ -> raise @@ Type_bug "derefAnot"
+      end
+    | SubstExp (f1, f2) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      if u1 = TyRef u2 then
+        if is_static_type u2 then TyUnit
+        else raise @@ Type_bug "NonAnotated deref with non-static type"
+      else raise @@ Type_bug "subst"
+    | SubstAnotExp (f1, f2, u) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      if u1 = TyRef u2 && u2 = u then
+        if not @@ is_static_type u2 then TyUnit
+        else raise @@ Type_bug "Anotated deref with static type"
+      else raise @@ Type_bug "substAnot"
     | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "yet"
     | FunTyExp _ -> raise @@ Type_bug "should not occur FunTyExp outside of let"
+    (* | _ -> raise @@ Failure "yet" *)
   and type_of_ms env u_match = function
     | (mf, f) :: t ->
       let u_match', env' = type_of_matchform env mf in

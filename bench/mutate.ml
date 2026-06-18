@@ -72,6 +72,8 @@ let rec count_fun_params (t : exp) : int =
       count_fun_params e1 + count_fun_params e2 + count_fun_params e3
   | MatchExp (_, e, ms) ->
     count_fun_params e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fun_params e) ms)
+  | RefExp (_, e) | DerefExp (_, e) -> count_fun_params e
+  | SubstExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
   | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let rec count_fix_nodes (t : exp) : int =
@@ -92,6 +94,8 @@ let rec count_fix_nodes (t : exp) : int =
       count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
   | MatchExp (_, e, ms) ->
     count_fix_nodes e + List.fold_left (fun n -> fun m -> n + m) 0 (List.map (fun (_, e) -> count_fix_nodes e) ms)
+  | RefExp (_, e) | DerefExp (_, e) -> count_fix_nodes e
+  | SubstExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
   | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let (*rec*) count_tapp_nodes ((*t*)_ : exp) : int = 0
@@ -177,6 +181,11 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list =
   | MatchExp (_, e, ms) ->
     let c1, f1, l1 = collect_links c fixc e in
     List.fold_left (fun (c, f, l) -> fun (_, e) -> let c, f, l' = collect_links c f e in c, f, l @ l') (c1, f1, l1) ms
+  | RefExp (_, e) | DerefExp (_, e) -> collect_links c fixc e
+  | SubstExp (_, e1, e2) ->
+      let c1, f1, l1 = collect_links c fixc e1 in
+      let c2, f2, l2 = collect_links c1 f1 e2 in
+      (c2, f2, l1 @ l2)
   | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 let build_link_map (ls:link list) : (int * (int * int) list) list =
@@ -388,6 +397,16 @@ let rec apply
   (* | CAppExp (r, s, e1) ->
       let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
       (lamc1, fixc1, tappc1, CAppExp (r, s, e1')) *)
+  | RefExp (r, e) ->
+      let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
+      (lamc1, fixc1, tappc1, RefExp (r, e'))
+  | DerefExp (r, e) ->
+      let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
+      (lamc1, fixc1, tappc1, DerefExp (r, e'))
+  | SubstExp (r, e1, e2) ->
+      let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
+      let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
+      (lamc2, fixc2, tappc2, SubstExp (r, e1', e2'))
   | TupleExp _ -> raise @@ Failure "mutate.ml tuple yet"
 
 

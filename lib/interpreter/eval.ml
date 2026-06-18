@@ -325,6 +325,7 @@ module CC = struct
       MatchExp (subst_exp s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp s f) ms)
     | LetExp (y, f1, f2) ->
       LetExp (y, subst_exp s f1, subst_exp s f2)
+    | _ -> raise @@ Failure "yet"
 
   let eval_binop op v1 v2 =
     begin match op, v1, v2 with
@@ -463,6 +464,7 @@ module CC = struct
         | _ -> raise @@ Eval_bug "cseq: sequence of non coercion value"
       end
     | CoercionExp c -> CoercionV c
+    | _ -> raise @@ Failure "yet"
   and match_mf ?(debug=false) env v mf = match v, mf with
     | _, MatchVar (id, _) ->
       let env = Environment.add id v env in

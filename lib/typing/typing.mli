@@ -23,6 +23,8 @@ val type_of_tag : tag -> ty
 
 val tag_of_ty : ty -> tag
 
+val is_static_type : ty -> bool
+
 module ITGL : sig
   open Syntax.ITGL
 

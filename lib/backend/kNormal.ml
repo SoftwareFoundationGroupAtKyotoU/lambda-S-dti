@@ -119,7 +119,8 @@ module CC = struct
       MatchExp (alpha_exp idenv f, List.map (fun (mf, f) -> let mf, idenv = alpha_mf idenv mf in (mf, alpha_exp idenv f)) ms)
     | TupleExp fs -> 
       TupleExp (List.map (fun f -> alpha_exp idenv f) fs)
-
+    | _ -> raise @@ Failure "yet"
+    
   let alpha_program idenv = function
     | Exp f -> Exp (alpha_exp idenv f), idenv
     | LetDecl (x, FixBExp (tvs, (x', y, u1, u2), f)) ->
@@ -209,6 +210,7 @@ module CC = struct
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
         | IConst _ | UConst | FunBExp _ | FixBExp _ | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | FunTyExp _ | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _ -> raise @@ KNormal_bug "if-cond type should bool"
+        | _ -> raise @@ Failure "yet"
       end
     | FunBExp (tvs, (x, _), f) -> 
       assert (tvs = []);
