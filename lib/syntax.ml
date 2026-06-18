@@ -1,9 +1,12 @@
 open Utils.Error
 
+(* === Definitions for id === *)
+
 (** Identifier used for names of variables. *)
 type id = string
 
-(** Module used to implement environment and type environment. *)
+(** Module used to implement value environment and type environment. *)
+(* Mapping from id *)
 module Environment = Map.Make (
   struct
     type t = id
@@ -11,6 +14,7 @@ module Environment = Map.Make (
   end
   )
 
+(* Set of id *)
 module V = struct
   include Set.Make (
     struct
@@ -21,7 +25,7 @@ module V = struct
   let big_union vars = List.fold_right union vars empty
 end
 
-type binop = Plus | Minus | Mult | Div | Mod | Eq | Neq | Lt | Lte | Gt | Gte
+(* === Definitions for ty === *)
 
 type ty =
   | TyDyn
@@ -54,11 +58,13 @@ let rec is_ground = function
   | TyVar (_, { contents = Some u }) -> is_ground u
   | _ -> false
 
+(* check whether the given argument belongs to ι *)
 let rec is_base_type = function
   | TyBool | TyInt | TyUnit -> true
   | TyVar (_, { contents = Some u }) -> is_base_type u
   | _ -> false
 
+(* u1 ~ u2 *)
 let rec is_consistent u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->
@@ -112,6 +118,12 @@ let ftv_tyenv (env: tysc Environment.t): TV.t =
 
 type tyarg = Ty of ty | TyNu
 
+(* === Definitions for binop === *)
+
+type binop = Plus | Minus | Mult | Div | Mod | Eq | Neq | Lt | Lte | Gt | Gte
+
+(* === Definitions for matchform === *)
+
 type matchform = (*match式でmatchさせることのできる形の種類を定義*)
   | MatchVar of id * ty                      (*変数でmatchさせるMatchVar*)
   (* | MatchAsc of matchform * ty *)
@@ -143,6 +155,8 @@ let rec ftv_matchform : matchform -> TV.t = function
   (* | MatchAsc (mf, u) -> TV.union (ftv_matchform mf) (ftv_ty u) *)
   | MatchCons (mf1, mf2) -> TV.union (ftv_matchform mf1) (ftv_matchform mf2)
   | MatchTuple mfs -> TV.big_union (List.map ftv_matchform mfs)
+
+(* === Definitions for coercion === *)
 
 type polarity = Pos | Neg
 

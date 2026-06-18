@@ -60,6 +60,7 @@ module KNorm = struct
           | _ -> raise @@ Closure_bug "not tyvar was created"
         in
         (newu, fun x -> List.fold_left (fun x ufun -> ufun x) (Cls.SetTy (newtv, x)) (List.rev ufuns))
+    | TyRef _ -> raise @@ Closure_bug "yet"
 
   let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)

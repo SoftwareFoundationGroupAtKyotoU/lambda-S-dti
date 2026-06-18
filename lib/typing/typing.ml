@@ -29,6 +29,7 @@ let rec is_equal u1 u2 = match u1, u2 with
     (is_equal u11 u21) && (is_equal u12 u22)
   | TyList u1, TyList u2 -> is_equal u1 u2
   | TyTuple us1, TyTuple us2 -> List.fold_left2 (fun b u1 u2 -> b && u1 = u2) true us1 us2
+  | TyRef u1, TyRef u2 -> is_equal u1 u2
   | _ -> false
 
 let type_of_binop = function
@@ -45,6 +46,7 @@ let rec is_static_type = function
   | TyDyn -> false
   | TyList u -> is_static_type u
   | TyTuple us -> List.fold_left (fun b u -> b && is_static_type u) true us
+  | TyRef u -> is_static_type u
   | _ -> true
 
 (* Substitutions for type variables *)
@@ -411,6 +413,7 @@ module ITGL = struct
       type_of_meet (TyList u1) u2
     | TupleExp (_, es) ->
       TyTuple (List.map (fun e -> type_of_exp env e) es)
+    | _ -> raise @@ Type_bug "yet"
   and type_of_ms env ms u_match u_exp = match ms with
     | (mf, e) :: ms ->
       let u, env', _ = type_of_mf env mf [] in
@@ -478,6 +481,7 @@ module ITGL = struct
     | NilExp (r, u) -> NilExp (r, normalize_type u)
     | ConsExp (r, e1, e2) -> ConsExp (r, normalize_exp e1, normalize_exp e2)
     | TupleExp (r, es) -> TupleExp (r, List.map (fun e -> normalize_exp e) es)
+    | _ -> raise @@ Type_bug "yet"
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)
@@ -527,6 +531,7 @@ let rec type_of_coercion = function
     if u12 = u21 then (u11, u22)
     else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
   | CFail _ -> assert false (* TODO *)
+  | _ -> raise @@ Type_bug "yet"
 
 module CC = struct
   open Syntax.CC

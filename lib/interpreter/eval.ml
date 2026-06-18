@@ -110,6 +110,7 @@ let rec subst_coercion s = function
 | CId u -> CId (subst_type s u)
 | CSeq (c1, c2) -> CSeq (subst_coercion s c1, subst_coercion s c2)
 | CFail _ as c -> c
+| _ -> raise @@ Eval_bug "yet"
 
 let rec compose ?(debug=false) c1 c2 = (* TODO : blame *)
   if debug then fprintf err_formatter "compose <-- %a；%a@." Pp.pp_coercion c1 Pp.pp_coercion c2;

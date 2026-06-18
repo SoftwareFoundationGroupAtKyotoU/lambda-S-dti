@@ -10,19 +10,16 @@ let with_paren flag ppf_e ppf e =
 
 (* === pp for ty === *)
 
-let rec gt_ty u1 u2 = match u1, u2 with
-  | TyVar (_, { contents = Some u1 }), u2 | u1, TyVar (_, { contents = Some u2 }) -> gt_ty u1 u2
-  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyList _ | TyRef _ | TyTuple _ ), TyFun _ -> true
-  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyList _ | TyRef _), TyTuple _  -> true
-  | (TyDyn | TyVar _ | TyInt | TyBool | TyUnit), (TyList _ | TyRef _) -> true
-  | _ -> false
+let rec level_ty = function
+  | TyVar (_, { contents = Some u }) -> level_ty u
+  | TyDyn | TyVar _ | TyInt | TyBool | TyUnit -> 100
+  | TyList _ | TyRef _ -> 90
+  | TyTuple _ -> 80
+  | TyFun _ -> 70
 
-let gte_ty u1 u2 = match u1, u2 with
-  | TyFun _, TyFun _ -> true
-  | TyList _, TyList _ -> true
-  | TyTuple _, TyTuple _ -> true
-  | TyRef _, TyRef _ -> true
-  | _ -> gt_ty u1 u2
+let gt_ty u1 u2 = level_ty u1 > level_ty u2
+
+let gte_ty u1 u2 = level_ty u1 >= level_ty u2
 
 (* util for pp_ty and pp_ty2 *)
 let pp_ty_main ppf ~pp_tyvar u =
@@ -73,6 +70,7 @@ let pp_ty2 ppf u =
 
 (* === pp for binop === *)
 
+(* TODO: delete later *)
 let gt_binop op1 op2 = match op1, op2 with
   | (Plus | Minus | Mult | Div | Mod), (Eq | Neq | Lt | Lte | Gt | Gte)
   | (Mult | Div | Mod), (Plus | Minus) -> true
@@ -100,6 +98,8 @@ let pp_binop ppf op =
     | Gte -> ">="
   end
 
+(* === pp for variables === *)
+
 let pp_print_var ppf (x, ys) =
   if List.length ys = 0 then
     fprintf ppf "%s" x
@@ -114,6 +114,15 @@ let pp_tyarg ppf = function
   | Ty u -> pp_ty ppf u
   | TyNu -> pp_print_string ppf "ν"
 
+
+let pp_print_tas ppf tas =
+  let pp_sep ppf () = fprintf ppf "," in
+  let pp_list ppf types = pp_print_list pp_tyarg ppf types ~pp_sep:pp_sep in
+  fprintf ppf "%a"
+    pp_list tas
+
+(* === pp for let === *)
+
 let pp_tyabses ppf tyvars =
   if List.length tyvars = 0 then
     fprintf ppf ""
@@ -122,11 +131,34 @@ let pp_tyabses ppf tyvars =
     let pp_list ppf types = pp_print_list pp_ty ppf types ~pp_sep:pp_sep in
     fprintf ppf "fun %a -> " pp_list @@ List.map (fun x -> TyVar x) tyvars
 
-let pp_print_tas ppf tas =
-  let pp_sep ppf () = fprintf ppf "," in
-  let pp_list ppf types = pp_print_list pp_tyarg ppf types ~pp_sep:pp_sep in
-  fprintf ppf "%a"
-    pp_list tas
+(* === pp for matchform === *)
+
+let gte_matchform mf1 mf2 = match mf1, mf2 with
+  | MatchCons _, MatchCons _ -> true
+  | MatchTuple _, MatchTuple _ -> true
+  | _ -> false
+
+let rec pp_matchform ppf = function
+  (* | MatchVar (x, u) -> fprintf ppf "(%s: %a)" x pp_ty u *)
+  | MatchVar (x, _) -> fprintf ppf "%s" x
+  (* | MatchAsc (mf, u) -> fprintf ppf "(%a : %a)" pp_matchform mf pp_ty u *)
+  | MatchILit i -> pp_print_int ppf i
+  | MatchBLit b -> pp_print_bool ppf b
+  | MatchULit -> pp_print_string ppf "()"
+  (* | MatchNil u -> fprintf ppf "([] : %a)" pp_ty (TyList u) *)
+  | MatchNil _ -> fprintf ppf "[]"
+  | MatchCons (mf1, mf2) as mf -> 
+    fprintf ppf "%a :: %a"
+      (with_paren (gte_matchform mf mf1) pp_matchform) mf1
+      pp_matchform mf2
+  | MatchTuple mfs as mf ->
+    let pp_sep ppf () = fprintf ppf ", " in
+    let pp_list ppf matches = pp_print_list (fun ppf mf' -> (with_paren (gte_matchform mf mf') pp_matchform) ppf mf') ppf matches ~pp_sep:pp_sep in
+    fprintf ppf "(%a)"
+      pp_list mfs
+  | MatchWild _ -> pp_print_string ppf "_"
+
+(* === pp for coercion === *)
 
 let pp_tag ppf = function
   | I -> pp_print_string ppf "int"
@@ -141,30 +173,7 @@ let pp_tag ppf = function
     in
     fprintf ppf "(%a)"
       pp_dyn_tuple n
-  | Rf -> pp_print_string ppf "{?}"
-
-let gte_matchform mf1 mf2 = match mf1, mf2 with
-  | MatchCons _, MatchCons _ -> true
-  | MatchTuple _, MatchTuple _ -> true
-  | _ -> false
-
-let rec pp_matchform ppf = function
-  | MatchVar (x, u) -> fprintf ppf "(%s: %a)" x pp_ty u
-  (* | MatchAsc (mf, u) -> fprintf ppf "(%a : %a)" pp_matchform mf pp_ty u *)
-  | MatchILit i -> pp_print_int ppf i
-  | MatchBLit b -> pp_print_bool ppf b
-  | MatchULit -> pp_print_string ppf "()"
-  | MatchNil u -> fprintf ppf "([] : %a)" pp_ty (TyList u)
-  | MatchCons (mf1, mf2) as mf -> 
-    fprintf ppf "%a :: %a"
-      (with_paren (gte_matchform mf mf1) pp_matchform) mf1
-      pp_matchform mf2
-  | MatchTuple mfs as mf ->
-    let pp_sep ppf () = fprintf ppf ", " in
-    let pp_list ppf matches = pp_print_list (fun ppf mf' -> (with_paren (gte_matchform mf mf') pp_matchform) ppf mf') ppf matches ~pp_sep:pp_sep in
-    fprintf ppf "(%a)"
-      pp_list mfs
-  | MatchWild _ -> pp_print_string ppf "_"
+  | Rf -> pp_print_string ppf ":?:"
 
 let gt_coercion c1 c2 = match c1, c2 with
   | (CInj _ | CProj _ | CTvInj _ | CTvProj _ | CTvProjInj _ | CId _ | CFail _ | CFun _ | CList _ | CTuple _), CSeq _ -> true
@@ -176,109 +185,64 @@ let gte_coercion c1 c2 = match c1, c2 with
   (* | CList _, CList _ is intentionally ommited *)
   | _ -> gt_coercion c1 c2
 
-let rec pp_coercion ppf = function
-  | CInj t -> 
-    fprintf ppf "%a!"
-      pp_tag t
-  | CProj (t, _) ->
-    fprintf ppf "%a?p"
-      pp_tag t
-  | CTvInj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "%a!p"
-      pp_ty (TyVar tv)
-  | CTvProj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "%a?p"
-      pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
-    fprintf ppf "?p%a!q"
-      pp_ty (TyVar tv)
-  | CTvInj (tv, _) ->
-    fprintf ppf "|%a|!"
-      pp_ty (TyVar tv)
-  | CTvProj (tv, _) ->
-    fprintf ppf "|%a|?"
-      pp_ty (TyVar tv)
-  | CTvProjInj (tv, _, _) ->
-    fprintf ppf "?|%a|!"
-      pp_ty (TyVar tv)
-  | CFun (c1, c2) as c ->
-    fprintf ppf "%a->%a"
-      (with_paren (gte_coercion c c1) pp_coercion) c1
-      (with_paren (gte_coercion c c2) pp_coercion) c2
-  | CList c ->
-    fprintf ppf "[%a]"
-      pp_coercion c
-  | CTuple cs as c ->
-    let pp_sep ppf () = fprintf ppf "*" in
-    let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
-    fprintf ppf "%a"
-      pp_list cs
-  | CId u ->
-    fprintf ppf "id{%a}" 
-      pp_ty u
-  | CSeq (c1, c2) ->
-    fprintf ppf "%a;%a"
-      pp_coercion c1
-      pp_coercion c2
-  | CFail (t1, _, t2) ->
-    fprintf ppf "⊥{%a,p,%a}"
-      pp_tag t1
-      pp_tag t2
-  | CRef _ -> raise Syntax_error
-
-let pp_coercion2 ppf c = 
-  let pp_ty = pp_ty2 in
+let pp_coercion_main ppf ~pp_ty c = 
   let rec pp_coercion ppf = function
-  | CInj t -> 
-    fprintf ppf "%a!"
-      pp_tag t
-  | CProj (t, _) ->
-    fprintf ppf "%a?p"
-      pp_tag t
-  | CTvInj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "%a!"
-      pp_ty (TyVar tv)
-  | CTvProj ((_, {contents = None} as tv), _) ->
-    fprintf ppf "%a?p"
-      pp_ty (TyVar tv)
-  | CTvProjInj ((_, {contents = None} as tv), _, _) ->
-    fprintf ppf "?p%a!"
-      pp_ty (TyVar tv)
-  | CTvInj (tv, _) ->
-    fprintf ppf "|%a|!"
-      pp_ty (TyVar tv)
-  | CTvProj (tv, _) ->
-    fprintf ppf "|%a|?"
-      pp_ty (TyVar tv)
-  | CTvProjInj (tv, _, _) ->
-    fprintf ppf "?|%a|!"
-      pp_ty (TyVar tv)
-  | CFun (c1, c2) as c ->
-    fprintf ppf "%a->%a"
-      (with_paren (gte_coercion c c1) pp_coercion) c1
-      (with_paren (gte_coercion c c2) pp_coercion) c2
-  | CList c ->
-    fprintf ppf "[%a]"
-      pp_coercion c
-  | CTuple cs as c ->
-    let pp_sep ppf () = fprintf ppf "*" in
-    let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
-    fprintf ppf "%a"
-      pp_list cs
-  | CId u ->
-    fprintf ppf "id{%a}" 
-      pp_ty u
-  | CSeq (c1, c2) ->
-    fprintf ppf "%a;%a"
-      pp_coercion c1
-      pp_coercion c2
-  | CFail (t1, _, t2) ->
-    fprintf ppf "⊥{%a,p,%a}"
-      pp_tag t1
-      pp_tag t2
-  | CRef _ -> raise Syntax_error
+    | CInj t -> 
+      fprintf ppf "%a!"
+        pp_tag t
+    | CProj (t, _) ->
+      fprintf ppf "%a?p"
+        pp_tag t
+    | CTvInj ((_, {contents = None} as tv), _) ->
+      fprintf ppf "%a!p"
+        pp_ty (TyVar tv)
+    | CTvProj ((_, {contents = None} as tv), _) ->
+      fprintf ppf "%a?p"
+        pp_ty (TyVar tv)
+    | CTvProjInj ((_, {contents = None} as tv), _, _) ->
+      fprintf ppf "?p%a!q"
+        pp_ty (TyVar tv)
+    | CTvInj (tv, _) ->
+      fprintf ppf "|%a|!"
+        pp_ty (TyVar tv)
+    | CTvProj (tv, _) ->
+      fprintf ppf "|%a|?"
+        pp_ty (TyVar tv)
+    | CTvProjInj (tv, _, _) ->
+      fprintf ppf "?|%a|!"
+        pp_ty (TyVar tv)
+    | CFun (c1, c2) as c ->
+      fprintf ppf "%a->%a"
+        (with_paren (gte_coercion c c1) pp_coercion) c1
+        (with_paren (gte_coercion c c2) pp_coercion) c2
+    | CList c ->
+      fprintf ppf "[%a]"
+        pp_coercion c
+    | CTuple cs as c ->
+      let pp_sep ppf () = fprintf ppf "*" in
+      let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
+      fprintf ppf "%a"
+        pp_list cs
+    | CId u ->
+      fprintf ppf "id{%a}" 
+        pp_ty u
+    | CSeq (c1, c2) ->
+      fprintf ppf "%a;%a"
+        pp_coercion c1
+        pp_coercion c2
+    | CFail (t1, _, t2) ->
+      fprintf ppf "⊥{%a,p,%a}"
+        pp_tag t1
+        pp_tag t2
+    | CRef _ -> raise Syntax_error
   in
   pp_coercion ppf c
+
+let pp_coercion ppf c =
+  pp_coercion_main ppf ~pp_ty:pp_ty c
+
+let pp_coercion2 ppf c = 
+  pp_coercion_main ppf ~pp_ty:pp_ty2 c
 
 module ITGL = struct
   open Syntax.ITGL
@@ -289,29 +253,22 @@ module ITGL = struct
     | CConsistent (u1, u2) ->
       fprintf ppf "%a ~.~ %a" pp_ty u1 pp_ty u2
 
-  let gt_exp e1 e2 = match e1, e2 with
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ | AppExp _ | BinOp _ | ConsExp _ | IfExp _ | MatchExp _), (LetExp _ | FunEExp _ | FunIExp _ | FixEExp _ | FixIExp _) -> true
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ | AppExp _ | BinOp _ | ConsExp _ | IfExp _), MatchExp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ | AppExp _ | BinOp _ | ConsExp _), IfExp _ -> true
-    | BinOp (_, op1, _, _), BinOp (_, op2, _, _) -> gt_binop op1 op2
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ | AppExp _), (BinOp _ | ConsExp _) -> true
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _), AppExp _ -> true
-    | (Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _), AscExp _ -> true
-    | _ -> false
+  let level_exp = function
+    | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
+    | DerefExp _ -> 90
+    | AppExp _ | RefExp _ -> 80
+    | BinOp (_, (Mult | Div | Mod), _, _) -> 70
+    | BinOp (_, (Plus | Minus), _, _) -> 60
+    | ConsExp _ -> 50
+    | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
+    | SubstExp _ -> 20
+    | IfExp _ | FunEExp _ | FunIExp _ | FixEExp _ | FixIExp _ | LetExp _ | MatchExp _ -> 10
+  
+  let gt_exp e1 e2 =
+    level_exp e1 > level_exp e2
 
-  let gte_exp e1 e2 = match e1, e2 with
-    | LetExp _, LetExp _ -> true
-    | FunEExp _, FunEExp _ -> true
-    | FunIExp _, FunIExp _ -> true
-    | FixEExp _, FixEExp _ -> true
-    | FixIExp _, FixIExp _ -> true
-    | IfExp _, IfExp _ -> true
-    | BinOp (_, op1, _, _), BinOp (_, op2, _, _) when op1 = op2 -> true
-    | AppExp _, AppExp _ -> true
-    | MatchExp _, MatchExp _ -> true
-    | ConsExp _, ConsExp _ -> true
-    | TupleExp _, TupleExp _ -> true
-    | _ -> gt_exp e1 e2
+  let gte_exp e1 e2 =
+    level_exp e1 >= level_exp e2
 
   let rec pp_exp ppf = function
     | Var (_, x, ys) -> pp_print_var ppf (x, !ys)
@@ -323,9 +280,9 @@ module ITGL = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         pp_binop op
         (with_paren (gt_exp e e2) pp_exp) e2
-    | AscExp (_, e1, u) as e ->
+    | AscExp (_, e1, u) ->
       fprintf ppf "(%a : %a)"
-        (with_paren (gt_exp e e1) pp_exp) e1
+        pp_exp e1
         pp_ty u
     | IfExp (_, e1, e2, e3) as e ->
       fprintf ppf "if %a then %a else %a"
@@ -369,8 +326,13 @@ module ITGL = struct
       let pp_list ppf exps = pp_print_list pp_exp ppf exps ~pp_sep:pp_sep in
       fprintf ppf "(%a)"
         pp_list es
-    | _ -> raise Syntax_error
-      
+    | RefExp (_, e') as e ->
+      fprintf ppf "ref %a" (with_paren (gte_exp e e') pp_exp) e'
+    | DerefExp (_, e') as e ->
+      fprintf ppf "!%a" (with_paren (gt_exp e e') pp_exp) e'  
+    | SubstExp (_, e1, e2) as e ->
+      fprintf ppf "%a := %a" (with_paren (gte_exp e e1) pp_exp) e1 (with_paren (gt_exp e e2) pp_exp) e2
+    
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf " | %a -> %a%a"

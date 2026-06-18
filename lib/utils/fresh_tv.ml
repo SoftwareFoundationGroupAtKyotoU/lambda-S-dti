@@ -29,6 +29,9 @@ let rec tv_renew_ty u env = match u with
       TyTuple (List.rev r), env
     in
     iter env us []
+  | TyRef u -> 
+    let u, env = tv_renew_ty u env in
+    TyRef u, env
 
 let rec tv_renew_coercion c env = match c with
   | CInj _ | CProj _ | CFail _ -> c, env
@@ -76,6 +79,7 @@ let rec tv_renew_coercion c env = match c with
     let c1, env = tv_renew_coercion c1 env in
     let c2, env = tv_renew_coercion c2 env in
     CSeq (c1, c2), env 
+  | CRef _ -> raise @@ Failure "yet"
 
 let rec tv_renew_mf mf env = match mf with
   | MatchILit _ | MatchBLit _ | MatchULit -> mf, env

@@ -80,13 +80,67 @@ module ITGL = struct
         assert_equal ~ctxt:ctxt ~printer:id e @@ asprintf "%a" pp_program @@ parse (e ^ ";;")
     in
     List.map test [
+      "42";
+      "true";
+      "false";
+      "()";
+
+      "1 + 2 + 3";
+      "1 - 2 - 3";
+      "1 * 2 * 3";
+      "1 / 2 / 3";
+      "1 + 2 * 3";
+      "1 * 2 + 3";
+      "(1 + 2) * 3";
+      "1 = 2";
+      "1 <> 2";
+      "1 < 2 + 3";
+      "1 + 2 >= 3 * 4";
+
       "fun (x: ?) -> fun (y: ?) -> fun (z: ?) -> z";
-      "x (y z)";
       "x y z";
-      "1 * 2 + 3 * 4";
-      "(1 + 2) * (3 + 4)";
-      "(fun (x: ?) -> x) (fun (y: ?) -> y)";
+      "x (y z)";
+      "f x + 1";
+      "f (x + 1)";
+
       "1 + (2 : ?)";
+      "(1 + 2 : int)";
+      "(f (x : int) : bool)";
+
+      "[]";
+      "1 :: []";
+      "1 :: 2 :: []";
+      "(1 :: 2) :: []";
+      "1 + 2 :: 3 * 4 :: []";
+      "f x :: y";
+
+      "(1, 2)";
+      "(1, 2, 3)";
+      "((1, 2), 3)";
+      "(1, (2, 3))";
+      "(1 + 2, 3 * 4)";
+
+      "ref 1";
+      "!x";
+      "x := 1";
+      "!x + 1";
+      "!(x + 1)";
+      "ref (x y)";
+      "!f x";
+      "!(f x)";
+      "x := y := 1";
+      "(x := y) := 1";
+      "x := !x + 1";
+
+      "if true then 1 else 2";
+      "if 1 = 2 then x else y";
+      "if a then b else if c then d else e";
+      "let x = 1 in x + 1";
+      "let x = 1 in let y = 2 in x + y";
+      "match x with | y -> 1";
+      
+      "let x = 1 + 2";
+      "let rec f (x: int) : int = f x";
     ]
 
   let suite = [

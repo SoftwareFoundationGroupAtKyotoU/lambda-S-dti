@@ -37,6 +37,7 @@ let rec meet u1 u2 = match u1, u2 with
   | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
   | TyList u1, TyList u2 -> TyList (meet u1 u2)
   | TyTuple us1, TyTuple us2 -> TyTuple (List.map2 (fun u1 u2 -> meet u1 u2) us1 us2)
+  | TyRef u1, TyRef u2 -> TyRef (meet u1 u2)
   | _ ->
     raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
@@ -227,6 +228,7 @@ module ITGL = struct
     | TupleExp (_, es) ->
       let fs, us = List.split (List.map (fun e -> translate_exp env e) es) in
       CC.TupleExp fs, TyTuple us
+    | _ -> raise @@ Translation_bug "yet"
   and translate_ms ~intoB env = function
     | (mf, e) :: t -> 
       if t = [] then

@@ -31,6 +31,7 @@ let c_of_ty = function
   | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
   | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
   | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
+  | TyRef _ -> raise @@ ToC_bug "yet"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function
@@ -98,6 +99,7 @@ let toC_tag ppf = function
   | Ar -> pp_print_string ppf "AR"
   | Li -> pp_print_string ppf "LI"
   | Tp _ -> pp_print_string ppf "TP"
+  | Rf -> pp_print_string ppf "RF"
 
 let rec toC_crc ppf (c, x) = 
   if CrcManager.mem c then 

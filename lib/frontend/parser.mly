@@ -256,19 +256,22 @@ UnaryExpr :
       let zero = IConst (dummy_range, 0) in
       BinOp (r, Minus, zero, e)
     }
-  | start_r=REF e=UnaryExpr {
-      let r = join_range start_r (range_of_exp e) in
-      RefExp (r, e)
-    }
-  | start_r=BANG e=UnaryExpr {
-      let r = join_range start_r (range_of_exp e) in
-      DerefExp (r, e)
-    }
   | AppExpr { $1 }
 
 AppExpr :
-  | e1=AppExpr e2=SimpleExpr {
+  | e1=AppExpr e2=PrefixExpr {
       AppExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
+    }
+  | start_r=REF e=PrefixExpr {
+      let r = join_range start_r (range_of_exp e) in
+      RefExp (r, e)
+    }
+  | PrefixExpr { $1 }
+
+PrefixExpr :
+  | start_r=BANG e=PrefixExpr {
+      let r = join_range start_r (range_of_exp e) in
+      DerefExp (r, e)
     }
   | SimpleExpr { $1 }
 
