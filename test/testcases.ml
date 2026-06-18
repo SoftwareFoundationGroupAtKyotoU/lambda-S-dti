@@ -169,7 +169,7 @@ let let_poly_toplevel = [
     "g", "'a -> 'a", "<fun>", "<fun>", "<fun>", "<fun>";
   ];
   [
-    "let f: 'a -> 'a -> ? = fun x y -> 0", "'a -> 'a -> ?", "<fun>", "<fun><<id{'a}->(id{'a}->(id{int};int!))>>", "<fun>", "<fun><<id{'a}->(id{'a}->(id{int};int!))>>";
+    "let f: 'a -> 'a -> ? = fun x y -> 0", "'a -> 'a -> ?", "<fun>", "<fun>", "<fun>", "<fun>";
     "let g1 x = ((fun y -> y) : ? -> ?) x", "'a -> ?", "<fun>", "<fun>", "<fun>", "<fun>";
     "fun x y -> f (g1 x) (g1 y)", "'a -> 'b -> ?", "<fun>", "<fun>", "<fun>", "<fun>";
     "let g2 (x: 'a) = ((fun y -> y) : ? -> ?) x", "'a -> ?", "<fun>", "<fun>", "<fun>", "<fun>";
@@ -215,6 +215,8 @@ let lists = [
   ["let x = [true; false] in x", "bool list", "true :: false :: []", "true :: false :: []", "1 :: 0 :: []", "1 :: 0 :: []"];
   ["match ([(1, true); (2, false)] : ?) with | [] -> 0 | (x, y) :: t -> x", "int", "1", "1", "1", "1"];
   ["(([1; 2], true : ?) : int list * bool)", "int list * bool", "(1 :: 2 :: [], true)", "(1 :: 2 :: [], true)", "(1 :: 2 :: [], 1)", "(1 :: 2 :: [], 1)"];
+  ["let x = [] in let y = 3 :: x in let z = true :: x in y", "[int]", "3 :: []", "3 :: []", "3 :: []", "3 :: []"];
+  ["let x = ([]:?) in let y = 3 :: x in let z = true :: x in y", "[int]","3 :: []", "3 :: []", "3 :: []", "3 :: []"];
 ]
 
 let matches = [
