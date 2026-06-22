@@ -209,10 +209,7 @@ module ITGL = struct
         with Not_found ->
           raise @@ Type_bug (asprintf "variable '%s' not found in the environment" x)
         end
-      | FunEExp _
-      | FunIExp _
-      | FixEExp _
-      | FixIExp _ -> true
+      | FunExp _ | FixExp _ -> true
       | AscExp (_, e, TyFun _) -> is_fun_value env e
       | AscExp (r, e, TyVar (_, { contents = Some u })) -> is_fun_value env @@ AscExp (r, e, u)
       | _ -> false
@@ -273,10 +270,8 @@ module ITGL = struct
     | IConst _
     | BConst _
     | UConst _
-    | FunEExp _
-    | FunIExp _
-    | FixEExp _
-    | FixIExp _ 
+    | FunExp _
+    | FixExp _
     | NilExp _ -> true
     | ConsExp (_, e1, e2) -> is_pure_value env e1 && is_list_value env e2
     | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_pure_value env e) true es
@@ -374,12 +369,10 @@ module ITGL = struct
       let u3 = type_of_exp env e3 in
       unify @@ CConsistent (u1, TyBool);
       type_of_meet u2 u3
-    | FunEExp (_, x, u1, e)
-    | FunIExp (_, x, u1, e) ->
+    | FunExp (_, (x, _, u1), e) ->
       let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) e in
       TyFun (u1, u2)
-    | FixEExp (_, x, y, u1, u2, e)
-    | FixIExp (_, x, y, u1, u2, e) ->
+    | FixExp (_, x, (y, _, u1), u2, e) ->
       let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
       let env = Environment.add y (tysc_of_ty u1) env in
       let u2' = type_of_exp env e in
@@ -414,7 +407,7 @@ module ITGL = struct
         let us1 = TyScheme (xs, u1) in
         type_of_exp (Environment.add x us1 env) e2
       else
-        type_of_exp env @@ AppExp (r, FunIExp (r, x, u1, e2), e1)
+        type_of_exp env @@ AppExp (r, FunExp (r, (x, Impl, u1), e2), e1)
     | NilExp (_, u) -> TyList u
     | ConsExp (_, e1, e2) -> 
       let u2 = type_of_exp env e2 in
@@ -504,14 +497,10 @@ module ITGL = struct
       AscExp (r, normalize_exp e, normalize_type u)
     | IfExp (r, e1, e2, e3) ->
       IfExp (r, normalize_exp e1, normalize_exp e2, normalize_exp e3)
-    | FunEExp (r, x1, u1, e) ->
-      FunEExp (r, x1, normalize_type u1, normalize_exp e)
-    | FunIExp (r, x1, u1, e) ->
-      FunIExp (r, x1, normalize_type u1, normalize_exp e)
-    | FixEExp (r, x, y, u1, u2, e) ->
-      FixEExp (r, x, y, normalize_type u1, normalize_type u2, normalize_exp e)
-    | FixIExp (r, x, y, u1, u2, e) ->
-      FixIExp (r, x, y, normalize_type u1, normalize_type u2, normalize_exp e)
+    | FunExp (r, (x1, anot, u1), e) ->
+      FunExp (r, (x1, anot, normalize_type u1), normalize_exp e)
+    | FixExp (r, x, (y, anot, u1), u2, e) ->
+      FixExp (r, x, (y, anot, normalize_type u1), normalize_type u2, normalize_exp e)
     | AppExp (r, e1, e2) ->
       AppExp (r, normalize_exp e1, normalize_exp e2)
     | MatchExp (r, e, ms) ->

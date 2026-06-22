@@ -184,12 +184,10 @@ module ITGL = struct
       let r1, r2, r3 = range_of_exp e1, range_of_exp e2, range_of_exp e3 in
       let u = meet u2 u3 in
       CC.IfExp (c f1 r1 u1 TyBool, c f2 r2 u2 u, c f3 r3 u3 u), u
-    | FunEExp (_, x, u1, e)
-    | FunIExp (_, x, u1, e) ->
+    | FunExp (_, (x, _, u1), e) ->
       let f, u2 = translate_exp (Environment.add x (tysc_of_ty u1) env) e in
       CC.FunBExp ([], (x, u1), f), TyFun (u1, u2)
-    | FixEExp (_, x, y, u1, u2, e)
-    | FixIExp (_, x, y, u1, u2, e) ->
+    | FixExp (_, x, (y, _, u1), u2, e) ->
       (* NOTE: Disallow to use x polymorphically in e *)
       let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
       let env = Environment.add y (tysc_of_ty u1) env in

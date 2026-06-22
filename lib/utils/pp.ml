@@ -262,7 +262,7 @@ module ITGL = struct
     | ConsExp _ -> 50
     | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
     | SubstExp _ -> 20
-    | IfExp _ | FunEExp _ | FunIExp _ | FixEExp _ | FixIExp _ | LetExp _ | MatchExp _ -> 10
+    | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
   let gt_exp e1 e2 =
     level_exp e1 > level_exp e2
@@ -289,14 +289,12 @@ module ITGL = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
         (with_paren (gt_exp e e3) pp_exp) e3
-    | FunEExp (_, x1, u1, e)
-    | FunIExp (_, x1, u1, e) ->
+    | FunExp (_, (x1, _, u1), e) ->
       fprintf ppf "fun (%s: %a) -> %a"
         x1
         pp_ty u1
         pp_exp e
-    | FixEExp (_, x, y, u1, u2, e)
-    | FixIExp (_, x, y, u1, u2, e) ->
+    | FixExp (_, x, (y, _, u1), u2, e) ->
       fprintf ppf "fix %s (%s: %a): %a = %a"
         x
         y

@@ -7,16 +7,16 @@ let tyvenv = ref Environment.empty
 
 (* for function definition *)
 let param_to_fun r (x, u) e = match u with
-| None -> FunIExp (r, x.value, Typing.fresh_tyvar (), e)
-| Some u -> FunEExp (r, x.value, u, e)
+| None -> FunExp (r, (x.value, Impl, Typing.fresh_tyvar ()), e)
+| Some u -> FunExp (r, (x.value, Expl, u), e)
 
 (* for recursive function definition *)
 let param_to_fun_ty r (x, u1) (e, u) = match u1 with
 | None ->
     let u1 = Typing.fresh_tyvar () in
-    FunIExp (r, x.value, u1, e), TyFun (u1, u)
+    FunExp (r, (x.value, Impl, u1), e), TyFun (u1, u)
 | Some u1 ->
-    FunEExp (r, x.value, u1, e), TyFun (u1, u)
+    FunExp (r, (x.value, Expl, u1), e), TyFun (u1, u)
 
 let opt_ty_to_fresh_ty = function
   | None -> Typing.fresh_tyvar ()
@@ -79,10 +79,10 @@ Program :
       | (y, None) :: params ->
         let u1 = Typing.fresh_tyvar () in
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
-        LetDecl (x.value, FixIExp (r, x.value, y.value, u1, u2, e))
+        LetDecl (x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e))
       | (y, Some u1) :: params ->
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
-        LetDecl (x.value, FixEExp (r, x.value, y.value, u1, u2, e))
+        LetDecl (x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e))
     }
 
 Expr :
@@ -119,10 +119,10 @@ LetExpr :
       | (y, None) :: params ->
         let u1 = Typing.fresh_tyvar () in
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixIExp (r, x.value, y.value, u1, u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
       | (y, Some u1) :: params ->
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixEExp (r, x.value, y.value, u1, u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e1), e2)
     }
 
 FunExpr :
@@ -185,10 +185,10 @@ NotMatchLetExpr :
       | (y, None) :: params ->
         let u1 = Typing.fresh_tyvar () in
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixIExp (r, x.value, y.value, u1, u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
       | (y, Some u1) :: params ->
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixEExp (r, x.value, y.value, u1, u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e1), e2)
     }
 
 NotMatchFunExpr :

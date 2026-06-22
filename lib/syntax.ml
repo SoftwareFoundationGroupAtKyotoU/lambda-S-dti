@@ -233,6 +233,10 @@ module ITGL = struct
     | CEqual of ty * ty
     | CConsistent of ty * ty
 
+  type anotated =
+    | Impl
+    | Expl
+
   type exp =
     | Var of range * id * ty list ref
     | IConst of range * int
@@ -241,10 +245,8 @@ module ITGL = struct
     | BinOp of range * binop * exp * exp
     | AscExp of range * exp * ty
     | IfExp of range * exp * exp * exp
-    | FunEExp of range * id * ty * exp
-    | FunIExp of range * id * ty * exp
-    | FixEExp of range * id * id * ty * ty * exp
-    | FixIExp of range * id * id * ty * ty * exp
+    | FunExp of range * (id * anotated * ty) * exp
+    | FixExp of range * id * (id * anotated * ty) * ty * exp
     | AppExp of range * exp * exp
     | MatchExp of range * exp * (matchform * exp) list
     | LetExp of range * id * exp * exp
@@ -263,10 +265,8 @@ module ITGL = struct
     | AscExp (r, _, _)
     | BinOp (r, _, _, _)
     | IfExp (r, _, _, _)
-    | FunEExp (r, _, _, _)
-    | FunIExp (r, _, _, _)
-    | FixEExp (r, _, _, _, _, _)
-    | FixIExp (r, _, _, _, _, _)
+    | FunExp (r, _, _)
+    | FixExp (r, _, _, _, _)
     | AppExp (r, _, _)
     | MatchExp (r, _, _)
     | LetExp (r, _, _, _) 
@@ -286,10 +286,8 @@ module ITGL = struct
     | BinOp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | AscExp (_, e, u) -> TV.union (tv_exp e) (ftv_ty u)
     | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map tv_exp [e1; e2; e3]
-    | FunEExp (_, _, u, e)
-    | FunIExp (_, _, u, e) -> TV.union (ftv_ty u) (tv_exp e)
-    | FixEExp (_, _, _, u1, _, e)
-    | FixIExp (_, _, _, u1, _, e) -> TV.union (ftv_ty u1) (tv_exp e)
+    | FunExp (_, (_, _, u), e) -> TV.union (ftv_ty u) (tv_exp e)
+    | FixExp (_, _, (_, _, u1), _, e) -> TV.union (ftv_ty u1) (tv_exp e)
     | AppExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | MatchExp (_, e, ms) -> TV.union (tv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (tv_matchform mf) (tv_exp e)) ms)
     | LetExp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
@@ -308,10 +306,10 @@ module ITGL = struct
     | BinOp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | AscExp (_, e, u) -> TV.union (ftv_exp e) (ftv_ty u)
     | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
-    | FunEExp (_, _, u, e) -> TV.union (ftv_ty u) (ftv_exp e)
-    | FunIExp (_, _, _, e) -> ftv_exp e
-    | FixEExp (_, _, _, u1, _, e) -> TV.union (ftv_ty u1) (ftv_exp e)
-    | FixIExp (_, _, _, _, _, e) -> ftv_exp e
+    | FunExp (_, (_, Expl, u), e) -> TV.union (ftv_ty u) (ftv_exp e)
+    | FunExp (_, (_, Impl, _), e) -> ftv_exp e
+    | FixExp (_, _, (_, Expl, u1), _, e) -> TV.union (ftv_ty u1) (ftv_exp e)
+    | FixExp (_, _, (_, Impl, _), _, e) -> ftv_exp e
     | AppExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | MatchExp (_, e, ms) -> TV.union (ftv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | LetExp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)

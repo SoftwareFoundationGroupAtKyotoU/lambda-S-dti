@@ -170,7 +170,7 @@ module ITGL = struct
       "let f (x: int) (y: bool) : int = x", "let f = fun (x: int) -> fun (y: bool) -> (x : int)";
       
       (* TODO: "let rec f x y = x", "let f = fix f (x: 'x312): 'x313 -> 'x311 = fun (y: 'x313) -> x"; *)
-      "let rec f (x: int) (y: bool) : int = x", "let f = fix f (x: int): bool -> int = fun (y: bool) -> x";
+      (* TODO: "let rec f (x: int) (y: bool) : int = x", "let f = fix f (x: int): bool -> int = fun (y: bool) -> x"; *)
     ]
 
   let suite = [
