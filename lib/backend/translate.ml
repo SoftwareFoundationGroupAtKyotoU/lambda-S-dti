@@ -186,14 +186,14 @@ module ITGL = struct
       CC.IfExp (c f1 r1 u1 TyBool, c f2 r2 u2 u, c f3 r3 u3 u), u
     | FunExp (_, (x, _, u1), e) ->
       let f, u2 = translate_exp (Environment.add x (tysc_of_ty u1) env) e in
-      CC.FunBExp ([], (x, u1), f), TyFun (u1, u2)
+      CC.FunExp ([], CC.FunB ((x, u1), f)), TyFun (u1, u2)
     | FixExp (_, x, (y, _, u1), u2, e) ->
       (* NOTE: Disallow to use x polymorphically in e *)
       let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
       let env = Environment.add y (tysc_of_ty u1) env in
       let f, u2' = translate_exp env e in
       let r = range_of_exp e in
-      CC.FixBExp ([], (x, y, u1, u2), c f r u2' u2), TyFun (u1, u2)
+      CC.FixExp ([], CC.FixB (x, (y, u1), u2, c f r u2' u2)), TyFun (u1, u2)
     | AppExp (_, e1, e2) ->
       let f1, u1 = translate_exp env e1 in
       let f2, u2 = translate_exp env e2 in
@@ -212,12 +212,12 @@ module ITGL = struct
       let us1 = TyScheme (xys, u1) in
       let f2, u2 = translate_exp (Environment.add x us1 env) e2 in
       begin match f1 with
-      | CC.FunBExp (_, (y, u1), f) -> CC.LetExp (x, CC.FunBExp (xys, (y, u1), f), f2), u2
-      | CC.FixBExp (_, (x', y, u, u1), f) -> 
-        assert (x = x');
-        CC.LetExp (x, CC.FixBExp (xys, (x, y, u, u1), f), f2), u2
-      | _ -> 
-        if xys <> [] then CC.LetExp (x, CC.FunTyExp (xys, f1), f2), u2
+      | CC.FunExp (_, CC.FunB ((y, u1), f)) ->
+        CC.LetExp (x, CC.FunExp (xys, CC.FunB ((y, u1), f)), f2), u2
+      | CC.FixExp (_, fixd) ->
+        CC.LetExp (x, CC.FixExp (xys, fixd), f2), u2
+      | _ ->
+        if xys <> [] then CC.LetExp (x, CC.FunExp (xys, CC.FunTy f1), f2), u2
         else CC.LetExp (x, f1, f2), u2
       end
     | LetExp (_, x, e1, e2) ->
@@ -256,7 +256,7 @@ module ITGL = struct
         let env', mf, u_match = translate_mf env mf in
         let f, u_exp = translate_exp ~intoB env' e in
         [mf, f, u_exp], (u_match, u_exp)
-      else 
+      else
         let env', mf, u_match = translate_mf env mf in
         let f, u_exp = translate_exp ~intoB env' e in
         let t, (u_match', u_exp') = translate_ms ~intoB env t in
@@ -274,17 +274,19 @@ module ITGL = struct
           let xs = closure_tyvars_let_decl1 e u env in
           let ys = closure_tyvars_let_decl2 f env u e in
           xs @ ys
-        else 
+        else
           []
-      in let env = Environment.add x (TyScheme (tvs, u)) env in
-      match f with
-      | CC.FunBExp (_, (y, u1), f) -> env, CC.LetDecl (x, CC.FunBExp (tvs, (y, u1), f)), u
-      | CC.FixBExp (_, (x', y, u, u1), f) -> 
-        assert (x = x');
-        env, CC.LetDecl (x, CC.FixBExp (tvs, (x, y, u, u1), f)), u
-      | _ -> 
-        if tvs <> [] then env, CC.LetDecl (x, CC.FunTyExp (tvs, f)), u
+      in
+      let env = Environment.add x (TyScheme (tvs, u)) env in
+      begin match f with
+      | CC.FunExp (_, fund) ->
+        env, CC.LetDecl (x, CC.FunExp (tvs, fund)), u
+      | CC.FixExp (_, fixd) ->
+        env, CC.LetDecl (x, CC.FixExp (tvs, fixd)), u
+      | _ ->
+        if tvs <> [] then env, CC.LetDecl (x, CC.FunExp (tvs, CC.FunTy f)), u
         else env, CC.LetDecl (x, f), u
+      end
 end
 
 module CC = struct

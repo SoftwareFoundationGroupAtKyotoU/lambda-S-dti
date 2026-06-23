@@ -332,13 +332,8 @@ module CC = struct
     | IConst of int
     | BConst of bool
     | UConst
-    | FunBExp of tyvar list * (id * ty) * exp
-    | FixBExp of tyvar list * (id * id * ty * ty) * exp
-    | FunSExp of tyvar list * (id * ty) * id *  exp
-    | FixSExp of tyvar list * (id * id * ty * ty) * id *  exp
-    | FunDualExp of tyvar list * (id * ty) * id * (exp * exp)
-    | FixDualExp of tyvar list * (id * id * ty * ty) * id * (exp * exp)
-    | FunTyExp of tyvar list * exp
+    | FunExp of tyvar list * fundef
+    | FixExp of tyvar list * fixdef
     | CoercionExp of coercion
     | BinOp of binop * exp * exp
     | IfExp of exp * exp * exp
@@ -357,22 +352,17 @@ module CC = struct
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
+  and fundef =
+    | FunB of (id * ty) * exp
+    | FunS of (id * ty) * (id * ty) * exp
+    | FunDual of (id * ty) * (id * ty) * (exp * exp)
+    | FunTy of exp
+  and fixdef =
+    | FixB of id * (id * ty) * ty * exp
+    | FixS of id * (id * ty) * ty * (id * ty) * exp
+    | FixDual of id * (id * ty) * ty * (id * ty) * (exp * exp)
 
   exception Occur_LS1 of string
-
-  (* let rec is_value = function
-    | Var _
-    | IConst _
-    | BConst _
-    | UConst
-    | FunExp _
-    | FixExp _ 
-    | NilExp _ -> true
-    | CastExp (_, v, TyFun _, TyFun _, _) -> is_value v
-    | CastExp (_, v, TyList _, TyList _, _) -> is_value v
-    | CastExp (_, v, g, TyDyn, _) -> is_value v && is_ground g
-    | ConsExp (v1, v2) -> is_value v1 && is_value v2
-    | _ -> false  *)
 
   let ftv_tyarg = function
     | Ty ty -> ftv_ty ty
@@ -383,13 +373,8 @@ module CC = struct
     | IConst _
     | BConst _
     | UConst -> TV.empty
-    | FunBExp (tvs, (_, u), f) -> TV.diff (TV.union (ftv_ty u) (ftv_exp f)) (TV.of_list tvs)
-    | FixBExp (tvs, (_, _, u1, _), f) -> TV.diff (TV.union (ftv_ty u1) (ftv_exp f)) (TV.of_list tvs)
-    | FunSExp (tvs, (_, u), _, f) -> TV.diff (TV.union (ftv_ty u) (ftv_exp f)) (TV.of_list tvs)
-    | FixSExp (tvs, (_, _, u1, _), _, f) -> TV.diff (TV.union (ftv_ty u1) (ftv_exp f)) (TV.of_list tvs)
-    | FunDualExp (tvs, (_, u), _, (f1, f2)) -> TV.diff (TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)) (TV.of_list tvs)
-    | FixDualExp (tvs, (_, _, u1, _), _, (f1, f2)) -> TV.diff (TV.union (ftv_ty u1) @@ TV.union (ftv_exp f1) (ftv_exp f2)) (TV.of_list tvs)
-    | FunTyExp (tvs, f) -> TV.diff (ftv_exp f) (TV.of_list tvs)
+    | FunExp (tvs, fund) -> TV.diff (ftv_fund fund) (TV.of_list tvs)
+    | FixExp (tvs, fixd) -> TV.diff (ftv_fixd fixd) (TV.of_list tvs)
     | CoercionExp c -> ftv_coercion c
     | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | IfExp (f1, f2, f3) ->
@@ -410,6 +395,15 @@ module CC = struct
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+  and ftv_fund = function
+    | FunB ((_, u), f) -> TV.union (ftv_ty u) (ftv_exp f)
+    | FunS ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)
+    | FunDual ((_, u), _, (f1, f2)) -> TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+    | FunTy f -> ftv_exp f
+  and ftv_fixd = function
+    | FixB (_, (_, u1), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
+    | FixS (_, (_, u1), _, (_, uk), f) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) (ftv_exp f)
+    | FixDual (_, (_, u1), _, (_, uk), (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) @@ TV.union (ftv_exp f1) (ftv_exp f2)
 
   type program =
     | Exp of exp

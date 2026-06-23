@@ -124,21 +124,14 @@ module CC = struct
       let e2, env = tv_renew_exp e2 env in
       let e3, env = tv_renew_exp e3 env in
       IfExp (e1, e2, e3), env
-    | FunBExp (tvs, (x, u), e) ->
-      let env = List.fold_left (fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
-      let u, env = tv_renew_ty u env in
-      let e, env = tv_renew_exp e env in
-      FunBExp (tvs, (x, u), e), env
-    | FixBExp (tvs, (x, y, u1, u2), e) ->
-      let env = List.fold_left (fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
-      let u1, env = tv_renew_ty u1 env in
-      let u2, env = tv_renew_ty u2 env in
-      let e, env = tv_renew_exp e env in
-      FixBExp (tvs, (x, y, u1, u2), e), env
-    | FunTyExp (tvs, e) ->
-      let env = List.fold_left (fun env -> fun (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
-      let e, env = tv_renew_exp e env in
-      FunTyExp (tvs, e), env
+    | FunExp (tvs, fund) ->
+      let env = List.fold_left (fun env (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
+      let fund, env = tv_renew_fund fund env in
+      FunExp (tvs, fund), env
+    | FixExp (tvs, fixd) ->
+      let env = List.fold_left (fun env (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
+      let fixd, env = tv_renew_fixd fixd env in
+      FixExp (tvs, fixd), env
     | AppMExp (e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
@@ -179,8 +172,23 @@ module CC = struct
         TupleExp (List.rev r), env
       in
       iter env es []
-    | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "fresh_tv"
-    | _ -> raise @@ Failure "yet"
+    | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "fresh_tv"
+  and tv_renew_fund fd env = match fd with
+    | FunB ((x, u), e) ->
+      let u, env = tv_renew_ty u env in
+      let e, env = tv_renew_exp e env in
+      FunB ((x, u), e), env
+    | FunTy e ->
+      let e, env = tv_renew_exp e env in
+      FunTy e, env
+    | FunS _ | FunDual _ -> raise @@ Occur_LS1 "fresh_tv fund"
+  and tv_renew_fixd fixd env = match fixd with
+    | FixB (x, (y, u1), u2, e) ->
+      let u1, env = tv_renew_ty u1 env in
+      let u2, env = tv_renew_ty u2 env in
+      let e, env = tv_renew_exp e env in
+      FixB (x, (y, u1), u2, e), env
+    | FixS _ | FixDual _ -> raise @@ Occur_LS1 "fresh_tv fixd"
   and tv_renew_ms ms env = match ms with
     | (mf, e) :: ms ->
       let mf, env = tv_renew_mf mf env in
@@ -190,11 +198,10 @@ module CC = struct
     | [] -> [], env
 
   let tv_renew p = match p with
-  | Exp e -> 
-    let e, _ = tv_renew_exp e Syntax.Environment.empty in 
+  | Exp e ->
+    let e, _ = tv_renew_exp e Syntax.Environment.empty in
     Exp e
-  | LetDecl (id, e) -> 
-    let env = Syntax.Environment.empty in
-    let e, _ = tv_renew_exp e env in
+  | LetDecl (id, e) ->
+    let e, _ = tv_renew_exp e Syntax.Environment.empty in
     LetDecl (id, e)
 end

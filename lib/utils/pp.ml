@@ -362,7 +362,7 @@ module CC = struct
     | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
     | SubstExp _ | SubstAnotExp _ -> 20
     | CastExp _ -> 15
-    | IfExp _ | FunBExp _ | FunSExp _ | FunDualExp _ | FixBExp _ | FixSExp _ | FixDualExp _ | FunTyExp _ | LetExp _ | MatchExp _ -> 10
+    | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
   let gt_exp e1 e2 =
     level_exp e1 > level_exp e2
@@ -395,58 +395,14 @@ module CC = struct
         (with_paren (gt_exp f f1) pp_exp) f1
         (with_paren (gt_exp f f2) pp_exp) f2
         (with_paren (gt_exp f f3) pp_exp) f3
-    | FunBExp (xs, (x1, u1), f) ->
-      fprintf ppf "%afun (%s: %a) -> %a"
-        pp_tyabses xs
-        x1
-        pp_ty u1
-        pp_exp f
-    | FixBExp (xs, (x, y, u1, u2), f) ->
-      fprintf ppf "%afix %s (%s: %a): %a = %a"
-        pp_tyabses xs
-        x
-        y
-        pp_ty u1
-        pp_ty u2
-        pp_exp f
-    | FunSExp (xs, (x1, u1), c, f) ->
-      fprintf ppf "%afun ((%s: %a), %s) -> %a"
-        pp_tyabses xs
-        x1
-        pp_ty u1
-        c
-        pp_exp f
-    | FixSExp (xs, (x, y, u1, u2), c, f) ->
-      fprintf ppf "%afix %s ((%s: %a), %s): %a = %a"
-        pp_tyabses xs
-        x
-        y
-        pp_ty u1
-        c
-        pp_ty u2
-        pp_exp f
-    | FunDualExp (xs, (x1, u1), c, (f1, f2)) ->
-      fprintf ppf "%afun ((%s: %a), %s) -> (%a | %a)"
-        pp_tyabses xs
-        x1
-        pp_ty u1
-        c
-        pp_exp f1
-        pp_exp f2
-    | FixDualExp (xs, (x, y, u1, u2), c, (f1, f2)) ->
-      fprintf ppf "%afix %s ((%s: %a), %s): %a = (%a | %a)"
-        pp_tyabses xs
-        x
-        y
-        pp_ty u1
-        c
-        pp_ty u2
-        pp_exp f1
-        pp_exp f2
-    | FunTyExp (xs, f) ->
+    | FunExp (xs, fund) ->
       fprintf ppf "%a%a"
         pp_tyabses xs
-        pp_exp f
+        pp_fund fund
+    | FixExp (xs, fixd) ->
+      fprintf ppf "%a%a"
+        pp_tyabses xs
+        pp_fixd fixd
     | AppMExp (f1, f2) as f ->
       fprintf ppf "%a %a"
         (with_paren (gt_exp f f1) pp_exp) f1
@@ -528,6 +484,54 @@ module CC = struct
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (m, e)
     | ([], _) -> fprintf ppf ""
+  and pp_fund ppf = function
+    | FunB ((y, u), e) ->
+      fprintf ppf "fun (%s: %a) -> %a"
+        y
+        pp_ty u
+        pp_exp e
+    | FunS ((y, u), (k, uk), e) ->
+      fprintf ppf "fun (%s: %a, %s: %a) -> %a"
+        y
+        pp_ty u
+        k
+        pp_ty uk
+        pp_exp e
+    | FunDual ((y, u), (k, uk), (e1, e2)) ->
+      fprintf ppf "fun (%s: %a, %s: %a) -> (%a | %a)"
+        y
+        pp_ty u
+        k
+        pp_ty uk
+        pp_exp e1
+        pp_exp e2
+    | FunTy e ->
+      fprintf ppf "%a"
+        pp_exp e
+  and pp_fixd ppf = function
+    | FixB (x, (y, u1), u2, e) ->
+      fprintf ppf "fix %s (%s: %a): %a = %a"
+        x y
+        pp_ty u1
+        pp_ty u2
+        pp_exp e
+    | FixS (x, (y, u1), u2, (k, uk), e) ->
+      fprintf ppf "fix %s (%s: %a, %s: %a): %a = %a"
+        x y
+        pp_ty u1
+        k
+        pp_ty uk
+        pp_ty u2
+        pp_exp e
+    | FixDual (x, (y, u1), u2, (k, uk), (e1, e2)) ->
+      fprintf ppf "fix %s (%s: %a, %s: %a): %a = (%a | %a)"
+        x y
+        pp_ty u1
+        k
+        pp_ty uk
+        pp_ty u2
+        pp_exp e1
+        pp_exp e2
 
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
