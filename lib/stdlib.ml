@@ -54,6 +54,11 @@ end *)
 module CC = struct 
   open Syntax.CC
 
+  let coerce_consume ~config v c = 
+    let v, psi = Eval.CC.coerce ~config v c [] in
+    Eval.CC.consume ~config psi;
+    v
+
   let is_some t ~config = 
     if config.intoB then
       FunBV (fun _ -> function
@@ -68,14 +73,14 @@ module CC = struct
         | CoerceV _ -> BoolV false
         | _ -> raise @@ Stdlib_bug "not dyn value"),
         (function
-        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.CC.coerce ~debug:config.debug (BoolV true) c'
-        | CoerceV _, CoercionV c' -> Eval.CC.coerce ~debug:config.debug (BoolV false) c'
+        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> coerce_consume ~config (BoolV true) c'
+        | CoerceV _, CoercionV c' -> coerce_consume ~config (BoolV false) c'
         | _ -> raise @@ Stdlib_bug "not dyn value")
       )
     else
       FunSV (fun _ -> function
-      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.CC.coerce ~debug:config.debug (BoolV true) c'
-      | CoerceV _, CoercionV c' -> Eval.CC.coerce ~debug:config.debug (BoolV false) c'
+      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> coerce_consume ~config (BoolV true) c'
+      | CoerceV _, CoercionV c' -> coerce_consume ~config (BoolV false) c'
       | _ -> raise @@ Stdlib_bug "not dyn value"
       )
 
@@ -116,14 +121,14 @@ module CC = struct
         (function
         | BoolV b, CoercionV c -> 
           print_string @@ string_of_bool b;
-          Eval.CC.coerce ~debug:config.debug UnitV c
+          coerce_consume ~config UnitV c
         | _ -> raise @@ Stdlib_bug "print_bool: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | BoolV b, CoercionV c -> 
         print_string @@ string_of_bool b; 
-        Eval.CC.coerce ~debug:config.debug UnitV c
+        coerce_consume ~config UnitV c
       | _ -> raise @@ Stdlib_bug "print_bool: unexpected value"
       )
 
@@ -143,14 +148,14 @@ module CC = struct
         (function
         | IntV i, CoercionV c -> 
           print_int i;
-          Eval.CC.coerce ~debug:config.debug UnitV c
+          coerce_consume ~config UnitV c
         | _ -> raise @@ Stdlib_bug "print_int: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | IntV i, CoercionV c -> 
         print_int i;
-        Eval.CC.coerce ~debug:config.debug UnitV c
+        coerce_consume ~config UnitV c
       | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
       )
 
@@ -170,14 +175,14 @@ module CC = struct
         (function
         | UnitV, CoercionV c -> 
           print_newline (); 
-          Eval.CC.coerce ~debug:config.debug UnitV c
+          coerce_consume ~config UnitV c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | UnitV, CoercionV c -> 
         print_newline (); 
-        Eval.CC.coerce ~debug:config.debug UnitV c
+        coerce_consume ~config UnitV c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 
@@ -197,14 +202,14 @@ module CC = struct
         (function
         | UnitV, CoercionV c -> 
           let i = read_int () in
-          Eval.CC.coerce ~debug:config.debug (IntV i) c
+          coerce_consume ~config (IntV i) c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | UnitV, CoercionV c -> 
         let i = read_int () in
-        Eval.CC.coerce ~debug:config.debug (IntV i) c
+        coerce_consume ~config (IntV i) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 end
@@ -226,14 +231,14 @@ module KNorm = struct
         | CoerceV _ -> IntV 0
         | _ -> raise @@ Stdlib_bug "not dyn value"),
         (function
-        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.KNorm.coerce ~debug:config.debug (IntV 1) c'
-        | CoerceV _, CoercionV c' -> Eval.KNorm.coerce ~debug:config.debug (IntV 0) c'
+        | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.KNorm.coerce ~config (IntV 1) c'
+        | CoerceV _, CoercionV c' -> Eval.KNorm.coerce ~config (IntV 0) c'
         | _ -> raise @@ Stdlib_bug "not dyn value")
       )
     else
       FunSV (fun _ -> function
-      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.KNorm.coerce ~debug:config.debug (IntV 1) c'
-      | CoerceV _, CoercionV c' -> Eval.KNorm.coerce ~debug:config.debug (IntV 0) c'
+      | CoerceV (_, CSeq (_, CInj t')), CoercionV c' when t = t' -> Eval.KNorm.coerce ~config (IntV 1) c'
+      | CoerceV _, CoercionV c' -> Eval.KNorm.coerce ~config (IntV 0) c'
       | _ -> raise @@ Stdlib_bug "not dyn value"
       )
 
@@ -278,20 +283,20 @@ module KNorm = struct
         (function
         | IntV 0, CoercionV c -> 
           print_string "false";
-          Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+          Eval.KNorm.coerce ~config (IntV 0) c
         | IntV 1, CoercionV c -> 
           print_string "true";
-          Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+          Eval.KNorm.coerce ~config (IntV 0) c
         | _ -> raise @@ Stdlib_bug "print_bool: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | IntV 0, CoercionV c -> 
         print_string "false"; 
-        Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+        Eval.KNorm.coerce ~config (IntV 0) c
       | IntV 1, CoercionV c -> 
         print_string "true"; 
-        Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+        Eval.KNorm.coerce ~config (IntV 0) c
       | _ -> raise @@ Stdlib_bug "print_bool: unexpected value"
       )
 
@@ -311,14 +316,14 @@ module KNorm = struct
         (function
         | IntV i, CoercionV c -> 
           print_int i;
-          Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+          Eval.KNorm.coerce ~config (IntV 0) c
         | _ -> raise @@ Stdlib_bug "print_int: unexpected value")
       )
     else
       FunSV (fun _ -> function
       | IntV i, CoercionV c -> 
         print_int i;
-        Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+        Eval.KNorm.coerce ~config (IntV 0) c
       | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
       )
 
@@ -338,14 +343,14 @@ module KNorm = struct
         (function
         | IntV 0, CoercionV c -> 
           print_newline (); 
-          Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+          Eval.KNorm.coerce ~config (IntV 0) c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | IntV 0, CoercionV c -> 
         print_newline (); 
-        Eval.KNorm.coerce ~debug:config.debug (IntV 0) c
+        Eval.KNorm.coerce ~config (IntV 0) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 
@@ -365,14 +370,14 @@ module KNorm = struct
         (function
         | IntV 0, CoercionV c -> 
           let i = read_int () in
-          Eval.KNorm.coerce ~debug:config.debug (IntV i) c
+          Eval.KNorm.coerce ~config (IntV i) c
         | _ -> raise @@ Stdlib_bug "print_newline: unexpected value")
       )
     else 
       FunSV (fun _ -> function
       | IntV 0, CoercionV c -> 
         let i = read_int () in 
-        Eval.KNorm.coerce ~debug:config.debug (IntV i) c
+        Eval.KNorm.coerce ~config (IntV i) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
       )
 end
@@ -416,15 +421,12 @@ let pervasives ~config =
         let e = Parser.toplevel Lexer.main @@ Lexing.from_string str in
         let e, u = Typing.ITGL.type_of_program tyenv e in
         let tyenv, e, _ = Typing.ITGL.normalize tyenv e u in
-        let new_tyenv, f, _ = Translate.ITGL.translate ~intoB:config.intoB tyenv e in
+        let new_tyenv, f, _ = Translate.ITGL.translate ~config tyenv e in
         let _ = Typing.CC.type_of_program tyenv f in
-        let f = 
-          if config.intoB then f
-          else if config.alt then Translate.CC.translate_alt tyenv f
-          else Translate.CC.translate tyenv f
-        in let env, _, _ = Eval.CC.eval_program env f in
+        let f, _ = Translate.CC.translate ~config tyenv f in
+        let env, _, _ = Eval.CC.eval_program ~config env f in
         let kf, kfunenvs = KNormal.kNorm_funs kfunenvs f in
-        let kenv, _, _ = Eval.KNorm.eval_program kenv kf in
+        let kenv, _, _ = Eval.KNorm.eval_program ~config kenv kf in
         env, new_tyenv, kfunenvs, kenv)
       (env, tyenv, kfunenvs, kenv)
       implementations_eval

@@ -100,7 +100,7 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
 
 let eval ppf state ~config =
   print_title ppf "Eval";
-  let env, x, v = Eval.CC.eval_program ~debug:config.debug state.env state.program in 
+  let env, x, v = Eval.CC.eval_program ~config state.env state.program in 
   { state with env }, x, v
 
 let kNorm_funs ppf state ~config =
@@ -126,7 +126,7 @@ let kNorm_funs ppf state ~config =
 
 let keval ppf state ~config =
   print_title ppf "k-Eval";
-  let kenv, kx, kv = Eval.KNorm.eval_program state.kenv state.program ~debug:config.debug in
+  let kenv, kx, kv = Eval.KNorm.eval_program ~config state.kenv state.program in
   { state with kenv }, kx, kv
 
 let closure ppf state ~config = 

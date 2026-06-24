@@ -566,14 +566,14 @@ module CC = struct
     | _ -> gt_value v1 v2
 
   let pp_value_main ppf ~pp_ty ~pp_coercion v =
-    let rec pp_value ppf = function 
+    let rec pp_value refl ppf = function 
       | BoolV b -> pp_print_bool ppf b
       | IntV i -> pp_print_int ppf i
       | UnitV -> pp_print_string ppf "()"
       | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
       | CoerceV (v1, c) as v ->
         fprintf ppf "%a<<%a>>"
-          (with_paren (gt_value v v1) pp_value) v1
+          (with_paren (gt_value v v1) @@ pp_value refl) v1
           pp_coercion c
       | CoercionV c -> 
         fprintf ppf "%a"
@@ -581,23 +581,25 @@ module CC = struct
       | NilV -> pp_print_string ppf "[]"
       | ConsV (v1, v2) as v ->
         fprintf ppf "%a :: %a"
-          (with_paren (gte_value v v1) pp_value) v1
-          (with_paren (gt_value v v2) pp_value) v2
+          (with_paren (gte_value v v1) @@ pp_value refl) v1
+          (with_paren (gt_value v v2) @@ pp_value refl) v2
       | TupleV vs ->
         let pp_sep ppf () = fprintf ppf ", " in
-        let pp_list ppf vals = pp_print_list pp_value ppf vals ~pp_sep:pp_sep in
+        let pp_list ppf vals = pp_print_list (pp_value refl) ppf vals ~pp_sep:pp_sep in
         fprintf ppf "(%a)"
           pp_list vs
-      | RefV { contents = (v, u) } ->
-        fprintf ppf "{ contents = %a, %a }"
-          pp_value v
-          pp_ty u
+      | RefV ({ contents = (v, u) } as r) ->
+        if List.mem r refl then fprintf ppf "<cycle>"
+        else
+          fprintf ppf "{ contents = %a, %a }"
+            (pp_value (r :: refl)) v
+            pp_ty u
       | Tagged (t, v) ->
         fprintf ppf "%a: %a => ?"
-          pp_value v
+          (pp_value refl) v
           pp_tag t
     in
-    pp_value ppf v
+    pp_value [] ppf v
 
   let pp_value ppf v = pp_value_main ppf ~pp_ty ~pp_coercion v
 

@@ -305,7 +305,7 @@ Type:
   | TupleType { $1 }
   
 TupleType :
-  | u1=PostType STAR us=separated_nonempty_list(STAR, SimpleType) { TyTuple (u1 :: us) }
+  | u1=PostType STAR us=separated_nonempty_list(STAR, PostType) { TyTuple (u1 :: us) }
   | PostType { $1 }
 
 PostType :

@@ -14,9 +14,8 @@ module CC_Translation = struct
     let test (program, expected_cc_b, expected_cc_s) =
       program >:: fun ctxt ->
         let e = parse @@ program ^ ";;" in
-        let _, f_b, _ = Translate.ITGL.translate ~intoB:true tyenv e in
-        let _, f_s, _ = Translate.ITGL.translate ~intoB:false tyenv e in
-        (* CCのASTを文字列化（※ pp_cc_program はご自身の関数名に合わせてください） *)
+        let _, f_b, _ = Translate.ITGL.translate ~config:(Config.create ~intoB:true ~monotonic:false ~eager:true ()) tyenv e in
+        let _, f_s, _ = Translate.ITGL.translate ~config:(Config.create ~intoB:false ~monotonic:true ()) tyenv e in
         let actual_cc_b = asprintf "%a" Pp.CC.pp_program f_b in
         let actual_cc_s = asprintf "%a" Pp.CC.pp_program f_s in
         assert_equal ~ctxt:ctxt ~printer:id expected_cc_b actual_cc_b;

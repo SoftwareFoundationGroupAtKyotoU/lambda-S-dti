@@ -666,30 +666,24 @@ module CC = struct
     | DerefExp (f, None) ->
       let u = type_of_exp env f in
       begin match u with
-      | TyRef u when is_static_type u -> u
-      | TyRef _ -> raise @@ Type_bug "NonAnotated deref with non-static type"
+      | TyRef u -> u
       | _ -> raise @@ Type_bug "deref"
       end
     | DerefExp (f, Some u) ->
       let u' = type_of_exp env f in
       begin match u' with
-      | TyRef u' when u = u' && not @@ is_static_type u -> u
-      | TyRef _ -> raise @@ Type_bug "Anotated deref with static type"
+      | TyRef u' when u = u' -> u
       | _ -> raise @@ Type_bug "derefAnot"
       end
     | SubstExp (f1, f2, None) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
-      if u1 = TyRef u2 then
-        if is_static_type u2 then TyUnit
-        else raise @@ Type_bug "NonAnotated subst with non-static type"
+      if u1 = TyRef u2 then TyUnit
       else raise @@ Type_bug "subst"
     | SubstExp (f1, f2, Some u) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
-      if u1 = TyRef u2 && u2 = u then
-        if not @@ is_static_type u2 then TyUnit
-        else raise @@ Type_bug "Anotated subst with static type"
+      if u1 = TyRef u2 && u2 = u then TyUnit
       else raise @@ Type_bug "substAnot"
     | CoercionExp c -> type_of_coercion c
     | CAppExp (f1, f2) ->
