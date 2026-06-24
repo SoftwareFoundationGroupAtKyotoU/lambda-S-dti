@@ -35,10 +35,10 @@ let run state program ~config =
   | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame+"
   | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame-"
 
-let config_B = create ~intoB:true ~eager:true ()
+let config_B = create ~intoB:true ~eager:true ~monotonic:false ()
 let config_S = create ()
 let config_A = create ~alt:true ()
-let config_B_k = create ~kNorm:true ~intoB:true ~eager:true ()
+let config_B_k = create ~kNorm:true ~intoB:true ~eager:true ~monotonic:false ()
 let config_S_k = create ~kNorm:true ()
 let config_A_k = create ~kNorm:true ~alt:true ()
 

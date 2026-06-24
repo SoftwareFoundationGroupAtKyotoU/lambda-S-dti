@@ -83,7 +83,14 @@ let rec tv_renew_coercion c env = match c with
     let c1, env = tv_renew_coercion c1 env in
     let c2, env = tv_renew_coercion c2 env in
     CSeq (c1, c2), env 
-  | CRef _ -> raise @@ Failure "yet"
+  | CRef (c1, c2) ->
+    let c1, env = tv_renew_coercion c1 env in
+    let c2, env = tv_renew_coercion c2 env in
+    CRef (c1, c2), env
+  | CMRef (u1, u2) ->
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    CMRef (u1, u2), env
 
 let rec tv_renew_mf mf env = match mf with
   | MatchILit _ | MatchBLit _ | MatchULit -> mf, env
@@ -136,6 +143,25 @@ module CC = struct
       let env = List.fold_left (fun env (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
       let fixd, env = tv_renew_fixd fixd env in
       FixExp (tvs, fixd), env
+    | RefExp (e, u) ->
+      let e, env = tv_renew_exp e env in
+      let u, env = tv_renew_ty u env in
+      RefExp (e, u), env
+    | DerefExp (e, uo) ->
+      let e, env = tv_renew_exp e env in
+      let uo, env = match uo with
+        | None -> None, env
+        | Some u -> let u, env = tv_renew_ty u env in Some u, env
+      in
+      DerefExp (e, uo), env
+    | SubstExp (e1, e2, uo) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let uo, env = match uo with
+        | None -> None, env
+        | Some u -> let u, env = tv_renew_ty u env in Some u, env
+      in
+      SubstExp (e1, e2, uo), env
     | AppMExp (e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in

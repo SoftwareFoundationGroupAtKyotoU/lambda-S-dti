@@ -196,7 +196,8 @@ type coercion =
   | CFun of coercion * coercion
   | CList of coercion
   | CTuple of coercion list
-  | CRef of ty
+  | CRef of coercion * coercion
+  | CMRef of ty * ty
   | CId of ty
   | CSeq of coercion * coercion
   | CFail of tag * (range * polarity) * tag
@@ -207,6 +208,7 @@ let is_d = function
   | CSeq (CList _, CInj _)
   | CSeq (CTuple _, CInj _)
   | CSeq (CRef _, CInj _)
+  | CSeq (CMRef _, CInj _)
   | CFun _
   | CList _
   | CTuple _
@@ -219,7 +221,8 @@ let rec ftv_coercion = function
   | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CList c -> ftv_coercion c
   | CTuple cs -> TV.big_union (List.map ftv_coercion cs)
-  | CRef u -> ftv_ty u
+  | CRef (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CMRef (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
@@ -345,10 +348,8 @@ module CC = struct
     | MatchExp of exp * (matchform * exp) list
     | TupleExp of exp list
     | RefExp of exp * ty
-    | DerefExp of exp
-    | DerefAnotExp of exp * ty
-    | SubstExp of exp * exp
-    | SubstAnotExp of exp * exp * ty
+    | DerefExp of exp * ty option
+    | SubstExp of exp * exp * ty option
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CSeqExp of exp * exp
@@ -388,10 +389,10 @@ module CC = struct
       TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
     | TupleExp es -> TV.big_union (List.map ftv_exp es)
     | RefExp (f, u) -> TV.union (ftv_exp f) (ftv_ty u)
-    | DerefExp f -> ftv_exp f
-    | DerefAnotExp (f, u) -> TV.union (ftv_exp f) (ftv_ty u)
-    | SubstExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | SubstAnotExp (f1, f2, u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
+    | DerefExp (f, None) -> ftv_exp f
+    | DerefExp (f, Some u) -> TV.union (ftv_exp f) (ftv_ty u)
+    | SubstExp (f1, f2, None) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | SubstExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
@@ -421,6 +422,7 @@ module CC = struct
     | NilV
     | ConsV of value * value
     | TupleV of value list
+    | RefV of (value * ty) ref
     | Tagged of tag * value
     | CoerceV of value * coercion
 end

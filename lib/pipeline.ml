@@ -78,7 +78,7 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   log_section bench_ppf "after Mutate";
   fprintf bench_ppf "%a@." Pp.ITGL.pp_program state.program;
   print_title ppf (if config.intoB then "Cast-insertion" else "Coercion-insertion");
-  let new_tyenv, f, u' = Translate.ITGL.translate ~intoB:config.intoB state.tyenv state.program in 
+  let new_tyenv, f, u' = Translate.ITGL.translate ~config state.tyenv state.program in
   (* NOTE: new_tyenv include current LetDecl type, so type check and translation must be executed in old tyenv *)
   (* Pp.pp_ty2 Format.err_formatter u'; *)
   assert (Typing.is_equal state.ty u');

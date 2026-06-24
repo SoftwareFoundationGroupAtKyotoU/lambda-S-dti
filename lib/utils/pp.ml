@@ -180,7 +180,7 @@ let pp_tag ppf = function
 
 let level_coercion = function
   | CInj _ | CProj _ | CTvInj _ | CTvProj _ | CTvProjInj _ | CId _ | CFail _ -> 100
-  | CList _ | CRef _ -> 80
+  | CList _ | CRef _ | CMRef _ -> 80
   | CTuple _ -> 60
   | CFun _ -> 40
   | CSeq _ -> 0
@@ -227,6 +227,13 @@ let pp_coercion_main ppf ~pp_ty c =
       let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
       fprintf ppf "%a"
         pp_list cs
+    | CRef (c1, c2) ->
+      fprintf ppf "ref(%a,%a)"
+        pp_coercion c1
+        pp_coercion c2
+    | CMRef (_, u) ->
+      fprintf ppf "mref(%a)"
+        pp_ty u
     | CId u ->
       fprintf ppf "id{%a}" 
         pp_ty u
@@ -238,7 +245,6 @@ let pp_coercion_main ppf ~pp_ty c =
       fprintf ppf "⊥{%a,p,%a}"
         pp_tag t1
         pp_tag t2
-    | CRef _ -> raise Syntax_error
   in
   pp_coercion ppf c
 
@@ -357,14 +363,14 @@ module CC = struct
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | TupleExp _ | CoercionExp _ -> 100
     | CSeqExp _ -> 95
-    | DerefExp _ | DerefAnotExp _ -> 90
+    | DerefExp _ -> 90
     | AppDExp _ | AppMExp _ | RefExp _ -> 80
     | CAppExp _ -> 75
     | BinOp ((Mult | Div | Mod), _, _) -> 70
     | BinOp ((Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
-    | SubstExp _ | SubstAnotExp _ -> 20
+    | SubstExp _  -> 20
     | CastExp _ -> 15
     | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
@@ -464,18 +470,18 @@ module CC = struct
       fprintf ppf "ref %a@%a"
         (with_paren (gte_exp f f') pp_exp) f'
         pp_ty u
-    | DerefExp f' as f ->
+    | DerefExp (f', None) as f ->
       fprintf ppf "!%a"
         (with_paren (gte_exp f f') pp_exp) f'
-    | DerefAnotExp (f', u) as f ->
+    | DerefExp (f', Some u) as f ->
       fprintf ppf "!%a@%a"
         (with_paren (gt_exp f f') pp_exp) f'
         pp_ty u
-    | SubstExp (f1, f2) as f ->
+    | SubstExp (f1, f2, None) as f ->
       fprintf ppf "%a := %a"
         (with_paren (gte_exp f f1) pp_exp) f1
         (with_paren (gte_exp f f2) pp_exp) f2
-    | SubstAnotExp (f1, f2, u) as f ->
+    | SubstExp (f1, f2, Some u) as f ->
       fprintf ppf "%a := %a@%a"
         (with_paren (gte_exp f f1) pp_exp) f1
         (with_paren (gte_exp f f2) pp_exp) f2
@@ -559,59 +565,43 @@ module CC = struct
     | TupleV _, TupleV _ -> true
     | _ -> gt_value v1 v2
 
-  let rec pp_value ppf = function
-    | BoolV b -> pp_print_bool ppf b
-    | IntV i -> pp_print_int ppf i
-    | UnitV -> pp_print_string ppf "()"
-    | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v1, c) as v ->
-      fprintf ppf "%a<<%a>>"
-        (with_paren (gt_value v v1) pp_value) v1
-        pp_coercion c
-    | CoercionV c -> 
-      fprintf ppf "%a"
-        pp_coercion c
-    | NilV -> pp_print_string ppf "[]"
-    | ConsV (v1, v2) as v ->
-      fprintf ppf "%a :: %a"
-        (with_paren (gte_value v v1) pp_value) v1
-        (with_paren (gt_value v v2) pp_value) v2
-    | TupleV vs ->
-      let pp_sep ppf () = fprintf ppf ", " in
-      let pp_list ppf vals = pp_print_list pp_value ppf vals ~pp_sep:pp_sep in
-      fprintf ppf "(%a)"
-        pp_list vs
-    | Tagged (t, v) ->
-      fprintf ppf "%a: %a => ?"
-        pp_value v
-        pp_tag t
+  let pp_value_main ppf ~pp_ty ~pp_coercion v =
+    let rec pp_value ppf = function 
+      | BoolV b -> pp_print_bool ppf b
+      | IntV i -> pp_print_int ppf i
+      | UnitV -> pp_print_string ppf "()"
+      | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
+      | CoerceV (v1, c) as v ->
+        fprintf ppf "%a<<%a>>"
+          (with_paren (gt_value v v1) pp_value) v1
+          pp_coercion c
+      | CoercionV c -> 
+        fprintf ppf "%a"
+          pp_coercion c
+      | NilV -> pp_print_string ppf "[]"
+      | ConsV (v1, v2) as v ->
+        fprintf ppf "%a :: %a"
+          (with_paren (gte_value v v1) pp_value) v1
+          (with_paren (gt_value v v2) pp_value) v2
+      | TupleV vs ->
+        let pp_sep ppf () = fprintf ppf ", " in
+        let pp_list ppf vals = pp_print_list pp_value ppf vals ~pp_sep:pp_sep in
+        fprintf ppf "(%a)"
+          pp_list vs
+      | RefV { contents = (v, u) } ->
+        fprintf ppf "{ contents = %a, %a }"
+          pp_value v
+          pp_ty u
+      | Tagged (t, v) ->
+        fprintf ppf "%a: %a => ?"
+          pp_value v
+          pp_tag t
+    in
+    pp_value ppf v
 
-  let rec pp_value2 ppf = function
-    | BoolV b -> pp_print_bool ppf b
-    | IntV i -> pp_print_int ppf i
-    | UnitV -> pp_print_string ppf "()"
-    | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v1, c) as v ->
-      fprintf ppf "%a<<%a>>"
-        (with_paren (gt_value v v1) pp_value2) v1
-        pp_coercion2 c
-    | CoercionV c -> 
-      fprintf ppf "%a"
-        pp_coercion2 c
-    | NilV -> pp_print_string ppf "[]"
-    | ConsV (v1, v2) as v ->
-      fprintf ppf "%a :: %a"
-        (with_paren (gte_value v v1) pp_value2) v1
-        (with_paren (gt_value v v2) pp_value2) v2
-    | TupleV vs ->
-      let pp_sep ppf () = fprintf ppf ", " in
-      let pp_list ppf vals = pp_print_list pp_value2 ppf vals ~pp_sep:pp_sep in
-      fprintf ppf "(%a)"
-        pp_list vs
-    | Tagged (t, v) ->
-      fprintf ppf "%a: %a => ?"
-        pp_value2 v
-        pp_tag t
+  let pp_value ppf v = pp_value_main ppf ~pp_ty ~pp_coercion v
+
+  let pp_value2 ppf v = pp_value_main ppf ~pp_ty:pp_ty2 ~pp_coercion:pp_coercion2 v
 end
 
 module KNorm = struct 

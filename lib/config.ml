@@ -1,19 +1,27 @@
 type t = {
+  (* execution formula *)
   debug : bool;
+  compile : bool;
+  (* translation formula *)
   kNorm : bool;
   alt : bool;
-  compile : bool;
   intoB : bool;
+  (* evaluation formula *)
   eager : bool;
+  monotonic : bool;
+  (* modes for compiler *)
   static : bool;
   hash : bool;
+  (* filemode *)
   opt_file : string option;
 }
 
-let create ?(debug=false) ?(kNorm=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(opt_file=None) () =
+let create ?(debug=false) ?(kNorm=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(monotonic=true) ?(opt_file=None) () =
   (* invalid combination *)
-  if alt && intoB then 
+  if alt && intoB then
     failwith "Config error: -a and -b could not be at the same time";
+  if monotonic && intoB then
+    failwith "Config error: --monotonic and -b could not be at the same time";
   if not compile && intoB && not eager then 
     failwith "NotImplemented: lazy cast application for -b interpreter is yet";
   if not compile && not intoB && eager then 
@@ -33,4 +41,4 @@ let create ?(debug=false) ?(kNorm=false) ?(alt=false) ?(intoB=false) ?(eager=fal
   in
   (* NOTE: when compiling, -k is always true *)
   let kNorm = if compile then true else kNorm in
-  { debug; kNorm; alt; intoB; eager; compile; static; hash; opt_file }
+  { debug; kNorm; alt; intoB; eager; compile; static; hash; monotonic; opt_file }

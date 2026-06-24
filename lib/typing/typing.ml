@@ -543,7 +543,10 @@ let type_of_coercion c =
       let pairs = List.map (fun c -> coerce_pair c) cs in
       let us1, us2 = List.split pairs in
       TyTuple us1, TyTuple us2
-    | CRef u -> (TyDyn, TyRef u) (* TyDyn for dummy *)
+    | CRef (c1, _) ->
+      let u1, u2 = coerce_pair c1 in
+      TyRef u1, TyRef u2
+    | CMRef (u1, u2) -> TyRef u1, TyRef u2
     | CId u -> u, u
     | CSeq (c1, c2) ->
       let u11, u12 = coerce_pair c1 in
@@ -660,28 +663,28 @@ module CC = struct
       let u' = type_of_exp env f in
       assert (u = u');
       TyRef u
-    | DerefExp f -> 
+    | DerefExp (f, None) ->
       let u = type_of_exp env f in
       begin match u with
       | TyRef u when is_static_type u -> u
       | TyRef _ -> raise @@ Type_bug "NonAnotated deref with non-static type"
       | _ -> raise @@ Type_bug "deref"
       end
-    | DerefAnotExp (f, u) ->
+    | DerefExp (f, Some u) ->
       let u' = type_of_exp env f in
       begin match u' with
       | TyRef u' when u = u' && not @@ is_static_type u -> u
       | TyRef _ -> raise @@ Type_bug "Anotated deref with static type"
       | _ -> raise @@ Type_bug "derefAnot"
       end
-    | SubstExp (f1, f2) ->
+    | SubstExp (f1, f2, None) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       if u1 = TyRef u2 then
         if is_static_type u2 then TyUnit
         else raise @@ Type_bug "NonAnotated subst with non-static type"
       else raise @@ Type_bug "subst"
-    | SubstAnotExp (f1, f2, u) ->
+    | SubstExp (f1, f2, Some u) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       if u1 = TyRef u2 && u2 = u then
