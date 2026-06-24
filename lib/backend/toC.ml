@@ -32,6 +32,7 @@ let c_of_ty = function
   | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
   | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
   | TyRef _ -> raise @@ ToC_bug "yet"
+  | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
 
 (*型引数のCプログラム表記を出力する関数*)
 let c_of_tyarg = function

@@ -91,20 +91,10 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
     if bench = 0 then f
     else Fresh_tv.CC.tv_renew f
   in
-  let f(*, u'''*) = 
-    if config.intoB then f 
-    else begin
-      print_title ppf "CPS-translation";
-      (* TODO: cps-tlanslation should return type u'''? *)
-      let f = 
-        (* NOTE: when generating C, alternative translation is done in closure conversion *)
-        if config.alt && not config.compile then Translate.CC.translate_alt state.tyenv f
-        else Translate.CC.translate state.tyenv f 
-      in
-      fprintf ppf "f: %a@." Pp.CC.pp_program f;
-      f
-    end
-  in
+  print_title ppf "CPS-translation";
+  let f, u''' = Translate.CC.translate ~config state.tyenv f in
+  assert (Typing.is_equal state.ty u''');
+  fprintf ppf "f: %a@." Pp.CC.pp_program f;
   let state = change_state_program f state in
   { state with tyenv = new_tyenv }
 

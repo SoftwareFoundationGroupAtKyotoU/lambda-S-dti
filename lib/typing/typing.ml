@@ -525,31 +525,35 @@ module ITGL = struct
     normalize_type u
 end
 
-let rec type_of_coercion = function
-  | CInj t -> (type_of_tag t, TyDyn)
-  | CProj (t, _) -> (TyDyn, type_of_tag t)
-  | CTvInj (tv, _) -> (TyVar tv, TyDyn)
-  | CTvProj (tv, _) -> (TyDyn, TyVar tv)
-  | CTvProjInj _ -> (TyDyn, TyDyn)
-  | CFun (c1, c2) -> 
-    let (u11, u12) = type_of_coercion c1 in
-    let (u21, u22) = type_of_coercion c2 in
-    (TyFun (u12, u21), TyFun (u11, u22))
-  | CList c ->
-    let u1, u2 = type_of_coercion c in
-    (TyList u1, TyList u2)
-  | CTuple cs ->
-    let us1, us2 = List.split (List.map (fun c -> type_of_coercion c) cs) in
-    (TyTuple us1, TyTuple us2) 
-  | CRef u -> (TyDyn, TyRef u) (* TyDyn for dummy *)
-  | CId u -> (u, u)
-  | CSeq (c1, c2) ->
-    let (u11, u12) = type_of_coercion c1 in
-    let (u21, u22) = type_of_coercion c2 in
-    if u12 = u21 then (u11, u22)
-    else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
-  | CFail _ -> assert false (* TODO *)
-  (* | _ -> raise @@ Type_bug "yet" *)
+let type_of_coercion c =
+  let rec coerce_pair = function
+    | CInj t -> type_of_tag t, TyDyn
+    | CProj (t, _) -> TyDyn, type_of_tag t
+    | CTvInj (tv, _) -> TyVar tv, TyDyn
+    | CTvProj (tv, _) -> TyDyn, TyVar tv
+    | CTvProjInj _ -> TyDyn, TyDyn
+    | CFun (c1, c2) ->
+      let u11, u12 = coerce_pair c1 in
+      let u21, u22 = coerce_pair c2 in
+      TyFun (u12, u21), TyFun (u11, u22)
+    | CList c ->
+      let u1, u2 = coerce_pair c in
+      TyList u1, TyList u2
+    | CTuple cs ->
+      let pairs = List.map (fun c -> coerce_pair c) cs in
+      let us1, us2 = List.split pairs in
+      TyTuple us1, TyTuple us2
+    | CRef u -> (TyDyn, TyRef u) (* TyDyn for dummy *)
+    | CId u -> u, u
+    | CSeq (c1, c2) ->
+      let u11, u12 = coerce_pair c1 in
+      let u21, u22 = coerce_pair c2 in
+      if u12 = u21 then u11, u22
+      else raise @@ Type_bug (asprintf "type mismatch in coercion sequence: %a, %a" pp_ty u12 pp_ty u21)
+    | CFail _ -> assert false
+  in
+  let c1, c2 = coerce_pair c in
+  TyCoercion (c1, c2)
 
 module CC = struct
   open Syntax.CC
@@ -615,14 +619,10 @@ module CC = struct
         u2
       else
         raise @@ Type_bug "if"
-    | FunBExp (tvs, (x, u1), f) ->
-      assert (tvs = []);
-      let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) f in
-      TyFun (u1, u2)
-    | FixBExp (tvs, (x, y, u1, u), f) ->
-      assert (tvs = []);
-      let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env)) f in
-      TyFun (u1, u2)
+    | FunExp (tvs, fund) ->
+      let TyScheme (_, u) = type_of_fund env tvs fund in u
+    | FixExp (tvs, fixd) ->
+      let TyScheme (_, u) = type_of_fixd env tvs fixd in u
     | AppMExp (f1, f2) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
@@ -631,53 +631,24 @@ module CC = struct
           u12
         | _ -> raise @@ Type_bug (Format.asprintf "app::: u1:%a, u2:%a" Pp.pp_ty u1 Pp.pp_ty u2)
       end
-    | CAppExp (f1, CoercionExp c) ->
-      let u = type_of_exp env f1 in 
-      let (u1, u2) = type_of_coercion c in 
-      if u = u1 || (match c with CRef _ -> true | _ -> false) then (* we can't create types from CRef *)
-        if is_consistent u1 u2 then
-          u2
-        else
-          raise @@ Type_bug "not consistent"
-      else
-        raise @@ Type_bug "invalid source type"
-    | CAppExp _ -> raise @@ Type_bug "CappExp f2 is not CoercionExp"
-    | CastExp (f, TyVar (_, { contents = Some u1 }), u2, r_p)
-    | CastExp (f, u1, TyVar (_, { contents = Some u2 }), r_p) ->
-      type_of_exp env @@ CastExp (f, u1, u2, r_p)
-    | CastExp (f, u1, u2, _) ->
-      let u = type_of_exp env f in
-      if u = u1 then
-        if is_consistent u1 u2 then
-          u2
-        else
-          raise @@ Type_bug "not consistent"
-      else
-        raise @@ Type_bug "invalid source type"
+    | AppDExp (f1, (f2, f3)) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      let u3 = type_of_exp env f3 in
+      begin match u1, u3 with
+      | TyFun (u11, u12), TyCoercion (u31, u32) when u11 = u2 && u12 = u31 -> u32
+      | _ -> raise @@ Type_bug (Format.asprintf "AppDExp")
+      end
     | MatchExp (f, ms) ->
-      let u_match = type_of_exp env f in 
-      let u = type_of_ms env u_match ms in
-      u
-    | LetExp (x, f1, f2) (*when is_value f1*) -> 
+      let u_match = type_of_exp env f in
+      type_of_ms env u_match ms
+    | LetExp (x, f1, f2) ->
       let us1 = match f1 with
-        | FunBExp (xs, (y, u1), f) -> 
-          let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) env) f in
-          TyScheme (xs, TyFun (u1, u2))
-        | FixBExp (xs, (x', y, u1, u), f) -> 
-          assert (x = x');
-          let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env)) f in
-          TyScheme (xs, TyFun (u1, u2))
-        | FunTyExp (xs, f) ->
-          let u = type_of_exp env f in
-          TyScheme (xs, u)
-        | f1 ->
-          let u = type_of_exp env f1 in
-          tysc_of_ty u
+        | FunExp (xs, fd) -> type_of_fund env xs fd
+        | FixExp (tvs, fixd) -> type_of_fixd env tvs fixd
+        | f1 -> tysc_of_ty (type_of_exp env f1)
       in
-      let u2 = type_of_exp (Environment.add x us1 env) f2 in
-      u2
-    (* | LetExp _ ->
-      raise @@ Type_bug "invalid translation for let expression" *)
+      type_of_exp (Environment.add x us1 env) f2
     | NilExp u -> TyList u
     | ConsExp (f1, f2) ->
       let u2 = type_of_exp env f2 in
@@ -708,18 +679,91 @@ module CC = struct
       let u2 = type_of_exp env f2 in
       if u1 = TyRef u2 then
         if is_static_type u2 then TyUnit
-        else raise @@ Type_bug "NonAnotated deref with non-static type"
+        else raise @@ Type_bug "NonAnotated subst with non-static type"
       else raise @@ Type_bug "subst"
     | SubstAnotExp (f1, f2, u) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       if u1 = TyRef u2 && u2 = u then
         if not @@ is_static_type u2 then TyUnit
-        else raise @@ Type_bug "Anotated deref with static type"
+        else raise @@ Type_bug "Anotated subst with static type"
       else raise @@ Type_bug "substAnot"
-    | FunSExp _ | FixSExp _ | FunDualExp _ | FixDualExp _ | CoercionExp _ | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "yet"
-    | FunTyExp _ -> raise @@ Type_bug "should not occur FunTyExp outside of let"
-    (* | _ -> raise @@ Failure "yet" *)
+    | CoercionExp c -> type_of_coercion c
+    | CAppExp (f1, f2) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      begin match u2 with
+      | TyCoercion (u21, u22) when u1 = u21 -> u22
+      | _ -> raise @@ Type_bug (asprintf "CAppExp")
+      end
+    | CSeqExp (f1, f2) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      begin match u1, u2 with
+      | TyCoercion (u11, u12), TyCoercion (u21, u22) when u12 = u21 -> TyCoercion (u11, u22)
+      | _ -> raise @@ Type_bug (asprintf "CSeqExp: %a, %a" pp_ty u1 pp_ty u2)
+      end
+    | CastExp (f, u1, u2, _) ->
+      let u = type_of_exp env f in
+      if u = u1 then
+        if is_consistent u1 u2 then u2
+        else raise @@ Type_bug "not consistent"
+      else raise @@ Type_bug "invalid source type"
+  and type_of_fund env tvs fd = match fd with
+    | FunB ((x, u1), f) ->
+      let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) f in
+      TyScheme (tvs, TyFun (u1, u2))
+    | FunS ((x, u1), (k, uk), f) ->
+      begin match uk with
+      | TyCoercion (uk1, uk2) ->
+        let env = Environment.add k (tysc_of_ty uk) (Environment.add x (tysc_of_ty u1) env) in
+        let u2' = type_of_exp env f in
+        assert (u2' = uk2);
+        TyScheme (tvs, TyFun (u1, uk1))
+      | _ -> raise @@ Type_bug "FunS uk"
+      end
+    | FunDual ((x, u1), (k, uk), (f1, f2)) ->
+      begin match uk with
+      | TyCoercion (uk1, uk2) ->
+        let env = Environment.add x (tysc_of_ty u1) env in
+        let u2 = type_of_exp env f1 in
+        assert (u2 = uk1);
+        let env = Environment.add k (tysc_of_ty uk) env in
+        let u2' = type_of_exp env f2 in
+        assert (u2' = uk2);
+        TyScheme (tvs, TyFun (u1, u2))
+      | _ -> raise @@ Type_bug "FunDual uk"
+      end
+    | FunTy f ->
+      TyScheme (tvs, type_of_exp env f)
+  and type_of_fixd env tvs fixd = match fixd with
+    | FixB (x, (y, u1), u2, f) ->
+      let env = Environment.add y (tysc_of_ty u1) @@ Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
+      let u2' = type_of_exp env f in
+      assert (u2' = u2);
+      TyScheme (tvs, TyFun (u1, u2))
+    | FixS (x, (y, u1), u2, (k, uk), f) ->
+      begin match uk with
+      | TyCoercion (uk1, uk2) ->
+        assert (uk1 = u2);
+        let env = Environment.add k (tysc_of_ty uk) @@ Environment.add y (tysc_of_ty u1) @@ Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
+        let u2' = type_of_exp env f in
+        assert (u2' = uk2);
+        TyScheme (tvs, TyFun (u1, u2))
+      | _ -> raise @@ Type_bug "FixS uk"
+      end
+    | FixDual (x, (y, u1), u2, (k, uk), (f1, f2)) ->
+      begin match uk with
+      | TyCoercion (uk1, uk2) ->
+        assert (uk1 = u2);
+        let env = Environment.add y (tysc_of_ty u1) @@ Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
+        let u2 = type_of_exp env f1 in
+        assert (uk1 = u2);
+        let u2' = type_of_exp (Environment.add k (tysc_of_ty uk) env) f2 in
+        assert (u2' = uk2);
+        TyScheme (tvs, TyFun (u1, u2))
+      | _ -> raise @@ Type_bug "FixDual uk"
+      end
   and type_of_ms env u_match = function
     | (mf, f) :: t ->
       let u_match', env' = type_of_matchform env mf in
@@ -734,16 +778,11 @@ module CC = struct
 
   let type_of_program env = function
     | Exp e -> type_of_exp env e
-    | LetDecl (x, f) -> match f with
-      | FunBExp (_, (y, u1), f) -> 
-        let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) env) f in
-        TyFun (u1, u2)
-      | FixBExp (_, (x', y, u1, u), f) -> 
-        assert (x = x');
-        let u2 = type_of_exp (Environment.add y (tysc_of_ty u1) (Environment.add x (tysc_of_ty (TyFun (u1, u))) env)) f in
-        TyFun (u1, u2)
-      | FunTyExp (_, f) ->
-        type_of_exp env f
-      | f ->
-        type_of_exp env f
+    | LetDecl (_, f) ->
+      let TyScheme (_, u) = match f with
+        | FunExp (tvs, fund) -> type_of_fund env tvs fund
+        | FixExp (tvs, fixd) -> type_of_fixd env tvs fixd
+        | f -> tysc_of_ty (type_of_exp env f)
+      in
+      u
 end

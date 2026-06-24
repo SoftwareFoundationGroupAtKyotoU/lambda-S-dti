@@ -15,7 +15,7 @@ let rec level_ty = function
   | TyDyn | TyVar _ | TyInt | TyBool | TyUnit -> 100
   | TyList _ | TyRef _ -> 90
   | TyTuple _ -> 80
-  | TyFun _ -> 70
+  | TyFun _ | TyCoercion _ -> 70
 
 let gt_ty u1 u2 = level_ty u1 > level_ty u2
 
@@ -41,6 +41,10 @@ let pp_ty_main ppf ~pp_tyvar u =
       fprintf ppf "%a"
         pp_list us
     | TyRef u' as u -> fprintf ppf "%a ref" (with_paren (gt_ty u u') pp_ty) u'
+    | TyCoercion (u1, u2) ->
+      fprintf ppf "%a ~> %a"
+        (with_paren (gte_ty u u1) pp_ty) u1
+        (with_paren (gte_ty u u2) pp_ty) u2
   in
   pp_ty ppf u
 

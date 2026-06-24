@@ -38,7 +38,7 @@ module ITGL : sig
   (* val normalize_coercion : coercion -> coercion *)
 end
 
-val type_of_coercion : coercion -> ty * ty
+val type_of_coercion : coercion -> ty
 
 module CC : sig
   open Syntax.CC

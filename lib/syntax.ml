@@ -37,7 +37,7 @@ type ty =
   | TyList of ty
   | TyTuple of ty list
   | TyRef of ty
-  (* | TyCoercion of ty * ty *)
+  | TyCoercion of ty * ty
 and tyvar = int * ty option ref
 (* int value is used to identify type variables.
  * ty option ref value is used to implement instantiation.
