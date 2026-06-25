@@ -1,344 +1,18 @@
 open Format
 open Syntax
+open Type_utils
+open Coercion
+open Normalize
 
 exception Eval_bug of string
 
-let subst_type = Typing.subst_type
-
-let fresh_tyvar = Typing.fresh_tyvar
-
-let type_of_tag = Typing.type_of_tag
-
-let tag_of_ty = Typing.tag_of_ty
-
 let nu_to_fresh = function
 | Ty u -> u
-| TyNu -> Typing.fresh_tyvar ()
-
-let rec subst_mf s = function
-  | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
-  | MatchWild u -> MatchWild (subst_type s u)
-  | MatchVar (x, u) -> MatchVar (x, subst_type s u)
-  | MatchNil u -> MatchNil (subst_type s u)
-  | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
-  | MatchTuple mfs -> MatchTuple (List.map (fun mf -> subst_mf s mf) mfs)
-
-let rec normalize_coercion ~monotonic c = match c with
-  | CId TyDyn -> c
-  | CSeq (CProj _ as c1, c2) -> CSeq (c1, normalize_coercion ~monotonic c2)
-  | CTvProj ((_, { contents = Some u }), r_p) ->
-    Translate.ITGL.make_s_coercion ~monotonic TyDyn r_p (Typing.ITGL.normalize_type u)
-  | CTvProj ((_, { contents = None }), _) -> c
-  | CTvInj ((_, { contents = Some u }), r_p) ->
-    Translate.ITGL.make_s_coercion ~monotonic (Typing.ITGL.normalize_type u) r_p TyDyn
-  | CTvInj ((_, { contents = None }), _) -> c
-  | CTvProjInj ((_, { contents = Some u }), r_p1, r_p2) ->
-    Translate.ITGL.make_static_middle_coercion ~monotonic r_p1 (Typing.ITGL.normalize_type u) r_p2
-  | CTvProjInj ((_, { contents = None }), _, _) -> c
-  | CSeq (c1, (CInj _ as c2)) -> CSeq (normalize_coercion ~monotonic c1, c2)
-  | CFail _ as c -> c
-  | CId u -> CId (Typing.ITGL.normalize_type u)
-  | CFun (s, t) ->
-    let s' = normalize_coercion ~monotonic s in
-    let t' = normalize_coercion ~monotonic t in
-    begin match s', t' with
-      | CId u1, CId u2 -> CId (TyFun (u1, u2))
-      | _ -> CFun (s', t')
-    end
-  | CList s ->
-    let s' = normalize_coercion ~monotonic s in
-    begin match s' with
-      | CId u -> CId (TyList u)
-      | _ -> CList s'
-    end
-  | CTuple ss ->
-    let rec check_id l r = match l with
-    | CId u :: t -> check_id t (u :: r)
-    | _ :: _ -> (false, r) (* r is dummy *)
-    | [] -> (true, List.rev r)
-    in
-    let (is_id, id_u) = check_id ss [] in
-    if is_id then CId (TyTuple id_u)
-    else CTuple ss
-  | CRef (c1, c2) ->
-    let c1 = normalize_coercion ~monotonic c1 in
-    let c2 = normalize_coercion ~monotonic c2 in
-    begin match c1, c2 with
-    | CId u, CId _ -> CId (TyRef u)
-    | _ -> CRef (c1, c2)
-    end
-  | CMRef (u1, u2) -> CMRef (Typing.ITGL.normalize_type u1, Typing.ITGL.normalize_type u2)
-  | c -> raise @@ Eval_bug (Format.asprintf "cannot normalize coercion: %a" Pp.pp_coercion c)
-
-let rec subst_coercion ~monotonic s = function
-  | CInj _ | CProj _ as c -> c
-  | CTvInj ((a, _ as tv), p) ->
-    let u = subst_type s (TyVar tv) in
-    normalize_coercion ~monotonic (CTvInj ((a, {contents = Some u}), p))
-  | CTvProj ((a, _ as tv), p) ->
-    let u = subst_type s (TyVar tv) in
-    normalize_coercion ~monotonic (CTvProj ((a, {contents = Some u}), p))
-  | CTvProjInj ((a, _ as tv), p, q) ->
-    let u = subst_type s (TyVar tv) in
-    normalize_coercion ~monotonic (CTvProjInj ((a, {contents = Some u}), p, q))
-  | CFun (c1, c2) -> CFun (subst_coercion ~monotonic s c1, subst_coercion ~monotonic s c2)
-  | CList c -> CList (subst_coercion ~monotonic s c)
-  | CTuple cs -> CTuple (List.map (fun c -> subst_coercion ~monotonic s c) cs)
-  | CId u -> CId (subst_type s u)
-  | CSeq (c1, c2) -> CSeq (subst_coercion ~monotonic s c1, subst_coercion ~monotonic s c2)
-  | CFail _ as c -> c
-  | CRef (c1, c2) -> CRef (subst_coercion ~monotonic s c1, subst_coercion ~monotonic s c2)
-  | CMRef (u1, u2) -> CMRef (subst_type s u1, subst_type s u2)
-
-let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
-  let debug = config.debug in
-  let monotonic = config.monotonic in
-  let compose = compose ~config in
-  if debug then fprintf err_formatter "comp <-- %a；%a@." Pp.pp_coercion c1 Pp.pp_coercion c2;
-  match normalize_coercion ~monotonic c1, normalize_coercion ~monotonic c2 with
-  (* id{star} ;;; t *)
-  | CId TyDyn, c2 -> c2
-  (* G?p;i ;;; t *)
-  | CSeq (CProj (t, p), c1), c2 -> CSeq (CProj (t, p), compose c1 c2)
-  (* X?p ;;; t *)
-  | CTvProj ((a1, _ as tv), p), CId (TyVar (a2, _)) when a1 = a2 -> CTvProj (tv, p)
-  | CTvProj ((a1, _ as tv), p), CTvInj ((a2, _), q) when a1 = a2 -> CTvProjInj (tv, p, q)
-  (* X! ;;; t *)
-  | CTvInj (tv, p), CId TyDyn -> CTvInj (tv, p)
-  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Ar, _), c2) ->
-    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
-    uref := Some (TyFun (x1, x2));
-    begin match x1, x2 with
-      | TyVar tv1, TyVar tv2 ->
-        compose (CFun (CTvProj (tv1, (r, neg p)), (CTvInj (tv2, (r, p))))) c2
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CTvInj ((_, uref as tv), p), CSeq (CProj (Li, _), c2) ->
-    let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
-    uref := Some (TyList x1);
-    begin match x1 with
-      | TyVar tv1 ->
-        compose (CList (CTvInj (tv1, p))) c2
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CTvInj ((_, uref as tv), p), CSeq (CProj ((Tp n), _), c2) ->
-    let xs = List.map (fun _ -> fresh_tyvar ()) (make_dyn_list n) in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyTuple xs);
-    uref := Some (TyTuple xs);
-    let rec make_c1 l r = match l with
-    | TyVar tv :: t -> 
-      make_c1 t (CTvInj (tv, p) :: r)
-    | _ :: _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    | [] -> CTuple (List.rev r)
-    in
-    compose (make_c1 xs []) c2
-  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Rf, _), c2) ->
-    let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyRef x1);
-    uref := Some (TyRef x1);
-    begin match x1 with
-      | TyVar tv1 ->
-        if config.monotonic then compose (CMRef (x1, TyDyn)) c2
-        else compose (CRef (CTvInj (tv1, (r, p)), CTvProj (tv1, (r, neg p)))) c2
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CTvInj ((_, uref as tv), _), CSeq (CProj (t, _), c2) -> 
-    let u = type_of_tag t in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
-    uref := Some u;
-    compose (CId u) c2
-  | CTvInj ((a1, uref as tv1), _), CTvProj ((a2, _ as tv2), _) -> 
-    if a1 = a2 then CId (TyVar tv1)
-    else begin 
-      if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv1) Pp.pp_ty (TyVar tv2);
-      uref := Some (TyVar tv2); 
-      CId (TyVar tv2)
-    end
-  | CTvInj (tv1, p), CTvProjInj (tv2, q, r) ->
-    compose (compose (CTvInj (tv1, p)) (CTvProj (tv2, q))) (CTvInj (tv2, r))
-    (* if a1 = a2 then CTvInj tv1
-    else (uref := Some (TyVar tv2); CTvInj tv2) *)
-  (* ?pX! ;;; t *)
-  | CTvProjInj (tv, p, q), c2 ->
-    compose (CTvProj (tv, p)) (compose (CTvInj (tv, q)) c2)
-  (* | CTvProjInj (tv, p), CId TyDyn -> CTvProjInj (tv, p)
-  | CTvProjInj ((_, uref), p), CSeq (CProj (Ar, (r', q)), c2) ->
-    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    uref := Some (TyFun (x1, x2));
-    begin match x1, x2 with
-    | TyVar tv1, TyVar tv2 ->
-      compose (CSeq (CProj (Ar, p), CFun (CTvProjInj (tv1, (r', neg q)), CTvProjInj (tv2, p)))) c2
-    | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CTvProjInj ((_, uref), p), CSeq (CProj (t, _), c2) -> 
-    uref := Some (type_of_tag t);
-    compose (CSeq (CProj (t, p), CId (type_of_tag t))) c2
-  | CTvProjInj ((a1, uref as tv1), p), CTvProj ((a2, _ as tv2), _) -> 
-    if a1 = a2 then CTvProj (tv1, p)
-    else (uref := Some (TyVar tv2); CTvProj (tv2, p))
-  | CTvProjInj ((a1, uref as tv1), p), CTvProjInj ((a2, _ as tv2), _) ->
-    if a1 = a2 then CTvProjInj (tv1, p)
-    else (uref := Some (TyVar tv2); CTvProjInj (tv2, p)) *)
-  (* i ;;; t *)
-  | CSeq (_, CInj _) as c1, CId TyDyn -> c1
-  | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
-    if t = t' then compose c1 c2 
-    else CFail (t, p, t')
-  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), (r, p)) ->
-    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
-    uref := Some (TyFun (x1, x2));
-    begin match x1, x2 with
-      | TyVar tv1, TyVar tv2 ->
-        compose c1 (CFun (CTvInj (tv1, (r, neg p)), CTvProj (tv2, (r, p))))
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CSeq (c1, CInj Li), CTvProj ((_, uref as tv), p) ->
-    let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyList x1);
-    uref := Some (TyList x1);
-    begin match x1 with
-      | TyVar tv1 ->
-        compose c1 (CList (CTvProj (tv1, p)))
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CSeq (c1, CInj (Tp n)), CTvProj ((_, uref as tv), p) ->
-    let xs = List.map (fun _ -> fresh_tyvar ()) (make_dyn_list n) in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyTuple xs);
-    uref := Some (TyTuple xs);
-    let rec make_c2 l r = match l with
-    | TyVar tv :: t -> 
-      make_c2 t (CTvProj (tv, p) :: r)
-    | _ :: _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    | [] -> CTuple (List.rev r)
-    in
-    compose c1 (make_c2 xs [])
-  | CSeq (c1, CInj Rf), CTvProj ((_, uref as tv), (r, p)) ->
-    let x1 = fresh_tyvar () in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyRef x1);
-    uref := Some (TyRef x1);
-    begin match x1 with
-      | TyVar tv1 ->
-        if config.monotonic then compose c1 (CMRef (TyDyn, x1))
-        else compose c1 (CRef (CTvProj (tv1, (r, p)), CTvInj (tv1, (r, neg p))))
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
-    let u = type_of_tag t in
-    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
-    uref := Some u;
-    compose c1 (CId u)
-  | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p, q) ->
-    compose (compose c1 (CTvProj (tv, p))) (CTvInj (tv, q))
-  (* | CSeq (c1, CInj Ar), CTvProjInj ((_, uref), (r, p)) ->
-    let x1, x2 = fresh_tyvar (), fresh_tyvar () in
-    uref := Some (TyFun (x1, x2));
-    begin match x1, x2 with
-      | TyVar tv1, TyVar tv2 ->
-        compose c1 (CSeq (CFun (CTvProjInj (tv1, (r, neg p)), CTvProjInj (tv2, (r, p))), CInj Ar))
-      | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
-    end
-  | CSeq (c1, CInj t), CTvProjInj ((_, uref), _) ->
-    uref := Some (type_of_tag t);
-    compose c1 (CSeq (CId (type_of_tag t), CInj t)) *)
-  | CFail _ as c1, _ -> c1
-  (* g ;;; i *)
-  | _, (CFail _ as c2) (*when is_g c1*) -> c2
-  | c1, CSeq (c2, CInj t) (*when is_g c1*) -> CSeq (compose c1 c2, CInj t)
-  (* g ;;; g *)
-  | CId _, c2 -> c2
-  | c1, CId _ -> c1
-  | CFun (s, t), CFun (s', t') ->
-    let c1 = compose s' s in
-    let c2 = compose t t' in
-    begin match c1, c2 with
-      | CId u1, CId u2 -> CId (TyFun (u1, u2))
-      | _ -> CFun (c1, c2) 
-    end
-  | CList s, CList s' ->
-    let c = compose s s' in
-    begin match c with
-      | CId u -> CId (TyList u)
-      | _ -> CList c
-    end
-  | CTuple ss1, CTuple ss2 ->
-    let ss = List.map2 (fun s1 s2 -> compose s1 s2) ss1 ss2 in
-    let rec check_id l r = match l with
-    | CId u :: t -> check_id t (u :: r)
-    | _ :: _ -> (false, r) (* r is dummy *)
-    | [] -> (true, List.rev r)
-    in
-    let (is_id, id_u) = check_id ss [] in
-    if is_id then CId (TyTuple id_u)
-    else CTuple ss
-  | CRef (c_r1, c_w1), CRef (c_r2, c_w2) ->
-    let c_r = compose c_r1 c_r2 in
-    let c_w = compose c_w2 c_w1 in
-    begin match c_r, c_w with
-    | CId u, CId _ -> CId (TyRef u)
-    | _ -> CRef (c_r, c_w)
-    end
-  | CMRef (u11, u12), CMRef (u21, u22) ->
-    begin try
-      let u1 = Typing.ITGL.type_of_meet u11 u21 in
-      let u2 = Typing.ITGL.type_of_meet u12 u22 in
-      CMRef (u1, u2)
-    with Typing.Type_error _ -> CFail (Rf, (Utils.Error.dummy_range, Pos), Rf) end (* TODO *)
-  | _ -> raise @@ Eval_bug "cannot compose coercions"
+| TyNu -> fresh_tyvar ()
 
 module CC = struct
   open Syntax.CC
-
-  let rec subst_exp ~monotonic s = function
-    | Var (x, ys) ->
-      let subst_type = function
-        | Ty u -> Ty (subst_type s u)
-        | TyNu -> TyNu
-      in
-      Var (x, List.map subst_type ys)
-    | IConst _
-    | BConst _
-    | UConst as f -> f
-    | BinOp (op, f1, f2) -> BinOp (op, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | IfExp (f1, f2, f3) -> IfExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3)
-    | FunExp (tvs, fd) ->
-      (* Remove substitutions captured by tvs *)
-      let s = List.filter (fun (x, _) -> not @@ List.memq x tvs) s in
-      FunExp (tvs, subst_fund ~monotonic s fd)
-    | FixExp (tvs, fixd) ->
-      let s = List.filter (fun (x, _) -> not @@ List.memq x tvs) s in
-      FixExp (tvs, subst_fixd ~monotonic s fixd)
-    | NilExp u -> NilExp (subst_type s u)
-    | ConsExp (f1, f2) -> ConsExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | TupleExp fs -> TupleExp (List.map (fun f -> subst_exp ~monotonic s f) fs)
-    | AppMExp (f1, f2) -> AppMExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | AppDExp (f1, (f2, f3)) -> AppDExp (subst_exp ~monotonic s f1, (subst_exp ~monotonic s f2, subst_exp ~monotonic s f3))
-    | CastExp (f, u1, u2, r_p) -> CastExp (subst_exp ~monotonic s f, subst_type s u1, subst_type s u2, r_p)
-    | CoercionExp c -> CoercionExp (subst_coercion ~monotonic s c)
-    | CAppExp (f1, f2) -> CAppExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | CSeqExp (f1, f2) -> CSeqExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | MatchExp (f, ms) ->
-      MatchExp (subst_exp ~monotonic s f, List.map (fun (mf, f) -> subst_mf s mf, subst_exp ~monotonic s f) ms)
-    | LetExp (y, f1, f2) ->
-      LetExp (y, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | RefExp (f, u) -> RefExp (subst_exp ~monotonic s f, subst_type s u)
-    | DerefExp (f, uo) -> DerefExp (subst_exp ~monotonic s f, Option.map (subst_type s) uo)
-    | SubstExp (f1, f2, uo) -> SubstExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, Option.map (subst_type s) uo)
-  and subst_fund ~monotonic s = function
-    | FunB ((x, u), f) -> FunB ((x, subst_type s u), subst_exp ~monotonic s f)
-    | FunS ((x, u1), (k, uk), f) ->
-      FunS ((x, subst_type s u1), (k, subst_type s uk), subst_exp ~monotonic s f)
-    | FunDual ((x, u1), (k, uk), (f1, f2)) ->
-      FunDual ((x, subst_type s u1), (k, subst_type s uk), (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2))
-    | FunTy f -> FunTy (subst_exp ~monotonic s f)
-  and subst_fixd ~monotonic s = function
-    | FixB (x, (y, u1), u2, f) -> FixB (x, (y, subst_type s u1), subst_type s u2, subst_exp ~monotonic s f)
-    | FixS (x, (y, u1), u2, (k, uk), f) ->
-      FixS (x, (y, subst_type s u1), subst_type s u2, (k, subst_type s uk), subst_exp ~monotonic s f)
-    | FixDual (x, (y, u1), u2, (k, uk), (f1, f2)) ->
-      FixDual (x, (y, subst_type s u1), subst_type s u2, (k, subst_type s uk), (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2))
+  open Subst.CC
 
   let eval_binop op v1 v2 =
     begin match op, v1, v2 with
@@ -478,7 +152,7 @@ module CC = struct
         match v, ou with
         | RefV { contents = (v, _) }, None -> v
         | RefV { contents = (v, u) }, Some u' ->
-          let s = Translate.ITGL.make_s_coercion ~monotonic (Typing.ITGL.normalize_type u) (Utils.Error.dummy_range, Pos) (Typing.ITGL.normalize_type u') in (* TODO *)
+          let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
           let v, psi = coerce ~config v s [] in
           consume ~config psi;
           v
@@ -495,7 +169,7 @@ module CC = struct
         match v1, ou with
         | RefV ({ contents = (_, u) } as rv), None -> rv := v2, u; UnitV
         | RefV ({ contents = (_, u) } as rv), Some u' ->
-          let s = Translate.ITGL.make_s_coercion ~monotonic (Typing.ITGL.normalize_type u') (Utils.Error.dummy_range, Pos) (Typing.ITGL.normalize_type u) in (* TODO *)
+          let s = make_s_coercion ~monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u) in (* TODO *)
           let v, psi = coerce ~config v2 s [] in
           rv := v, u;
           consume ~config psi;
@@ -597,7 +271,7 @@ module CC = struct
       | Tagged _, _ -> raise @@ Blame (r, p)
       | _ -> raise @@ Eval_bug "untagged value"
       end
-    | TyDyn, TyTuple us when us = make_dyn_list (List.length us) ->
+    | TyDyn, TyTuple us when List.fold_left (fun b u -> u = TyDyn && b) true us ->
       begin match v with
       | Tagged (Tp n, v) when n = List.length us -> v
       | Tagged _ -> raise @@ Blame (r, p)
@@ -642,7 +316,7 @@ module CC = struct
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
-    | TyTuple us, TyDyn when us = make_dyn_list (List.length us) -> Tagged (Tp (List.length us), v)
+    | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)
     | TyRef TyDyn, TyDyn -> Tagged (Rf, v)
     (* Ground *)
     | TyFun _, TyDyn ->
@@ -654,7 +328,7 @@ module CC = struct
       let v = cast ~config v u1 dlist (r, p) in
       cast ~config v dlist TyDyn (r, p)
     | TyTuple us, TyDyn ->
-      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
       let v = cast ~config v u1 dtuple (r, p) in
       cast ~config v dtuple TyDyn (r, p)
     | TyRef _, TyDyn ->
@@ -671,7 +345,7 @@ module CC = struct
       let v = cast ~config v TyDyn dlist (r, p) in
       cast ~config v dlist u2 (r, p)
     | TyDyn, TyTuple us ->
-      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
       let v = cast ~config v TyDyn dtuple (r, p) in
       cast ~config v dtuple u2 (r, p)
     | TyDyn, TyRef _ ->
@@ -689,29 +363,28 @@ module CC = struct
           x := Some u;
           v
         | Tagged (Ar, v) ->
-          let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
+          let u = TyFun (fresh_tyvar (), fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
           cast ~config v (TyFun (TyDyn, TyDyn)) u (r, p)
         | Tagged (Li, v) ->
-          let u = TyList (Typing.fresh_tyvar ()) in
+          let u = TyList (fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
           cast ~config v (TyList TyDyn) u (r, p)
         | Tagged (Tp n, v) ->
-          let dtuple_con = make_dyn_list n in
-          let u = TyTuple (List.map (fun _ -> fresh_tyvar ()) dtuple_con) in
+          let u = TyTuple (List.init n (fun _ -> fresh_tyvar ())) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
           x := Some u;
-          cast ~config v (TyTuple dtuple_con) u (r, p)
+          cast ~config v (TyTuple (List.init n (fun _ -> TyDyn))) u (r, p)
         | Tagged (Rf, v) ->
-          let u = TyRef (Typing.fresh_tyvar ()) in
+          let u = TyRef (fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'
             Pp.pp_ty u;
@@ -753,7 +426,7 @@ module CC = struct
       if u'' = u' then
         consume ~config psi
       else begin
-        let s = Translate.ITGL.make_s_coercion ~monotonic:config.monotonic (Typing.ITGL.normalize_type u') (Utils.Error.dummy_range, Pos) (Typing.ITGL.normalize_type u'') in (* TODO *)
+        let s = make_s_coercion ~monotonic:config.monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u'') in (* TODO *)
         let v, psi = coerce ~config v s psi in
         rv := v, u'';
         consume ~config psi
@@ -797,30 +470,7 @@ end
 
 module KNorm = struct
   open Syntax.KNorm
-
-  let rec subst_exp ~monotonic s =
-    let subst_type_k s = function
-      | Ty u -> Ty (subst_type s u)
-      | TyNu -> TyNu
-    in function
-    | Var _ | IConst _ | Nil as f -> f
-    | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ as f -> f
-    | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp ~monotonic s f) ms)
-    | AppDExp _ | AppMExp _ | CAppExp _ | CSeqExp _ as f -> f
-    | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_type_k s) tas)
-    | CastExp (x, u1, u2, r_p) -> CastExp (x, subst_type s u1, subst_type s u2, r_p)
-    | CoercionExp c -> CoercionExp (subst_coercion ~monotonic s c)
-    | LetExp (x, f1, f2) ->
-      LetExp (x, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | LetFunExp (x, tvs, fd, f) ->
-      LetFunExp (x, tvs, subst_fd ~monotonic s fd, subst_exp ~monotonic s f)
-  and subst_fd ~monotonic s = function
-    | FunB (arg, f) -> FunB (arg, subst_exp ~monotonic s f)
-    | FunS (arg, f) -> FunS (arg, subst_exp ~monotonic s f)
-    | FunDual (arg, (f, f')) -> FunDual (arg, (subst_exp ~monotonic s f, subst_exp ~monotonic s f'))
-    | FunTy f -> FunTy (subst_exp ~monotonic s f)
+  open Subst.KNorm
 
   let rec eval_exp ~(config:Config.t) kenv f =
     let monotonic = config.monotonic in
@@ -1025,7 +675,7 @@ module KNorm = struct
       | Tagged _, _ -> raise @@ Blame (r, p)
       | _ -> raise @@ Eval_bug "untagged value"
       end
-    | TyDyn, TyTuple us when us = make_dyn_list (List.length us) ->
+    | TyDyn, TyTuple us when List.fold_left (fun b u -> u = TyDyn && b) true us ->
       begin match v with
       | Tagged (Tp n, v) when n = List.length us -> v
       | Tagged _ -> raise @@ Blame (r, p)
@@ -1069,7 +719,7 @@ module KNorm = struct
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
-    | TyTuple us, TyDyn when us = make_dyn_list (List.length us) -> Tagged (Tp (List.length us), v)
+    | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)
     | TyRef TyDyn, TyDyn -> Tagged (Rf, v)
     (* Ground *)
     | (TyFun _ as u1), (TyDyn as u2) ->
@@ -1081,7 +731,7 @@ module KNorm = struct
       let v = cast ~config v u1 dlist (r, p) in
       cast ~config v dlist TyDyn (r, p)
     | TyTuple us, TyDyn ->
-      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
       let v = cast ~config v u1 dtuple (r, p) in
       cast ~config v dtuple TyDyn (r, p)
     | TyRef _, TyDyn ->
@@ -1098,7 +748,7 @@ module KNorm = struct
       let v = cast ~config v TyDyn dlist (r, p) in
       cast ~config v dlist u2 (r, p)
     | TyDyn, TyTuple us ->
-      let dtuple = TyTuple (make_dyn_list (List.length us)) in
+      let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
       let v = cast ~config v TyDyn dtuple (r, p) in
       cast ~config v dtuple u2 (r, p)
     | TyDyn, TyRef _ ->
@@ -1116,29 +766,28 @@ module KNorm = struct
           x := Some u;
           v
         | Tagged (Ar, v) -> 
-          let u = TyFun (Typing.fresh_tyvar (), Typing.fresh_tyvar ()) in
+          let u = TyFun (fresh_tyvar (), fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;
           x := Some u;
           cast ~config v (TyFun (TyDyn, TyDyn)) u (r, p)
         | Tagged (Li, v) ->
-          let u = TyList (Typing.fresh_tyvar ()) in
+          let u = TyList (fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;
           x := Some u;
           cast ~config v (TyList TyDyn) u (r, p)
         | Tagged (Tp n, v) ->
-          let dtuple_con = make_dyn_list n in
-          let u = TyTuple (List.map (fun _ -> fresh_tyvar ()) dtuple_con) in
+          let u = TyTuple (List.init n (fun _ -> fresh_tyvar ())) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;
           x := Some u;
-          cast ~config v (TyTuple dtuple_con) u (r, p)
+          cast ~config v (TyTuple (List.init n (fun _ -> TyDyn))) u (r, p)
         | Tagged (Rf, v) ->
-          let u = TyRef (Typing.fresh_tyvar ()) in
+          let u = TyRef (fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty u'
             Pp.pp_ty u;

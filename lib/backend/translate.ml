@@ -1,12 +1,10 @@
 open Pp
+open Ftv
 open Syntax
 open Format
+open Type_utils
 
 exception Translation_bug of string
-
-(* let type_of_tag = Typing.type_of_tag *)
-
-let tag_of_ty = Typing.tag_of_ty
 
 (* These functions (dom, cod, elm, cont, meet) only can be used for normalized types *)
 let dom = function
@@ -58,100 +56,19 @@ let rec meet u1 u2 = match u1, u2 with
 
 module ITGL = struct
   open Syntax.ITGL
+  open Tv.ITGL
+  open Ftv.ITGL
 
   let closure_tyvars_let_decl1 e u1 env =
     TV.elements @@ TV.diff (TV.union (tv_exp e) (ftv_ty u1)) (ftv_tyenv env)
 
   let closure_tyvars2 w1 env u1 v1 =
     let ftvs = TV.big_union [ftv_tyenv env; ftv_ty u1; ftv_exp v1] in
-    TV.elements @@ TV.diff (Syntax.CC.ftv_exp w1) ftvs
+    TV.elements @@ TV.diff (Ftv.CC.ftv_exp w1) ftvs
   
   let closure_tyvars_let_decl2 w1 env u1 v1 =
     let ftvs = TV.big_union [ftv_tyenv env; ftv_ty u1; tv_exp v1] in
-    TV.elements @@ TV.diff (Syntax.CC.ftv_exp w1) ftvs
-
-  (* Cast insertion translation *)
-  let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
-    | i1, i2 when is_base_type i1 && is_base_type i2 && i1 = i2 -> CId i1
-    | TyVar (i1, {contents = None}) as t, TyVar (i2, {contents = None}) when i1 = i2 -> CId t
-    | TyFun (u11, u12), TyFun (u21, u22) ->
-      let s1 = make_s_coercion ~monotonic u21 (r, neg p) u11 in
-      let s2 = make_s_coercion ~monotonic u12 (r, p) u22 in
-      begin match s1, s2 with
-      | CId u1, CId u2 -> CId (TyFun (u1, u2))
-      | _ -> CFun (s1, s2)
-      end
-    | TyList u1, TyList u2 ->
-      let s = make_s_coercion ~monotonic u1 (r, p) u2 in
-      begin match s with
-      | CId u -> CId (TyList u)
-      | _ -> CList s
-      end
-    | TyTuple us1, TyTuple us2 ->
-      let ss = List.map2 (fun u1 u2 -> make_s_coercion ~monotonic u1 (r, p) u2) us1 us2 in
-      let rec check_id l r = match l with
-      | CId u :: t -> check_id t (u :: r)
-      | _ :: _ -> (false, r) (* r is dummy *)
-      | [] -> (true, List.rev r)
-      in
-      let (is_id, id_u) = check_id ss [] in
-      if is_id then CId (TyTuple id_u)
-      else CTuple ss
-    | TyRef u1, TyRef u2 ->
-      if monotonic then
-        if u1 = u2 then CId (TyRef u1)
-        else CMRef (u1, u2)
-      else
-        let c_r = make_s_coercion ~monotonic u1 (r, p) u2 in
-        let c_w = make_s_coercion ~monotonic u2 (r, neg p) u1 in
-        begin match c_r, c_w with
-        | CId u, CId _ -> CId (TyRef u)
-        | _ -> CRef (c_r, c_w)
-        end
-    | TyDyn, TyDyn -> CId TyDyn
-    | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
-    | TyFun _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyFun (TyDyn, TyDyn)), CInj Ar)
-    | TyList _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyList TyDyn), CInj Li)
-    | TyTuple us as u, TyDyn ->
-      let n = List.length us in
-      CSeq (make_s_coercion ~monotonic u (r, p) (TyTuple (make_dyn_list n)), CInj (Tp n))
-    | TyRef _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyRef TyDyn), CInj Rf)
-    | TyVar tv, TyDyn -> CTvInj (tv, (r, p))
-    | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
-    | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion ~monotonic (TyFun (TyDyn, TyDyn)) (r, p) u)
-    | TyDyn, (TyList _ as u) -> CSeq (CProj (Li, (r, p)), make_s_coercion ~monotonic (TyList TyDyn) (r, p) u)
-    | TyDyn, (TyTuple us as u) ->
-      let n = List.length us in
-      CSeq (CProj (Tp n, (r, p)), make_s_coercion ~monotonic (TyTuple (make_dyn_list n)) (r, p) u)
-    | TyDyn, (TyRef _ as u) -> CSeq (CProj (Rf, (r, p)), make_s_coercion ~monotonic (TyRef TyDyn) (r, p) u)
-    | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
-    | _ -> raise @@ Translation_bug (Format.asprintf "cannot exist such coercion: %a and %a in %a" Pp.pp_ty u1 Pp.pp_ty u2 Utils.Error.pp_range r)
-
-  let rec make_static_middle_coercion ~monotonic (r1, p1) u (r2, p2) = match u with
-    | TyVar tv -> CTvProjInj (tv, (r1, p1), (r2, p2))
-    | TyInt | TyBool | TyUnit as g -> CSeq (CProj (tag_of_ty g, (r1, p1)), CSeq (CId g, CInj (tag_of_ty g)))
-    | TyFun (u1, u2) ->
-      let c1 = make_static_middle_coercion ~monotonic (r2, neg p2) u1 (r1, neg p1) in
-      let c2 = make_static_middle_coercion ~monotonic (r1, p1) u2 (r2, p2) in
-      CSeq (CProj (Ar, (r1, p1)), CSeq (CFun (c1, c2), CInj Ar))
-    | TyList u ->
-      let c = make_static_middle_coercion ~monotonic (r1, p1) u (r2, p2) in
-      CSeq (CProj (Li, (r1, p1)), CSeq (CList c, CInj Li))
-    | TyTuple us ->
-      let n = List.length us in
-      let cs = List.map (fun u -> make_static_middle_coercion ~monotonic (r1, p1) u (r2, p2)) us in
-      CSeq (CProj (Tp n, (r1, p1)), CSeq (CTuple cs, CInj (Tp n)))
-    | TyRef u ->
-      let c = 
-        if monotonic then CMRef (TyDyn, u)
-        else
-          let c1 = make_static_middle_coercion ~monotonic (r1, p1) u (r2, p2) in
-          let c2 = make_static_middle_coercion ~monotonic (r2, neg p2) u (r1, neg p1) in
-          CRef (c1, c2)
-      in
-        CSeq (CProj (Rf, (r1, p1)), CSeq (c, CInj Rf))
-    | TyCoercion _ -> raise @@ Translation_bug "static_middle: TyCoercion is inserted"
-    | TyDyn -> raise @@ Translation_bug "static_middle: not static"
+    TV.elements @@ TV.diff (Ftv.CC.ftv_exp w1) ftvs
 
   let cast f r u1 u2 =
     if u1 = u2 then f  (* Omit identity cast for better performance *)
@@ -159,7 +76,7 @@ module ITGL = struct
 
   let coerce ~monotonic f r u1 u2 = (* this is not same as ldti about blame label r *)
     if u1 = u2 then f (* Omit identity coercion for better performance *)
-    else CC.CAppExp (f, CC.CoercionExp (make_s_coercion ~monotonic u1 (r, Pos) u2))
+    else CC.CAppExp (f, CC.CoercionExp (Coercion.make_s_coercion ~monotonic u1 (r, Pos) u2))
   
   let rec translate_mf env mf = match mf with 
     | MatchILit _ -> env, mf, TyInt
@@ -193,7 +110,7 @@ module ITGL = struct
         let s = Utils.List.zip xs !ys in
         let ys = List.map (fun (x, u) -> if TV.mem x ftvs then Ty u else TyNu) s in
         let ys = ys @ Utils.List.repeat TyNu (List.length xs - List.length ys) in
-        let u = Typing.subst_type (List.filter (fun (x, _) -> TV.mem x ftvs) s) u in
+        let u = Subst.subst_type (List.filter (fun (x, _) -> TV.mem x ftvs) s) u in
         CC.Var (x, ys), u
       with Not_found ->
         raise @@ Translation_bug "variable not found during cast-inserting translation"
@@ -277,13 +194,13 @@ module ITGL = struct
     | DerefExp (r, e) ->
       let f, u = translate_exp ~config env e in
       let u' = cont u in
-      if Typing.is_static_type u then CC.DerefExp (f, None), u'
+      if Type_utils.is_static_type u then CC.DerefExp (f, None), u'
       else CC.DerefExp (c f r u (TyRef u'), Some u'), u'
     | SubstExp (r, e1, e2) ->
       let f1, u1 = translate_exp ~config env e1 in
       let f2, u2 = translate_exp ~config env e2 in
       let u1' = cont u1 in
-      if Typing.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
+      if Type_utils.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
       else CC.SubstExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', Some u1'), TyUnit
     (* | _ -> raise @@ Translation_bug "yet" *)
   and translate_ms ~config env = function
@@ -355,8 +272,8 @@ module CC = struct
       let ftvs = ftv_ty u in
       let s = Utils.List.zip xs ys in
       let s = List.filter (fun (x, _) -> TV.mem x ftvs) s in
-      let s = List.map (fun (x, u) -> x, Typing.tyarg_to_ty u) s in
-      let u = Typing.subst_type s u in
+      let s = List.map (fun (x, u) -> x, Type_utils.tyarg_to_ty u) s in
+      let u = Subst.subst_type s u in
       Var (x, ys), u
     | IConst i -> IConst i, TyInt
     | BConst b -> BConst b, TyBool
@@ -427,7 +344,7 @@ module CC = struct
         if config.intoB then FunB ((x, u1), f_direct)
         else
           let id = fresh_CVar () in
-          let u_ans = Typing.fresh_tyvar () in
+          let u_ans = Type_utils.fresh_tyvar () in
           let uk = TyCoercion (u2, u_ans) in
           let env = Environment.add id (tysc_of_ty uk) env in
           let k = Var (id, []) in
@@ -449,7 +366,7 @@ module CC = struct
         if config.intoB then FixB (x, (y, u1), u2, f_direct)
         else
           let id = fresh_CVar () in
-          let u_ans = Typing.fresh_tyvar () in
+          let u_ans = Type_utils.fresh_tyvar () in
           let uk = TyCoercion (u2, u_ans) in
           let env = Environment.add id (tysc_of_ty uk) env in
           let k = Var (id, []) in

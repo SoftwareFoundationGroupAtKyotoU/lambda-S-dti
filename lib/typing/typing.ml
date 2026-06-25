@@ -1,81 +1,23 @@
 open Format
 open Pp
 open Syntax
+open Subst
+open Ftv
+open Type_utils
 
 exception Type_error of string
 
 (* Bug in this implementation *)
 exception Type_bug of string
 
-let fresh_tyvar =
-  let counter = ref 0 in
-  let body () =
-    let v = !counter in
-    counter := v + 1;
-    TyVar (!counter, ref None)
-  in body
-
-(* for assertion in main and tests *)
-let rec is_equal u1 u2 = match u1, u2 with
-  | TyVar (_, { contents = Some u1 }), u2
-  | u1, TyVar (_, { contents = Some u2 }) -> is_equal u1 u2
-  | TyDyn, TyDyn
-  | TyBool, TyBool
-  | TyInt, TyInt
-  | TyUnit, TyUnit -> true
-  | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
-  | TyFun (u11, u12), TyFun (u21, u22) ->
-    (is_equal u11 u21) && (is_equal u12 u22)
-  | TyList u1, TyList u2 -> is_equal u1 u2
-  | TyTuple us1, TyTuple us2 -> List.fold_left2 (fun b u1 u2 -> b && u1 = u2) true us1 us2
-  | TyRef u1, TyRef u2 -> is_equal u1 u2
-  | _ -> false
-
 let type_of_binop = function
   | Plus | Minus | Mult | Div | Mod -> TyInt, TyInt, TyInt
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
 
-let type_of_tag = type_of_tag
-
-let tag_of_ty = tag_of_ty
-
-let rec is_static_type = function
-  | TyDyn -> false
-  | TyVar (_, { contents = Some u }) -> is_static_type u
-  | TyFun (u1, u2) -> (is_static_type u1) && (is_static_type u2)
-  | TyList u -> is_static_type u
-  | TyTuple us -> List.fold_left (fun b u -> b && is_static_type u) true us
-  | TyRef u -> is_static_type u
-  | _ -> true
-
-(* Substitutions for type variables *)
-
-type substitution = tyvar * ty
-type substitutions = substitution list
-
-(* S(t) *)
-let subst_type (s: substitutions) (u: ty) =
-  (* {X':->U'}(U) *)
-  let rec subst u ((a', _), u' as s0) = match u with
-    | TyFun (u1, u2) -> TyFun (subst u1 s0, subst u2 s0)
-    | TyList u -> TyList (subst u s0)
-    | TyTuple us -> TyTuple (List.map (fun u -> subst u s0) us)
-    | TyRef u -> TyRef (subst u s0)
-    | TyVar (a, { contents = None }) when a = a' -> u'
-    | TyVar (_, { contents = Some u }) -> subst u s0
-    | _ as u -> u
-  in
-  List.fold_left subst u s
-
-(* When you're sure that this tyarg does not contain ν
- * you can convert it to ty *)
-let tyarg_to_ty = function
-  | Ty u -> u
-  | TyNu -> raise @@ Type_bug "failed to cast tyarg to ty"
-
 module ITGL = struct
   open Pp.ITGL
   open Syntax.ITGL
+  open Ftv.ITGL
 
   (* Unification *)
 
@@ -463,66 +405,6 @@ module ITGL = struct
     | LetDecl (x, e) ->
       let u = type_of_exp env e in
       LetDecl (x, e), u
-
-  (* Normalize type variables *)
-
-  let rec normalize_type = function
-    | TyVar (_, { contents = Some u }) -> normalize_type u
-    | TyFun (u1, u2) -> TyFun (normalize_type u1, normalize_type u2)
-    | TyList u -> TyList (normalize_type u)
-    | TyTuple us -> TyTuple (List.map (fun u -> normalize_type u) us)
-    | TyRef u -> TyRef (normalize_type u)
-    | _ as u -> u
-
-  let normalize_tyenv =
-    Environment.map @@ fun (TyScheme (xs, u)) -> TyScheme (xs, normalize_type u)
-
-  let rec normalize_matchform = function
-    | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
-    | MatchWild u -> MatchWild (normalize_type u)
-    | MatchVar (x, u) -> MatchVar (x, normalize_type u)
-    | MatchNil u -> MatchNil (normalize_type u)
-    | MatchCons (mf1, mf2) -> MatchCons (normalize_matchform mf1, normalize_matchform mf2)
-    | MatchTuple mfs -> MatchTuple (List.map (fun mf -> normalize_matchform mf) mfs)
-    (* | MatchAsc (mf, u) -> MatchAsc (normalize_matchform mf, normalize_type u) *)
-
-  let rec normalize_exp = function
-    | Var (r, x, ys) -> Var (r, x, ref @@ List.map normalize_type !ys)
-    | IConst _
-    | BConst _
-    | UConst _ as e -> e
-    | BinOp (r, op, e1, e2) ->
-      BinOp (r, op, normalize_exp e1, normalize_exp e2)
-    | AscExp (r, e, u) ->
-      AscExp (r, normalize_exp e, normalize_type u)
-    | IfExp (r, e1, e2, e3) ->
-      IfExp (r, normalize_exp e1, normalize_exp e2, normalize_exp e3)
-    | FunExp (r, (x1, anot, u1), e) ->
-      FunExp (r, (x1, anot, normalize_type u1), normalize_exp e)
-    | FixExp (r, x, (y, anot, u1), u2, e) ->
-      FixExp (r, x, (y, anot, normalize_type u1), normalize_type u2, normalize_exp e)
-    | AppExp (r, e1, e2) ->
-      AppExp (r, normalize_exp e1, normalize_exp e2)
-    | MatchExp (r, e, ms) ->
-      MatchExp (r, normalize_exp e, List.map (fun (mf, e) -> normalize_matchform mf, normalize_exp e) ms)
-    | LetExp (r, y, e1, e2) ->
-      LetExp (r, y, normalize_exp e1, normalize_exp e2)
-    | NilExp (r, u) -> NilExp (r, normalize_type u)
-    | ConsExp (r, e1, e2) -> ConsExp (r, normalize_exp e1, normalize_exp e2)
-    | TupleExp (r, es) -> TupleExp (r, List.map (fun e -> normalize_exp e) es)
-    | RefExp (r, e) -> RefExp (r, normalize_exp e)
-    | DerefExp (r, e) -> DerefExp (r, normalize_exp e)
-    | SubstExp (r, e1, e2) -> SubstExp (r, normalize_exp e1, normalize_exp e2)
-    (* | _ -> raise @@ Type_bug "yet" *)
-
-  let normalize_program = function
-    | Exp e -> Exp (normalize_exp e)
-    | LetDecl (x, e) -> LetDecl (x, normalize_exp e)
-
-  let normalize env p u =
-    normalize_tyenv env,
-    normalize_program p,
-    normalize_type u
 end
 
 let type_of_coercion c =

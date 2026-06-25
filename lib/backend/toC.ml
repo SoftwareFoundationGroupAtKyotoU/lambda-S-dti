@@ -4,6 +4,7 @@ open Format
 open Config
 open Utils.Error
 open Static_manage
+open Fv.Cls
 
 exception ToC_bug of string
 exception ToC_error of string
@@ -717,16 +718,16 @@ let toC_crcs ppf l ~config =
   ここで定義する内容はfun型の関数自体の定義 (*いらない：と，関数が格納されたvalue型の値の二つ*)
   fundef内のfvl(自由変数のリスト)とtvs(型変数のリスト)に要素が入っているかどうかで関数の型が異なるので，四通りの場合分けが発生する*)
 let toC_label ppf fundef ~config = match fundef with
-| FundefD { name = l; tvs = (_, _); arg = (_, _); formal_fv = _; body = _ } ->
-  fprintf ppf "static value fun_%s(value, value, value);"
-    l
-| FundefM { name = l; tvs = (_, _); arg = _; formal_fv = _; body = _ } ->
-  fprintf ppf "static value fun%s_%s(value, value);"
-    (if config.alt then "_alt" else "")
-    l
-| FundefTy { name = l; tvs = (_, _); formal_fv = _; body = _ } ->
-  fprintf ppf "static value tfun_%s(value, value);"
-    l
+  | FundefD { name = l; tvs = (_, _); arg = (_, _); formal_fv = _; body = _ } ->
+    fprintf ppf "static value fun_%s(value, value, value);"
+      l
+  | FundefM { name = l; tvs = (_, _); arg = _; formal_fv = _; body = _ } ->
+    fprintf ppf "static value fun%s_%s(value, value);"
+      (if config.alt then "_alt" else "")
+      l
+  | FundefTy { name = l; tvs = (_, _); formal_fv = _; body = _ } ->
+    fprintf ppf "static value tfun_%s(value, value);"
+      l
 
 (*関数本体の定義*)
 let toC_funv ppf (exists_fun, l) =
@@ -736,34 +737,34 @@ let toC_funv ppf (exists_fun, l) =
     fprintf ppf "value %s = cls;\n" l
 
 let toC_fundef ppf fundef ~config = match fundef with
-| FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
-  cnt_env := 0;
-  fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
-    l
-    x
-    y
-    toC_funv (V.mem (to_id l) (fv_exp f), l)
-    toC_fvs fvl
-    toC_tvs tvs
-    (toC_exp ~config ~is_main:false) f
-| FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
-  cnt_env := 0;
-  fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
-    (if config.alt then "_alt" else "")
-    l
-    x
-    toC_funv (V.mem (to_id l) (fv_exp f), l)
-    toC_fvs fvl
-    toC_tvs tvs
-    (toC_exp ~config ~is_main:false) f
-| FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f } ->
-  cnt_env := 0;
-  fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a%a%a}"
-    l
-    toC_funv (V.mem (to_id l) (fv_exp f), l)
-    toC_fvs fvl
-    toC_tvs tvs
-    (toC_exp ~config ~is_main:false) f
+  | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
+      l
+      x
+      y
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f
+  | FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
+      (if config.alt then "_alt" else "")
+      l
+      x
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f
+  | FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a%a%a}"
+      l
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f
   
 (*関数定義全体を記述*)
 let toC_fundefs ppf toplevel ~config =

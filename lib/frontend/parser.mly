@@ -2,24 +2,25 @@
 open Syntax
 open Syntax.ITGL
 open Utils.Error
+open Type_utils
 
 let tyvenv = ref Environment.empty
 
 (* for function definition *)
 let param_to_fun r (x, u) e = match u with
-| None -> FunExp (r, (x.value, Impl, Typing.fresh_tyvar ()), e)
+| None -> FunExp (r, (x.value, Impl, fresh_tyvar ()), e)
 | Some u -> FunExp (r, (x.value, Expl, u), e)
 
 (* for recursive function definition *)
 let param_to_fun_ty r (x, u1) (e, u) = match u1 with
 | None ->
-    let u1 = Typing.fresh_tyvar () in
+    let u1 = fresh_tyvar () in
     FunExp (r, (x.value, Impl, u1), e), TyFun (u1, u)
 | Some u1 ->
     FunExp (r, (x.value, Expl, u1), e), TyFun (u1, u)
 
 let opt_ty_to_fresh_ty = function
-  | None -> Typing.fresh_tyvar ()
+  | None -> fresh_tyvar ()
   | Some u -> u
 
 exception Parser_bug of string
@@ -77,7 +78,7 @@ Program :
       | [] ->
         raise @@ Parser_bug "params must not be empty"
       | (y, None) :: params ->
-        let u1 = Typing.fresh_tyvar () in
+        let u1 = fresh_tyvar () in
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
         LetDecl (x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e))
       | (y, Some u1) :: params ->
@@ -117,7 +118,7 @@ LetExpr :
       | [] ->
         raise @@ Parser_bug "params must not be empty"
       | (y, None) :: params ->
-        let u1 = Typing.fresh_tyvar () in
+        let u1 = fresh_tyvar () in
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
         LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
       | (y, Some u1) :: params ->
@@ -149,7 +150,7 @@ MatchForm :
   | m=LitMatchForm { m }
 
 LitMatchForm :
-  | x=ID { MatchVar (x.value, Typing.fresh_tyvar ()) }
+  | x=ID { MatchVar (x.value, fresh_tyvar ()) }
   | i=INTV { MatchILit i.value }
   | TRUE   { MatchBLit true }
   | FALSE  { MatchBLit false }
@@ -157,12 +158,12 @@ LitMatchForm :
   | LBRACKET ms=separated_list(SEMI, LitMatchForm) RBRACKET {
     let rec makelist l = match l with
       | h :: t -> MatchCons (h, makelist t)
-      | [] -> MatchNil (Typing.fresh_tyvar ())
+      | [] -> MatchNil (fresh_tyvar ())
     in makelist ms 
     }
   // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
   | LPAREN m=MatchForm RPAREN { m }
-  | UNDER { MatchWild (Typing.fresh_tyvar ()) }
+  | UNDER { MatchWild (fresh_tyvar ()) }
 
 NotMatchExpr :
   | e=NotMatchLetExpr { e }
@@ -183,7 +184,7 @@ NotMatchLetExpr :
       | [] ->
         raise @@ Parser_bug "params must not be empty"
       | (y, None) :: params ->
-        let u1 = Typing.fresh_tyvar () in
+        let u1 = fresh_tyvar () in
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
         LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
       | (y, Some u1) :: params ->
@@ -292,9 +293,9 @@ SimpleExpr :
   | LPAREN e=Expr RPAREN { e }
 
 ListElms :
-  | /* empty */ { fun r -> NilExp(r, Typing.fresh_tyvar ()) }
+  | /* empty */ { fun r -> NilExp(r, fresh_tyvar ()) }
   | e=BinOpExpr { fun r ->
-      ConsExp(range_of_exp e, e, NilExp(r, Typing.fresh_tyvar ()))
+      ConsExp(range_of_exp e, e, NilExp(r, fresh_tyvar ()))
     }
   | e=BinOpExpr SEMI l=ListElms { fun r ->
       ConsExp(range_of_exp e, e, l r)
@@ -322,7 +323,7 @@ SimpleType :
       try
         Environment.find x.value !tyvenv
       with Not_found ->
-        let u = Typing.fresh_tyvar () in
+        let u = fresh_tyvar () in
         tyvenv := Environment.add x.value u !tyvenv;
         u
     }

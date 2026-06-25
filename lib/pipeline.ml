@@ -70,7 +70,7 @@ let typing_ITGL ppf state =
   print_title ppf "Typing";
   let e, u = Typing.ITGL.type_of_program state.tyenv state.program in
   (* NOTE: Typing.ITGL.translate and Typing.CC.type_of_program expect normalized input *)
-  let tyenv, e, u = Typing.ITGL.normalize state.tyenv e u in
+  let tyenv, e, u = Normalize.ITGL.normalize state.tyenv e u in
   fprintf ppf "e: %a@.U: %a@." Pp.ITGL.pp_program e Pp.pp_ty u;
   { state with program = e; ty = u; tyenv = tyenv }
 
@@ -81,9 +81,9 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   let new_tyenv, f, u' = Translate.ITGL.translate ~config state.tyenv state.program in
   (* NOTE: new_tyenv include current LetDecl type, so type check and translation must be executed in old tyenv *)
   (* Pp.pp_ty2 Format.err_formatter u'; *)
-  assert (Typing.is_equal state.ty u');
+  assert (Type_utils.is_equal state.ty u');
   let u'' = Typing.CC.type_of_program state.tyenv f in
-  assert (Typing.is_equal state.ty u'');
+  assert (Type_utils.is_equal state.ty u'');
   log_section bench_ppf "after Insertion";
   fprintf bench_ppf "%a@." Pp.CC.pp_program f;
   fprintf ppf "f: %a@." Pp.CC.pp_program f;
@@ -93,7 +93,7 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   in
   print_title ppf "CPS-translation";
   let f, u''' = Translate.CC.translate ~config state.tyenv f in
-  assert (Typing.is_equal state.ty u''');
+  assert (Type_utils.is_equal state.ty u''');
   fprintf ppf "f: %a@." Pp.CC.pp_program f;
   let state = change_state_program f state in
   { state with tyenv = new_tyenv }

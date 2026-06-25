@@ -1,4 +1,5 @@
 open Syntax
+open Type_utils
 
 let pick_tv u = match u with
   | TyVar tv -> tv
@@ -8,7 +9,7 @@ let rec tv_renew_ty u env = match u with
   | TyVar (i, _) -> 
     begin 
     try TyVar (Environment.find (string_of_int i) env), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    Not_found -> let tv = pick_tv (fresh_tyvar ()) in
     let env = Environment.add (string_of_int i) tv env in
     TyVar tv, env
     end
@@ -42,21 +43,21 @@ let rec tv_renew_coercion c env = match c with
   | CTvInj ((i, _), p) -> 
     begin
     try CTvInj ((Environment.find (string_of_int i) env), p), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ())in
+    Not_found -> let tv = pick_tv (fresh_tyvar ())in
     let env = Environment.add (string_of_int i) tv env in
     CTvInj (tv, p), env
     end
   | CTvProj ((i, _), p) -> 
     begin
     try CTvProj ((Environment.find (string_of_int i) env), p), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    Not_found -> let tv = pick_tv (fresh_tyvar ()) in
     let env = Environment.add (string_of_int i) tv env in
     CTvProj (tv, p), env
     end
   | CTvProjInj ((i, _), p, q) -> 
     begin
     try CTvProjInj ((Environment.find (string_of_int i) env), p, q), env with
-    Not_found -> let tv = pick_tv (Typing.fresh_tyvar ()) in
+    Not_found -> let tv = pick_tv (fresh_tyvar ()) in
     let env = Environment.add (string_of_int i) tv env in
     CTvProjInj (tv, p, q), env
     end

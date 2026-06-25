@@ -2,10 +2,6 @@ open Syntax
 
 exception Eval_bug of string
 
-val compose : config:Config.t -> coercion -> coercion -> coercion
-
-val tag_of_ty : ty -> tag
-
 module CC : sig
   open Syntax.CC
   

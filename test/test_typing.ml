@@ -20,7 +20,7 @@ module ITGL = struct
       program >:: fun ctxt ->
         let e = parse @@ program ^ ";;" in
         let e, u = Typing.ITGL.type_of_program tyenv e in
-        let tyenv, e, u = Typing.ITGL.normalize tyenv e u in
+        let tyenv, e, u = Normalize.ITGL.normalize tyenv e u in
         let _, f_b, u_b = Translate.ITGL.translate ~config:(Config.create ~intoB:true ~monotonic:false ~eager:true ()) tyenv e in
         let _, f_s, u_s = Translate.ITGL.translate ~config:(Config.create ~intoB:false ~monotonic:true ()) tyenv e in
         let u_b' = Typing.CC.type_of_program tyenv f_b in

@@ -1,5 +1,6 @@
 open Syntax
 open Static_manage
+open Ftv
 
 exception Closure_bug of string
 exception Closure_error of string
@@ -14,6 +15,7 @@ let toplevel = ref []
 
 module KNorm = struct
   open Syntax.KNorm
+  open Fv.KNorm
 
   let rec exist_tv l1 l2 = match l2 with
     | h :: t -> if List.mem h l1 then true else exist_tv l1 t
@@ -30,7 +32,7 @@ module KNorm = struct
         TyManager.register u;
         (u, fun x -> x)
       end else 
-        let newu = Typing.fresh_tyvar () in
+        let newu = Type_utils.fresh_tyvar () in
         let newtv = match newu with
         | TyVar (i, u) -> u := Some (TyFun (u1, u2)); (i, u)
         | _ -> raise @@ Closure_bug "not tyvar was created"
@@ -42,7 +44,7 @@ module KNorm = struct
         TyManager.register u;
         (u, fun x -> x)
       end else
-        let newu = Typing.fresh_tyvar () in
+        let newu = Type_utils.fresh_tyvar () in
         let newtv = match newu with
           | TyVar (i, u) -> u := Some (TyList u'); (i, u)
           | _ -> raise @@ Closure_bug "not tyvar was created"
@@ -54,7 +56,7 @@ module KNorm = struct
         TyManager.register u;
         (u, fun x -> x)
       end else
-        let newu = Typing.fresh_tyvar () in
+        let newu = Type_utils.fresh_tyvar () in
         let newtv = match newu with
           | TyVar (i, u) -> u := Some (TyTuple us); (i, u)
           | _ -> raise @@ Closure_bug "not tyvar was created"
@@ -203,7 +205,7 @@ module KNorm = struct
           let static_backup = static_save () in
           let known' = V.add x known in (* xをknownに入れてclosure変換してみる *)
           let f1' = toCls_exp known' new_tvs args funty f1 in
-          let zs = V.diff (Cls.fv_exp f1') v_arg in
+          let zs = V.diff (Fv.Cls.fv_exp f1') v_arg in
           if V.is_empty zs (*&& List.length new_tvs = 0*) then 
             (* closure変換後のf1に自由変数がなければ、xをknownに入れて返す *)
             known', f1'
@@ -215,7 +217,7 @@ module KNorm = struct
             known, f1'
           end
       in
-      let zs = V.elements (V.diff (Cls.fv_exp f1') (V.union (V.singleton x) v_arg)) in
+      let zs = V.elements (V.diff (Fv.Cls.fv_exp f1') (V.union (V.singleton x) v_arg)) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
       let fundef, funty = match fd with
         | FunB (y, _) -> Cls.FundefM { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f1' }, funty
@@ -225,7 +227,7 @@ module KNorm = struct
       in
       if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
       let f2' = toCls_exp known' tvs (Environment.add x (zs, List.length tvs) args) funty f2 in
-      if V.mem x (Cls.fv_exp f2') then match fd with
+      if V.mem x (Fv.Cls.fv_exp f2') then match fd with
         | FunTy _ -> Cls.MakeTyCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
         | _ -> Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
       else f2'
@@ -238,6 +240,7 @@ end
 
 module Cls = struct
   open Syntax.Cls
+  open Fv.Cls
 
   let rec replace_var vx vy f = 
     let replace x = if x = vx then vy else x in

@@ -1,5 +1,6 @@
 open Syntax
 open Config
+open Type_utils
 
 exception Stdlib_bug of string
 exception Stdlib_exit of int
@@ -420,7 +421,7 @@ let pervasives ~config =
       (fun (env, tyenv, kfunenvs, kenv) str ->
         let e = Parser.toplevel Lexer.main @@ Lexing.from_string str in
         let e, u = Typing.ITGL.type_of_program tyenv e in
-        let tyenv, e, _ = Typing.ITGL.normalize tyenv e u in
+        let tyenv, e, _ = Normalize.ITGL.normalize tyenv e u in
         let new_tyenv, f, _ = Translate.ITGL.translate ~config tyenv e in
         let _ = Typing.CC.type_of_program tyenv f in
         let f, _ = Translate.CC.translate ~config tyenv f in

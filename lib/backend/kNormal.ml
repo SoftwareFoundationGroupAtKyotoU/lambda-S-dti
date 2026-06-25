@@ -3,8 +3,6 @@ open Syntax
 exception KNormal_error of string
 exception KNormal_bug of string
 
-let subst_type = Typing.subst_type
-
 (* generate variable string for insert_let *)
 let counter = ref 0
 let genvar x = 

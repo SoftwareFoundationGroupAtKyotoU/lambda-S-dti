@@ -315,7 +315,7 @@ let mutate_prog_with_indices (idxs:int list) (p : program) : program =
   in
   let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.create ~compile:true ()) in
   let p, u = Typing.ITGL.type_of_program tyenv mutated in
-  let _, p, _ = Typing.ITGL.normalize tyenv p u in
+  let _, p, _ = Normalize.ITGL.normalize tyenv p u in
   p
 
 (* 0..n を長さ順に全列挙（昇順） *)
@@ -342,7 +342,7 @@ let mutate_all (p:program) : program list =
   in
   let _, tyenv, _, _ = Stdlib.pervasives ~config:(Config.create ~compile:true ()) in
   let p, u = Typing.ITGL.type_of_program tyenv p in
-  let _, p, _ = Typing.ITGL.normalize tyenv p u in
+  let _, p, _ = Normalize.ITGL.normalize tyenv p u in
   Format.fprintf Format.std_formatter "program's type is %a\n" Pp.pp_ty u;
   let a = analyze t in
   let n_total = a.n_fun + 2 * a.n_fix + a.n_tapp in

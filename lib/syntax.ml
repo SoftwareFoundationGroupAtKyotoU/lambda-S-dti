@@ -45,49 +45,6 @@ and tyvar = int * ty option ref
   
 type tysc = TyScheme of tyvar list * ty
 
-(* creates monomorphic typescheme *)
-let tysc_of_ty u = TyScheme ([], u) 
-
-(** Returns true if the given argument is a ground type. Othewise returns false. *)
-let rec is_ground = function
-  | TyInt | TyBool | TyUnit -> true (* base type *)
-  | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
-  | TyList TyDyn -> true
-  | TyTuple us -> List.fold_left (fun b u -> b && u = TyDyn) true us
-  | TyRef TyDyn -> true
-  | TyVar (_, { contents = Some u }) -> is_ground u
-  | _ -> false
-
-(* check whether the given argument belongs to ι *)
-let rec is_base_type = function
-  | TyBool | TyInt | TyUnit -> true
-  | TyVar (_, { contents = Some u }) -> is_base_type u
-  | _ -> false
-
-(* u1 ~ u2 *)
-let rec is_consistent u1 u2 = match u1, u2 with
-  | TyVar (_, { contents = Some u1 }), u2
-  | u1, TyVar (_, { contents = Some u2 }) ->
-    is_consistent u1 u2
-  | TyBool, TyBool | TyInt, TyInt | TyUnit, TyUnit -> true
-  | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
-  | TyDyn, _ | _, TyDyn -> true
-  | TyFun (u11, u12), TyFun (u21, u22) ->
-    (is_consistent u11 u21) && (is_consistent u12 u22)
-  | TyList u1, TyList u2 -> is_consistent u1 u2
-  | TyTuple us1, TyTuple us2 ->
-    begin try
-      List.fold_left2 (fun b u1 u2 -> b && is_consistent u1 u2) true us1 us2
-    with Invalid_argument _ -> false end
-  | TyRef u1, TyRef u2 -> is_consistent u1 u2
-  | _ -> false
-
-let make_dyn_list n =
-  let rec iter i r =
-    if i = 0 then r
-    else iter (i - 1) (TyDyn :: r)
-  in iter n []
-
 (* Set of type variables used for let polymorphism *)
 (* Module for a set of type variables. *)
 module TV = struct
@@ -99,22 +56,6 @@ module TV = struct
     )
   let big_union vars = List.fold_right union vars empty
 end
-
-(** Returns a set of free type variables in a given type. *)
-let rec ftv_ty: ty -> TV.t = function
-  | TyVar (_, { contents = None } as tv) -> TV.singleton tv
-  | TyVar (_, { contents = Some u }) -> ftv_ty u
-  | TyFun (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
-  | TyList u -> ftv_ty u
-  | TyTuple us -> TV.big_union (List.map ftv_ty us)
-  | TyRef u -> ftv_ty u
-  | _ -> TV.empty
-
-let ftv_tysc: tysc -> TV.t = function
-  | TyScheme (xs, u) -> TV.diff (ftv_ty u) (TV.of_list xs)
-
-let ftv_tyenv (env: tysc Environment.t): TV.t =
-  Environment.fold (fun _ us vars -> TV.union vars (ftv_tysc us)) env TV.empty
 
 type tyarg = Ty of ty | TyNu
 
@@ -135,27 +76,6 @@ type matchform = (*match式でmatchさせることのできる形の種類を定
   | MatchTuple of matchform list
   | MatchWild of ty
 
-let rec fv_matchform = function
-  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
-  | MatchVar (x, _) -> V.singleton x
-  | MatchCons (mf1, mf2) -> V.big_union [fv_matchform mf1; fv_matchform mf2]
-  | MatchTuple mfs -> V.big_union (List.map fv_matchform mfs)
-
-let rec tv_matchform : matchform -> TV.t = function
-  | MatchVar (_, u) -> ftv_ty u
-  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
-  | MatchNil u -> ftv_ty u
-  (* | MatchAsc (mf, u) -> TV.union (tv_matchform mf) (ftv_ty u) *)
-  | MatchCons (mf1, mf2) -> TV.union (tv_matchform mf1) (tv_matchform mf2)
-  | MatchTuple mfs -> TV.big_union (List.map tv_matchform mfs)
-
-let rec ftv_matchform : matchform -> TV.t = function
-  | MatchVar _ | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
-  | MatchNil _ -> TV.empty
-  (* | MatchAsc (mf, u) -> TV.union (ftv_matchform mf) (ftv_ty u) *)
-  | MatchCons (mf1, mf2) -> TV.union (ftv_matchform mf1) (ftv_matchform mf2)
-  | MatchTuple mfs -> TV.big_union (List.map ftv_matchform mfs)
-
 (* === Definitions for coercion === *)
 
 type polarity = Pos | Neg
@@ -164,28 +84,6 @@ type polarity = Pos | Neg
 let neg = function Pos -> Neg | Neg -> Pos
 
 type tag = I | B | U | Ar | Li | Tp of int | Rf
-
-let type_of_tag = function
-  | I -> TyInt
-  | B -> TyBool
-  | U -> TyUnit
-  | Ar -> TyFun (TyDyn, TyDyn)
-  | Li -> TyList TyDyn
-  | Tp n -> TyTuple (make_dyn_list n)
-  | Rf -> TyRef TyDyn
-
-let rec tag_of_ty = function
-  | TyInt -> I
-  | TyBool -> B
-  | TyUnit -> U
-  | TyFun (TyDyn, TyDyn) -> Ar
-  | TyList TyDyn -> Li
-  | TyTuple us ->
-    if List.fold_left (fun b u -> b && u = TyDyn) true us then Tp (List.length us) else assert false
-  | TyRef TyDyn -> Rf
-  | TyVar (_, {contents = Some u}) -> tag_of_ty u
-  | _ -> assert false
-  (* | _ -> raise @@ Type_bug "tag_of_ty: invalid type" *)
 
 type coercion =
   | CInj of tag
@@ -201,31 +99,6 @@ type coercion =
   | CId of ty
   | CSeq of coercion * coercion
   | CFail of tag * (range * polarity) * tag
-
-let is_d = function
-  | CSeq (CId _, CInj _)
-  | CSeq (CFun _, CInj _)
-  | CSeq (CList _, CInj _)
-  | CSeq (CTuple _, CInj _)
-  | CSeq (CRef _, CInj _)
-  | CSeq (CMRef _, CInj _)
-  | CFun _
-  | CList _
-  | CTuple _
-  | CRef _ -> true (* TODO : CFun (s, t) when s <> CId _ or t <> CId _ *)
-  | _ -> false
-
-let rec ftv_coercion = function
-  | CInj _ | CProj _ -> TV.empty
-  | CTvInj (tv, _) | CTvProj (tv, _) | CTvProjInj (tv, _, _) -> TV.singleton tv
-  | CFun (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CList c -> ftv_coercion c
-  | CTuple cs -> TV.big_union (List.map ftv_coercion cs)
-  | CRef (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CMRef (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
-  | CId u -> ftv_ty u
-  | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
-  | CFail _ -> TV.empty
 
 exception Blame of range * polarity
 
@@ -280,49 +153,6 @@ module ITGL = struct
     | DerefExp (r, _)
     | SubstExp (r, _, _) -> r
 
-  (* for polymorphic let declaration *)
-  let rec tv_exp: exp -> TV.t = function
-    | Var _
-    | IConst _
-    | BConst _
-    | UConst _ -> TV.empty
-    | BinOp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
-    | AscExp (_, e, u) -> TV.union (tv_exp e) (ftv_ty u)
-    | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map tv_exp [e1; e2; e3]
-    | FunExp (_, (_, _, u), e) -> TV.union (ftv_ty u) (tv_exp e)
-    | FixExp (_, _, (_, _, u1), _, e) -> TV.union (ftv_ty u1) (tv_exp e)
-    | AppExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
-    | MatchExp (_, e, ms) -> TV.union (tv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (tv_matchform mf) (tv_exp e)) ms)
-    | LetExp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
-    | NilExp (_, u) -> ftv_ty u
-    | ConsExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
-    | TupleExp (_, es) -> TV.big_union (List.map tv_exp es)
-    | RefExp (_, e) -> tv_exp e
-    | DerefExp (_, e) -> tv_exp e
-    | SubstExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
-
-  let rec ftv_exp: exp -> TV.t = function
-    | Var _
-    | IConst _
-    | BConst _
-    | UConst _ -> TV.empty
-    | BinOp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-    | AscExp (_, e, u) -> TV.union (ftv_exp e) (ftv_ty u)
-    | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
-    | FunExp (_, (_, Expl, u), e) -> TV.union (ftv_ty u) (ftv_exp e)
-    | FunExp (_, (_, Impl, _), e) -> ftv_exp e
-    | FixExp (_, _, (_, Expl, u1), _, e) -> TV.union (ftv_ty u1) (ftv_exp e)
-    | FixExp (_, _, (_, Impl, _), _, e) -> ftv_exp e
-    | AppExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-    | MatchExp (_, e, ms) -> TV.union (ftv_exp e) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
-    | LetExp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-    | NilExp _ -> TV.empty
-    | ConsExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-    | TupleExp (_, es) -> TV.big_union (List.map ftv_exp es)
-    | RefExp (_, e) -> ftv_exp e
-    | DerefExp (_, e) -> ftv_exp e
-    | SubstExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
-
   type program =
     | Exp of exp
     | LetDecl of id * exp
@@ -330,6 +160,8 @@ end
 
 (** Syntax of the blame calculus with dynamic type inference. *)
 module CC = struct
+  exception Occur_LS1 of string
+
   type exp =
     | Var of id * tyarg list
     | IConst of int
@@ -362,49 +194,6 @@ module CC = struct
     | FixB of id * (id * ty) * ty * exp
     | FixS of id * (id * ty) * ty * (id * ty) * exp
     | FixDual of id * (id * ty) * ty * (id * ty) * (exp * exp)
-
-  exception Occur_LS1 of string
-
-  let ftv_tyarg = function
-    | Ty ty -> ftv_ty ty
-    | TyNu -> TV.empty
-
-  let rec ftv_exp: exp -> TV.t = function
-    | Var (_, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
-    | IConst _
-    | BConst _
-    | UConst -> TV.empty
-    | FunExp (tvs, fund) -> TV.diff (ftv_fund fund) (TV.of_list tvs)
-    | FixExp (tvs, fixd) -> TV.diff (ftv_fixd fixd) (TV.of_list tvs)
-    | CoercionExp c -> ftv_coercion c
-    | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | IfExp (f1, f2, f3) ->
-      List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
-    | AppMExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | AppDExp (f1, (f2, f3)) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
-    | LetExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | NilExp _ -> TV.empty
-    | ConsExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | MatchExp (f, ms) ->
-      TV.union (ftv_exp f) (TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms)
-    | TupleExp es -> TV.big_union (List.map ftv_exp es)
-    | RefExp (f, u) -> TV.union (ftv_exp f) (ftv_ty u)
-    | DerefExp (f, None) -> ftv_exp f
-    | DerefExp (f, Some u) -> TV.union (ftv_exp f) (ftv_ty u)
-    | SubstExp (f1, f2, None) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | SubstExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
-    | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
-    | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-  and ftv_fund = function
-    | FunB ((_, u), f) -> TV.union (ftv_ty u) (ftv_exp f)
-    | FunS ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)
-    | FunDual ((_, u), _, (f1, f2)) -> TV.union (ftv_ty u) @@ TV.union (ftv_exp f1) (ftv_exp f2)
-    | FunTy f -> ftv_exp f
-  and ftv_fixd = function
-    | FixB (_, (_, u1), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
-    | FixS (_, (_, u1), _, (_, uk), f) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) (ftv_exp f)
-    | FixDual (_, (_, u1), _, (_, uk), (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) @@ TV.union (ftv_exp f1) (ftv_exp f2)
 
   type program =
     | Exp of exp
@@ -459,29 +248,6 @@ module KNorm = struct
     | FunS of (id * id) * exp
     | FunDual of (id * id) * (exp * exp)
     | FunTy of exp
-
-  let rec fv_exp = function
-    | Var x | Hd x | Tl x  | Tget (x, _) -> V.singleton x
-    | IConst _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
-    | Tuple xs -> V.of_list xs
-    | IfEqExp (x, y, f1, f2) | IfLteExp (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
-    | MatchExp (x, ms) -> 
-      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
-    | AppTy (x, _, _) -> V.singleton x
-    | AppMExp (x, y) -> V.of_list [x; y]
-    | AppDExp (x, (y, z)) -> V.of_list [x; y; z]
-    | CastExp (x, _, _, _) -> V.singleton x
-    | CAppExp (x, y) -> V.of_list [x; y]
-    | CSeqExp (x, y) -> V.of_list [x; y]
-    | CoercionExp _ -> V.empty
-    | LetExp (x, f1, f2) -> V.union (fv_exp f1) (V.remove x (fv_exp f2))
-    | LetFunExp (x, _, fd, f2) -> V.union (V.remove x @@ fv_fd fd) (V.remove x @@ fv_exp f2)
-  and fv_fd = function
-    | FunB (x, f) -> V.remove x @@ fv_exp f
-    | FunS ((x, y), f) -> V.remove x @@ V.remove y @@ fv_exp f
-    | FunDual ((x, y), (f1, f2)) -> V.remove x @@ V.remove y @@ V.union (fv_exp f1) (fv_exp f2)
-    | FunTy f -> fv_exp f
 
   type program =
     | Exp of exp
@@ -560,30 +326,6 @@ module Cls = struct
     | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
     | FundefM of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
     | FundefTy of { name : label; tvs : tyvar list * int; formal_fv : id list; body : exp }
-
-  let rec fv_exp = function
-    | Var x | Hd x | Tl x | Tget (x, _) -> V.singleton x
-    | Int _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
-    | Tuple xs -> V.of_list xs
-    | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
-    | Match (x, ms) -> 
-      V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
-    | AppTy (x, _, _, _) -> V.singleton x
-    | AppTyFun (x, _, _, _) -> V.singleton x
-    | SetTy (_, f) -> fv_exp f
-    | AppDDir (_, (y, z)) -> V.of_list [y; z]
-    | AppDCls (x, (y, z)) -> V.of_list [x; y; z]
-    | AppMDir (_, y) -> V.singleton y
-    | AppMCls (x, y) -> V.of_list [x; y]
-    | Cast (x, _, _, _) -> V.singleton x
-    | CApp (x, y) -> V.of_list [x; y]
-    | CSeq (x, y) -> V.of_list [x; y]
-    | Coercion _ -> V.empty
-    | MakeCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
-    | MakeTyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
-    | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
-    | Insert (_, f) -> fv_exp f
 
   type program = Prog of fundef list * exp
 
