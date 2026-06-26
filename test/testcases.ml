@@ -248,18 +248,31 @@ let tuples = [
   ["((1, (2, 3) : ?) : int * int)", "int * int", "blame+", "(1, (2, 3))<<id{int}*⊥{(? * ?),p,int}>>"];
 ]
 
+let refs = [
+  ["ref 1", "int ref", "{ contents = 1, int }", "{ contents = 1, int }"];
+  ["!(ref 1)", "int", "1", "1"];
+  ["!(ref true)", "bool", "true", "true"];
+  ["let x = ref 1 in x := 2", "unit", "()", "()"];
+  ["let x = ref 1 in x := 2; !x", "int", "2", "2"];
+  ["let x = ref 0 in let y = x in y := 5; !x", "int", "5", "5"];
+  ["let x = ref 1 in x := !x + 1; !x", "int", "2", "2"];
+  ["fun x -> x := !x + 1", "int ref -> unit", "<fun>", "<fun>"];
+  ["ref (1 : ?)", "? ref", "{ contents = 1: int => ?, ? }", "{ contents = 1<<id{int};int!>>, ? }"];
+  ["!(ref (1 : ?))", "?", "1: int => ?", "1<<id{int};int!>>"];
+  (* TODO: [
+    "let f : ? = fun (x:?) -> x", "?", "<fun>: (? -> ?) => ?", "<fun><<id{? -> ?};(? -> ?)!>>";
+    "let r : ? = ref (f, (():?))", "?", "{ contents = (<fun>, (): unit => ?), int * ? }", "{ contents = (<fun><<id{? -> ?};(? -> ?)!>>, ()<<id{unit};unit!>>), ? * ? }<<mref(?);:?:!>>";
+    "r := (f, r)", "unit", "()", "()";
+    "let g (x : ((? -> int) * ((int -> ?) * ?) ref) ref) = match !x with (y, z) -> (y:?) 42", "((? -> int) * ((int -> ?) * ?) ref) ref -> ?", "<fun>", "<fun>";
+    "g r", "?", "", "42<<id{int};int!>>";
+  ] *)
+]
+
 let stdlibs = [
   ["succ 2", "int", "3", "3"];
   ["prec 0", "int", "-1", "-1"];
 ]
 
-(* let f : ? = fun (x:?) -> x in
-let r : ? = ref (f, (():?)) in
-let x = r := (f, r) in
-let g (x : ((? -> int) * ((int -> ?) * ?) ref) ref) =
-  match !x with (y, z) -> (y:?) 42
-in
-g r *)
 (* ["match (1, true) : ? with ((x:int), (y:bool)) -> x", "int", "1", "1", "1", "1"]; *)
 (* ["match (1, true) : ? with ((x:bool), (y:bool)) -> x", "bool", "blame+", "blame+", "blame+", "blame+"]; *)
 (* ["let x, y = 1, true in x", "int", "1", "1", "1", "1"]; *)
@@ -286,5 +299,6 @@ let suites = [
   "List", lists;
   "Match Expression", matches;
   "Tuple", tuples;
+  "Reference", refs;
   "Functions in Standard Library", stdlibs;
 ]
