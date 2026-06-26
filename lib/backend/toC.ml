@@ -14,58 +14,89 @@ module type Target = sig
   (* statement append *)
   val ( ++ ) : stm -> stm -> stm
 
+  val empty : stm
+
   val print_stm : Format.formatter -> stm -> unit
 
   val let_val : id -> stm -> stm -> stm
 
   val set_var : id -> id -> stm
   val set_int : id -> int -> stm
+  val set_crc_dyn : id -> coercion -> stm 
   val set_add : id -> id -> id -> stm
   val set_sub : id -> id -> id -> stm
   val set_mul : id -> id -> id -> stm
   val set_div : id -> id -> id -> stm
   val set_mod : id -> id -> id -> stm
 
+  val app_d_dir : id -> label -> id -> id -> stm
+  val app_d_cls : id -> id -> id -> id -> stm
+  val app_m_dir : id -> label -> id -> stm
+  val app_m_cls : id -> id -> id -> stm
+  val capp : id -> id -> id -> stm
+
   val if_eq : id -> id -> stm -> stm -> stm
   val if_lte : id -> id -> stm -> stm -> stm
+
+  val make_cls : intoB:bool -> static:bool -> alt:bool -> id -> closure -> stm -> stm
 
   val retv_fun : id
   val retv_main : id
   val return_val : id -> stm
 
+  val fun_prot : fundef -> stm
+  val fun_decl : fundef -> stm -> stm
+
+  val prog_newline : stm
   val prog_includes : bench:int -> stm
-  val prog_main_wrap : bench:int -> static_mode:bool -> stm -> stm
+  val prog_main_wrap : bench:int -> static:bool -> stm -> stm
 end
 
 module ToTarget (T : Target) = struct
   open T
 
-  let rec emit_exp = function
+  let rec emit_exp ~is_main ~config = function
     | Let (x, f1, f2) ->
-      let_val x (emit_assign x f1) (emit_exp f2)
+      let_val x (emit_assign ~config x f1) (emit_exp ~is_main ~config f2)
     | IfEq (x, y, f1, f2) ->
-      if_eq x y (emit_exp f1) (emit_exp f2)
+      if_eq x y (emit_exp ~is_main ~config f1) (emit_exp ~is_main ~config f2)
     | IfLte (x, y, f1, f2) ->
-      if_lte x y (emit_exp f1) (emit_exp f2)
+      if_lte x y (emit_exp ~is_main ~config f1) (emit_exp ~is_main ~config f2)
+    | MakeCls (x, cls, _, f) ->
+      make_cls ~intoB:config.intoB ~static:config.static ~alt:config.alt x cls (emit_exp ~is_main ~config f)
     | atom ->
-      let ret = return_val retv_main in
-      let_val retv_fun (emit_assign retv_fun atom) ret
-  and emit_assign x = function
+      let ret = return_val @@ if is_main then retv_main else retv_fun in
+      let_val retv_fun (emit_assign ~config retv_fun atom) ret
+  and emit_assign ~config x = function
     | Var y -> set_var x y
     | Int i -> set_int x i
+    | Coercion c -> set_crc_dyn x c
     | Add (y, z) -> set_add x y z
     | Sub (y, z) -> set_sub x y z
     | Mul (y, z) -> set_mul x y z
     | Div (y, z) -> set_div x y z
     | Mod (y, z) -> set_mod x y z
-    | Let (y, f1, f2) -> let_val y (emit_assign x f1) (emit_assign x f2)
-    | IfEq (y, z, f1, f2) -> if_eq y z (emit_assign x f1) (emit_assign x f2)
-    | IfLte (y, z, f1, f2) -> if_lte y z (emit_assign x f1) (emit_assign x f2)
+    | AppDDir (l, (y1, y2)) -> app_d_dir x l y1 y2
+    | AppDCls (y, (z1, z2)) -> app_d_cls x y z1 z2
+    | AppMDir (l, y) -> app_m_dir x l y
+    | AppMCls (y, z) -> app_m_cls x y z
+    | CApp (y, z) -> capp x y z
+    | Let (y, f1, f2) -> let_val y (emit_assign ~config y f1) (emit_assign ~config x f2)
+    | IfEq (y, z, f1, f2) -> if_eq y z (emit_assign ~config x f1) (emit_assign ~config x f2)
+    | IfLte (y, z, f1, f2) -> if_lte y z (emit_assign ~config x f1) (emit_assign ~config x f2)
+    | MakeCls (y, cls, _, f) -> make_cls ~intoB:config.intoB ~static:config.static ~alt:config.alt y cls (emit_assign ~config x f)
     | _ -> raise @@ ToC_bug "yet"
 
-  let emit_program ~config ~bench (Prog (_, body)) = 
-    prog_includes ~bench
-    ++ prog_main_wrap ~bench ~static_mode:config.static (emit_exp body)
+  let emit_fun_prot fd = fun_prot fd
+  let emit_fun_decl ~config fd =
+    let body = match fd with FundefD  { body = f; _ } | FundefM { body = f; _ } | FundefTy { body = f; _ } -> f in
+    fun_decl fd (emit_exp ~is_main:false ~config body)
+
+  let emit_program ~config ~bench (Prog (fds, body)) = 
+    prog_includes ~bench ++ prog_newline
+    ++ List.fold_left ( ++ ) empty (List.map (fun fd -> emit_fun_prot fd) fds) ++ prog_newline
+    ++ List.fold_left ( ++ ) empty (List.map (fun fd -> emit_fun_decl ~config fd) fds) ++ prog_newline
+    ++ prog_main_wrap ~bench ~static:config.static (emit_exp ~is_main:true ~config body)
 end
 
 module CTarget : Target = struct
@@ -85,18 +116,86 @@ module CTarget : Target = struct
 
   let set_var x y ppf = fprintf ppf "%s = %s;@." x y
   let set_int x i ppf = fprintf ppf "%s = %d;@." x i
+  let set_crc_dyn x c ppf = match c with CId -> fprintf ppf "%s = (value)&crc_id;@." x | _ -> raise @@ ToC_bug "yet"
   let set_add x y z ppf = fprintf ppf "%s = %s + %s;@." x y z
   let set_sub x y z ppf = fprintf ppf "%s = %s - %s;@." x y z
   let set_mul x y z ppf = fprintf ppf "%s = %s * %s;@." x y z
   let set_div x y z ppf = fprintf ppf "%s = %s / %s;@." x y z
   let set_mod x y z ppf = fprintf ppf "%s = %s %% %s;@." x y z
 
+  let app_d_dir x l y1 y2 ppf = fprintf ppf "%s = fun_%s((value)NULL, %s, %s);@." x l y1 y2
+  let app_d_cls x y z1 z2 ppf = fprintf ppf "%s = (((fun*)%s)->funcD)(%s, %s, %s);@." x y y z1 z2
+  let app_m_dir x l y ppf = fprintf ppf "%s = fun_%s((value)NULL, %s);@." x l y
+  let app_m_cls x y z ppf = fprintf ppf "%s = (((fun*)%s)->funcM)(%s, %s);@." x y y z
+  let capp x y z ppf = fprintf ppf "%s = coerce(%s, (crc*)%s);@." x y z
+
   let if_eq x y s1 s2 ppf = fprintf ppf "if (%s == %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
   let if_lte x y s1 s2 ppf = fprintf ppf "if (%s <= %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
+
+  let emit_env_vars ppf (x, vs(*, offset, ftas*)) =
+    List.iteri (fun i v ->
+      fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;\n" x i v
+    ) vs
+    (* ;let base_idx = List.length vs + offset in
+    List.iteri (fun i ta ->
+      fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;\n" x (base_idx + i) (c_of_tyarg ta)
+    ) ftas *)
+
+  let make_cls ~intoB ~static ~alt x { entry = l; actual_fv = vs } s ppf =
+    let env_size = List.length vs in
+    let embed_funs =
+      if intoB || static then
+        asprintf "((fun*)%s)->funcM = fun_%s;\n" x l
+      else if alt then
+        asprintf "((fun*)%s)->funcD = fun_%s;\n((fun*)%s)->funcM = fun_alt_%s;\n" x l x l
+      else
+        asprintf "((fun*)%s)->funcD = fun_%s;\n" x l
+    in
+    fprintf ppf "value %s;\n%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a"
+      x x env_size embed_funs emit_env_vars (x, vs) print_stm s
 
   let retv_fun = "retv"
   let retv_main = "0"
   let return_val x ppf = fprintf ppf "return %s;@." x
+
+  let fun_prot fd ppf = match fd with
+    | FundefD { name = l; _ } ->
+      fprintf ppf "static value fun_%s(value, value, value);@." l
+    | FundefM { name = l; _ } ->
+      fprintf ppf "static value fun_%s(value, value);@." l
+    | FundefTy { name = l; _ } ->
+      fprintf ppf "static value tfun_%s(value, value);@." l
+
+  let emit_fvs ppf fvl =
+    List.iteri (fun i v ->
+      fprintf ppf "value %s = (value)(((fun*)cls)->env[%d]);\n" v i;
+    ) fvl
+
+  let fun_decl fd body ppf = match fd with
+    | FundefD { name = l; (*tvs = (tvs, _);*) arg = (x, y); formal_fv = fvl; _ } ->
+      fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a}@."
+        l
+        x
+        y
+        (* toC_funv (V.mem (to_id l) (fv_exp f), l) *)
+        emit_fvs fvl
+        (* toC_tvs tvs *)
+        print_stm body
+    | FundefM { name = l; (*tvs = (tvs, _);*) arg = x; formal_fv = fvl; _ } ->
+      fprintf ppf "static value fun_%s(value cls, value %s) {\n%a%a}@."
+        l
+        x
+        (* toC_funv (V.mem (to_id l) (fv_exp f), l) *)
+        emit_fvs fvl
+        (* toC_tvs tvs *)
+        print_stm body
+    | FundefTy { name = l; (*tvs = (tvs, _);*) formal_fv = fvl; _ } ->
+      fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a}@."
+        l
+        (* toC_funv (V.mem (to_id l) (fv_exp f), l) *)
+        emit_fvs fvl
+        (* toC_tvs tvs *)
+        print_stm body
 
   (* let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
   let tys = TyManager.get_definitions () in
@@ -116,6 +215,8 @@ module CTarget : Target = struct
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     (toC_exp ~config ~is_main:true) f
     "}" *)
+
+  let prog_newline ppf = fprintf ppf "\n"
   
   let prog_include str ppf =
     fprintf ppf "#include %s@." str
@@ -124,13 +225,13 @@ module CTarget : Target = struct
     let bench_dir = if bench = 0 then "" else "../../" in
     List.fold_left ( ++ ) empty @@ List.map prog_include ["<gc.h>"; asprintf "\"../%slibC/runtime.h\"" bench_dir ]
 
-  let prog_main_wrap ~bench ~static_mode body_stm ppf =
-    if bench = 0 && not static_mode then fprintf ppf "range *range_list;\n\n";
+  let prog_main_wrap ~bench ~static body_stm ppf =
+    if bench = 0 && not static then fprintf ppf "range *range_list;\n\n";
     let function_name = if bench = 0 then "main" else asprintf "mutant%d" bench in
     fprintf ppf "int %s() {\n%s%a}"
       function_name
       (if bench = 0 then "GC_INIT();\n" else "")
-      (* if not static_mode then fprintf ppf "#ifdef HASH\ninit_crcs();\n#endif\n"; *)
+      (* if not static then fprintf ppf "#ifdef HASH\ninit_crcs();\n#endif\n"; *)
       (* if has_ranges then fprintf ppf "range_list = local_range_list;\n"; *)
       print_stm body_stm;
 end

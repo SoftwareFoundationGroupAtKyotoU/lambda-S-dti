@@ -383,7 +383,7 @@ module CC = struct
       begin match u1 with
       | TyFun (u_dom, u_ret) -> 
         assert (u_dom = u2);
-        if config.intoB || config.alt then AppMExp (f1, f2), u_ret
+        if config.intoB || config.alt && not config.compile then AppMExp (f1, f2), u_ret
         else AppDExp (f1, (f2, CoercionExp (CId u_ret))), u_ret
       | _ -> raise @@ Translation_bug "AppMExp"
       end

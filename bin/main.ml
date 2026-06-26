@@ -92,6 +92,7 @@ let () =
   let compile_ref = ref false in
   let intoB_ref = ref false in
   let eager_ref = ref false in
+  let monotonic_ref = ref true in
   let hash_ref = ref false in
   let static_ref = ref false in
   let options = Arg.align [
@@ -100,6 +101,7 @@ let () =
       ("-c", Arg.Unit (fun () -> compile_ref := true), " Compile the program to C code");
       ("-b", Arg.Unit (fun () -> intoB_ref := true), " Translate into LB");
       ("-e", Arg.Unit (fun () -> eager_ref := true), " Eager list coercion-/cast-composition");
+      ("--non_monotonic", Arg.Unit (fun () -> monotonic_ref := false), " monotonic reference off");
       ("-h", Arg.Unit (fun () -> hash_ref := true), " hash-consing / compose-memo on");
       ("--static", Arg.Unit (fun () -> static_ref := true), " Evaluate or compile only fully statically program");
     ]
@@ -115,6 +117,7 @@ let () =
     ~compile:!compile_ref 
     ~intoB:!intoB_ref 
     ~eager:!eager_ref 
+    ~monotonic:!monotonic_ref
     ~hash:!hash_ref 
     ~static:!static_ref 
     ~opt_file:!file_ref 
