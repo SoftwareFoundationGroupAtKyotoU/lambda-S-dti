@@ -42,6 +42,10 @@ and tyvar = int * ty option ref
 (* int value is used to identify type variables.
  * ty option ref value is used to implement instantiation.
  * Some u means this variable is instantiated with u. *)
+
+type constr =
+  | CEqual of ty * ty
+  | CConsistent of ty * ty
   
 type tysc = TyScheme of tyvar list * ty
 
@@ -104,11 +108,6 @@ exception Blame of range * polarity
 
 (** Syntax of the surface language, the ITGL with extensions. *)
 module ITGL = struct
-  (* for typing *)
-  type constr =
-    | CEqual of ty * ty
-    | CConsistent of ty * ty
-
   type anotated =
     | Impl
     | Expl

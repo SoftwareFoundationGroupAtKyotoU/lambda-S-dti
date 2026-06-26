@@ -9,8 +9,6 @@ val type_of_binop : binop -> ty * ty * ty
 module ITGL : sig
   open Syntax.ITGL
 
-  val type_of_meet: ty -> ty -> ty
-
   val is_pure_value : tysc Environment.t -> exp -> bool
   val type_of_program : tysc Environment.t -> program -> (program * ty)
 

@@ -2,6 +2,7 @@ open Syntax
 open Format
 open Normalize
 open Type_utils
+open Unify
 
 exception Coercion_bug of string
 
@@ -269,8 +270,8 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
     end
   | CMRef (u11, u12), CMRef (u21, u22) ->
     begin try
-      let u1 = Typing.ITGL.type_of_meet u11 u21 in
-      let u2 = Typing.ITGL.type_of_meet u12 u22 in
+      let u1 = unify_meet u11 u21 in
+      let u2 = unify_meet u12 u22 in
       CMRef (u1, u2)
     with Typing.Type_error _ -> CFail (Rf, (Utils.Error.dummy_range, Pos), Rf) end (* TODO *)
   | _ -> raise @@ Coercion_bug "cannot compose coercions"

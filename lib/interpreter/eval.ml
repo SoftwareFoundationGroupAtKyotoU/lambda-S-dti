@@ -3,6 +3,7 @@ open Syntax
 open Type_utils
 open Coercion
 open Normalize
+open Unify
 
 exception Eval_bug of string
 
@@ -422,7 +423,7 @@ module CC = struct
     | ({ contents = v, u' } as rv, u) :: psi ->
       let print_debug f = Utils.Format.make_print_debug config.debug f in
       print_debug "cons <-- (%a, %a), %a@." Pp.CC.pp_value v Pp.pp_ty u' Pp.pp_ty u;
-      let u'' = try Typing.ITGL.type_of_meet u' u with Typing.Type_error _ -> raise @@ Blame (Utils.Error.dummy_range, Pos) in (* TODO *)
+      let u'' = try unify_meet u' u with Typing.Type_error _ -> raise @@ Blame (Utils.Error.dummy_range, Pos) in (* TODO *)
       if u'' = u' then
         consume ~config psi
       else begin

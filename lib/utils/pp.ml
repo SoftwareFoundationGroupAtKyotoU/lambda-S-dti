@@ -72,6 +72,12 @@ let pp_ty2 ppf u =
   in
   pp_ty_main ppf ~pp_tyvar u
 
+let pp_constr ppf = function
+  | CEqual (u1, u2) ->
+    fprintf ppf "%a =.= %a" pp_ty u1 pp_ty u2
+  | CConsistent (u1, u2) ->
+    fprintf ppf "%a ~.~ %a" pp_ty u1 pp_ty u2
+
 (* === pp for binop === *)
 
 (* TODO: delete later *)
@@ -256,12 +262,6 @@ let pp_coercion2 ppf c =
 
 module ITGL = struct
   open Syntax.ITGL
-
-  let pp_constr ppf = function
-    | CEqual (u1, u2) ->
-      fprintf ppf "%a =.= %a" pp_ty u1 pp_ty u2
-    | CConsistent (u1, u2) ->
-      fprintf ppf "%a ~.~ %a" pp_ty u1 pp_ty u2
 
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
