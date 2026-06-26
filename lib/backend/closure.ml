@@ -285,7 +285,7 @@ module Cls = struct
     | Let (x, f1, f2) -> Let (x, replace_var vx vy f1, replace_var vx vy f2)
     | MakeCls (x, {entry = l; actual_fv = fvs}, ftvs, f) -> MakeCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, ftvs, replace_var vx vy f)
     | MakeTyCls (x, {entry = l; actual_fv = fvs}, ftvs, f) -> MakeTyCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, ftvs, replace_var vx vy f)
-    | SetTy _ | Insert _ -> raise @@ Closure_bug "SetTy or Insert appear in replace"
+    | SetTy _ -> raise @@ Closure_bug "SetTy appear in replace"
     | AppMCls _ | AppMDir _ -> raise @@ Closure_bug "AppM appear in replace"
     | Cast _ -> raise @@ Closure_bug "Cast appear in replace"
 

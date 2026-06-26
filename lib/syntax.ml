@@ -312,7 +312,6 @@ module Cls = struct
     | MakeCls of id * closure * ftv * exp
     | MakeTyCls of id * closure * ftv * exp
     | SetTy of tyvar * exp
-    | Insert of id * exp
 
   type fundef = 
     | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }

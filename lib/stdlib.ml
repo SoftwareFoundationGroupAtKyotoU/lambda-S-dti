@@ -240,7 +240,8 @@ let implementations_eval = [
     "let ignore x = ();;";
   ]
 
-let pervasives ~config = 
+let pervasives ~config =
+  let config = { config with debug = false } in
   let env, tyenv, kfunenvs = Environment.empty, Environment.empty, (Environment.empty, Environment.empty, Environment.empty) in
   let env, tyenv, kfunenvs =
     List.fold_left

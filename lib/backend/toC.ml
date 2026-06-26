@@ -1,14 +1,147 @@
 open Syntax
 open Syntax.Cls
-open Format
 open Config
-open Utils.Error
-open Static_manage
-open Fv.Cls
+(* open Utils.Error *)
+(* open Static_manage *)
+(* open Fv.Cls *)
 
 exception ToC_bug of string
 exception ToC_error of string
 
+module type Target = sig
+  type stm
+  
+  (* statement append *)
+  val ( ++ ) : stm -> stm -> stm
+
+  val print_stm : Format.formatter -> stm -> unit
+
+  val let_val : id -> stm -> stm -> stm
+
+  val set_var : id -> id -> stm
+  val set_int : id -> int -> stm
+  val set_add : id -> id -> id -> stm
+  val set_sub : id -> id -> id -> stm
+  val set_mul : id -> id -> id -> stm
+  val set_div : id -> id -> id -> stm
+  val set_mod : id -> id -> id -> stm
+
+  val if_eq : id -> id -> stm -> stm -> stm
+  val if_lte : id -> id -> stm -> stm -> stm
+
+  val retv_fun : id
+  val retv_main : id
+  val return_val : id -> stm
+
+  val prog_includes : bench:int -> stm
+  val prog_main_wrap : bench:int -> static_mode:bool -> stm -> stm
+end
+
+module ToTarget (T : Target) = struct
+  open T
+
+  let rec emit_exp = function
+    | Let (x, f1, f2) ->
+      let_val x (emit_assign x f1) (emit_exp f2)
+    | IfEq (x, y, f1, f2) ->
+      if_eq x y (emit_exp f1) (emit_exp f2)
+    | IfLte (x, y, f1, f2) ->
+      if_lte x y (emit_exp f1) (emit_exp f2)
+    | atom ->
+      let ret = return_val retv_main in
+      let_val retv_fun (emit_assign retv_fun atom) ret
+  and emit_assign x = function
+    | Var y -> set_var x y
+    | Int i -> set_int x i
+    | Add (y, z) -> set_add x y z
+    | Sub (y, z) -> set_sub x y z
+    | Mul (y, z) -> set_mul x y z
+    | Div (y, z) -> set_div x y z
+    | Mod (y, z) -> set_mod x y z
+    | Let (y, f1, f2) -> let_val y (emit_assign x f1) (emit_assign x f2)
+    | IfEq (y, z, f1, f2) -> if_eq y z (emit_assign x f1) (emit_assign x f2)
+    | IfLte (y, z, f1, f2) -> if_lte y z (emit_assign x f1) (emit_assign x f2)
+    | _ -> raise @@ ToC_bug "yet"
+
+  let emit_program ~config ~bench (Prog (_, body)) = 
+    prog_includes ~bench
+    ++ prog_main_wrap ~bench ~static_mode:config.static (emit_exp body)
+end
+
+module CTarget : Target = struct
+  open Format
+
+  type stm = formatter -> unit
+
+  let ( ++ ) s1 s2 ppf = s1 ppf; s2 ppf
+  
+  let empty _ = ()
+
+  let print_stm ppf s = s ppf
+
+  let let_val x bind body ppf =
+    fprintf ppf "value %s;\n%a%a"
+      x print_stm bind print_stm body
+
+  let set_var x y ppf = fprintf ppf "%s = %s;@." x y
+  let set_int x i ppf = fprintf ppf "%s = %d;@." x i
+  let set_add x y z ppf = fprintf ppf "%s = %s + %s;@." x y z
+  let set_sub x y z ppf = fprintf ppf "%s = %s - %s;@." x y z
+  let set_mul x y z ppf = fprintf ppf "%s = %s * %s;@." x y z
+  let set_div x y z ppf = fprintf ppf "%s = %s / %s;@." x y z
+  let set_mod x y z ppf = fprintf ppf "%s = %s %% %s;@." x y z
+
+  let if_eq x y s1 s2 ppf = fprintf ppf "if (%s == %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
+  let if_lte x y s1 s2 ppf = fprintf ppf "if (%s <= %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
+
+  let retv_fun = "retv"
+  let retv_main = "0"
+  let return_val x ppf = fprintf ppf "return %s;@." x
+
+  (* let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
+  let tys = TyManager.get_definitions () in
+  let ranges = RangeManager.get_definitions () in
+  let crcs = CrcManager.get_definitions () in
+  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
+  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
+    (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
+      (if bench = 0 then "" else "../../"))
+    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
+    toC_tys tys
+    toC_ranges ranges
+    (toC_crcs ~config) crcs
+    (toC_fundefs ~config) toplevel
+    (if bench = 0 && not config.static then "range *range_list;\n\n" else "")
+    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
+    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
+    (toC_exp ~config ~is_main:true) f
+    "}" *)
+  
+  let prog_include str ppf =
+    fprintf ppf "#include %s@." str
+  
+  let prog_includes ~bench =
+    let bench_dir = if bench = 0 then "" else "../../" in
+    List.fold_left ( ++ ) empty @@ List.map prog_include ["<gc.h>"; asprintf "\"../%slibC/runtime.h\"" bench_dir ]
+
+  let prog_main_wrap ~bench ~static_mode body_stm ppf =
+    if bench = 0 && not static_mode then fprintf ppf "range *range_list;\n\n";
+    let function_name = if bench = 0 then "main" else asprintf "mutant%d" bench in
+    fprintf ppf "int %s() {\n%s%a}"
+      function_name
+      (if bench = 0 then "GC_INIT();\n" else "")
+      (* if not static_mode then fprintf ppf "#ifdef HASH\ninit_crcs();\n#endif\n"; *)
+      (* if has_ranges then fprintf ppf "range_list = local_range_list;\n"; *)
+      print_stm body_stm;
+end
+
+module TC = ToTarget(CTarget)
+
+let toC_program ~config ~bench ppf program =
+  CTarget.print_stm ppf (TC.emit_program ~bench ~config program)
+
+
+(*
 (*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
@@ -798,4 +931,4 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
     (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     (toC_exp ~config ~is_main:true) f
-    "}"
+    "}" *)

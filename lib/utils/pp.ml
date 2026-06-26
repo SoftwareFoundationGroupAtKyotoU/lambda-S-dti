@@ -877,7 +877,6 @@ module Cls = struct
           x
           pp_exp f1
           pp_exp f2
-    | Insert _ -> raise @@ Syntax_error (*"insert or setty was applied to Cls.pp_exp"*)
   and pp_match ppf = function
     | (mf, e) :: m -> 
       fprintf ppf " | %a -> %a%a"
