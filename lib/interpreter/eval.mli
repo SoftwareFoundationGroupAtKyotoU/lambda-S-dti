@@ -12,11 +12,4 @@ module CC : sig
   val consume :  config:Config.t ->((value * ty) ref * ty) list -> unit
 end 
 
-module KNorm : sig
-  open Syntax.KNorm
-
-  val eval_program : config:Config.t -> value Environment.t -> program -> value Environment.t * id * value
-  
-  val coerce : config:Config.t -> value -> coercion -> value
-end
 

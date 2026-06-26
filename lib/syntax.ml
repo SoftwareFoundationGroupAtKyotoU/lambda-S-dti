@@ -230,6 +230,9 @@ module KNorm = struct
     | Tl of id
     | Tuple of id list
     | Tget of id * int
+    | Ref of id * ty
+    | Deref of id * ty option
+    | Subst of id * id * ty option
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
     | AppMExp of id * id
@@ -252,19 +255,6 @@ module KNorm = struct
     | Exp of exp
     | LetDecl of id * exp
     | LetFunDecl of id * tyvar list * fundef
-
-  type value =
-    | IntV of int
-    | NilV
-    | ConsV of value * value
-    | TupleV of value list
-    | Tagged of tag * value
-    | CoerceV of value * coercion
-    | CoercionV of coercion
-    | FunBV of (ty list -> value -> value)
-    | FunSV of (ty list -> (value * value) -> value)
-    | FunDualV of (ty list -> ((value -> value) * ((value * value) -> value)))
-    | FunTyV of (ty list -> value)
 end
 
 module Cls = struct
@@ -302,6 +292,9 @@ module Cls = struct
     | Hd of id
     | Tl of id
     | Tget of id * int
+    | Ref of id * ty
+    | Deref of id * ty option
+    | Subst of id * id * ty option
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list

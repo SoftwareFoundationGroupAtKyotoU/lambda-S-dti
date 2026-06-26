@@ -28,12 +28,11 @@ type 't state = {
   tyenv : tysc Environment.t;
   env : CC.value Environment.t;
   kfunenvs : tyvar list Environment.t * id Environment.t * id Environment.t;
-  kenv : KNorm.value Environment.t;
 }
 
 let init_state program ~config =
-  let env, tyenv, kfunenvs, kenv = Stdlib.pervasives ~config in
-  { program; ty = TyVar (-1, { contents = None }); tyenv; env; kfunenvs; kenv }
+  let env, tyenv, kfunenvs = Stdlib.pervasives ~config in
+  { program; ty = TyVar (-1, { contents = None }); tyenv; env; kfunenvs }
 
 let change_state_program program state =
   {
@@ -42,7 +41,6 @@ let change_state_program program state =
     tyenv = state.tyenv;
     env = state.env;
     kfunenvs = state.kfunenvs;
-    kenv = state.kenv
   }
 
 (* --- public API --- *)
@@ -123,11 +121,6 @@ let kNorm_funs ppf state ~config =
   fprintf ppf "kf: %a@." Pp.KNorm.pp_program kf;
   let state = change_state_program kf state in
   { state with kfunenvs = kfunenvs }
-
-let keval ppf state ~config =
-  print_title ppf "k-Eval";
-  let kenv, kx, kv = Eval.KNorm.eval_program ~config state.kenv state.program in
-  { state with kenv }, kx, kv
 
 let closure ppf state ~config = 
   print_title ppf "Closure";

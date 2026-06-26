@@ -28,15 +28,6 @@ let rec repl ppf lexbuf programs ~config ~state =
           Pipeline.init_state () ~config, []
           (* TODO: ファイルモードのとき，プログラムがきちんと書れていなくてもコンパイルが通ることがある (ex: bad.ml) *)
         | _ -> cc_state |> Pipeline.change_state_program (), programs
-      else if config.kNorm then
-        (* Evaluation on kNormalized term *)
-        let state, kx, kv = 
-          cc_state
-          |> Pipeline.kNorm_funs ppf ~config
-          |> Pipeline.keval ppf ~config
-        in
-        fprintf std_formatter "%a : %a = %a@." pp_print_string kx Pp.pp_ty2 state.ty Pp.KNorm.pp_value2 kv;
-        state |> Pipeline.change_state_program (), []
       else
         (* Evaluation *)
         let state, x, v = 
@@ -97,7 +88,6 @@ let () =
   in
   let file_ref = ref None in
   let debug_ref = ref false in
-  let kNorm_ref = ref false in
   let alt_ref = ref false in
   let compile_ref = ref false in
   let intoB_ref = ref false in
@@ -106,7 +96,6 @@ let () =
   let static_ref = ref false in
   let options = Arg.align [
       ("-d", Arg.Unit (fun () -> debug_ref := true), " Enable debug mode");
-      ("-k", Arg.Unit (fun () -> kNorm_ref := true), " Evaluate on k-Normal form");
       ("-a", Arg.Unit (fun () -> alt_ref := true), " Use alternative translation");
       ("-c", Arg.Unit (fun () -> compile_ref := true), " Compile the program to C code");
       ("-b", Arg.Unit (fun () -> intoB_ref := true), " Translate into LB");
@@ -122,7 +111,6 @@ let () =
   Arg.parse options parse_argv usage;
   let config = Config.create 
     ~debug:!debug_ref 
-    ~kNorm:!kNorm_ref 
     ~alt:!alt_ref 
     ~compile:!compile_ref 
     ~intoB:!intoB_ref 

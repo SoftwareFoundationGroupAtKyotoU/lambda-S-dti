@@ -84,9 +84,11 @@ module CC = struct
     | ConsExp (f1, f2) -> ConsExp (alpha_exp idenv f1, alpha_exp idenv f2)
     | MatchExp (f, ms) -> 
       MatchExp (alpha_exp idenv f, List.map (fun (mf, f) -> let mf, idenv = alpha_mf idenv mf in (mf, alpha_exp idenv f)) ms)
-    | TupleExp fs -> 
+    | TupleExp fs ->
       TupleExp (List.map (fun f -> alpha_exp idenv f) fs)
-    | _ -> raise @@ Failure "yet"
+    | RefExp (f, u) -> RefExp (alpha_exp idenv f, u)
+    | DerefExp (f, u) -> DerefExp (alpha_exp idenv f, u)
+    | SubstExp (f1, f2, u) -> SubstExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
   and alpha_fund idenv = function
     | FunB ((x, u), f) ->
       let newx = genvar x in
@@ -237,12 +239,22 @@ module CC = struct
       insert_let f2 @@ fun y -> insert_let f1 @@ fun x -> KNorm.Cons (x, y)
     | TupleExp fs ->
       let rec make_tuple fs l = match fs with
-      | f :: fs -> 
+      | f :: fs ->
         let f = k_normalize_exp tvsenv f in
         insert_let f @@ fun x -> (make_tuple fs (x :: l))
       | [] -> KNorm.Tuple (List.rev l)
       in
       make_tuple fs []
+    | RefExp (f, u) ->
+      let f = k_normalize_exp tvsenv f in
+      insert_let f @@ fun x -> KNorm.Ref (x, u)
+    | DerefExp (f, u) ->
+      let f = k_normalize_exp tvsenv f in
+      insert_let f @@ fun x -> KNorm.Deref (x, u)
+    | SubstExp (f1, f2, u) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Subst (x, y, u)
     | LetExp (x, f1, f2) ->
       begin match f1 with
       | FunExp (tvs, fund) ->
@@ -258,7 +270,6 @@ module CC = struct
         let f2 = k_normalize_exp (Environment.add x [] tvsenv) f2 in
         KNorm.LetExp (x, f1, f2)
       end
-    | _ -> raise @@ KNormal_bug "yet"
   and k_normalize_fund ~static tvsenv = function
     | FunB ((x, _), f) ->
       let f = k_normalize_exp ~static (Environment.add x [] tvsenv) f in
@@ -320,6 +331,9 @@ module KNorm = struct
     | Hd x -> Hd (find x idenv)
     | Tl x -> Tl (find x idenv)
     | Tget (x, i) -> Tget (find x idenv, i)
+    | Ref (x, u) -> Ref (find x idenv, u)
+    | Deref (x, u) -> Deref (find x idenv, u)
+    | Subst (x, y, u) -> Subst (find x idenv, find y idenv, u)
     | IfEqExp (x, y, f1, f2) ->
       IfEqExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
     | IfLteExp (x, y, f1, f2) ->

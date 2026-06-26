@@ -151,6 +151,17 @@ module KNorm = struct
     | Hd x -> Cls.Hd x
     | Tl x -> Cls.Tl x
     | Tget (x, i) -> Tget (x, i)
+    | Ref (x, u) ->
+      let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Ref (x, u))
+    | Deref (x, None) -> Cls.Deref (x, None)
+    | Deref (x, Some u) ->
+      let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Deref (x, Some u))
+    | Subst (x, y, None) -> Cls.Subst (x, y, None)
+    | Subst (x, y, Some u) ->
+      let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Subst (x, y, Some u))
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args funty f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
@@ -258,6 +269,9 @@ module Cls = struct
     | Hd x -> Hd (replace x)
     | Tl x -> Tl (replace x)
     | Tget (x, i) -> Tget (replace x, i)
+    | Ref (x, u) -> Ref (replace x, u)
+    | Deref (x, uo) -> Deref (replace x, uo)
+    | Subst (x, y, uo) -> Subst (replace x, replace y, uo)
     | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
     | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
     | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)

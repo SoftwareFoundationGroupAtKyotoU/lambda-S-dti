@@ -295,6 +295,7 @@ let rec toC_exp ppf f ~config ~is_main =
           x
           y
           i
+    | Ref _ | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
     | AppDDir (y, (z1, z2)) ->
       fprintf ppf "%s = fun_%s(0, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
         x
@@ -488,7 +489,7 @@ let rec toC_exp ppf f ~config ~is_main =
     end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
-  | Var _ | Int _ | Nil | Cons _ | Tuple _ | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Hd _ | Tl _ | Tget _ | AppDDir _ | AppDCls _ | AppMDir _ | AppMCls _ | Cast _ | AppTy _ | AppTyFun _ | CApp _ | Coercion _ | CSeq _ as f ->
+  | Var _ | Int _ | Nil | Cons _ | Tuple _ | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Hd _ | Tl _ | Tget _ | AppDDir _ | AppDCls _ | AppMDir _ | AppMCls _ | Cast _ | AppTy _ | AppTyFun _ | CApp _ | Coercion _ | CSeq _ | Ref _ | Deref _ | Subst _ as f ->
     fprintf ppf "value retv;\n%areturn %s;\n"
       toC_exp (Insert ("retv", f))
       (if is_main then "0" else "retv")

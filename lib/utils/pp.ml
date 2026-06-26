@@ -642,6 +642,11 @@ module KNorm = struct
     | Tget (x, i) -> fprintf ppf "tget(%s, %d)" x i
     | Hd x -> fprintf ppf "hd(%s)" x
     | Tl x -> fprintf ppf "tl(%s)" x
+    | Ref (x, u) -> fprintf ppf "ref %s@%a" x pp_ty u
+    | Deref (x, None) -> fprintf ppf "!%s" x
+    | Deref (x, Some u) -> fprintf ppf "!%s@%a" x pp_ty u
+    | Subst (x, y, None) -> fprintf ppf "%s := %s" x y
+    | Subst (x, y, Some u) -> fprintf ppf "%s := %s@%a" x y pp_ty u
     | IfEqExp (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -726,64 +731,6 @@ module KNorm = struct
           x
           pp_tyabses tvs
           pp_fd fd
-
-  let gt_value v1 v2 = match v1, v2 with
-    | (IntV _ | FunSV _ | FunDualV _ | FunBV _ | NilV | TupleV _ | CoercionV _ | CoerceV _), ConsV _ -> true
-    | (IntV _ | FunSV _ | FunDualV _ | FunBV _ | NilV | TupleV _ | CoercionV _), CoerceV _ -> true
-    | _ -> false
-
-  let gte_value v1 v2 = match v1, v2 with
-    | (FunSV _ | FunDualV _ | FunBV _ | FunTyV _), (FunSV _ | FunDualV _ | FunBV _ | FunTyV _) -> true
-    | CoerceV _, CoerceV _ -> true
-    | ConsV _, ConsV _ -> true
-    | TupleV _, TupleV _ -> true
-    | _ -> gt_value v1 v2
-
-  let rec pp_value ppf = function
-    | IntV i -> pp_print_int ppf i
-    | NilV -> pp_print_string ppf "[]"
-    | ConsV (v1, v2) as v ->
-      fprintf ppf "%a :: %a"
-        (with_paren (gte_value v v1) pp_value) v1
-        (with_paren (gt_value v v2) pp_value) v2
-    | TupleV vs ->
-      let pp_sep ppf () = fprintf ppf ", " in
-      let pp_list ppf vals = pp_print_list pp_value ppf vals ~pp_sep:pp_sep in
-      fprintf ppf "(%a)"
-        pp_list vs
-    | FunSV _ | FunDualV _ | FunBV _ | FunTyV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v1, c) as v -> 
-      fprintf ppf "%a<<%a>>"
-        (with_paren (gt_value v v1) pp_value) v1
-        pp_coercion c
-    | Tagged (t, v) ->
-      fprintf ppf "%a: %a => ?"
-        pp_value v
-        pp_tag t
-    | CoercionV c -> pp_coercion ppf c
-
-  let rec pp_value2 ppf = function
-    | IntV i -> pp_print_int ppf i
-    | NilV -> pp_print_string ppf "[]"
-    | ConsV (v1, v2) as v ->
-      fprintf ppf "%a :: %a"
-        (with_paren (gte_value v v1) pp_value2) v1
-        (with_paren (gt_value v v2) pp_value2) v2
-    | TupleV vs ->
-      let pp_sep ppf () = fprintf ppf ", " in
-      let pp_list ppf vals = pp_print_list pp_value2 ppf vals ~pp_sep:pp_sep in
-      fprintf ppf "(%a)"
-        pp_list vs
-    | FunSV _ | FunDualV _ | FunBV _ | FunTyV _ -> pp_print_string ppf "<fun>"
-    | CoerceV (v1, c) as v -> 
-      fprintf ppf "%a<<%a>>"
-        (with_paren (gt_value v v1) pp_value2) v1
-        pp_coercion2 c
-    | Tagged (t, v) ->
-      fprintf ppf "%a: %a => ?"
-        pp_value2 v
-        pp_tag t
-    | CoercionV c -> pp_coercion2 ppf c
 end
 
 module Cls = struct
@@ -851,6 +798,11 @@ module Cls = struct
     | Hd x -> fprintf ppf "hd(%s)" x
     | Tl x -> fprintf ppf "tl(%s)" x
     | Tget (x, i) -> fprintf ppf "tget(%s, %i)" x i
+    | Ref (x, u) -> fprintf ppf "ref %s@%a" x pp_ty u
+    | Deref (x, None) -> fprintf ppf "!%s" x
+    | Deref (x, Some u) -> fprintf ppf "!%s@%a" x pp_ty u
+    | Subst (x, y, None) -> fprintf ppf "%s := %s" x y
+    | Subst (x, y, Some u) -> fprintf ppf "%s := %s@%a" x y pp_ty u
     | IfEq (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x

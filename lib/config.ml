@@ -3,7 +3,6 @@ type t = {
   debug : bool;
   compile : bool;
   (* translation formula *)
-  kNorm : bool;
   alt : bool;
   intoB : bool;
   (* evaluation formula *)
@@ -16,7 +15,7 @@ type t = {
   opt_file : string option;
 }
 
-let create ?(debug=false) ?(kNorm=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(monotonic=true) ?(opt_file=None) () =
+let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(monotonic=true) ?(opt_file=None) () =
   (* invalid combination *)
   if alt && intoB then
     failwith "Config error: -a and -b could not be at the same time";
@@ -38,5 +37,4 @@ let create ?(debug=false) ?(kNorm=false) ?(alt=false) ?(intoB=false) ?(eager=fal
       (alt, intoB, eager)
   in
   (* NOTE: when compiling, -k is always true *)
-  let kNorm = if compile then true else kNorm in
-  { debug; kNorm; alt; intoB; eager; compile; static; hash; monotonic; opt_file }
+  { debug; alt; intoB; eager; compile; static; hash; monotonic; opt_file }

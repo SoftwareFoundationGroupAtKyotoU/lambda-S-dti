@@ -10,9 +10,9 @@ module KNorm = struct
   open Syntax.KNorm
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x  | Tget (x, _) -> V.singleton x
+    | Var x | Hd x | Tl x  | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
     | IConst _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
+    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) | Subst (x, y, _) -> V.of_list [x; y]
     | Tuple xs -> V.of_list xs
     | IfEqExp (x, y, f1, f2) | IfLteExp (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | MatchExp (x, ms) -> 
@@ -37,9 +37,9 @@ module Cls = struct
   open Syntax.Cls
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x | Tget (x, _) -> V.singleton x
+    | Var x | Hd x | Tl x | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
     | Int _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) -> V.of_list [x; y]
+    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) | Subst (x, y, _) -> V.of_list [x; y]
     | Tuple xs -> V.of_list xs
     | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
     | Match (x, ms) -> 
