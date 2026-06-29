@@ -12,6 +12,7 @@
 #include "fun.h"
 #include "lst.h"
 #include "tpl.h"
+#include "ref.h"
 
 #include "app.h"
 #include "capp.h"

@@ -27,6 +27,7 @@ typedef enum ground_ty : uint8_t {
 	G_AR,
 	G_LI,
 	G_TP,
+	G_RF,
 } ground_ty;
 
 typedef struct ty ty;
@@ -44,6 +45,9 @@ typedef struct tpl_raw tpl;
 #else
 typedef struct tpl_header tpl;
 #endif
+
+typedef struct ref ref;
+
 #if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;
 #endif //not CAST && not STATIC

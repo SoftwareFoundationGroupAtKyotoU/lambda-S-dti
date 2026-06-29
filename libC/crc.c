@@ -19,6 +19,7 @@ crc crc_inj_BOOL = { .crckind = SEQ_INJ, .g_inj = G_BOOL, .crcdat = { .seq_tv = 
 crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
+crc crc_inj_RF = { .crckind = SEQ_INJ, .g_inj = G_RF, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 
 static inline crc* create_new_crc(crc* candidate) {
 	#ifdef PROFILE
@@ -58,6 +59,13 @@ static uint32_t hash_crc(const crc *c) {
             for (int i = 0; i < c->crcdat.tpl_crc.arity; i++) {
                 h = (h * 31) + (uintptr_t)c->crcdat.tpl_crc.crcs[i];
             }
+            break;
+		case REF:
+            h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c1;
+            h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c2;
+            break;
+		case MREF:
+            h = (h * 31) + (uintptr_t)c->crcdat.mref_crc;
             break;
         default:
             h = (h * 31) + c->crcdat.seq_tv.rid_proj;
@@ -99,6 +107,11 @@ static int eq_crc(const crc *a, const crc *b) {
                 if (a->crcdat.tpl_crc.crcs[i] != b->crcdat.tpl_crc.crcs[i]) return 0;
             }
             return 1;
+		case REF:
+            return a->crcdat.ref_crc.c1 == b->crcdat.ref_crc.c1 &&
+                   a->crcdat.ref_crc.c2 == b->crcdat.ref_crc.c2;
+		case MREF:
+            return a->crcdat.mref_crc == b->crcdat.mref_crc;
         default:
             return a->crcdat.seq_tv.rid_proj == b->crcdat.seq_tv.rid_proj &&
                    a->crcdat.seq_tv.rid_inj  == b->crcdat.seq_tv.rid_inj  &&
@@ -241,6 +254,23 @@ static inline crc* new_tuple(uint16_t arity, crc **crcs) {
     return alloc_crc(&temp);
 }
 
+static inline crc* new_ref(crc *c1, crc *c2) {
+    crc temp = {0};
+    temp.crckind = REF;
+	temp.has_tv = c1->has_tv | c2->has_tv;
+    temp.crcdat.ref_crc.c1 = c1;
+    temp.crcdat.ref_crc.c2 = c2;
+    return alloc_crc(&temp);
+}
+
+static inline crc* new_mref(ty *u) {
+    crc temp = {0};
+    temp.crckind = MREF;
+	// temp.has_tv = c1->has_tv | c2->has_tv;
+    temp.crcdat.mref_crc = u;
+    return alloc_crc(&temp);
+}
+
 static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
     crc temp = {0};
     temp.crckind = BOT;
@@ -280,6 +310,7 @@ static inline crc* new_seq_inj(crc *s_new, const crc *base_inj) {
                 temp.crcdat.seq_tv.ptr.s = &crc_id;
                 return alloc_crc(&temp);
             }
+			case G_RF: return &crc_inj_RF;
             default: {
                 printf("got G_NONE");
                 exit(1);
@@ -436,6 +467,32 @@ static inline crc *normalize_tv_inj_tuple(crc *c) {
     temp_seq.crcdat.seq_tv.ptr.s = ctuple;
     
     return alloc_crc(&temp_seq);
+}
+static inline crc *normalize_tv_inj_ref(crc *c) {
+    ty *inner = c->crcdat.seq_tv.ptr.tv->tydat.tyref;
+
+    crc tr = {0};
+    tr.crckind = TV_INJ;
+	tr.p_inj = c->p_inj;
+	tr.has_tv = 1;
+    tr.crcdat.seq_tv.rid_inj = c->crcdat.seq_tv.rid_inj;
+    tr.crcdat.seq_tv.ptr.tv = inner;
+    crc *cr = alloc_crc(&tr);
+
+    crc tw = {0};
+    tw.crckind = TV_PROJ; tw.p_proj = c->p_inj ^ 1; tw.has_tv = 1;
+    tw.crcdat.seq_tv.rid_proj = c->crcdat.seq_tv.rid_inj;
+    tw.crcdat.seq_tv.ptr.tv = inner;
+    crc *cw = alloc_crc(&tw);
+
+    crc *cref = new_ref(cr, cw);
+
+    crc ts = {0};
+    ts.crckind = SEQ_INJ;
+	ts.g_inj = G_RF;
+	ts.has_tv = cref->has_tv;
+    ts.crcdat.seq_tv.ptr.s = cref;
+    return alloc_crc(&ts);
 }
 inline crc *normalize_tv_inj(crc *c) {
 	switch(c->crcdat.seq_tv.ptr.tv->tykind) {

@@ -13,9 +13,10 @@ typedef struct ty {
 		TYFUN, //4
 		TYLIST, //5
 		TYTUPLE, //6
-		TYVAR, //7
+		TYREF, //7
+		TYVAR, //8
 		#ifndef CAST
-		SUBSTITUTED, //8
+		SUBSTITUTED, //9
 		#endif
 	} tykind;
 	union tydat {
@@ -29,6 +30,7 @@ typedef struct ty {
 			uint16_t arity;
 			ty **tys;
 		} tytuple;
+		ty *tyref;
 	} tydat;
 } ty;
 
@@ -38,6 +40,7 @@ extern ty tybool;
 extern ty tyunit;
 extern ty tyar;
 extern ty tyli;
+extern ty tyref;
 
 ty *(newty)();
 

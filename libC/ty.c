@@ -9,6 +9,7 @@ ty tybool = { .tykind = BASE_BOOL };
 ty tyunit = { .tykind = BASE_UNIT };
 ty tyar = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
 ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
+ty tyref = { .tykind = TYREF, .tydat = { .tyref = &tydyn } };
 
 inline ty *newty() {
 	ty *retty = (ty*)GC_MALLOC(sizeof(ty));

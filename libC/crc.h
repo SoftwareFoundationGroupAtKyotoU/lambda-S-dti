@@ -23,6 +23,8 @@ typedef struct crc {
 		FUN, //10
 		LIST, //11
 		TUPLE, //12
+		REF, //13
+		MREF, //14
 	} crckind;
 	uint8_t p_proj  : 1;
     uint8_t p_inj   : 1;
@@ -53,6 +55,11 @@ typedef struct crc {
 			uint16_t arity;
 			crc **crcs;
 		} tpl_crc;
+		struct ref_crc { // for REF
+			crc *c1;
+			crc *c2;
+		} ref_crc;
+		ty *mref_crc; // for MREF
 	} crcdat;
 } crc;
 
@@ -62,6 +69,7 @@ crc *compose(crc*, crc*);
 crc *compose_funs(crc*, crc*);
 crc *compose_lists(crc*, crc*);
 crc *compose_tuples(crc*, crc*);
+crc *compose_refs(crc*, crc*);
 
 crc *normalize_tv_inj(crc*);
 crc *normalize_tv_proj(crc*);
@@ -74,6 +82,7 @@ extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
 extern crc crc_inj_AR;
 extern crc crc_inj_LI;
+extern crc crc_inj_RF;
 
 crc* alloc_crc(crc*);
 
