@@ -1,14 +1,68 @@
 open Syntax
-open Syntax.Cls
-open Format
-open Config
-open Utils.Error
-open Static_manage
-open Fv.Cls
+open Syntax.C
+(* open Format *)
+(* open Config *)
+(* open Utils.Error *)
+(* open Static_manage *)
+(* open Fv.Cls *)
 
 exception ToC_bug of string
 exception ToC_error of string
 
+let rec toC_exp ~is_main = function
+  | Cls.Let (x, f1, f2) ->
+    SDecl (VALUE, x) :: toC_assign x f1 @ toC_exp ~is_main f2
+  | Cls.IfEq (x, y, f1, f2) ->
+    [SIf (Eq (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2)]
+  | Cls.IfLte (x, y, f1, f2) ->
+    [SIf (Lte (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2)]
+  | _ as f ->
+    let return = SReturn (if is_main then Int 0 else Var "retv") in
+    SDecl (VALUE, "retv") :: toC_assign "retv" f @ [return]
+and toC_assign x f =
+  let assign_x e = [SAssign (LVar x, e)] in
+  match f with
+  | Cls.Var y -> assign_x (Var y)
+  | Cls.Int i -> assign_x (Int i)
+  | Cls.Add (y, z) -> assign_x (Add (y, z))
+  | Cls.Sub (y, z) -> assign_x (Sub (y, z))
+  | Cls.Mul (y, z) -> assign_x (Mul (y, z))
+  | Cls.Div (y, z) -> assign_x (Div (y, z))
+  | Cls.Mod (y, z) -> assign_x (Mod (y, z))
+  | Cls.Let (y, f1, f2) -> SDecl (VALUE, y) :: toC_assign y f1 @ toC_assign x f2
+  | _ -> raise @@ ToC_bug "yet"
+
+let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
+  ignore config;
+  ignore toplevel;
+  ignore f;
+  let inc = [
+    Include "<gc.h>";
+    Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
+  ]
+  in
+  let decl = if bench = 0 then [Decl (PTR RANGE, "range_list")] else [] in
+  let main = [Fundef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true f)] in
+  inc @ decl @ main
+  (* let tys = TyManager.get_definitions () in
+  let ranges = RangeManager.get_definitions () in
+  let crcs = CrcManager.get_definitions () in
+  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
+  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
+    (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
+      (if bench = 0 then "" else "../../"))
+    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
+    toC_tys tys
+    toC_ranges ranges
+    (toC_crcs ~config) crcs
+    (toC_fundefs ~config) toplevel
+    (if bench = 0 && not config.static then "range *range_list;\n\n" else "")
+    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
+    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
+    (toC_exp ~config ~is_main:true) f
+    "}" *)
+
+(* 
 (*Utilities*)
 (*型のCプログラム表記を出力する関数
   Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
@@ -295,7 +349,13 @@ let rec toC_exp ppf f ~config ~is_main =
           x
           y
           i
-    | Ref _ | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
+    | Ref (y, u) ->
+      let c = c_of_ty u in
+      fprintf ppf "%s = (value)GC_MALLOC(sizeof(ref));\n((ref*)%s)->v = %s;\n((ref*)%s)->u = %s;\n"
+        x x y x c
+    | Deref (y, None) -> fprintf ppf "%s = ((ref*)%s)->v;\n" x y
+    | Subst (y, z, None) -> fprintf ppf "((ref*)%s)->v = %s;\n%s = 0;\n" y z x
+    | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
     | AppDDir (y, (z1, z2)) ->
       fprintf ppf "%s = fun_%s(0, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
         x
@@ -798,4 +858,4 @@ let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
     (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
     (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
     (toC_exp ~config ~is_main:true) f
-    "}"
+    "}" *)

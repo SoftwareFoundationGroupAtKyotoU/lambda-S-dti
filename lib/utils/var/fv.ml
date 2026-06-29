@@ -58,5 +58,4 @@ module Cls = struct
     | MakeCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
     | MakeTyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
     | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
-    | Insert (_, f) -> fv_exp f
 end

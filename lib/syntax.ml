@@ -312,7 +312,6 @@ module Cls = struct
     | MakeCls of id * closure * ftv * exp
     | MakeTyCls of id * closure * ftv * exp
     | SetTy of tyvar * exp
-    | Insert of id * exp
 
   type fundef = 
     | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
@@ -321,4 +320,62 @@ module Cls = struct
 
   type program = Prog of fundef list * exp
 
+end
+
+module C = struct
+  type ty = VALUE | TY | INT | PTR of ty | RANGE
+
+  type exp =
+    | Var of id
+    | Int of int
+    | Add of id * id
+    | Sub of id * id
+    | Mul of id * id
+    | Div of id * id
+    | Mod of id * id
+    | Eq of id * id
+    | Lte of id * id
+    (* | Cons of id * id *)
+    (* | Tuple of id list *)
+    (* | Hd of id *)
+    (* | Tl of id *)
+    (* | Tget of id * int
+    | Ref of id * ty
+    | Deref of id * ty option
+    | Subst of id * id * ty option *)
+    (* | AppTy of id * int * int * tyarg list (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
+    | AppTyFun of id * int * int * tyarg list
+    | AppDCls of id * (id * id)
+    | AppDDir of label * (id * id)
+    | AppMCls of id * id
+    | AppMDir of label * id
+    | Cast of id * ty * ty * (int * polarity)
+    | CApp of id * id
+    | CSeq of id * id
+    | Coercion of coercion *)
+
+  type lval =
+    | LVar of id
+
+  type stm =
+    | SDecl of ty * id
+    | SAssign of lval * exp
+    | SReturn of exp
+    | SIf of exp * stm list * stm list
+    (*
+    | Match of id * (matchform * exp) list *)
+    (* | MakeCls of id * closure * ftv * exp
+    | MakeTyCls of id * closure * ftv * exp *)
+    (* | SetTy of tyvar * exp *)
+
+  type func_sig = {
+    ret_ty: ty;
+    fname: id;
+    params: (ty * id) list;
+  }
+
+  type toplevel =
+    | Include of string
+    | Fundef of func_sig * stm list
+    | Decl of ty * id
 end

@@ -130,7 +130,7 @@ let closure ppf state ~config =
 
 let toC ppf state ~config ~bench = 
   print_title ppf "toC";
-  let toC_program = ToC.toC_program ~config ~bench in
-  let c_code = asprintf "%a" toC_program state.program in
-  fprintf ppf "%s@." c_code;
-  c_code
+  let c_code = ToC.toC_program ~config ~bench state.program in
+  let str_c = asprintf "%a" Pp.C.pp_program c_code in
+  fprintf ppf "%s@." str_c;
+  str_c

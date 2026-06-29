@@ -877,7 +877,6 @@ module Cls = struct
           x
           pp_exp f1
           pp_exp f2
-    | Insert _ -> raise @@ Syntax_error (*"insert or setty was applied to Cls.pp_exp"*)
   and pp_match ppf = function
     | (mf, e) :: m -> 
       fprintf ppf " | %a -> %a%a"
@@ -955,4 +954,56 @@ module Cls = struct
           fprintf ppf "%a\nexp:\n%a"
             pp_toplevel toplevel
             pp_exp cf
+end
+
+module C = struct
+  open Syntax.C
+
+  let rec pp_ty ppf = function
+    | VALUE -> pp_print_string ppf "value"
+    | TY -> pp_print_string ppf "ty"
+    | INT -> pp_print_string ppf "int"
+    | PTR t -> fprintf ppf "%a*" pp_ty t
+    | RANGE -> pp_print_string ppf "range"
+
+  let pp_exp ppf = function
+    | Var x -> pp_print_string ppf x
+    | Int i -> pp_print_int ppf i
+    | Add (x, y) -> fprintf ppf "%s + %s" x y
+    | Sub (x, y) -> fprintf ppf "%s - %s" x y
+    | Mul (x, y) -> fprintf ppf "%s * %s" x y
+    | Div (x, y) -> fprintf ppf "%s / %s" x y
+    | Mod (x, y) -> fprintf ppf "%s %% %s" x y
+    | Eq (x, y) -> fprintf ppf "%s == %s" x y
+    | Lte (x, y) -> fprintf ppf "%s <= %s" x y
+
+  let pp_lval ppf = function
+    | LVar x -> pp_print_string ppf x
+
+  let sep_stm ppf () = pp_print_string ppf "\n"
+
+  let rec pp_stm ppf = function
+    | SDecl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
+    | SAssign (l, e) -> fprintf ppf "%a = %a;" pp_lval l pp_exp e
+    | SReturn e -> fprintf ppf "return %a;" pp_exp e
+    | SIf (e, s1, s2) ->
+      fprintf ppf "if (%a){\n%a\n} else {\n%a\n}"
+        pp_exp e
+        (pp_print_list ~pp_sep:sep_stm pp_stm) s1
+        (pp_print_list ~pp_sep:sep_stm pp_stm) s2
+
+  let pp_toplevel ppf = function
+    | Include s -> fprintf ppf "#include %s" s
+    | Decl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
+    | Fundef ({ ret_ty; fname; params }, body) ->
+      let pp_param ppf (t, x) = fprintf ppf "%a %s" pp_ty t x in
+      let sep_param ppf () = pp_print_string ppf ", " in
+      fprintf ppf "%a %s(%a){\n%a\n}"
+        pp_ty ret_ty fname
+        (pp_print_list ~pp_sep:sep_param pp_param) params
+        (pp_print_list ~pp_sep:sep_stm pp_stm) body
+  
+  let pp_program ppf program =
+    let pp_sep ppf () = pp_print_string ppf "\n" in
+    pp_print_list ~pp_sep pp_toplevel ppf program
 end
