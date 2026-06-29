@@ -1,6 +1,6 @@
 open Syntax
 open Static_manage
-open Ftv
+(* open Ftv *)
 
 exception Closure_bug of string
 exception Closure_error of string
@@ -21,7 +21,7 @@ module KNorm = struct
     | h :: t -> if List.mem h l1 then true else exist_tv l1 t
     | [] -> false
   
-  let rec ty_tv tvs u = match u with
+  (* let rec ty_tv tvs u = match u with
     | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn as u -> (u, fun x -> x)
     | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> (u, fun x -> x)
     | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
@@ -63,11 +63,11 @@ module KNorm = struct
         in
         (newu, fun x -> List.fold_left (fun x ufun -> ufun x) (Cls.SetTy (newtv, x)) (List.rev ufuns))
     | TyRef _ -> raise @@ Closure_bug "yet"
-    | TyCoercion _ -> raise @@ Closure_bug "yet"
+    | TyCoercion _ -> raise @@ Closure_bug "yet" *)
 
-  let ta_tv tvs = function
+  (* let ta_tv tvs = function
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
-    | TyNu -> (TyNu, fun x -> x)
+    | TyNu -> (TyNu, fun x -> x) *)
 
   let tyvar_to_tyarg tvs = 
     let rec ttt l r = match l with
@@ -107,7 +107,7 @@ module KNorm = struct
       let r = RangeManager.range_id r in
       let c = Cls.CTvInj (tv, (r, p)) in
       if not (List.mem tv tvs) then begin
-        TyManager.register (TyVar tv);
+        (* TyManager.register (TyVar tv); *)
         CrcManager.register c
       end;
       c
@@ -115,7 +115,7 @@ module KNorm = struct
       let r = RangeManager.range_id r in
       let c = Cls.CTvProj (tv, (r, p)) in
       if not (List.mem tv tvs) then begin
-        TyManager.register (TyVar tv);
+        (* TyManager.register (TyVar tv); *)
         CrcManager.register c
       end;
       c
@@ -151,17 +151,17 @@ module KNorm = struct
     | Hd x -> Cls.Hd x
     | Tl x -> Cls.Tl x
     | Tget (x, i) -> Tget (x, i)
-    | Ref (x, u) ->
-      let u, udeclfun = ty_tv tvs u in
-      udeclfun (Cls.Ref (x, u))
+    | Ref (x, u) -> Cls.Ref (x, u)
+      (* let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Ref (x, u)) *)
     | Deref (x, None) -> Cls.Deref (x, None)
-    | Deref (x, Some u) ->
-      let u, udeclfun = ty_tv tvs u in
-      udeclfun (Cls.Deref (x, Some u))
+    | Deref (x, Some u) -> Cls.Deref (x, Some u)
+      (* let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Deref (x, Some u)) *)
     | Subst (x, y, None) -> Cls.Subst (x, y, None)
-    | Subst (x, y, Some u) ->
-      let u, udeclfun = ty_tv tvs u in
-      udeclfun (Cls.Subst (x, y, Some u))
+    | Subst (x, y, Some u) -> Cls.Subst (x, y, Some u)
+      (* let u, udeclfun = ty_tv tvs u in
+      udeclfun (Cls.Subst (x, y, Some u)) *)
     | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args funty f) ms)
     | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
     | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
@@ -170,18 +170,18 @@ module KNorm = struct
     | AppMExp (x, y) when V.mem x known -> Cls.AppMDir (Cls.to_label x, y)
     | AppMExp (x, y) -> Cls.AppMCls (x, y)
     | AppTy (x, _, tas) -> 
-      let uandf = List.map (ta_tv tvs) tas in
-      let rec destruct_uandf l ru rf = match l with
+      (* let uandf = List.map (ta_tv tvs) tas in *)
+      (* let rec destruct_uandf l ru rf = match l with
         | (u, f) :: t -> destruct_uandf t (u::ru) (fun x -> rf (f x))
         | [] -> ru, rf 
-      in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in
+      in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in *)
       let (zs, outer_tvs_len) = Environment.find x args in
-      if V.mem x funty then f (AppTyFun (x, List.length zs, outer_tvs_len, us))
-      else f (Cls.AppTy (x, List.length zs, outer_tvs_len, us))
-    | CastExp (x, u1, u2, (r, p)) -> 
-      let u1, udeclfun1 = ty_tv tvs u1 in 
+      if V.mem x funty then AppTyFun (x, List.length zs, outer_tvs_len, tas)
+      else Cls.AppTy (x, List.length zs, outer_tvs_len, tas)
+    | CastExp (x, u1, u2, (r, p)) -> Cls.Cast (x, u1, u2, (RangeManager.range_id r, p))
+      (* let u1, udeclfun1 = ty_tv tvs u1 in 
       let u2, udeclfun2 = ty_tv tvs u2 in 
-      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, (RangeManager.range_id r, p))))
+      udeclfun1 (udeclfun2 (Cls.Cast (x, u1, u2, (RangeManager.range_id r, p)))) *)
     | CAppExp (x, y) -> Cls.CApp (x, y)
     | CSeqExp (x, y) -> Cls.CSeq (x, y)
     | CoercionExp c -> Cls.Coercion (toCls_crc tvs c)

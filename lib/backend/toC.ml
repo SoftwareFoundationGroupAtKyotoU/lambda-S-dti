@@ -9,47 +9,47 @@ exception ToC_bug of string
 exception ToC_error of string
 
 module type Target = sig
+  type exp
+
+  val var : id -> exp
+  val int : int -> exp
+
+  val add : id -> id -> exp
+  val sub : id -> id -> exp
+  val mul : id -> id -> exp
+  val div : id -> id -> exp
+  val mod : id -> id -> exp
+
+  val crc_dyn : coercion -> exp
+
+  val app_d_dir : label -> id -> id -> exp
+  val app_d_cls : id -> id -> id -> exp
+  val app_m_dir : label -> id -> exp
+  val app_m_cls : id -> id -> exp
+  (* val app_ty : id -> tyarg list -> exp *)
+  val capp : id -> id -> exp
+
   type stm
-  
-  (* statement append *)
-  val ( ++ ) : stm -> stm -> stm
-
-  val empty : stm
-
-  val print_stm : Format.formatter -> stm -> unit
-
-  val let_val : id -> stm -> stm -> stm
-
-  val set_var : id -> id -> stm
-  val set_int : id -> int -> stm
-  val set_crc_dyn : id -> coercion -> stm 
-  val set_add : id -> id -> id -> stm
-  val set_sub : id -> id -> id -> stm
-  val set_mul : id -> id -> id -> stm
-  val set_div : id -> id -> id -> stm
-  val set_mod : id -> id -> id -> stm
-
-  val app_d_dir : id -> label -> id -> id -> stm
-  val app_d_cls : id -> id -> id -> id -> stm
-  val app_m_dir : id -> label -> id -> stm
-  val app_m_cls : id -> id -> id -> stm
-  val capp : id -> id -> id -> stm
-
+  val assign : id -> exp -> stm -> stm
   val if_eq : id -> id -> stm -> stm -> stm
   val if_lte : id -> id -> stm -> stm -> stm
-
   val make_cls : intoB:bool -> static:bool -> alt:bool -> id -> closure -> stm -> stm
+  val return : id -> stm
 
-  val retv_fun : id
-  val retv_main : id
-  val return_val : id -> stm
+  type decl
+  val fun_prot : fundef -> decl
+  val fun_decl : fundef -> stm -> decl
+  val main_fun_decl : bench:int -> static:bool -> stm -> decl
 
-  val fun_prot : fundef -> stm
-  val fun_decl : fundef -> stm -> stm
-
-  val prog_newline : stm
+  (* val prog_newline : stm *)
   val prog_includes : bench:int -> stm
   val prog_main_wrap : bench:int -> static:bool -> stm -> stm
+
+  (* utilities *)
+  (* statement append *)
+  val ( ++ ) : stm -> stm -> stm
+  val empty : stm
+  val print_stm : Format.formatter -> stm -> unit
 end
 
 module ToTarget (T : Target) = struct
@@ -80,6 +80,7 @@ module ToTarget (T : Target) = struct
     | AppDCls (y, (z1, z2)) -> app_d_cls x y z1 z2
     | AppMDir (l, y) -> app_m_dir x l y
     | AppMCls (y, z) -> app_m_cls x y z
+    | AppTy (x, tas) -> app_ty x y tas
     | CApp (y, z) -> capp x y z
     | Let (y, f1, f2) -> let_val y (emit_assign ~config y f1) (emit_assign ~config x f2)
     | IfEq (y, z, f1, f2) -> if_eq y z (emit_assign ~config x f1) (emit_assign ~config x f2)
@@ -127,7 +128,24 @@ module CTarget : Target = struct
   let app_d_cls x y z1 z2 ppf = fprintf ppf "%s = (((fun*)%s)->funcD)(%s, %s, %s);@." x y y z1 z2
   let app_m_dir x l y ppf = fprintf ppf "%s = fun_%s((value)NULL, %s);@." x l y
   let app_m_cls x y z ppf = fprintf ppf "%s = (((fun*)%s)->funcM)(%s, %s);@." x y y z
-  let capp x y z ppf = fprintf ppf "%s = coerce(%s, (crc*)%s);@." x y z
+  let app_ty x y tas ppf =
+    let total = List.length tas in
+    fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n\
+                 *((fun*)%s) = *((fun*)%s);\n" x total x y;
+    (* cnt_env := 0; *)
+    (* while !cnt_env < n do
+      fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
+      cnt_env := !cnt_env + 1
+    done; *)
+    List.iter i (fun ta ->
+      fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;\n" x !cnt_env (c_of_tyarg ta);
+      cnt_env := !cnt_env + 1
+    ) tas
+    (* ;while !cnt_env < total do
+      fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
+      cnt_env := !cnt_env + 1
+    done *)
+    let capp x y z ppf = fprintf ppf "%s = coerce(%s, (crc*)%s);@." x y z
 
   let if_eq x y s1 s2 ppf = fprintf ppf "if (%s == %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
   let if_lte x y s1 s2 ppf = fprintf ppf "if (%s <= %s) {\n%a} else {\n%a}@." x y print_stm s1 print_stm s2
