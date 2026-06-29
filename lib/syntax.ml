@@ -323,22 +323,30 @@ module Cls = struct
 end
 
 module C = struct
-  type ty = VALUE | TY | INT | PTR of ty | RANGE | CRC
+  type ty = 
+    | INT | VOID | PTR of ty
+    | VALUE | FUN | LST | TPL | REF | CRC
+    | RANGE | TY
 
   type exp =
     | Var of id
-    | Int of int
-    | Add of id * id
-    | Sub of id * id
-    | Mul of id * id
-    | Div of id * id
-    | Mod of id * id
-    | Eq of id * id
-    | Lte of id * id
-    | App of id * exp list
-    | Addr of id
+    | Dot of exp * id
+    | Arrow of exp * id
     | Cast of ty * exp
+    | Index of exp * int
+    | Int of int
+    | Add of exp * exp
+    | Sub of exp * exp
+    | Mul of exp * exp
+    | Div of exp * exp
+    | Mod of exp * exp
+    | Eq of exp * exp
+    | Lte of exp * exp
+    | App of exp * exp list
+    | Addr of id
     | Null
+    | Malloc of ty * exp
+    | Sizeof of ty
     (* | Cons of id * id *)
     (* | Tuple of id list *)
     (* | Hd of id *)
@@ -360,9 +368,13 @@ module C = struct
 
   type lval =
     | LVar of id
+    | LDot of lval * id
+    | LArrow of lval * id
+    | LCast of ty * lval
+    | LIndex of lval * int
 
   type stm =
-    | SDecl of ty * id
+    | SDecl of ty * id * exp option
     | SAssign of lval * exp
     | SReturn of exp
     | SIf of exp * stm list * stm list
@@ -380,7 +392,7 @@ module C = struct
 
   type toplevel =
     | Include of string
+    | Decl of ty * id
     | FunDecl of func_sig
     | FunDef of func_sig * stm list
-    | Decl of ty * id
 end

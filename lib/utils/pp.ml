@@ -963,33 +963,48 @@ module C = struct
   let sep_comma ppf () = pp_print_string ppf ", "
 
   let rec pp_ty ppf = function
-    | VALUE -> pp_print_string ppf "value"
-    | TY -> pp_print_string ppf "ty"
     | INT -> pp_print_string ppf "int"
+    | VOID -> pp_print_string ppf "void"
     | PTR t -> fprintf ppf "%a*" pp_ty t
-    | RANGE -> pp_print_string ppf "range"
+    | VALUE -> pp_print_string ppf "value"
+    | FUN -> pp_print_string ppf "fun"
+    | LST -> pp_print_string ppf "lst"
+    | TPL -> pp_print_string ppf "tpl"
+    | REF -> pp_print_string ppf "ref"
     | CRC -> pp_print_string ppf "crc"
+    | RANGE -> pp_print_string ppf "range"
+    | TY -> pp_print_string ppf "ty"
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
-    | Int i -> pp_print_int ppf i
-    | Add (x, y) -> fprintf ppf "%s + %s" x y
-    | Sub (x, y) -> fprintf ppf "%s - %s" x y
-    | Mul (x, y) -> fprintf ppf "%s * %s" x y
-    | Div (x, y) -> fprintf ppf "%s / %s" x y
-    | Mod (x, y) -> fprintf ppf "%s %% %s" x y
-    | Eq (x, y) -> fprintf ppf "%s == %s" x y
-    | Lte (x, y) -> fprintf ppf "%s <= %s" x y
-    | App (x, es) -> fprintf ppf "%s(%a)" x (pp_print_list ~pp_sep:sep_comma pp_exp) es
-    | Addr x -> fprintf ppf "&%s" x
+    | Dot (e, x) -> fprintf ppf "%a.%s" pp_exp e x
+    | Arrow (e, x) -> fprintf ppf "%a->%s" pp_exp e x
     | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
+    | Index (e, i) -> fprintf ppf "%a[%d]" pp_exp e i
+    | Int i -> pp_print_int ppf i
+    | Add (e1, e2) -> fprintf ppf "%a + %a" pp_exp e1 pp_exp e2
+    | Sub (e1, e2) -> fprintf ppf "%a - %a" pp_exp e1 pp_exp e2
+    | Mul (e1, e2) -> fprintf ppf "%a * %a" pp_exp e1 pp_exp e2
+    | Div (e1, e2) -> fprintf ppf "%a / %a" pp_exp e1 pp_exp e2
+    | Mod (e1, e2) -> fprintf ppf "%a %% %a" pp_exp e1 pp_exp e2
+    | Eq (e1, e2) -> fprintf ppf "%a == %a" pp_exp e1 pp_exp e2
+    | Lte (e1, e2) -> fprintf ppf "%a <= %a" pp_exp e1 pp_exp e2
+    | App (e, es) -> fprintf ppf "%a(%a)" pp_exp e (pp_print_list ~pp_sep:sep_comma pp_exp) es
+    | Addr x -> fprintf ppf "&%s" x
     | Null -> pp_print_string ppf "NULL"
+    | Malloc (t, e) -> fprintf ppf "(%a)GC_MALLOC(%a)" pp_ty t pp_exp e
+    | Sizeof t -> fprintf ppf "sizeof(%a)" pp_ty t
 
-  let pp_lval ppf = function
+  let rec pp_lval ppf = function
     | LVar x -> pp_print_string ppf x
+    | LDot (l, x) -> fprintf ppf "%a.%s" pp_lval l x
+    | LArrow (l, x) -> fprintf ppf "%a->%s" pp_lval l x
+    | LCast (t, l) -> fprintf ppf "((%a)%a)" pp_ty t pp_lval l
+    | LIndex (l, i) -> fprintf ppf "%a[%d]" pp_lval l i
 
   let rec pp_stm ppf = function
-    | SDecl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
+    | SDecl (t, x, None) -> fprintf ppf "%a %s;" pp_ty t x
+    | SDecl (t, x, Some e) -> fprintf ppf "%a %s = %a;" pp_ty t x pp_exp e
     | SAssign (l, e) -> fprintf ppf "%a = %a;" pp_lval l pp_exp e
     | SReturn e -> fprintf ppf "return %a;" pp_exp e
     | SIf (e, s1, s2) ->

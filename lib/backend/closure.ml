@@ -310,7 +310,7 @@ module Cls = struct
     | IfLte (x, y, f1, f2) -> IfLte (x, y, to_alt ids f1, to_alt ids f2)
     | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, to_alt ids f) ms)
     | AppDCls (x, (y, k)) when V.mem k ids -> AppMCls (x, y)
-    | AppDDir (l, (y, k)) when V.mem k ids -> AppMDir ("alt_" ^ l, y)
+    | AppDDir (l, (y, k)) when V.mem k ids -> AppMDir (l, y)
     | CApp (x, k) when V.mem k ids -> Var x
     | MakeCls (x, cls, ftvs, f) -> MakeCls (x, cls, ftvs, to_alt ids f)
     | MakeTyCls (x, cls, ftvs, f) -> MakeTyCls (x, cls, ftvs, to_alt ids f)
@@ -322,7 +322,7 @@ module Cls = struct
     | h :: t -> 
       begin match h with
       | FundefD {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = f } -> 
-        FundefM {name = "alt_" ^ l; tvs = (tvs, n); arg = y; formal_fv = ids; body = to_alt (V.singleton k) f } ::
+        FundefM {name = l; tvs = (tvs, n); arg = y; formal_fv = ids; body = to_alt (V.singleton k) f } ::
         FundefD {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = to_alt V.empty f } ::
         (alt_funs t)
       | FundefTy _ as h -> h :: (alt_funs t)

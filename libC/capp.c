@@ -101,6 +101,9 @@ int ty_equal (ty *t1, ty *t2) {
 				}
 				return 1;
 			}
+			case TYREF: {
+				return ty_equal(t1->tydat.tyref, t2->tydat.tyref);
+			}
 			case TYVAR:
 				return t1 == t2;
 		} 
@@ -482,6 +485,10 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					printf("Dyn and Dyn should be omitted by id");
 					exit(1);
 				}
+				default: {
+					printf("yet");
+					exit(1);
+				}
 			}
 		}
 		default: break;
@@ -796,6 +803,11 @@ value coerce(value v, crc *s) {
 			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
 			s = s->crcdat.seq_tv.ptr.s;
 			goto CASE_BOT;
+		}
+
+		default: {
+			printf("yet");
+			exit(1);
 		}
 	}
 

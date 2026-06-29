@@ -46,7 +46,11 @@ typedef struct tpl_raw tpl;
 typedef struct tpl_header tpl;
 #endif
 
+#ifdef MONOTONIC
 typedef struct ref ref;
+#else
+typedef value *ref;
+#endif
 
 #if !defined(CAST) && !defined(STATIC)
 typedef struct crc crc;

@@ -1,7 +1,7 @@
 open Syntax
 open Syntax.C
 (* open Format *)
-(* open Config *)
+open Config
 (* open Utils.Error *)
 (* open Static_manage *)
 (* open Fv.Cls *)
@@ -9,60 +9,131 @@ open Syntax.C
 exception ToC_bug of string
 exception ToC_error of string
 
-let rec toC_exp ~is_main = function
+let toC_vs l vs =
+  List.mapi (fun i v -> SAssign (LIndex (l, i), Cast (PTR VOID, Var v))) vs
+
+let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
-    SDecl (VALUE, x) :: toC_assign x f1 @ toC_exp ~is_main f2
+    SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
   | Cls.IfEq (x, y, f1, f2) ->
-    SIf (Eq (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2) :: []
+    SIf (Eq (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.IfLte (x, y, f1, f2) ->
-    SIf (Lte (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2) :: []
+    SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
+(* | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> TODO *)
+  | Cls.MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = []; offset = 0 }, f) ->
+    (* let env_size = List.length vs + List.length ftv + n in *)
+    let env_size = List.length vs in
+    let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
+    let set_func =
+      if config.intoB || config.static then
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ l)) :: []
+      else if config.alt then
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ l)) ::
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ "alt_" ^ l)) :: []
+      else
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ l)) :: []
+    in
+    let lval_vs = LArrow (LCast (PTR FUN, LVar x), "env") in
+    SDecl (VALUE, x, Some cls) :: set_func @ toC_vs lval_vs vs @ toC_exp ~is_main ~config f
+  (*  ...
+      toC_vs (x, vs)
+      toC_ftas (n, x, ftv)
+      toC_exp f *)
   | _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
-    SDecl (VALUE, "retv") :: toC_assign "retv" f @ [return]
-and toC_assign x f =
+    SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
+and toC_assign ~config x f =
   let assign_x e = SAssign (LVar x, e) :: [] in
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
-  | Cls.Add (y, z) -> assign_x (Add (y, z))
-  | Cls.Sub (y, z) -> assign_x (Sub (y, z))
-  | Cls.Mul (y, z) -> assign_x (Mul (y, z))
-  | Cls.Div (y, z) -> assign_x (Div (y, z))
-  | Cls.Mod (y, z) -> assign_x (Mod (y, z))
-  | Cls.AppDDir (l, (y1, y2)) -> assign_x (App ("fun_" ^ l, [Cast (VALUE, Null); Var y1; Var y2]))
-  | Cls.AppMDir (l, y) -> assign_x (App ("fun_" ^ l, [Cast (VALUE, Null); Var y]))
-  | Cls.CApp (y, z) -> assign_x (App ("coerce", [Var y; Cast (PTR CRC, Var z)]))
+  | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
+  | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
+  | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
+  | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
+  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
+  | Cls.AppDDir (l, (y1, y2)) ->
+    assign_x (App (Var ("fun_" ^ l), [Cast (VALUE, Null); Var y1; Var y2]))
+  | Cls.AppDCls (y, (z1, z2)) ->
+    let func = Arrow (Cast (PTR FUN, Var y), "funcD") in
+    assign_x (App (func, [Var y; Var z1; Var z2]))
+  | Cls.AppMDir (l, y) ->
+    let alt_str = if config.alt then "alt_" else "" in
+    assign_x (App (Var ("fun_" ^ alt_str ^ l), [Cast (VALUE, Null); Var y]))
+  | Cls.AppMCls (y, z) ->
+    let func = Arrow (Cast (PTR FUN, Var y), "funcM") in
+    assign_x (App (func, [Var y; Var z]))
+  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
-  | Cls.Let (y, f1, f2) -> SDecl (VALUE, y) :: toC_assign y f1 @ toC_assign x f2
+  | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
 
-let toC_fundef = function
-  | Cls.FundefD { name; arg = (y, k); body; _ } ->
-    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls"); (VALUE, y); (VALUE, k) ] } in
-    let body = toC_exp ~is_main:false body in
-    FunDecl f_s, FunDef (f_s, body)
-  | Cls.FundefM { name; arg = y; body; _ } ->
-    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls"); (VALUE, y) ] } in
-    let body = toC_exp ~is_main:false body in
-    FunDecl f_s, FunDef (f_s, body)
-  | Cls.FundefTy { name; body; _ } ->
-    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls") ] } in
-    let body = toC_exp ~is_main:false body in
-    FunDecl f_s, FunDef (f_s, body)
+(* let toC_fv ppf x =
+  fprintf ppf "value %s = (value)(((fun*)cls)->env[%d]);"
+    x
+    !cnt_env;
+  cnt_env := !cnt_env + 1 *)
+let toC_fvs x fvs =
+  let pick_x i = Cast (VALUE, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
+  List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x i))) fvs 
 
-let toC_toplevel toplevel =
-  List.split @@ List.map (fun fd -> toC_fundef fd) toplevel
+(* let toC_fundef ppf fundef ~config = match fundef with
+  | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
+      l
+      x
+      y
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f
+  | FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
+      (if config.alt then "_alt" else "")
+      l
+      x
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f
+  | FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f } ->
+    cnt_env := 0;
+    fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a%a%a}"
+      l
+      toC_funv (V.mem (to_id l) (fv_exp f), l)
+      toC_fvs fvl
+      toC_tvs tvs
+      (toC_exp ~config ~is_main:false) f *)
+
+let toC_fundef ~config fundef =
+  let name, fname, params, formal_fv, body = match fundef with
+    | Cls.FundefD { name; arg = (y, k); formal_fv; body; _ } ->
+      name, "fun_" ^ name, [name; y; k], formal_fv, body
+    | Cls.FundefM { name; arg = y; formal_fv; body; _ } ->
+      let alt_str = if config.alt then "alt_" else "" in
+      name, "fun_" ^ alt_str ^ name, [name; y], formal_fv, body
+    | Cls.FundefTy { name; body; formal_fv; _ } ->
+      name, "tfun_" ^ name, [name; "dummy"], formal_fv, body
+  in
+  let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
+  let fvs = toC_fvs name formal_fv in
+  let body = toC_exp ~is_main:false ~config body in
+  FunDecl f_s, FunDef (f_s, fvs @ body)
+
+let toC_toplevel ~config toplevel =
+  List.split @@ List.map (fun fd -> toC_fundef ~config fd) toplevel
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
-  ignore config;
   let inc = [
     Include "<gc.h>";
     Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
   ]
   in
-  let fundecl, fundef = toC_toplevel toplevel in
-  let decl = if bench = 0 then [Decl (PTR RANGE, "range_list")] else [] in
-  let main = [FunDef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true f)] in
+  let fundecl, fundef = toC_toplevel ~config toplevel in
+  let decl = if bench = 0 && not config.static then [Decl (PTR RANGE, "range_list")] else [] in
+  let main = [FunDef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true ~config f)] in
   inc @ fundecl @ fundef @ decl @ main
   (* let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in

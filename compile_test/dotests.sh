@@ -13,7 +13,7 @@ run_test() {
   skip_flag="$3"
 
   # オプションのリスト
-  declare -a options_list=("-c" "-c -a" "-c -b" "-c --static")
+  declare -a options_list=("-c" "-c -a" "-c -b --non_monotonic" "-c --static")
 
   for opt in "${options_list[@]}"; do
 
