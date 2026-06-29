@@ -959,14 +959,18 @@ end
 module C = struct
   open Syntax.C
 
+  let sep_newline ppf () = pp_print_string ppf "\n"
+  let sep_comma ppf () = pp_print_string ppf ", "
+
   let rec pp_ty ppf = function
     | VALUE -> pp_print_string ppf "value"
     | TY -> pp_print_string ppf "ty"
     | INT -> pp_print_string ppf "int"
     | PTR t -> fprintf ppf "%a*" pp_ty t
     | RANGE -> pp_print_string ppf "range"
+    | CRC -> pp_print_string ppf "crc"
 
-  let pp_exp ppf = function
+  let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | Int i -> pp_print_int ppf i
     | Add (x, y) -> fprintf ppf "%s + %s" x y
@@ -976,11 +980,13 @@ module C = struct
     | Mod (x, y) -> fprintf ppf "%s %% %s" x y
     | Eq (x, y) -> fprintf ppf "%s == %s" x y
     | Lte (x, y) -> fprintf ppf "%s <= %s" x y
+    | App (x, es) -> fprintf ppf "%s(%a)" x (pp_print_list ~pp_sep:sep_comma pp_exp) es
+    | Addr x -> fprintf ppf "&%s" x
+    | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
+    | Null -> pp_print_string ppf "NULL"
 
   let pp_lval ppf = function
     | LVar x -> pp_print_string ppf x
-
-  let sep_stm ppf () = pp_print_string ppf "\n"
 
   let rec pp_stm ppf = function
     | SDecl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
@@ -989,19 +995,22 @@ module C = struct
     | SIf (e, s1, s2) ->
       fprintf ppf "if (%a){\n%a\n} else {\n%a\n}"
         pp_exp e
-        (pp_print_list ~pp_sep:sep_stm pp_stm) s1
-        (pp_print_list ~pp_sep:sep_stm pp_stm) s2
+        (pp_print_list ~pp_sep:sep_newline pp_stm) s1
+        (pp_print_list ~pp_sep:sep_newline pp_stm) s2
 
   let pp_toplevel ppf = function
     | Include s -> fprintf ppf "#include %s" s
     | Decl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
-    | Fundef ({ ret_ty; fname; params }, body) ->
+    | FunDecl { ret_ty; fname; params } ->
+      fprintf ppf "%a %s(%a);"
+        pp_ty ret_ty fname
+        (pp_print_list ~pp_sep:sep_comma pp_ty) (List.map fst params)
+    | FunDef ({ ret_ty; fname; params }, body) ->
       let pp_param ppf (t, x) = fprintf ppf "%a %s" pp_ty t x in
-      let sep_param ppf () = pp_print_string ppf ", " in
       fprintf ppf "%a %s(%a){\n%a\n}"
         pp_ty ret_ty fname
-        (pp_print_list ~pp_sep:sep_param pp_param) params
-        (pp_print_list ~pp_sep:sep_stm pp_stm) body
+        (pp_print_list ~pp_sep:sep_comma pp_param) params
+        (pp_print_list ~pp_sep:sep_newline pp_stm) body
   
   let pp_program ppf program =
     let pp_sep ppf () = pp_print_string ppf "\n" in

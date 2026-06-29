@@ -13,14 +13,14 @@ let rec toC_exp ~is_main = function
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x) :: toC_assign x f1 @ toC_exp ~is_main f2
   | Cls.IfEq (x, y, f1, f2) ->
-    [SIf (Eq (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2)]
+    SIf (Eq (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2) :: []
   | Cls.IfLte (x, y, f1, f2) ->
-    [SIf (Lte (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2)]
+    SIf (Lte (x, y), toC_exp ~is_main f1, toC_exp ~is_main f2) :: []
   | _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv") :: toC_assign "retv" f @ [return]
 and toC_assign x f =
-  let assign_x e = [SAssign (LVar x, e)] in
+  let assign_x e = SAssign (LVar x, e) :: [] in
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
@@ -29,21 +29,41 @@ and toC_assign x f =
   | Cls.Mul (y, z) -> assign_x (Mul (y, z))
   | Cls.Div (y, z) -> assign_x (Div (y, z))
   | Cls.Mod (y, z) -> assign_x (Mod (y, z))
+  | Cls.AppDDir (l, (y1, y2)) -> assign_x (App ("fun_" ^ l, [Cast (VALUE, Null); Var y1; Var y2]))
+  | Cls.AppMDir (l, y) -> assign_x (App ("fun_" ^ l, [Cast (VALUE, Null); Var y]))
+  | Cls.CApp (y, z) -> assign_x (App ("coerce", [Var y; Cast (PTR CRC, Var z)]))
+  | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y) :: toC_assign y f1 @ toC_assign x f2
-  | _ -> raise @@ ToC_bug "yet"
+  | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
+
+let toC_fundef = function
+  | Cls.FundefD { name; arg = (y, k); body; _ } ->
+    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls"); (VALUE, y); (VALUE, k) ] } in
+    let body = toC_exp ~is_main:false body in
+    FunDecl f_s, FunDef (f_s, body)
+  | Cls.FundefM { name; arg = y; body; _ } ->
+    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls"); (VALUE, y) ] } in
+    let body = toC_exp ~is_main:false body in
+    FunDecl f_s, FunDef (f_s, body)
+  | Cls.FundefTy { name; body; _ } ->
+    let f_s = { ret_ty = VALUE; fname = "fun_" ^ name; params = [ (VALUE, "cls") ] } in
+    let body = toC_exp ~is_main:false body in
+    FunDecl f_s, FunDef (f_s, body)
+
+let toC_toplevel toplevel =
+  List.split @@ List.map (fun fd -> toC_fundef fd) toplevel
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   ignore config;
-  ignore toplevel;
-  ignore f;
   let inc = [
     Include "<gc.h>";
     Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
   ]
   in
+  let fundecl, fundef = toC_toplevel toplevel in
   let decl = if bench = 0 then [Decl (PTR RANGE, "range_list")] else [] in
-  let main = [Fundef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true f)] in
-  inc @ decl @ main
+  let main = [FunDef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true f)] in
+  inc @ fundecl @ fundef @ decl @ main
   (* let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in

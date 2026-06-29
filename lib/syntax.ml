@@ -323,7 +323,7 @@ module Cls = struct
 end
 
 module C = struct
-  type ty = VALUE | TY | INT | PTR of ty | RANGE
+  type ty = VALUE | TY | INT | PTR of ty | RANGE | CRC
 
   type exp =
     | Var of id
@@ -335,6 +335,10 @@ module C = struct
     | Mod of id * id
     | Eq of id * id
     | Lte of id * id
+    | App of id * exp list
+    | Addr of id
+    | Cast of ty * exp
+    | Null
     (* | Cons of id * id *)
     (* | Tuple of id list *)
     (* | Hd of id *)
@@ -376,6 +380,7 @@ module C = struct
 
   type toplevel =
     | Include of string
-    | Fundef of func_sig * stm list
+    | FunDecl of func_sig
+    | FunDef of func_sig * stm list
     | Decl of ty * id
 end
