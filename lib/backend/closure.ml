@@ -176,8 +176,8 @@ module KNorm = struct
         | [] -> ru, rf 
       in let us, f = destruct_uandf (List.rev uandf) [] (fun x -> x) in
       let (zs, outer_tvs_len) = Environment.find x args in
-      if V.mem x funty then f (AppTyFun (x, List.length zs, outer_tvs_len, us))
-      else f (Cls.AppTy (x, List.length zs, outer_tvs_len, us))
+      if V.mem x funty then f (AppTyFun (x, List.length zs, us, outer_tvs_len))
+      else f (Cls.AppTy (x, List.length zs, us, outer_tvs_len))
     | CastExp (x, u1, u2, (r, p)) -> 
       let u1, udeclfun1 = ty_tv tvs u1 in 
       let u2, udeclfun2 = ty_tv tvs u2 in 
@@ -231,16 +231,16 @@ module KNorm = struct
       let zs = V.elements (V.diff (Fv.Cls.fv_exp f1') (V.union (V.singleton x) v_arg)) in
       (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
       let fundef, funty = match fd with
-        | FunB (y, _) -> Cls.FundefM { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = y; formal_fv = zs; body = f1' }, funty
-        | FunS ((y, z), _) -> Cls.FundefD { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); arg = (y, z); formal_fv = zs; body = f1' }, funty
+        | FunB (y, _) -> Cls.FundefM { name = Cls.to_label x; arg = y; vs = zs; tvs = new_tvs; body = f1' }, funty
+        | FunS ((y, z), _) -> Cls.FundefD { name = Cls.to_label x; arg = (y, z); vs = zs; tvs = new_tvs; body = f1' }, funty
         | FunDual _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
-        | FunTy _ -> Cls.FundefTy { name = Cls.to_label x; tvs = (new_tvs, List.length tvs'); formal_fv = zs; body = f1' }, V.add x funty
+        | FunTy _ -> Cls.FundefTy { name = Cls.to_label x; vs = zs; tvs = new_tvs; body = f1' }, V.add x funty
       in
       if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
       let f2' = toCls_exp known' tvs (Environment.add x (zs, List.length tvs) args) funty f2 in
       if V.mem x (Fv.Cls.fv_exp f2') then match fd with
-        | FunTy _ -> Cls.MakeTyCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
-        | _ -> Cls.MakeCls (x, { Cls.entry = Cls.to_label x; Cls.actual_fv = zs }, { ftvs = tyvar_to_tyarg tvs; offset = List.length tvs' }, f2')
+        | FunTy _ -> Cls.MakeTyCls (x, { entry = Cls.to_label x; fvs = zs; offset = List.length tvs'; ftvs = tyvar_to_tyarg tvs }, f2')
+        | _ -> Cls.MakeCls (x, { entry = Cls.to_label x; fvs = zs;  offset = List.length tvs'; ftvs = tyvar_to_tyarg tvs }, f2')
       else f2'
 
   let toCls kf known = 
@@ -283,8 +283,8 @@ module Cls = struct
     | CSeq (k1, k2) -> CSeq (replace k1, replace k2)
     | Coercion c -> Coercion c
     | Let (x, f1, f2) -> Let (x, replace_var vx vy f1, replace_var vx vy f2)
-    | MakeCls (x, {entry = l; actual_fv = fvs}, ftvs, f) -> MakeCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, ftvs, replace_var vx vy f)
-    | MakeTyCls (x, {entry = l; actual_fv = fvs}, ftvs, f) -> MakeTyCls (x, {entry=to_label (replace (to_id l)); actual_fv = List.map replace fvs}, ftvs, replace_var vx vy f)
+    | MakeCls (x, { entry; fvs; offset; ftvs }, f) -> MakeCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
+    | MakeTyCls (x, { entry; fvs; offset; ftvs }, f) -> MakeTyCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
     | SetTy _ -> raise @@ Closure_bug "SetTy appear in replace"
     | AppMCls _ | AppMDir _ -> raise @@ Closure_bug "AppM appear in replace"
     | Cast _ -> raise @@ Closure_bug "Cast appear in replace"
@@ -312,8 +312,8 @@ module Cls = struct
     | AppDCls (x, (y, k)) when V.mem k ids -> AppMCls (x, y)
     | AppDDir (l, (y, k)) when V.mem k ids -> AppMDir (l, y)
     | CApp (x, k) when V.mem k ids -> Var x
-    | MakeCls (x, cls, ftvs, f) -> MakeCls (x, cls, ftvs, to_alt ids f)
-    | MakeTyCls (x, cls, ftvs, f) -> MakeTyCls (x, cls, ftvs, to_alt ids f)
+    | MakeCls (x, cls, f) -> MakeCls (x, cls, to_alt ids f)
+    | MakeTyCls (x, cls, f) -> MakeTyCls (x, cls, to_alt ids f)
     | AppMCls _ | AppMDir _ -> raise @@ Closure_bug "AppM appear in to_alt"
     | Cast _ -> raise @@ Closure_bug "Cast appear in to_alt"
     | f -> f
@@ -321,9 +321,9 @@ module Cls = struct
   let rec alt_funs = function
     | h :: t -> 
       begin match h with
-      | FundefD {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = f } -> 
-        FundefM {name = l; tvs = (tvs, n); arg = y; formal_fv = ids; body = to_alt (V.singleton k) f } ::
-        FundefD {name = l; tvs = (tvs, n); arg = (y, k); formal_fv = ids; body = to_alt V.empty f } ::
+      | FundefD { name; arg = (y, k); vs; tvs; body } -> 
+        FundefM { name; arg = y;      vs; tvs; body = to_alt (V.singleton k) body } ::
+        FundefD { name; arg = (y, k); vs; tvs; body = to_alt V.empty body } ::
         (alt_funs t)
       | FundefTy _ as h -> h :: (alt_funs t)
       | _ -> raise @@ Closure_bug "alt form appear in alt_funs"

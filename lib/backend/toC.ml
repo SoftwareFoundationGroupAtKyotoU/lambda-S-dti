@@ -9,8 +9,41 @@ open Config
 exception ToC_bug of string
 exception ToC_error of string
 
-let toC_vs l vs =
-  List.mapi (fun i v -> SAssign (LIndex (l, i), Cast (PTR VOID, Var v))) vs
+(*Utilities*)
+(*型のCプログラム表記を出力する関数
+  Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
+(* let c_of_ty = function
+  | TyInt -> "&tyint"
+  | TyBool -> "&tybool"
+  | TyUnit -> "&tyunit"
+  | TyDyn -> "&tydyn"
+  | TyFun (TyDyn, TyDyn) -> "&tyar"
+  | TyFun (_, _) as u -> "&" ^ TyManager.find u
+  | TyList TyDyn -> "&tyli"
+  | TyList _ as u -> "&" ^ TyManager.find u
+  | TyTuple _ as u -> "&" ^ TyManager.find u
+  | TyRef TyDyn -> "&tyrf"
+  | TyRef _ as u -> "&" ^ TyManager.find u
+  | TyVar (i, { contents = None }) as u ->
+    begin try 
+      "&" ^ TyManager.find u
+    with Not_found ->
+      Format.asprintf "_ty%d" i
+    end
+  | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
+  | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
+  | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
+  | TyVar (i, { contents = Some (TyRef _) }) -> Format.asprintf "_tyref%d" i
+  | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
+  | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
+
+(*型引数のCプログラム表記を出力する関数*)
+let c_of_tyarg = function
+  | Ty u -> c_of_ty u
+  | TyNu -> "newty()" *)
+
+let app_fvs l fvs = List.mapi (fun i fv -> SAssign (LIndex (l, i), Cast (PTR VOID, Var fv))) fvs
+(* let app_ftvs l n ftvs = List.mapi (fun i tv -> SAssign (LIndex (l, n + i), Cast (PTR VOID, Var v))) tvs *)
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
@@ -20,28 +53,31 @@ let rec toC_exp ~is_main ~config = function
   | Cls.IfLte (x, y, f1, f2) ->
     SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
 (* | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> TODO *)
-  | Cls.MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = []; offset = 0 }, f) ->
+  | Cls.MakeCls (x, { entry; fvs; offset = 0; ftvs = [] }, f) ->
     (* let env_size = List.length vs + List.length ftv + n in *)
-    let env_size = List.length vs in
+    (* ignore ftv; *)
+    let env_size = List.length fvs in
     let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
     let set_func =
       if config.intoB || config.static then
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ l)) :: []
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ entry)) :: []
       else if config.alt then
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ l)) ::
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ "alt_" ^ l)) :: []
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ entry)) ::
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ "alt_" ^ entry)) :: []
       else
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ l)) :: []
+        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ entry)) :: []
     in
-    let lval_vs = LArrow (LCast (PTR FUN, LVar x), "env") in
-    SDecl (VALUE, x, Some cls) :: set_func @ toC_vs lval_vs vs @ toC_exp ~is_main ~config f
+    let lval_env = LArrow (LCast (PTR FUN, LVar x), "env") in
+    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs lval_env fvs @ toC_exp ~is_main ~config f
   (*  ...
       toC_vs (x, vs)
       toC_ftas (n, x, ftv)
       toC_exp f *)
-  | _ as f ->
+  | Cls.Var _ | Cls.Int _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Coercion _
+  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.CApp _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
+  | _ as f -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
 and toC_assign ~config x f =
   let assign_x e = SAssign (LVar x, e) :: [] in
   match f with
@@ -49,9 +85,9 @@ and toC_assign ~config x f =
   | Cls.Int i -> assign_x (Int i)
   | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
   | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
-  | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
+  (* | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
   | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
-  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
+  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z)) *)
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [Cast (VALUE, Null); Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
@@ -66,14 +102,13 @@ and toC_assign ~config x f =
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
+  | Cls.IfEq (y, z, f1, f2) ->
+    SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
+  | Cls.IfLte (y, z, f1, f2) ->
+    SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
 
-(* let toC_fv ppf x =
-  fprintf ppf "value %s = (value)(((fun*)cls)->env[%d]);"
-    x
-    !cnt_env;
-  cnt_env := !cnt_env + 1 *)
-let toC_fvs x fvs =
+let pick_vs x fvs =
   let pick_x i = Cast (VALUE, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
   List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x i))) fvs 
 
@@ -108,17 +143,17 @@ let toC_fvs x fvs =
       (toC_exp ~config ~is_main:false) f *)
 
 let toC_fundef ~config fundef =
-  let name, fname, params, formal_fv, body = match fundef with
-    | Cls.FundefD { name; arg = (y, k); formal_fv; body; _ } ->
-      name, "fun_" ^ name, [name; y; k], formal_fv, body
-    | Cls.FundefM { name; arg = y; formal_fv; body; _ } ->
+  let name, fname, params, vs, body = match fundef with
+    | Cls.FundefD { name; arg = (y, k); vs; body; _ } ->
+      name, "fun_" ^ name, [name; y; k], vs, body
+    | Cls.FundefM { name; arg = y; vs; body; _ } ->
       let alt_str = if config.alt then "alt_" else "" in
-      name, "fun_" ^ alt_str ^ name, [name; y], formal_fv, body
-    | Cls.FundefTy { name; body; formal_fv; _ } ->
-      name, "tfun_" ^ name, [name; "dummy"], formal_fv, body
+      name, "fun_" ^ alt_str ^ name, [name; y], vs, body
+    | Cls.FundefTy { name; body; vs; _ } ->
+      name, "tfun_" ^ name, [name; "dummy"], vs, body
   in
   let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
-  let fvs = toC_fvs name formal_fv in
+  let fvs = pick_vs name vs in
   let body = toC_exp ~is_main:false ~config body in
   FunDecl f_s, FunDef (f_s, fvs @ body)
 
@@ -154,36 +189,6 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     "}" *)
 
 (* 
-(*Utilities*)
-(*型のCプログラム表記を出力する関数
-  Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
-let c_of_ty = function
-  | TyInt -> "&tyint"
-  | TyBool -> "&tybool"
-  | TyUnit -> "&tyunit"
-  | TyDyn -> "&tydyn"
-  | TyFun (TyDyn, TyDyn) -> "&tyar"
-  | TyFun (_, _) as u -> "&" ^ TyManager.find u
-  | TyList TyDyn -> "&tyli"
-  | TyList _ as u -> "&" ^ TyManager.find u
-  | TyTuple _ as u -> "&" ^ TyManager.find u
-  | TyVar (i, { contents = None }) as u ->
-    begin try 
-      "&" ^ TyManager.find u
-    with Not_found ->
-      Format.asprintf "_ty%d" i
-    end
-  | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
-  | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
-  | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
-  | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
-  | TyRef _ -> raise @@ ToC_bug "yet"
-  | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
-
-(*型引数のCプログラム表記を出力する関数*)
-let c_of_tyarg = function
-  | Ty u -> c_of_ty u
-  | TyNu -> "newty()"
 
 (*自由変数をクロージャに代入するプログラムを記述する関数*)
 (*自由変数と型変数を共通のインデックスで管理*)

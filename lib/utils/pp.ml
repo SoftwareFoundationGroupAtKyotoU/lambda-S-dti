@@ -771,14 +771,13 @@ module Cls = struct
       let pp_list ppf types = pp_print_list pp_ty ppf types ~pp_sep:pp_sep in
       fprintf ppf "[%a] " pp_list @@ List.map (fun x -> TyVar x) tyvars
   
-  let pp_print_cls ppf { entry = x; actual_fv = ids } =
-    if List.length ids = 0 then 
-      fprintf ppf "%s" x
-    else let pp_sep ppf () = fprintf ppf "," in
-    let pp_list ppf xs = pp_print_list pp_print_string ppf xs ~pp_sep:pp_sep in
-    fprintf ppf "%s[%a]"
-      x
-      pp_list ids
+  let pp_print_cls ppf { entry; fvs; offset; ftvs } =
+    let pp_sep ppf () = fprintf ppf "," in
+    fprintf ppf "%s[%a,%d,%a]"
+      entry
+      (pp_print_list ~pp_sep:pp_sep pp_print_string) fvs
+      offset
+      (pp_print_list ~pp_sep:pp_sep pp_tyarg) ftvs
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
@@ -823,21 +822,21 @@ module Cls = struct
     | AppDDir (l, (y, z)) -> fprintf ppf "%s:label (%s, %s)" l y z
     | AppMCls (x, y) -> fprintf ppf "%s:cls_alt %s" x y
     | AppMDir (l, y) -> fprintf ppf "%s:label_alt %s" l y
-    | AppTy (x, _, _, tas) | AppTyFun (x, _, _, tas) ->
+    | AppTy (x, _, tas, _) | AppTyFun (x, _, tas, _) ->
       fprintf ppf "%s[%a]"
         x
         pp_print_tas tas
-    | SetTy ((i, { contents = None }), f) -> 
+    | SetTy ((i, { contents = None }), f) ->
       fprintf ppf "set _ty%d = TYVAR in %a"
         i
         pp_exp f
-    | SetTy ((i, { contents = Some (TyFun (u1, u2)) }), f) -> 
+    | SetTy ((i, { contents = Some (TyFun (u1, u2)) }), f) ->
       fprintf ppf "set _tyfun%d = TYFUN(%a, %a) in %a"
         i
         pp_ty u1
         pp_ty u2
         pp_exp f
-    | SetTy ((i, { contents = Some (TyList u) }), f) -> 
+    | SetTy ((i, { contents = Some (TyList u) }), f) ->
       fprintf ppf "set _tylist%d = TYLIST(%a) in %a"
         i
         pp_ty u
@@ -862,12 +861,12 @@ module Cls = struct
     | Coercion c ->
       fprintf ppf "%a"
         pp_coercion c
-    | MakeCls (x, cls, _, f) ->
+    | MakeCls (x, cls, f) ->
       fprintf ppf "cls %s = %a in %a"
         x
         pp_print_cls cls
         pp_exp f
-    | MakeTyCls (x, cls, _, f) ->
+    | MakeTyCls (x, cls, f) ->
       fprintf ppf "tcls %s = %a in %a"
         x
         pp_print_cls cls
@@ -896,48 +895,48 @@ module Cls = struct
       pp_list fvl
 
   let pp_fundef ppf fundef = match fundef with
-  | FundefD { name = l; tvs = (tvs, _); arg = (y, z); formal_fv = fvl; body = f} ->
-    if List.length fvl = 0 then
+  | FundefD { name; arg = (y, z); vs; tvs; body } ->
+    if List.length vs = 0 then
       fprintf ppf "let rec %s %a(%s, %s) = %a"
-        l
+        name
         pp_tyabses tvs
         y
         z
-        pp_exp f
+        pp_exp body
     else
       fprintf ppf "let rec %s %a(%s, %s) = %a (fv:%a)"
-        l
+        name
         pp_tyabses tvs
         y
         z
-        pp_exp f
-        pp_print_fv fvl
-  | FundefM { name = l; tvs = (tvs, _); arg = y; formal_fv = fvl; body = f} -> 
-    if List.length fvl = 0 then
+        pp_exp body
+        pp_print_fv vs
+  | FundefM { name; arg = y; vs; tvs; body } -> 
+    if List.length vs = 0 then
       fprintf ppf "let rec %s %a%s = %a"
-        l
+        name
         pp_tyabses tvs
         y
-        pp_exp f
+        pp_exp body
     else
       fprintf ppf "let rec %s %a%s = %a (fv:%a)"
-        l
+        name
         pp_tyabses tvs
         y
-        pp_exp f
-        pp_print_fv fvl
-  | FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f} ->
-    if List.length fvl = 0 then
+        pp_exp body
+        pp_print_fv vs
+  | FundefTy { name; vs = vs; tvs; body } ->
+    if List.length vs = 0 then
       fprintf ppf "let %s %a= %a"
-        l
+        name
         pp_tyabses tvs
-        pp_exp f
+        pp_exp body
     else
       fprintf ppf "let %s %a= %a (fv:%a)"
-        l
+        name
         pp_tyabses tvs
-        pp_exp f
-        pp_print_fv fvl
+        pp_exp body
+        pp_print_fv vs
   let pp_toplevel ppf toplevel =
     let pp_sep ppf () = fprintf ppf "\n" in
     let pp_list ppf defs = pp_print_list pp_fundef ppf defs ~pp_sep:pp_sep in

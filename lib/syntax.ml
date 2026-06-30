@@ -264,9 +264,8 @@ module Cls = struct
 
   let to_id (x:label) = (x:id)
 
-  type closure = { entry : label; actual_fv : id list }
-
-  type ftv = { ftvs : tyarg list; offset : int } (* offsetはzsとftvsの間にいくつの型変数が入るのか *)
+  type closure = { entry : label; fvs : id list; offset : int; ftvs : tyarg list }
+  (* offsetはzsとftvsの間にいくつの型変数が入るのか *)
 
   type coercion =
     | CId
@@ -298,8 +297,8 @@ module Cls = struct
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list
-    | AppTy of id * int * int * tyarg list (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
-    | AppTyFun of id * int * int * tyarg list
+    | AppTy of id * int * tyarg list * int (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
+    | AppTyFun of id * int * tyarg list * int
     | AppDCls of id * (id * id)
     | AppDDir of label * (id * id)
     | AppMCls of id * id
@@ -309,14 +308,14 @@ module Cls = struct
     | CSeq of id * id
     | Coercion of coercion
     | Let of id * exp * exp
-    | MakeCls of id * closure * ftv * exp
-    | MakeTyCls of id * closure * ftv * exp
+    | MakeCls of id * closure * exp
+    | MakeTyCls of id * closure * exp
     | SetTy of tyvar * exp
 
   type fundef = 
-    | FundefD of { name : label ; tvs : tyvar list * int; arg : id * id; formal_fv : id list; body : exp }
-    | FundefM of { name : label ; tvs : tyvar list * int; arg : id; formal_fv : id list; body : exp }
-    | FundefTy of { name : label; tvs : tyvar list * int; formal_fv : id list; body : exp }
+    | FundefD  of { name : label; arg : id * id; vs : id list; tvs : tyvar list; body : exp }
+    | FundefM  of { name : label; arg : id;      vs : id list; tvs : tyvar list; body : exp }
+    | FundefTy of { name : label;                vs : id list; tvs : tyvar list; body : exp }
 
   type program = Prog of fundef list * exp
 
@@ -351,18 +350,13 @@ module C = struct
     (* | Tuple of id list *)
     (* | Hd of id *)
     (* | Tl of id *)
-    (* | Tget of id * int
-    | Ref of id * ty
+    (* | Tget of id * int *)
+    (* | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option *)
     (* | AppTy of id * int * int * tyarg list (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
     | AppTyFun of id * int * int * tyarg list
-    | AppDCls of id * (id * id)
-    | AppDDir of label * (id * id)
-    | AppMCls of id * id
-    | AppMDir of label * id
     | Cast of id * ty * ty * (int * polarity)
-    | CApp of id * id
     | CSeq of id * id
     | Coercion of coercion *)
 
@@ -378,10 +372,8 @@ module C = struct
     | SAssign of lval * exp
     | SReturn of exp
     | SIf of exp * stm list * stm list
-    (*
-    | Match of id * (matchform * exp) list *)
-    (* | MakeCls of id * closure * ftv * exp
-    | MakeTyCls of id * closure * ftv * exp *)
+    (* | Match of id * (matchform * exp) list *)
+    (* | MakeTyCls of id * closure * ftv * exp *)
     (* | SetTy of tyvar * exp *)
 
   type func_sig = {

@@ -55,7 +55,7 @@ module Cls = struct
     | CApp (x, y) -> V.of_list [x; y]
     | CSeq (x, y) -> V.of_list [x; y]
     | Coercion _ -> V.empty
-    | MakeCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
-    | MakeTyCls (x, { entry = _; actual_fv = vs }, _, f) -> V.remove x (V.union (V.of_list vs) (fv_exp f))
+    | MakeCls (x, { fvs; _ }, f) -> V.remove x (V.union (V.of_list fvs) (fv_exp f))
+    | MakeTyCls (x, { fvs; _ }, f) -> V.remove x (V.union (V.of_list fvs) (fv_exp f))
     | Let (x, c, f) -> V.union (fv_exp c) (V.remove x (fv_exp f))
 end
