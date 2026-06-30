@@ -36,14 +36,20 @@ exception ToC_error of string
   | TyVar (i, { contents = Some (TyRef _) }) -> Format.asprintf "_tyref%d" i
   | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
   | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
+*)
 
-(*型引数のCプログラム表記を出力する関数*)
-let c_of_tyarg = function
-  | Ty u -> c_of_ty u
-  | TyNu -> "newty()" *)
+let toC_ty = function
+  | TyInt -> Addr "tyint"
+  | TyUnit -> Addr "tyunit"
+  | _ as u -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.pp_ty u)
+
+let toC_ta = function
+  | Ty u -> toC_ty u
+  | TyNu -> App (Var "newty", [])
 
 let app_fvs l fvs = List.mapi (fun i fv -> SAssign (LIndex (l, i), Cast (PTR VOID, Var fv))) fvs
 (* let app_ftvs l n ftvs = List.mapi (fun i tv -> SAssign (LIndex (l, n + i), Cast (PTR VOID, Var v))) tvs *)
+let app_tas l n tas = List.mapi (fun i ta -> SAssign (LIndex (l, n + i), Cast (PTR VOID, toC_ta ta))) tas
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
@@ -53,22 +59,22 @@ let rec toC_exp ~is_main ~config = function
   | Cls.IfLte (x, y, f1, f2) ->
     SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
 (* | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> TODO *)
-  | Cls.MakeCls (x, { entry; fvs; offset = 0; ftvs = [] }, f) ->
+  | Cls.MakeCls (x, { entry; fvs; offset = n; ftvs = [] }, f) ->
     (* let env_size = List.length vs + List.length ftv + n in *)
     (* ignore ftv; *)
-    let env_size = List.length fvs in
+    let env_size = List.length fvs + n in
     let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
+    let fun_x = LCast (PTR FUN, LVar x) in
     let set_func =
       if config.intoB || config.static then
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ entry)) :: []
+        SAssign (LArrow (fun_x, "funcM"), Var ("fun_" ^ entry)) :: []
       else if config.alt then
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ entry)) ::
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcM") , Var ("fun_" ^ "alt_" ^ entry)) :: []
+        SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) ::
+        SAssign (LArrow (fun_x, "funcM"), Var ("fun_" ^ "alt_" ^ entry)) :: []
       else
-        SAssign (LArrow (LCast (PTR FUN, LVar x), "funcD") , Var ("fun_" ^ entry)) :: []
+        SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) :: []
     in
-    let lval_env = LArrow (LCast (PTR FUN, LVar x), "env") in
-    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs lval_env fvs @ toC_exp ~is_main ~config f
+    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs (LArrow (fun_x, "env")) fvs @ toC_exp ~is_main ~config f
   (*  ...
       toC_vs (x, vs)
       toC_ftas (n, x, ftv)
@@ -88,6 +94,7 @@ and toC_assign ~config x f =
   (* | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
   | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
   | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z)) *)
+  | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [Cast (VALUE, Null); Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
@@ -99,8 +106,26 @@ and toC_assign ~config x f =
   | Cls.AppMCls (y, z) ->
     let func = Arrow (Cast (PTR FUN, Var y), "funcM") in
     assign_x (App (func, [Var y; Var z]))
+  | Cls.AppTy (y, i1, tas, 0) ->
+    let env_size = i1 + List.length tas in
+    let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
+    let fun_x = LCast (PTR FUN, LVar x) in
+    let fun_y = Cast (PTR FUN, Var y) in
+    let set_func =
+      if config.intoB || config.static then
+        SAssign (LArrow (fun_x, "funcM"), Arrow (fun_y, "funcM")) :: []
+      else if config.alt then
+        SAssign (LArrow (fun_x, "funcD"), Arrow (fun_y, "funcD")) ::
+        SAssign (LArrow (fun_x, "funcM"), Arrow (fun_y, "funcM")) :: []
+      else
+        SAssign (LArrow (fun_x, "funcD"), Arrow (fun_y, "funcD")) :: []
+    in
+    let rec copy i n =
+      if i = n then []
+      else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
+    in
+    SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_tas (LArrow (fun_x, "env")) i1 tas @ copy (i1 + List.length tas) env_size
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
-  | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
     SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
@@ -108,9 +133,10 @@ and toC_assign ~config x f =
     SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
 
-let pick_vs x fvs =
-  let pick_x i = Cast (VALUE, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
-  List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x i))) fvs 
+let pick_env x fvs ftvs =
+  let pick_x t i = Cast (t, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
+  List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x VALUE i))) fvs @
+    List.mapi (fun i (d, _) -> SDecl (PTR TY, "_ty" ^ string_of_int d, Some (pick_x (PTR TY) (i + List.length fvs)))) ftvs
 
 (* let toC_fundef ppf fundef ~config = match fundef with
   | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
@@ -143,19 +169,19 @@ let pick_vs x fvs =
       (toC_exp ~config ~is_main:false) f *)
 
 let toC_fundef ~config fundef =
-  let name, fname, params, vs, body = match fundef with
-    | Cls.FundefD { name; arg = (y, k); vs; body; _ } ->
-      name, "fun_" ^ name, [name; y; k], vs, body
-    | Cls.FundefM { name; arg = y; vs; body; _ } ->
+  let name, fname, params, vs, tvs, body = match fundef with
+    | Cls.FundefD { name; arg = (y, k); vs; tvs; body } ->
+      name, "fun_" ^ name, [name; y; k], vs, tvs, body
+    | Cls.FundefM { name; arg = y; vs; tvs; body } ->
       let alt_str = if config.alt then "alt_" else "" in
-      name, "fun_" ^ alt_str ^ name, [name; y], vs, body
-    | Cls.FundefTy { name; body; vs; _ } ->
-      name, "tfun_" ^ name, [name; "dummy"], vs, body
+      name, "fun_" ^ alt_str ^ name, [name; y], vs, tvs, body
+    | Cls.FundefTy { name; vs; tvs; body } ->
+      name, "tfun_" ^ name, [name; "dummy"], vs, tvs, body
   in
   let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
-  let fvs = pick_vs name vs in
+  let fvs_ftvs = pick_env name vs tvs in
   let body = toC_exp ~is_main:false ~config body in
-  FunDecl f_s, FunDef (f_s, fvs @ body)
+  FunDecl f_s, FunDef (f_s, fvs_ftvs @ body)
 
 let toC_toplevel ~config toplevel =
   List.split @@ List.map (fun fd -> toC_fundef ~config fd) toplevel
