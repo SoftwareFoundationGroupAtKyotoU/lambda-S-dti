@@ -771,13 +771,13 @@ module Cls = struct
       let pp_list ppf types = pp_print_list pp_ty ppf types ~pp_sep:pp_sep in
       fprintf ppf "[%a] " pp_list @@ List.map (fun x -> TyVar x) tyvars
   
-  let pp_print_cls ppf { entry; fvs; offset; ftvs } =
+  let pp_cls ppf { entry; fvs; offset; ftvs } =
     let pp_sep ppf () = fprintf ppf "," in
     fprintf ppf "%s[%a,%d,%a]"
       entry
       (pp_print_list ~pp_sep:pp_sep pp_print_string) fvs
       offset
-      (pp_print_list ~pp_sep:pp_sep pp_tyarg) ftvs
+      (pp_print_list ~pp_sep:pp_sep (fun ppf (a, _) -> fprintf ppf "'x%d" a)) ftvs
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
@@ -864,12 +864,12 @@ module Cls = struct
     | MakeCls (x, cls, f) ->
       fprintf ppf "cls %s = %a in %a"
         x
-        pp_print_cls cls
+        pp_cls cls
         pp_exp f
     | MakeTyCls (x, cls, f) ->
       fprintf ppf "tcls %s = %a in %a"
         x
-        pp_print_cls cls
+        pp_cls cls
         pp_exp f
     | Let (x, f1, f2) ->
         fprintf ppf "let %s = %a in %a"

@@ -69,12 +69,6 @@ module KNorm = struct
     | Ty u -> let (u, f) = ty_tv tvs u in (Ty u, f)
     | TyNu -> (TyNu, fun x -> x)
 
-  let tyvar_to_tyarg tvs = 
-    let rec ttt l r = match l with
-    | tv :: t -> ttt t ((Ty (TyVar tv)) :: r)
-    | [] -> r
-  in ttt (List.rev tvs) []
-
   let rec toCls_crc tvs c = 
     let is_static c = 
       let cached = CrcManager.mem c in
@@ -239,8 +233,8 @@ module KNorm = struct
       if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
       let f2' = toCls_exp known' tvs (Environment.add x (zs, List.length tvs) args) funty f2 in
       if V.mem x (Fv.Cls.fv_exp f2') then match fd with
-        | FunTy _ -> Cls.MakeTyCls (x, { entry = Cls.to_label x; fvs = zs; offset = List.length tvs'; ftvs = tyvar_to_tyarg tvs }, f2')
-        | _ -> Cls.MakeCls (x, { entry = Cls.to_label x; fvs = zs;  offset = List.length tvs'; ftvs = tyvar_to_tyarg tvs }, f2')
+        | FunTy _ -> Cls.MakeTyCls (x, { entry = Cls.to_label x; fvs = zs; offset = List.length tvs'; ftvs = tvs }, f2')
+        | _ -> Cls.MakeCls (x, { entry = Cls.to_label x; fvs = zs;  offset = List.length tvs'; ftvs = tvs }, f2')
       else f2'
 
   let toCls kf known = 

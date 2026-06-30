@@ -264,7 +264,7 @@ module Cls = struct
 
   let to_id (x:label) = (x:id)
 
-  type closure = { entry : label; fvs : id list; offset : int; ftvs : tyarg list }
+  type closure = { entry : label; fvs : id list; offset : int; ftvs : tyvar list }
   (* offsetはzsとftvsの間にいくつの型変数が入るのか *)
 
   type coercion =

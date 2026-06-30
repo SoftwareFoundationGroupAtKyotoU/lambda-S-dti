@@ -48,8 +48,8 @@ let toC_ta = function
   | TyNu -> App (Var "newty", [])
 
 let app_fvs l fvs = List.mapi (fun i fv -> SAssign (LIndex (l, i), Cast (PTR VOID, Var fv))) fvs
-(* let app_ftvs l n ftvs = List.mapi (fun i tv -> SAssign (LIndex (l, n + i), Cast (PTR VOID, Var v))) tvs *)
 let app_tas l n tas = List.mapi (fun i ta -> SAssign (LIndex (l, n + i), Cast (PTR VOID, toC_ta ta))) tas
+let app_ftvs l n ftvs = List.mapi (fun i (d, _) -> SAssign (LIndex (l, n + i), Cast (PTR VOID, Var ("_ty" ^ string_of_int d)))) ftvs
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
@@ -58,11 +58,8 @@ let rec toC_exp ~is_main ~config = function
     SIf (Eq (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.IfLte (x, y, f1, f2) ->
     SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
-(* | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> TODO *)
-  | Cls.MakeCls (x, { entry; fvs; offset = n; ftvs = [] }, f) ->
-    (* let env_size = List.length vs + List.length ftv + n in *)
-    (* ignore ftv; *)
-    let env_size = List.length fvs + n in
+  | Cls.MakeCls (x, { entry; fvs; offset = n; ftvs }, f) ->
+    let env_size = List.length fvs + n + List.length ftvs in
     let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
     let fun_x = LCast (PTR FUN, LVar x) in
     let set_func =
@@ -74,7 +71,7 @@ let rec toC_exp ~is_main ~config = function
       else
         SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) :: []
     in
-    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs (LArrow (fun_x, "env")) fvs @ toC_exp ~is_main ~config f
+    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs (LArrow (fun_x, "env")) fvs @ app_ftvs (LArrow (fun_x, "env")) (List.length fvs + n) ftvs @ toC_exp ~is_main ~config f
   (*  ...
       toC_vs (x, vs)
       toC_ftas (n, x, ftv)
