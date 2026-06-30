@@ -354,8 +354,7 @@ module C = struct
     (* | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option *)
-    (* | AppTy of id * int * int * tyarg list (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
-    | AppTyFun of id * int * int * tyarg list
+    (* | AppTyFun of id * int * int * tyarg list
     | Cast of id * ty * ty * (int * polarity)
     | CSeq of id * id
     | Coercion of coercion *)

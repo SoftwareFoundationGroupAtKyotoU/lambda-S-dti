@@ -1,6 +1,5 @@
 open Syntax
 open Syntax.C
-(* open Format *)
 open Config
 (* open Utils.Error *)
 (* open Static_manage *)
@@ -9,47 +8,41 @@ open Config
 exception ToC_bug of string
 exception ToC_error of string
 
-(*Utilities*)
-(*型のCプログラム表記を出力する関数
-  Ground typeとDynamic type以外の型はもともと全てポインタなので&はいらない*)
-(* let c_of_ty = function
-  | TyInt -> "&tyint"
-  | TyBool -> "&tybool"
-  | TyUnit -> "&tyunit"
-  | TyDyn -> "&tydyn"
-  | TyFun (TyDyn, TyDyn) -> "&tyar"
-  | TyFun (_, _) as u -> "&" ^ TyManager.find u
-  | TyList TyDyn -> "&tyli"
-  | TyList _ as u -> "&" ^ TyManager.find u
-  | TyTuple _ as u -> "&" ^ TyManager.find u
-  | TyRef TyDyn -> "&tyrf"
-  | TyRef _ as u -> "&" ^ TyManager.find u
-  | TyVar (i, { contents = None }) as u ->
-    begin try 
-      "&" ^ TyManager.find u
-    with Not_found ->
-      Format.asprintf "_ty%d" i
-    end
-  | TyVar (i, { contents = Some (TyFun _) }) -> Format.asprintf "_tyfun%d" i
-  | TyVar (i, { contents = Some (TyList _) }) -> Format.asprintf "_tylist%d" i
-  | TyVar (i, { contents = Some (TyTuple _) }) -> Format.asprintf "_tytuple%d" i
-  | TyVar (i, { contents = Some (TyRef _) }) -> Format.asprintf "_tyref%d" i
-  | TyVar _ -> raise @@ ToC_bug "tyvar should cannot contain other than fun, list or tuple"
-  | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
-*)
+let toC_tyvar (i, _) = Var ("_ty" ^ string_of_int i)
 
 let toC_ty = function
   | TyInt -> Addr "tyint"
+  (* | TyBool -> Addr "tybool" *)
   | TyUnit -> Addr "tyunit"
+  (* | TyDyn -> Addr "tydyn" *)
+  (* | TyFun (TyDyn, TyDyn) -> Addr "tyar" *)
+  (* | TyFun (_, _) as u -> Addr (TyManager.find u) *)
+  (* | TyList TyDyn -> Addr "tyli" *)
+  (* | TyList _ as u -> Addr (TyManager.find u) *)
+  (* | TyTuple _ as u -> Addr (TyManager.find u) *)
+  (* | TyRef TyDyn -> Addr "tyrf" *)
+  (* | TyRef _ as u -> Addr (TyManager.find u) *)
+  (* | TyVar (i, { contents = None }) as u ->
+    begin try 
+      Addr (TyManager.find u)
+    with Not_found ->
+      Var (Format.asprintf "_ty%d" i)
+    end
+  | TyVar (i, { contents = Some (TyFun _) }) -> Var (Format.asprintf "_tyfun%d" i)
+  | TyVar (i, { contents = Some (TyList _) }) -> Var (Format.asprintf "_tylist%d" i)
+  | TyVar (i, { contents = Some (TyTuple _) }) -> Var (Format.asprintf "_tytuple%d" i)
+  | TyVar (i, { contents = Some (TyRef _) }) -> Var (Format.asprintf "_tyref%d" i) *)
+  (* | TyVar _ -> raise @@ ToC_bug "tyvar should not contain other than constructor type" *)
+  (* | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion" *)
   | _ as u -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.pp_ty u)
 
 let toC_ta = function
   | Ty u -> toC_ty u
   | TyNu -> App (Var "newty", [])
 
-let app_fvs l fvs = List.mapi (fun i fv -> SAssign (LIndex (l, i), Cast (PTR VOID, Var fv))) fvs
-let app_tas l n tas = List.mapi (fun i ta -> SAssign (LIndex (l, n + i), Cast (PTR VOID, toC_ta ta))) tas
-let app_ftvs l n ftvs = List.mapi (fun i (d, _) -> SAssign (LIndex (l, n + i), Cast (PTR VOID, Var ("_ty" ^ string_of_int d)))) ftvs
+let app_env l n f lst =
+  let lval_env = LArrow (l, "env") in
+  List.mapi (fun i h -> SAssign (LIndex (lval_env, n + i), Cast (PTR VOID, f h))) lst
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
@@ -71,13 +64,11 @@ let rec toC_exp ~is_main ~config = function
       else
         SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) :: []
     in
-    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs (LArrow (fun_x, "env")) fvs @ app_ftvs (LArrow (fun_x, "env")) (List.length fvs + n) ftvs @ toC_exp ~is_main ~config f
-  (*  ...
-      toC_vs (x, vs)
-      toC_ftas (n, x, ftv)
-      toC_exp f *)
+    let app_fvs = app_env fun_x 0 (fun fv -> Var fv) fvs in
+    let app_ftvs = app_env fun_x (List.length fvs + n) toC_tyvar ftvs in
+    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs @ app_ftvs @ toC_exp ~is_main ~config f
   | Cls.Var _ | Cls.Int _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Coercion _
-  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.CApp _ as f ->
+  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
   | _ as f -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
@@ -103,8 +94,8 @@ and toC_assign ~config x f =
   | Cls.AppMCls (y, z) ->
     let func = Arrow (Cast (PTR FUN, Var y), "funcM") in
     assign_x (App (func, [Var y; Var z]))
-  | Cls.AppTy (y, i1, tas, 0) ->
-    let env_size = i1 + List.length tas in
+  | Cls.AppTy (y, i1, tas, n) ->
+    let env_size = i1 + List.length tas + n in
     let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
     let fun_x = LCast (PTR FUN, LVar x) in
     let fun_y = Cast (PTR FUN, Var y) in
@@ -121,49 +112,67 @@ and toC_assign ~config x f =
       if i = n then []
       else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
     in
-    SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_tas (LArrow (fun_x, "env")) i1 tas @ copy (i1 + List.length tas) env_size
+    SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
     SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.IfLte (y, z, f1, f2) ->
     SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
+  (* | Cls.MakeCls (x, cls, f) -> *)
   | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
+
+(* let toC_tydecl ppf (_, name) =
+  fprintf ppf "static ty %s;" name
+
+let toC_tydecls ppf l = 
+  if List.length l = 0 then fprintf ppf ""
+  else let toC_sep ppf () = fprintf ppf "\n" in
+  let toC_list ppf decls = pp_print_list toC_tydecl ppf decls ~pp_sep:toC_sep in
+  fprintf ppf "%a\n"
+    toC_list l
+
+(*型の定義*)
+let toC_tycontent ppf (u, name) = match u with
+  | TyVar _ -> (* TyVarはtykindをTYVARにする *)
+    fprintf ppf "static ty %s = { .tykind = TYVAR };"
+      name
+  | TyFun (u1, u2) -> 
+    (*TyFunはtykindをTYFUNとする
+      さらに，leftとrightにTyFunの二つの型をそれぞれ代入する*)
+    fprintf ppf "static ty %s = { .tykind = TYFUN, .tydat.tyfun = { .left = %s, .right = %s } };"
+      name
+      (c_of_ty u1)
+      (c_of_ty u2)
+  | TyList u ->
+    fprintf ppf "static ty %s = { .tykind = TYLIST, .tydat.tylist = %s };"
+      name
+      (c_of_ty u)
+  | TyTuple us ->
+    let arity = List.length us in
+    let tys_str = String.concat ", " (List.map (fun u -> "(ty*)" ^ c_of_ty u) us) in
+    fprintf ppf "static ty *%s_tys[] = { %s };\n" name tys_str;
+    fprintf ppf "static ty %s = { .tykind = TYTUPLE, .tydat.tytuple = { .arity = %d, .tys = %s_tys } };"
+      name arity name  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
+
+let toC_tycontents ppf l = 
+  let toC_sep ppf () = fprintf ppf "\n" in
+  let toC_list ppf decls = pp_print_list toC_tycontent ppf decls ~pp_sep:toC_sep in
+  fprintf ppf "%a\n"
+    toC_list l
+
+(*型定義全体を記述*)
+let toC_tys ppf l =
+  if l = [] then fprintf ppf ""
+  else 
+    fprintf ppf "%a%a\n\n"
+      toC_tydecls l
+      toC_tycontents l *)
 
 let pick_env x fvs ftvs =
   let pick_x t i = Cast (t, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
   List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x VALUE i))) fvs @
     List.mapi (fun i (d, _) -> SDecl (PTR TY, "_ty" ^ string_of_int d, Some (pick_x (PTR TY) (i + List.length fvs)))) ftvs
-
-(* let toC_fundef ppf fundef ~config = match fundef with
-  | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
-      l
-      x
-      y
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f
-  | FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
-      (if config.alt then "_alt" else "")
-      l
-      x
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f
-  | FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a%a%a}"
-      l
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f *)
 
 let toC_fundef ~config fundef =
   let name, fname, params, vs, tvs, body = match fundef with
@@ -184,11 +193,13 @@ let toC_toplevel ~config toplevel =
   List.split @@ List.map (fun fd -> toC_fundef ~config fd) toplevel
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
+  (* let tys = TyManager.get_definitions () in *)
   let inc = [
     Include "<gc.h>";
     Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
   ]
   in
+  (* let tydecl = toC_tys tys in *)
   let fundecl, fundef = toC_toplevel ~config toplevel in
   let decl = if bench = 0 && not config.static then [Decl (PTR RANGE, "range_list")] else [] in
   let main = [FunDef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true ~config f)] in
@@ -212,61 +223,6 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     "}" *)
 
 (* 
-
-(*自由変数をクロージャに代入するプログラムを記述する関数*)
-(*自由変数と型変数を共通のインデックスで管理*)
-let cnt_env = ref 0
-
-let toC_v x ppf v =
-  fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;"
-    x
-    !cnt_env
-    v;
-  cnt_env := !cnt_env + 1
-
-let toC_vs ppf (x, vs) =
-  let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf fv = pp_print_list (toC_v x) ppf fv ~pp_sep:toC_sep in
-  fprintf ppf "%a"
-    toC_list vs
-
-(*型引数を代入するプログラムを記述する関数*)
-let toC_ta x ppf u =
-  fprintf ppf "((fun*)%s)->env[%d] = (void*)%s;"
-    x
-    !cnt_env
-    (c_of_tyarg u);
-  cnt_env := !cnt_env + 1
-
-let toC_tas ppf (y, num_zs, total, x, tas) =
-  cnt_env := 0;
-
-  (* yに登録されている自由変数をxにコピー *)
-  while (!cnt_env < num_zs) do
-    fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
-    cnt_env := !cnt_env + 1
-  done;
-
-  (* 今回適用する型引数を代入 *)
-  let toC_list ppf ta = pp_print_list (toC_ta x) ppf ta ~pp_sep:(fun ppf () -> fprintf ppf "\n") in
-  fprintf ppf "%a\n" 
-    toC_list tas;
-  
-  (* yに登録されている外側の型引数をxにコピー *)
-  while (!cnt_env < total) do
-    fprintf ppf "((fun*)%s)->env[%d] = ((fun*)%s)->env[%d];\n" x !cnt_env y !cnt_env;
-    cnt_env := !cnt_env + 1
-  done
-
-(*束縛されていない型引数を代入するプログラムを記述する関数*)
-let toC_ftas ppf (offset, x, ftas) =
-  cnt_env := !cnt_env + offset;
-  if List.length ftas = 0 then fprintf ppf ""
-  else let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf fta = pp_print_list (toC_ta x) ppf fta ~pp_sep:toC_sep in
-  fprintf ppf "%a\n"
-    toC_list ftas
-
 let toC_tag ppf = function
   | I -> pp_print_string ppf "INT"
   | B -> pp_print_string ppf "BOOL"
@@ -728,40 +684,6 @@ let toC_tys ppf l =
 
 (* ================================ *)
 
-(*関数定義をするCプログラムを記述*)
-(*関数定義の最初に，自由変数を詰める場所を設ける*)
-
-(*引数zsから要素を取り出し，変数名xの値に代入*)
-let toC_fv ppf x =
-  fprintf ppf "value %s = (value)(((fun*)cls)->env[%d]);"
-    x
-    !cnt_env;
-  cnt_env := !cnt_env + 1
-
-let toC_fvs ppf fvl =
-  if fvl = [] then fprintf ppf ""
-  else let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf fv = pp_print_list toC_fv ppf fv ~pp_sep:toC_sep in
-  fprintf ppf "%a\n"
-    toC_list fvl
-
-(*関数定義の最初に，型変数を詰める場所も設ける*)
-
-let toC_tv ppf (i, _) = (* TODO *)
-  fprintf ppf "ty *_ty%d = (ty*)(((fun*)cls)->env[%d]);"
-    i
-    !cnt_env;
-  cnt_env := !cnt_env + 1
-
-let toC_tvs ppf tvl =
-  if tvl = [] then fprintf ppf ""
-  else let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf tv = pp_print_list toC_tv ppf tv ~pp_sep:toC_sep in
-  fprintf ppf "%a\n"
-    toC_list tvl
-
-(* ================================ *)
-
 (*Castのran_polを記述する関数*)
 (*toC_exp Let Castを参照*)
 let toC_range ppf (r, _) =
@@ -892,59 +814,6 @@ let toC_crcs ppf l ~config =
       ) l
 
 (* ================================ *)
-  
-(*関数名の前方定義
-  再帰関数などに対応するために，関数本体の前に，名前を前方定義する
-  ここで定義する内容はfun型の関数自体の定義 (*いらない：と，関数が格納されたvalue型の値の二つ*)
-  fundef内のfvl(自由変数のリスト)とtvs(型変数のリスト)に要素が入っているかどうかで関数の型が異なるので，四通りの場合分けが発生する*)
-let toC_label ppf fundef ~config = match fundef with
-  | FundefD { name = l; tvs = (_, _); arg = (_, _); formal_fv = _; body = _ } ->
-    fprintf ppf "static value fun_%s(value, value, value);"
-      l
-  | FundefM { name = l; tvs = (_, _); arg = _; formal_fv = _; body = _ } ->
-    fprintf ppf "static value fun%s_%s(value, value);"
-      (if config.alt then "_alt" else "")
-      l
-  | FundefTy { name = l; tvs = (_, _); formal_fv = _; body = _ } ->
-    fprintf ppf "static value tfun_%s(value, value);"
-      l
-
-(*関数本体の定義*)
-let toC_funv ppf (exists_fun, l) =
-  if not exists_fun then
-    fprintf ppf ""
-  else
-    fprintf ppf "value %s = cls;\n" l
-
-let toC_fundef ppf fundef ~config = match fundef with
-  | FundefD { name = l; tvs = (tvs, _); arg = (x, y); formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value fun_%s(value cls, value %s, value %s) {\n%a%a%a%a}"
-      l
-      x
-      y
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f
-  | FundefM { name = l; tvs = (tvs, _); arg = x; formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value fun%s_%s(value cls, value %s) {\n%a%a%a%a}"
-      (if config.alt then "_alt" else "")
-      l
-      x
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f
-  | FundefTy { name = l; tvs = (tvs, _); formal_fv = fvl; body = f } ->
-    cnt_env := 0;
-    fprintf ppf "static value tfun_%s(value cls, value dummy) {\n%a%a%a%a}"
-      l
-      toC_funv (V.mem (to_id l) (fv_exp f), l)
-      toC_fvs fvl
-      toC_tvs tvs
-      (toC_exp ~config ~is_main:false) f
   
 (*関数定義全体を記述*)
 let toC_fundefs ppf toplevel ~config =
