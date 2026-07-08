@@ -2,27 +2,27 @@ open Syntax
 open Syntax.C
 open Config
 (* open Utils.Error *)
-(* open Static_manage *)
+open Static_manage
 (* open Fv.Cls *)
 
 exception ToC_bug of string
 exception ToC_error of string
 
-let toC_tyvar (i, _) = Var ("_ty" ^ string_of_int i)
+let string_of_tyvar (i, _) = "_ty" ^ string_of_int i
 
 let toC_ty = function
   | TyInt -> Addr "tyint"
-  (* | TyBool -> Addr "tybool" *)
+  | TyBool -> Addr "tybool"
   | TyUnit -> Addr "tyunit"
-  (* | TyDyn -> Addr "tydyn" *)
-  (* | TyFun (TyDyn, TyDyn) -> Addr "tyar" *)
-  (* | TyFun (_, _) as u -> Addr (TyManager.find u) *)
-  (* | TyList TyDyn -> Addr "tyli" *)
-  (* | TyList _ as u -> Addr (TyManager.find u) *)
-  (* | TyTuple _ as u -> Addr (TyManager.find u) *)
-  (* | TyRef TyDyn -> Addr "tyrf" *)
-  (* | TyRef _ as u -> Addr (TyManager.find u) *)
-  (* | TyVar (i, { contents = None }) as u ->
+  | TyDyn -> Addr "tydyn"
+  | TyFun (TyDyn, TyDyn) -> Addr "tyar"
+  | TyFun (_, _) as u -> Addr (TyManager.find u)
+  | TyList TyDyn -> Addr "tyli"
+  | TyList _ as u -> Addr (TyManager.find u)
+  | TyTuple _ as u -> Addr (TyManager.find u)
+  | TyRef TyDyn -> Addr "tyrf"
+  | TyRef _ as u -> Addr (TyManager.find u)
+  | TyVar (i, { contents = None }) as u ->
     begin try 
       Addr (TyManager.find u)
     with Not_found ->
@@ -31,10 +31,9 @@ let toC_ty = function
   | TyVar (i, { contents = Some (TyFun _) }) -> Var (Format.asprintf "_tyfun%d" i)
   | TyVar (i, { contents = Some (TyList _) }) -> Var (Format.asprintf "_tylist%d" i)
   | TyVar (i, { contents = Some (TyTuple _) }) -> Var (Format.asprintf "_tytuple%d" i)
-  | TyVar (i, { contents = Some (TyRef _) }) -> Var (Format.asprintf "_tyref%d" i) *)
-  (* | TyVar _ -> raise @@ ToC_bug "tyvar should not contain other than constructor type" *)
-  (* | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion" *)
-  | _ as u -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.pp_ty u)
+  | TyVar (i, { contents = Some (TyRef _) }) -> Var (Format.asprintf "_tyref%d" i)
+  | TyVar _ -> raise @@ ToC_bug "tyvar should not contain other than constructor type"
+  | TyCoercion _ -> raise @@ ToC_error "c_of_ty tycoercion"
 
 let toC_ta = function
   | Ty u -> toC_ty u
@@ -65,13 +64,13 @@ let rec toC_exp ~is_main ~config = function
         SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) :: []
     in
     let app_fvs = app_env fun_x 0 (fun fv -> Var fv) fvs in
-    let app_ftvs = app_env fun_x (List.length fvs + n) toC_tyvar ftvs in
+    let app_ftvs = app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs in
     SDecl (VALUE, x, Some cls) :: set_func @ app_fvs @ app_ftvs @ toC_exp ~is_main ~config f
   | Cls.Var _ | Cls.Int _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Coercion _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
-  | _ as f -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
+  | _ as f -> raise @@ ToC_bug (Format.asprintf "toC_exp yet: %a" Pp.Cls.pp_exp f)
 and toC_assign ~config x f =
   let assign_x e = SAssign (LVar x, e) :: [] in
   match f with
@@ -79,10 +78,10 @@ and toC_assign ~config x f =
   | Cls.Int i -> assign_x (Int i)
   | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
   | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
-  (* | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
+  | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
   | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
-  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z)) *)
-  | Cls.Coercion CId -> assign_x (Cast (VALUE, (Addr "crc_id")))
+  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
+  | Cls.Coercion (CId _) -> assign_x (Cast (VALUE, (Addr "crc_id")))
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [Cast (VALUE, Null); Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
@@ -113,27 +112,19 @@ and toC_assign ~config x f =
       else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
     in
     SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
-  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
+  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))  (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
     SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.IfLte (y, z, f1, f2) ->
     SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   (* | Cls.MakeCls (x, cls, f) -> *)
-  | _ -> raise @@ ToC_bug (Format.asprintf "yet: %a" Pp.Cls.pp_exp f)
+  | _ -> raise @@ ToC_bug (Format.asprintf "toC_assign yet: %a" Pp.Cls.pp_exp f)
 
-(* let toC_tydecl ppf (_, name) =
-  fprintf ppf "static ty %s;" name
-
-let toC_tydecls ppf l = 
-  if List.length l = 0 then fprintf ppf ""
-  else let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf decls = pp_print_list toC_tydecl ppf decls ~pp_sep:toC_sep in
-  fprintf ppf "%a\n"
-    toC_list l
+let toC_tydecls tys = List.map (fun (_, name) -> Decl (Static, TY, name, None)) tys
 
 (*型の定義*)
-let toC_tycontent ppf (u, name) = match u with
+(*let toC_tycontent ppf (u, name) = match u with
   | TyVar _ -> (* TyVarはtykindをTYVARにする *)
     fprintf ppf "static ty %s = { .tykind = TYVAR };"
       name
@@ -159,20 +150,23 @@ let toC_tycontents ppf l =
   let toC_sep ppf () = fprintf ppf "\n" in
   let toC_list ppf decls = pp_print_list toC_tycontent ppf decls ~pp_sep:toC_sep in
   fprintf ppf "%a\n"
-    toC_list l
+    toC_list l*)
 
-(*型定義全体を記述*)
-let toC_tys ppf l =
-  if l = [] then fprintf ppf ""
-  else 
-    fprintf ppf "%a%a\n\n"
-      toC_tydecls l
-      toC_tycontents l *)
+let toC_tycontents tys =
+  let toC_content = function
+    | TyVar _ -> Struct ["tykind", Var "TYVAR"]
+    | TyFun (u1, u2) ->
+      Struct ["tykind", Var "TYFUN"; "tydat", Struct ["tyfun", Struct ["left", toC_ty u1; "right", toC_ty u2]]]
+    | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
+  in
+  List.map (fun (u, name) -> Decl (Static, TY, name, Some (toC_content u))) tys
+
+let toC_tys tys = toC_tydecls tys, toC_tycontents tys
 
 let pick_env x fvs ftvs =
   let pick_x t i = Cast (t, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
   List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x VALUE i))) fvs @
-    List.mapi (fun i (d, _) -> SDecl (PTR TY, "_ty" ^ string_of_int d, Some (pick_x (PTR TY) (i + List.length fvs)))) ftvs
+    List.mapi (fun i ftv -> SDecl (PTR TY, string_of_tyvar ftv, Some (pick_x (PTR TY) (i + List.length fvs)))) ftvs
 
 let toC_fundef ~config fundef =
   let name, fname, params, vs, tvs, body = match fundef with
@@ -187,23 +181,23 @@ let toC_fundef ~config fundef =
   let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
   let fvs_ftvs = pick_env name vs tvs in
   let body = toC_exp ~is_main:false ~config body in
-  FunDecl f_s, FunDef (f_s, fvs_ftvs @ body)
+  FunDecl (Static, f_s), FunDef (Static, f_s, fvs_ftvs @ body)
 
 let toC_toplevel ~config toplevel =
   List.split @@ List.map (fun fd -> toC_fundef ~config fd) toplevel
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
-  (* let tys = TyManager.get_definitions () in *)
+  let tys = TyManager.get_definitions () in
   let inc = [
     Include "<gc.h>";
     Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
   ]
   in
-  (* let tydecl = toC_tys tys in *)
+  let tydecl, tydef = toC_tys tys in
   let fundecl, fundef = toC_toplevel ~config toplevel in
-  let decl = if bench = 0 && not config.static then [Decl (PTR RANGE, "range_list")] else [] in
-  let main = [FunDef ({ ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true ~config f)] in
-  inc @ fundecl @ fundef @ decl @ main
+  let decl = if bench = 0 && not config.static then [Decl (No, PTR RANGE, "range_list", None)] else [] in
+  let main = [FunDef (No, { ret_ty = INT; fname = "main"; params = []}, toC_exp ~is_main:true ~config f)] in
+  inc @ tydecl @ tydef @ fundecl @ fundef @ decl @ main
   (* let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in

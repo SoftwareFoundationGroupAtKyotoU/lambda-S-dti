@@ -193,7 +193,7 @@ module CC = struct
           v
         | _ -> raise @@ Eval_bug "capp: application of non coercion value"
       end
-    | CSeqExp (f1, f2) ->
+    | CCompExp (f1, f2) ->
       let v1 = eval ~config env f1 in
       let v2 = eval ~config env f2 in
       begin match v1, v2 with

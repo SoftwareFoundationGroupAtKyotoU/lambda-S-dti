@@ -203,7 +203,7 @@ module CC = struct
         TupleExp (List.rev r), env
       in
       iter env es []
-    | AppDExp _ | CSeqExp _ -> raise @@ Occur_LS1 "fresh_tv"
+    | AppDExp _ | CCompExp _ -> raise @@ Occur_LS1 "fresh_tv"
   and tv_renew_fund fd env = match fd with
     | FunB ((x, u), e) ->
       let u, env = tv_renew_ty u env in

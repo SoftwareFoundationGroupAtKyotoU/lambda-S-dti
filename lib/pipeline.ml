@@ -124,7 +124,11 @@ let kNorm_funs ppf state ~config =
 
 let closure ppf state ~config = 
   print_title ppf "Closure";
-  let p = Closure.toCls_program state.program Stdlib.venv ~alt:config.alt in
+  let p = state.program 
+          |> Closure.toCls Stdlib.venv
+          |> Static_manage.static_program
+          |> Translate.Cls.altCls ~config
+  in
   fprintf ppf "%a@." Pp.Cls.pp_program p;
   change_state_program p state
 

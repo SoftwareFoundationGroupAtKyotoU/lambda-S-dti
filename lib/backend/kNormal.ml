@@ -71,7 +71,7 @@ module CC = struct
     | CastExp (f1, u1, u2, p) ->
       CastExp (alpha_exp idenv f1, u1, u2, p)
     | CAppExp (f1, f2) -> CAppExp (alpha_exp idenv f1, alpha_exp idenv f2)
-    | CSeqExp (f1, f2) -> CSeqExp (alpha_exp idenv f1, alpha_exp idenv f2)
+    | CCompExp (f1, f2) -> CCompExp (alpha_exp idenv f1, alpha_exp idenv f2)
     | LetExp (x, FixExp (tvs, fixd), f2) ->
       let newx = genvar x in
       let idenv' = Environment.add x newx idenv in
@@ -198,7 +198,7 @@ module CC = struct
         | Var _ | BConst _ | IfExp _ | AppMExp _ | AppDExp _ | LetExp _ | CastExp _ | CAppExp _ | MatchExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunExp _ | FixExp _  | CSeqExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _ -> raise @@ KNormal_bug "if-cond type should bool"
+        | IConst _ | UConst | FunExp _ | FixExp _  | CCompExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _ -> raise @@ KNormal_bug "if-cond type should bool"
         | _ -> raise @@ Failure "yet"
       end
     | FunExp (tvs, fund) ->
@@ -223,10 +223,10 @@ module CC = struct
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in 
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CAppExp (x, y)
-    | CSeqExp (f1, f2) ->
+    | CCompExp (f1, f2) ->
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in 
-      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CSeqExp (x, y)
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.CCompExp (x, y)
     | CoercionExp c -> KNorm.CoercionExp c
     | MatchExp (f, ms) ->
       let f = k_normalize_exp tvsenv f in
@@ -345,7 +345,7 @@ module KNorm = struct
     | AppDExp (x, (y, z)) -> AppDExp (find x idenv, (find y idenv, find z idenv))
     | AppTy (x, tvs, tas) -> AppTy (find x idenv, tvs, tas)
     | CAppExp (x, y) -> CAppExp (find x idenv, find y idenv)
-    | CSeqExp (x, y) -> CSeqExp (find x idenv, find y idenv)
+    | CCompExp (x, y) -> CCompExp (find x idenv, find y idenv)
     | CastExp (x, u1, u2, r_p) -> CastExp (find x idenv, u1, u2, r_p)
     | LetExp (x, f1, f2) ->
       let f1 = beta_exp idenv f1 in

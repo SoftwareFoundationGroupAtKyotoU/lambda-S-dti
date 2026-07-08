@@ -1,6 +1,7 @@
 open Pp
 open Ftv
 open Syntax
+open Config
 open Format
 open Type_utils
 
@@ -100,7 +101,7 @@ module ITGL = struct
       in
       iter env mfs []
 
-  let rec translate_exp ~(config:Config.t) env f =
+  let rec translate_exp ~config env f =
     let c = if config.intoB then cast else coerce ~monotonic:config.monotonic in
     match f with
     | Var (_, x, ys) ->
@@ -266,7 +267,7 @@ module CC = struct
       in
       iter env mfs []
 
-  let rec translate_exp ~(config: Config.t) env = function
+  let rec translate_exp ~config env = function
     | Var (x, ys) ->
       let TyScheme (xs, u) = Environment.find x env in
       let ftvs = ftv_ty u in
@@ -397,7 +398,7 @@ module CC = struct
       let f, u = translate_exp ~config env f in
       assert (u = u1);
       CastExp (f, u1, u2, r_p), u2
-    | AppDExp _ | CSeqExp _ | CoercionExp _ | FunExp _ | FixExp _ | CAppExp _ as f ->
+    | AppDExp _ | CCompExp _ | CoercionExp _ | FunExp _ | FixExp _ | CAppExp _ as f ->
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | BinOp _ | FunExp _ | FixExp _
@@ -447,11 +448,11 @@ module CC = struct
         let k' = Var (id, []) in
         let f, u = translate_exp_k ~config env k' u_src_c uk2 f1 in
         assert (u = uk2);
-        LetExp (id, CSeqExp (f2, k), f), uk2
+        LetExp (id, CCompExp (f2, k), f), uk2
       | _ -> raise @@ Translation_bug "CAppExp"
       end
     | CastExp _ -> raise @@ Translation_bug "translate_exp_k CastExp"
-    | AppDExp _ | CSeqExp _ | CoercionExp _ | CAppExp _ as f ->
+    | AppDExp _ | CCompExp _ | CoercionExp _ | CAppExp _ as f ->
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
 
   let translate ~config env = function
@@ -461,4 +462,90 @@ module CC = struct
     | LetDecl (x, f) ->
       let f, u = translate_exp ~config env f in
       LetDecl (x, f), u
+end
+
+module Cls = struct
+  open Syntax.Cls
+  open Fv.Cls
+
+  let rec replace_var vx vy f = 
+    let replace x = if x = vx then vy else x in
+    match f with
+    | Var x -> Var (replace x)
+    | Int i -> Int i
+    | Nil -> Nil
+    | Add (x, y) -> Add (replace x, replace y)
+    | Sub (x, y) -> Sub (replace x, replace y)
+    | Mul (x, y) -> Mul (replace x, replace y)
+    | Div (x, y) -> Div (replace x, replace y)
+    | Mod (x, y) -> Mod (replace x, replace y)
+    | Cons (x, y) -> Cons (replace x, replace y)
+    | Tuple xs -> Tuple (List.map (fun x -> replace x) xs)
+    | Hd x -> Hd (replace x)
+    | Tl x -> Tl (replace x)
+    | Tget (x, i) -> Tget (replace x, i)
+    | Ref (x, u) -> Ref (replace x, u)
+    | Deref (x, uo) -> Deref (replace x, uo)
+    | Subst (x, y, uo) -> Subst (replace x, replace y, uo)
+    | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)
+    | AppTy (x, k, n, tas) -> AppTy (replace x, k, n, tas)
+    | AppTyFun (x, k, n, tas) -> AppTyFun (replace x, k, n, tas)
+    | AppDCls (x, (y, k)) -> AppDCls (replace x, (replace y, replace k))
+    | AppDDir (l, (y, k)) -> AppDDir (to_label (replace (to_id l)), (replace y, replace k))
+    | CApp (x, k) -> CApp (replace x, replace k)
+    | CComp (k1, k2) -> CComp (replace k1, replace k2)
+    | Coercion c -> Coercion c
+    | Let (x, f1, f2) -> Let (x, replace_var vx vy f1, replace_var vx vy f2)
+    | MakeCls (x, { entry; fvs; offset; ftvs }, f) -> MakeCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
+    | MakeTyCls (x, { entry; fvs; offset; ftvs }, f) -> MakeTyCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
+    | SetTy _ -> raise @@ Translation_bug "SetTy appear in replace"
+    | AppMCls _ | AppMDir _ -> raise @@ Translation_bug "AppM appear in replace"
+    | Cast _ -> raise @@ Translation_bug "Cast appear in replace"
+
+  let rec to_alt ids = function
+    | Let (x, Coercion (CId _), f) -> 
+      let f = to_alt (V.add x ids) f in
+      if V.mem x (fv_exp f) then raise @@ Translation_bug "to_alt: id appear"
+      else f
+    | Let (x, CComp (k1, k2), f) ->
+      begin match V.mem k1 ids, V.mem k2 ids with
+      | true, true -> 
+        let f = to_alt (V.add x ids) f in
+        if V.mem x (fv_exp f) then raise @@ Translation_bug "to_alt: id appear"
+        else f
+      | true, false -> to_alt ids @@ replace_var x k2 f
+      | false, true -> to_alt ids @@ replace_var x k1 f
+      | false, false -> Let (x, CComp (k1, k2), to_alt ids f)
+      end
+    | Let (x, CApp (y, k), f) when V.mem k ids -> to_alt ids (replace_var x y f)
+    | Let (x, f1, f2) -> Let (x, to_alt ids f1, to_alt ids f2)
+    | IfEq (x, y, f1, f2) -> IfEq (x, y, to_alt ids f1, to_alt ids f2)
+    | IfLte (x, y, f1, f2) -> IfLte (x, y, to_alt ids f1, to_alt ids f2)
+    | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, to_alt ids f) ms)
+    | AppDCls (x, (y, k)) when V.mem k ids -> AppMCls (x, y)
+    | AppDDir (l, (y, k)) when V.mem k ids -> AppMDir (l, y)
+    | CApp (x, k) when V.mem k ids -> Var x
+    | MakeCls (x, cls, f) -> MakeCls (x, cls, to_alt ids f)
+    | MakeTyCls (x, cls, f) -> MakeTyCls (x, cls, to_alt ids f)
+    | AppMCls _ | AppMDir _ -> raise @@ Translation_bug "AppM appear in to_alt"
+    | Cast _ -> raise @@ Translation_bug "Cast appear in to_alt"
+    | f -> f
+
+  let rec alt_funs = function
+    | h :: t -> 
+      begin match h with
+      | FundefD { name; arg = (y, k); vs; tvs; body } -> 
+        FundefM { name; arg = y;      vs; tvs; body = to_alt (V.singleton k) body } ::
+        FundefD { name; arg = (y, k); vs; tvs; body = to_alt V.empty body } ::
+        (alt_funs t)
+      | FundefTy _ as h -> h :: (alt_funs t)
+      | _ -> raise @@ Translation_bug "alt form appear in alt_funs"
+      end
+    | [] -> []
+
+  let altCls ~config (Prog (toplevel, p)) =
+    if config.alt then Prog (alt_funs toplevel, to_alt V.empty p)
+    else Prog (toplevel, p)
 end

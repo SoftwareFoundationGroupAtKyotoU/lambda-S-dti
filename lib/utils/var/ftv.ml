@@ -94,7 +94,7 @@ module CC = struct
     | SubstExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
-    | CSeqExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | CCompExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
   and ftv_fund = function
     | FunB ((_, u), f) -> TV.union (ftv_ty u) (ftv_exp f)
     | FunS ((_, u), _, f) -> TV.union (ftv_ty u) (ftv_exp f)

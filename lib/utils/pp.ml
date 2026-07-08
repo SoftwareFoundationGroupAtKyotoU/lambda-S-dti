@@ -362,7 +362,7 @@ module CC = struct
 
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | TupleExp _ | CoercionExp _ -> 100
-    | CSeqExp _ -> 95
+    | CCompExp _ -> 95
     | DerefExp _ -> 90
     | AppDExp _ | AppMExp _ | RefExp _ -> 80
     | CAppExp _ -> 75
@@ -426,7 +426,7 @@ module CC = struct
         fprintf ppf "%a<%a>"
           (with_paren (gt_exp f f1) pp_exp) f1
           pp_exp f2
-    | CSeqExp (f1, f2) ->
+    | CCompExp (f1, f2) ->
         fprintf ppf "%a;;%a"
           pp_exp f1
           pp_exp f2
@@ -678,7 +678,7 @@ module KNorm = struct
         x
         pp_ty u1
         pp_ty u2
-    | CSeqExp (x, y) -> 
+    | CCompExp (x, y) -> 
       fprintf ppf "%s;;%s" x y
     | LetExp (x, e1, e2) as e ->
       fprintf ppf "let %s = %a in %a"
@@ -735,33 +735,6 @@ end
 
 module Cls = struct
   open Syntax.Cls
-
-  let gt_coercion c1 c2 = match c1, c2 with
-    | (CTvInj _ | CTvProj _ | CId | CFun _ | CList _ | CTuple _), (CSeqInj _ | CSeqProj _) -> true
-    | _ -> false
-
-  let gte_coercion c1 c2 = match c1, c2 with
-    | CFun _, CFun _ -> true
-    | CTuple _, CTuple _ -> true
-    (* | CList _, CList _ is intentionally ommited *)
-    | _ -> gt_coercion c1 c2
-
-  let rec pp_coercion ppf = function
-    | CId -> fprintf ppf "id"
-    (* | Fail _ -> fprintf ppf "⊥" *)
-    | CSeqInj (c, t) -> fprintf ppf "%a;%a!" pp_coercion c pp_tag t
-    | CSeqProj (t, _, c) -> fprintf ppf "%a?p;%a" pp_tag t pp_coercion c
-    (* | SeqProjInj (t1, _, c, t2) -> fprintf ppf "%a?p;%a;%a!" pp_tag t1 pp_coercion c pp_tag t2 *)
-    | CTvInj (tv, _) -> fprintf ppf "%a!" pp_ty (TyVar tv)
-    | CTvProj (tv, _) -> fprintf ppf "%a?p" pp_ty (TyVar tv)
-    (* | TvProjInj (tv, _) -> fprintf ppf "?p%a!" pp_ty (TyVar tv) *)
-    | CFun (c1, c2) -> fprintf ppf "%a->%a" pp_coercion c1 pp_coercion c2
-    | CList c -> fprintf ppf "[%a]" pp_coercion c
-    | CTuple cs as c ->
-      let pp_sep ppf () = fprintf ppf "*" in
-      let pp_list ppf crcs = pp_print_list (fun ppf c' -> (with_paren (gte_coercion c c') pp_coercion) ppf c') ppf crcs ~pp_sep:pp_sep in
-      fprintf ppf "%a"
-        pp_list cs
 
   let pp_tyabses ppf tyvars =
     if List.length tyvars = 0 then
@@ -856,7 +829,7 @@ module Cls = struct
           pp_ty u2
     | CApp (x, y) ->
       fprintf ppf "%s<%s>" x y
-    | CSeq (x, y) ->
+    | CComp (x, y) ->
       fprintf ppf "%s;;%s" x y
     | Coercion c ->
       fprintf ppf "%a"
@@ -993,6 +966,9 @@ module C = struct
     | Null -> pp_print_string ppf "NULL"
     | Malloc (t, e) -> fprintf ppf "(%a)GC_MALLOC(%a)" pp_ty t pp_exp e
     | Sizeof t -> fprintf ppf "sizeof(%a)" pp_ty t
+    | Struct l ->
+      let pp_content ppf (x, e) = fprintf ppf ".%s = %a" x pp_exp e in
+      fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_content) l
 
   let rec pp_lval ppf = function
     | LVar x -> pp_print_string ppf x
@@ -1011,18 +987,23 @@ module C = struct
         pp_exp e
         (pp_print_list ~pp_sep:sep_newline pp_stm) s1
         (pp_print_list ~pp_sep:sep_newline pp_stm) s2
-
+  
+  let pp_spec ppf = function
+    | Static -> pp_print_string ppf "static "
+    | No -> pp_print_string ppf ""  
+    
   let pp_toplevel ppf = function
-    | Include s -> fprintf ppf "#include %s" s
-    | Decl (t, x) -> fprintf ppf "%a %s;" pp_ty t x
-    | FunDecl { ret_ty; fname; params } ->
-      fprintf ppf "%a %s(%a);"
-        pp_ty ret_ty fname
+    | Include s -> fprintf ppf "#include %s\n" s
+    | Decl (spec, t, x, None) -> fprintf ppf "%a%a %s;\n" pp_spec spec pp_ty t x
+    | Decl (spec, t, x, Some e) -> fprintf ppf "%a%a %s = %a;\n" pp_spec spec pp_ty t x pp_exp e
+    | FunDecl (spec, { ret_ty; fname; params }) ->
+      fprintf ppf "%a%a %s(%a);\n"
+        pp_spec spec pp_ty ret_ty fname
         (pp_print_list ~pp_sep:sep_comma pp_ty) (List.map fst params)
-    | FunDef ({ ret_ty; fname; params }, body) ->
+    | FunDef (spec, { ret_ty; fname; params }, body) ->
       let pp_param ppf (t, x) = fprintf ppf "%a %s" pp_ty t x in
-      fprintf ppf "%a %s(%a){\n%a\n}"
-        pp_ty ret_ty fname
+      fprintf ppf "%a%a %s(%a){\n%a\n}\n"
+        pp_spec spec pp_ty ret_ty fname
         (pp_print_list ~pp_sep:sep_comma pp_param) params
         (pp_print_list ~pp_sep:sep_newline pp_stm) body
   

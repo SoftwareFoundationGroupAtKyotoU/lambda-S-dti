@@ -12,3 +12,9 @@ module CC : sig
 
 	val translate : config:Config.t -> tysc Environment.t -> program -> (program * ty)
 end
+
+module Cls : sig
+	open Syntax.Cls
+
+	val altCls : config:Config.t -> program -> program
+end

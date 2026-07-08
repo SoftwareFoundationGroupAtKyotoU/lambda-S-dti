@@ -183,7 +183,7 @@ module CC = struct
     | SubstExp of exp * exp * ty option
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
-    | CSeqExp of exp * exp
+    | CCompExp of exp * exp
   and fundef =
     | FunB of (id * ty) * exp
     | FunS of (id * ty) * (id * ty) * exp
@@ -240,7 +240,7 @@ module KNorm = struct
     | AppTy of id * tyvar list * tyarg list
     | CAppExp of id * id
     | CastExp of id * ty * ty * (range * polarity)
-    | CSeqExp of id * id
+    | CCompExp of id * id
     | MatchExp of id * (matchform * exp) list
     | CoercionExp of coercion
     | LetExp of id * exp * exp
@@ -266,16 +266,6 @@ module Cls = struct
 
   type closure = { entry : label; fvs : id list; offset : int; ftvs : tyvar list }
   (* offsetはzsとftvsの間にいくつの型変数が入るのか *)
-
-  type coercion =
-    | CId
-    | CSeqInj of coercion * tag
-    | CSeqProj of tag * (int * polarity) * coercion
-    | CTvInj of tyvar * (int * polarity)
-    | CTvProj of tyvar * (int * polarity)
-    | CFun of coercion * coercion
-    | CList of coercion
-    | CTuple of coercion list
 
   type exp =
     | Var of id
@@ -303,9 +293,9 @@ module Cls = struct
     | AppDDir of label * (id * id)
     | AppMCls of id * id
     | AppMDir of label * id
-    | Cast of id * ty * ty * (int * polarity)
+    | Cast of id * ty * ty * (range * polarity)
     | CApp of id * id
-    | CSeq of id * id
+    | CComp of id * id
     | Coercion of coercion
     | Let of id * exp * exp
     | MakeCls of id * closure * exp
@@ -346,6 +336,7 @@ module C = struct
     | Null
     | Malloc of ty * exp
     | Sizeof of ty
+    | Struct of (id * exp) list
     (* | Cons of id * id *)
     (* | Tuple of id list *)
     (* | Hd of id *)
@@ -366,6 +357,8 @@ module C = struct
     | LCast of ty * lval
     | LIndex of lval * int
 
+  type spec = No | Static
+
   type stm =
     | SDecl of ty * id * exp option
     | SAssign of lval * exp
@@ -383,7 +376,7 @@ module C = struct
 
   type toplevel =
     | Include of string
-    | Decl of ty * id
-    | FunDecl of func_sig
-    | FunDef of func_sig * stm list
+    | Decl of spec * ty * id * exp option
+    | FunDecl of spec * func_sig
+    | FunDef of spec * func_sig * stm list
 end

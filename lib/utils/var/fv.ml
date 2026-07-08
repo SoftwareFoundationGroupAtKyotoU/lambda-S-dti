@@ -22,7 +22,7 @@ module KNorm = struct
     | AppDExp (x, (y, z)) -> V.of_list [x; y; z]
     | CastExp (x, _, _, _) -> V.singleton x
     | CAppExp (x, y) -> V.of_list [x; y]
-    | CSeqExp (x, y) -> V.of_list [x; y]
+    | CCompExp (x, y) -> V.of_list [x; y]
     | CoercionExp _ -> V.empty
     | LetExp (x, f1, f2) -> V.union (fv_exp f1) (V.remove x (fv_exp f2))
     | LetFunExp (x, _, fd, f2) -> V.union (V.remove x @@ fv_fd fd) (V.remove x @@ fv_exp f2)
@@ -53,7 +53,7 @@ module Cls = struct
     | AppMCls (x, y) -> V.of_list [x; y]
     | Cast (x, _, _, _) -> V.singleton x
     | CApp (x, y) -> V.of_list [x; y]
-    | CSeq (x, y) -> V.of_list [x; y]
+    | CComp (x, y) -> V.of_list [x; y]
     | Coercion _ -> V.empty
     | MakeCls (x, { fvs; _ }, f) -> V.remove x (V.union (V.of_list fvs) (fv_exp f))
     | MakeTyCls (x, { fvs; _ }, f) -> V.remove x (V.union (V.of_list fvs) (fv_exp f))

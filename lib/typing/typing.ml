@@ -458,12 +458,12 @@ module CC = struct
       | TyCoercion (u21, u22) when u1 = u21 -> u22
       | _ -> raise @@ Type_bug (asprintf "CAppExp")
       end
-    | CSeqExp (f1, f2) ->
+    | CCompExp (f1, f2) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
       begin match u1, u2 with
       | TyCoercion (u11, u12), TyCoercion (u21, u22) when u12 = u21 -> TyCoercion (u11, u22)
-      | _ -> raise @@ Type_bug (asprintf "CSeqExp: %a, %a" pp_ty u1 pp_ty u2)
+      | _ -> raise @@ Type_bug (asprintf "CCompExp: %a, %a" pp_ty u1 pp_ty u2)
       end
     | CastExp (f, u1, u2, _) ->
       let u = type_of_exp env f in
