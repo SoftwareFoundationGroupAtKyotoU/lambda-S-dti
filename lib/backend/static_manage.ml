@@ -138,20 +138,23 @@ let rec static_crc tvs c =
   | CInj _ | CProj _ | CSeq _ -> raise @@ Static_manage_bug "bad coercion"
   | CTvInj (tv, (r, _)) ->
     RangeManager.register r;
-    if not (List.mem tv tvs) then
+    if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
+    end
   | CTvProj (tv, (r, _)) ->
     RangeManager.register r;
-    if not (List.mem tv tvs) then
+    if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
+    end
   | CTvProjInj (tv, (r1, _), (r2, _)) ->
     RangeManager.register r1;
     RangeManager.register r2;
-    if not (List.mem tv tvs) then
+    if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
+    end
   | CFun (c1, c2) ->
     static_crc tvs c1;
     static_crc tvs c2;

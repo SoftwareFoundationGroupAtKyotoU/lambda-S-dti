@@ -954,6 +954,7 @@ module C = struct
     | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
     | Index (e, i) -> fprintf ppf "%a[%d]" pp_exp e i
     | Int i -> pp_print_int ppf i
+    | Str s -> fprintf ppf "\"%s\"" s
     | Add (e1, e2) -> fprintf ppf "%a + %a" pp_exp e1 pp_exp e2
     | Sub (e1, e2) -> fprintf ppf "%a - %a" pp_exp e1 pp_exp e2
     | Mul (e1, e2) -> fprintf ppf "%a * %a" pp_exp e1 pp_exp e2
@@ -969,6 +970,8 @@ module C = struct
     | Struct l ->
       let pp_content ppf (x, e) = fprintf ppf ".%s = %a" x pp_exp e in
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_content) l
+    | Array es ->
+      fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_exp) es
 
   let rec pp_lval ppf = function
     | LVar x -> pp_print_string ppf x

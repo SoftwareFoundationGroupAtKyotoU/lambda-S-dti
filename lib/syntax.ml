@@ -324,6 +324,7 @@ module C = struct
     | Cast of ty * exp
     | Index of exp * int
     | Int of int
+    | Str of string
     | Add of exp * exp
     | Sub of exp * exp
     | Mul of exp * exp
@@ -337,6 +338,7 @@ module C = struct
     | Malloc of ty * exp
     | Sizeof of ty
     | Struct of (id * exp) list
+    | Array of exp list
     (* | Cons of id * id *)
     (* | Tuple of id list *)
     (* | Hd of id *)
@@ -346,7 +348,6 @@ module C = struct
     | Deref of id * ty option
     | Subst of id * id * ty option *)
     (* | AppTyFun of id * int * int * tyarg list
-    | Cast of id * ty * ty * (int * polarity)
     | CSeq of id * id
     | Coercion of coercion *)
 
