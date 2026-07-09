@@ -50,6 +50,10 @@ let toC_ta = function
 
 (* ========================================= *)
 
+let int_of_pos = function Pos -> 1 | Neg -> 0
+
+let rid r = int_of_string @@ RangeManager.find r
+
 let rec check_has_tv = function
   | CId _ | CInj _ | CProj _ -> false
   | CList c' -> check_has_tv c'
@@ -88,26 +92,26 @@ let rec toC_crc ?(decl=false) x c =
         Struct [
           "crckind", Var "SEQ_PROJ";
           "g_proj", Var ("G_" ^ string_of_tag g);
-          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
+          "p_proj", Int (int_of_pos p);
           "arity_proj", Int arity;
           "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["s", ptr_crc]]]
+          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (rid r); "ptr", Struct ["s", ptr_crc]]]
         ]
       | CTvInj (tv, (r, p)) ->
         [],
         Struct [
           "crckind", Var "TV_INJ";
-          "p_inj", Int (match p with Pos -> 1 | Neg -> 0);
+          "p_inj", Int (int_of_pos p);
           "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_inj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
+          "crcdat", Struct ["seq_tv", Struct ["rid_inj", Int (rid r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
         ]
       | CTvProj (tv, (r, p)) ->
         [],
         Struct [
           "crckind", Var "TV_PROJ";
-          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
+          "p_proj", Int (int_of_pos p);
           "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
+          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (rid r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
         ]
       | CFun (c1, c2) ->
         let stm1, ptr_crc1 = stm_crc (x ^ "_fun1") c1 in
@@ -148,6 +152,26 @@ let app_env l n f lst =
   let lval_env = LArrow (l, "env") in
   List.mapi (fun i h -> SAssign (LIndex (lval_env, n + i), Cast (PTR VOID, f h))) lst
 
+let alloc_closure env_size =
+  Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size)))
+
+let set_func_stm ~config fun_x func_d func_m =
+  if config.intoB || config.static then
+    [SAssign (LArrow (fun_x, "funcM"), func_m)]
+  else if config.alt then
+    [SAssign (LArrow (fun_x, "funcD"), func_d);
+     SAssign (LArrow (fun_x, "funcM"), func_m)]
+  else
+    [SAssign (LArrow (fun_x, "funcD"), func_d)]
+
+let make_cls_stm ~set_func x ({ entry = _; fvs; offset = n; ftvs }: Cls.closure) =
+  let env_size = List.length fvs + n + List.length ftvs in
+  let fun_x = LCast (PTR FUN, LVar x) in
+  SDecl (VALUE, x, Some (alloc_closure env_size))
+  :: set_func fun_x
+  @ app_env fun_x 0 (fun fv -> Var fv) fvs
+  @ app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs
+
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
@@ -155,22 +179,17 @@ let rec toC_exp ~is_main ~config = function
     SIf (Eq (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.IfLte (x, y, f1, f2) ->
     SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
-  | Cls.MakeCls (x, { entry; fvs; offset = n; ftvs }, f) ->
-    let env_size = List.length fvs + n + List.length ftvs in
-    let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
-    let fun_x = LCast (PTR FUN, LVar x) in
-    let set_func =
-      if config.intoB || config.static then
-        SAssign (LArrow (fun_x, "funcM"), Var ("fun_" ^ entry)) :: []
-      else if config.alt then
-        SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) ::
-        SAssign (LArrow (fun_x, "funcM"), Var ("fun_" ^ "alt_" ^ entry)) :: []
-      else
-        SAssign (LArrow (fun_x, "funcD"), Var ("fun_" ^ entry)) :: []
+  | Cls.MakeCls (x, cls, f) ->
+    let set_func fun_x =
+      let alt_str = if config.alt then "alt_" else "" in
+      let func_d = Var ("fun_" ^ cls.entry) in
+      let func_m = Var ("fun_" ^ alt_str ^ cls.entry) in
+      set_func_stm ~config fun_x func_d func_m
     in
-    let app_fvs = app_env fun_x 0 (fun fv -> Var fv) fvs in
-    let app_ftvs = app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs in
-    SDecl (VALUE, x, Some cls) :: set_func @ app_fvs @ app_ftvs @ toC_exp ~is_main ~config f
+    make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
+  | Cls.MakeTyCls (x, cls, f) ->
+    let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
+    make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ | Cls.Cast _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
@@ -209,23 +228,20 @@ and toC_assign ~config x f =
     assign_x (App (func, [Var y; Var z]))
   | Cls.AppTy (y, i1, tas, n) ->
     let env_size = i1 + List.length tas + n in
-    let cls = Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size))) in
     let fun_x = LCast (PTR FUN, LVar x) in
     let fun_y = Cast (PTR FUN, Var y) in
     let set_func =
-      if config.intoB || config.static then
-        SAssign (LArrow (fun_x, "funcM"), Arrow (fun_y, "funcM")) :: []
-      else if config.alt then
-        SAssign (LArrow (fun_x, "funcD"), Arrow (fun_y, "funcD")) ::
-        SAssign (LArrow (fun_x, "funcM"), Arrow (fun_y, "funcM")) :: []
-      else
-        SAssign (LArrow (fun_x, "funcD"), Arrow (fun_y, "funcD")) :: []
+      let func_d = Arrow (fun_y, "funcD") in
+      let func_m = Arrow (fun_y, "funcM") in
+      set_func_stm ~config fun_x func_d func_m
     in
     let rec copy i n =
       if i = n then []
       else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
     in
-    SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
+    SAssign (LVar x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
+  | Cls.AppTyFun (y, i1, tas, n) ->
+    toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; Cast (VALUE, Null)]))]
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (int_of_string @@ RangeManager.find r); Int (match p with Pos -> 1 | Neg -> 0)]))
@@ -234,7 +250,17 @@ and toC_assign ~config x f =
     SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.IfLte (y, z, f1, f2) ->
     SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
-  (* | Cls.MakeCls (x, cls, f) -> *)
+  | Cls.MakeCls (x, cls, f) ->
+    let set_func fun_x =
+      let alt_str = if config.alt then "alt_" else "" in
+      let func_d = Var ("fun_" ^ cls.entry) in
+      let func_m = Var ("fun_" ^ alt_str ^ cls.entry) in
+      set_func_stm ~config fun_x func_d func_m
+    in
+    make_cls_stm ~set_func x cls @ toC_assign ~config x f
+  | Cls.MakeTyCls (x, cls, f) ->
+    let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
+    make_cls_stm ~set_func x cls @ toC_assign ~config x f
   | _ -> raise @@ ToC_bug (Format.asprintf "toC_assign yet: %a" Pp.Cls.pp_exp f)
 
 (* ======================================= *)

@@ -347,7 +347,6 @@ module C = struct
     (* | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option *)
-    (* | AppTyFun of id * int * int * tyarg list *)
 
   type lval =
     | LVar of id
@@ -364,7 +363,6 @@ module C = struct
     | SReturn of exp
     | SIf of exp * stm list * stm list
     (* | Match of id * (matchform * exp) list *)
-    (* | MakeTyCls of id * closure * ftv * exp *)
     (* | SetTy of tyvar * exp *)
 
   type func_sig = {
