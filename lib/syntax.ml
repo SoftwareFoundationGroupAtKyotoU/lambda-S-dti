@@ -363,6 +363,7 @@ module C = struct
     | SAssign of lval * exp
     | SReturn of exp
     | SIf of exp * stm list * stm list
+    | SApp of exp * exp list
     (* | Match of id * (matchform * exp) list *)
 
   type func_sig = {

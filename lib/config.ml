@@ -29,12 +29,12 @@ let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=f
     failwith "NotImplemented: --static interpreter is yet";
   if compile && intoB && hash then
     failwith "NotImplemented: hash consing is only for coercion";
-  (* NOTE: if --static, let alt be false, and intoB and eager be true *)
-  let alt, intoB, eager =
+  (* NOTE: if --static, let alt and hash be false, and intoB and eager be true *)
+  let alt, intoB, eager, monotonic, hash =
     if static then 
-      (false, true, true)
+      (false, true, true, false, false)
     else 
-      (alt, intoB, eager)
+      (alt, intoB, eager, monotonic, hash)
   in
   (* NOTE: when compiling, -k is always true *)
   { debug; alt; intoB; eager; compile; static; hash; monotonic; opt_file }

@@ -3,7 +3,6 @@ open Syntax.C
 open Config
 open Utils.Error
 open Static_manage
-(* open Fv.Cls *)
 
 exception ToC_bug of string
 exception ToC_error of string
@@ -351,36 +350,24 @@ let toC_crccontent ppf (c, name) =
       has_tv_val
       (c_of_crc c')
   | _ -> raise @@ ToC_bug (Format.asprintf "not in crccontent")
-
-(*型定義全体を記述*)
-let toC_crcs ppf l ~config =
-  let register_builtins ppf () =
-    fprintf ppf "\tregister_static_crc(&crc_id);\n";
-    fprintf ppf "\tregister_static_crc(&crc_inj_INT);\n";
-    fprintf ppf "\tregister_static_crc(&crc_inj_BOOL);\n";
-    fprintf ppf "\tregister_static_crc(&crc_inj_UNIT);\n";
-    fprintf ppf "\tregister_static_crc(&crc_inj_AR);\n";
-    fprintf ppf "\tregister_static_crc(&crc_inj_LI);\n"
-  in
-  if config.static then fprintf ppf ""
-  else if l = [] then 
-    fprintf ppf "\n#ifdef HASH\nstatic void init_crcs() {\n%a}\n#endif\n\n"
-      register_builtins ()
-  else 
-    fprintf ppf "%a%a\n#ifdef HASH\nstatic void init_crcs() {\n%a%a}\n#endif\n\n"
-      toC_crcdecls l
-      toC_crccontents l
-      register_builtins ()
-      (fun ppf decls ->
-         List.iter (fun (_, name) -> fprintf ppf "\tregister_static_crc(&%s);\n" name) decls
-      ) l
 *)
 
 let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) crcs
 
 let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc name c))) crcs
 
-let toC_crcs crcs = toC_crcdecls crcs, toC_crccontents crcs
+let toC_crcs ~config crcs = 
+  let register = 
+    List.map (fun str -> SApp (Var "register_static_crc", [Addr str]))
+      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_AR"; "crc_inj_LI"; "crc_inj_RF"]
+      @ (List.map snd crcs))
+  in
+  let crcinit =
+    if config.hash then
+      [FunDef (Static, { ret_ty = VOID; fname = "init_crcs"; params = [] }, register)]
+    else []
+  in
+  toC_crcdecls crcs, toC_crccontents crcs, crcinit
 
 (* ================================ *)
 
@@ -420,22 +407,22 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   in
   let tydecl, tydef = toC_tys tys in
   let rangedef = toC_ranges ranges in
-  let crcdecl, crcdef = toC_crcs crcs in
+  let crcdecl, crcdef, crcinit = toC_crcs ~config crcs in
   let fundecl, fundef = toC_toplevel ~config toplevel in
   let decl = if bench = 0 && not config.static then [Decl (No, PTR RANGE, "range_list", None)] else [] in
   let main = [
     FunDef (
       No,
       { ret_ty = INT; fname = "main"; params = []},
-      (if List.length ranges <> 0 then [SAssign (LVar "range_list", Var "local_range_list")] else [])
+      (if config.hash then [SApp (Var "init_crcs", [])] else [])
+        @ (if List.length ranges <> 0 then [SAssign (LVar "range_list", Var "local_range_list")] else [])
         @ toC_exp ~is_main:true ~config f
     )
   ]
   in
-  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ fundecl @ fundef @ decl @ main
+  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ fundecl @ fundef @ decl @ main
 
 (* 
-  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
   fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
     (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
     ...

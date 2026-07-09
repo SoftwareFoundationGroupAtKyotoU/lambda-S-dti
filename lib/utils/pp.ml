@@ -991,7 +991,8 @@ module C = struct
         pp_exp e
         (pp_print_list ~pp_sep:sep_newline pp_stm) s1
         (pp_print_list ~pp_sep:sep_newline pp_stm) s2
-  
+    | SApp (e, es) -> fprintf ppf "%a(%a);" pp_exp e (pp_print_list ~pp_sep:sep_comma pp_exp) es
+
   let pp_spec ppf = function
     | Static -> pp_print_string ppf "static "
     | No -> pp_print_string ppf ""  
