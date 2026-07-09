@@ -62,12 +62,12 @@ let rec check_has_tv = function
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
   | CMRef _ | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
 
-let rec toC_crc ?(decl=false) x c =
+let rec toC_crc x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
     | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
     | _ ->
-      if not decl && CrcManager.mem c then [], Addr (CrcManager.find c)
+      if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
         let stm, exp = toC_crc x c in
         SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (LVar x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
@@ -191,7 +191,7 @@ let rec toC_exp ~is_main ~config = function
     let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
     make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
-  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ | Cls.Cast _ as f ->
+  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
   | _ as f -> raise @@ ToC_bug (Format.asprintf "toC_exp yet: %a" Pp.Cls.pp_exp f)
@@ -353,7 +353,7 @@ let toC_crcs ppf l ~config =
 
 let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) crcs
 
-let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc ~decl:true name c))) crcs
+let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc name c))) crcs
 
 let toC_crcs crcs = toC_crcdecls crcs, toC_crccontents crcs
 
@@ -518,25 +518,6 @@ let rec toC_exp ppf f ~config ~is_main =
     | Deref (y, None) -> fprintf ppf "%s = ((ref*)%s)->v;\n" x y
     | Subst (y, z, None) -> fprintf ppf "((ref*)%s)->v = %s;\n%s = 0;\n" y z x
     | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
-    | AppTy (y, zs_len, outer_tvs_len, tas) ->
-      let total_env_size = zs_len + List.length tas + outer_tvs_len in
-      fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a"
-        x
-        total_env_size
-        x
-        y
-        toC_tas (y, zs_len, total_env_size, x, tas)
-    | AppTyFun (y, zs_len, outer_tvs_len, tas) ->
-      let total_env_size = zs_len + List.length tas + outer_tvs_len in
-      fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a%s = tfun_%s(%s, 0);\n"
-        x
-        total_env_size
-        x
-        y
-        toC_tas (y, zs_len, total_env_size, x, tas)
-        x
-        y
-        x
     | CApp (y, z) -> (* TODO *)
       if CrcManager.mem_inj z then
         let tag = CrcManager.find_inj z in
@@ -561,8 +542,6 @@ let rec toC_exp ppf f ~config ~is_main =
     (*以下は内部にexpがあるので，後者のexpまでinsertを送る
       letはf2のみに，ifはf1,f2の両方にinsertを送る*)
     | Match (y, ms) -> toC_exp ppf (Match (y, List.map (fun (mf, f) -> mf, Insert (x, f)) ms))
-    | MakeCls (y, c, tvs, f) -> toC_exp ppf (MakeCls (y, c, tvs, Insert (x, f)))
-    | MakeTyCls (y, c, tvs, f) -> toC_exp ppf (MakeTyCls (y, c, tvs, Insert (x, f)))
     | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Insert (x, f)))
     (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
     | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
@@ -577,34 +556,6 @@ let rec toC_exp ppf f ~config ~is_main =
     | [] -> 
       fprintf ppf "{\nprintf(\"didn't match\");\nexit(1);\n}\n"
     end
-  | MakeCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    let env_size = List.length vs + List.length ftv + n in
-    cnt_env := 0;
-    fprintf ppf "value %s;\n%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a%a"
-      x
-      x
-      env_size
-      begin if config.intoB || config.static then
-        asprintf "((fun*)%s)->funcM = fun_%s;\n" x l
-      else if config.alt then
-        asprintf "((fun*)%s)->funcD = fun_%s;\n((fun*)%s)->funcM = fun_alt_%s;\n" x l x l
-      else
-        asprintf "((fun*)%s)->funcD = fun_%s;\n" x l
-      end
-      toC_vs (x, vs)
-      toC_ftas (n, x, ftv)
-      toC_exp f
-  | MakeTyCls (x, { entry = l; actual_fv = vs }, { ftvs = ftv; offset = n }, f) -> (*TODO*)
-    let env_size = List.length vs + List.length ftv + n in
-    cnt_env := 0;
-    fprintf ppf "value %s;\n%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n%s%a%a%a"
-      x
-      x
-      env_size
-      (asprintf "((fun*)%s)->funcM = tfun_%s;\n" x l)
-      toC_vs (x, vs)
-      toC_ftas (n, x, ftv)
-      toC_exp f
   | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
     | None ->
         fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
@@ -634,7 +585,7 @@ let rec toC_exp ppf f ~config ~is_main =
     end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
-  | Nil | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | AppTyFun _ | Ref _ | Deref _ | Subst _ as f ->
+  | Nil | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | Ref _ | Deref _ | Subst _ as f ->
     fprintf ppf "value retv;\n%areturn %s;\n"
       toC_exp (Insert ("retv", f))
       (if is_main then "0" else "retv")
