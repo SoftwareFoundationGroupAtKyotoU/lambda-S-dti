@@ -347,9 +347,7 @@ module C = struct
     (* | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option *)
-    (* | AppTyFun of id * int * int * tyarg list
-    | CSeq of id * id
-    | Coercion of coercion *)
+    (* | AppTyFun of id * int * int * tyarg list *)
 
   type lval =
     | LVar of id

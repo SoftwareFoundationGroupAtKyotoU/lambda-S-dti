@@ -50,6 +50,100 @@ let toC_ta = function
 
 (* ========================================= *)
 
+let rec check_has_tv = function
+  | CId _ | CInj _ | CProj _ -> false
+  | CList c' -> check_has_tv c'
+  | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
+  | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
+  | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
+  | CMRef _ | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
+
+let rec toC_crc ?(decl=false) x c =
+  let stm_crc x c = match c with
+    | CId _ -> [], Addr "crc_id"
+    | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+    | _ ->
+      if not decl && CrcManager.mem c then [], Addr (CrcManager.find c)
+      else
+        let stm, exp = toC_crc x c in
+        SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (LVar x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
+  in
+    let has_tv_val = if check_has_tv c then 1 else 0 in
+    match c with
+      | CSeq (c', CInj g) ->
+        let arity = match g with Tp arity -> arity | _ -> 0 in
+        let stm, ptr_crc = stm_crc (x ^ "_inj") c' in
+        stm,
+        Struct [
+          "crckind", Var "SEQ_INJ";
+          "g_inj", Var ("G_" ^ string_of_tag g);
+          "arity_inj", Int arity;
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["seq_tv", Struct ["ptr", Struct ["s", ptr_crc]]]
+        ]
+      | CSeq (CProj (g, (r, p)), c') ->
+        let arity = match g with Tp arity -> arity | _ -> 0 in
+        let stm, ptr_crc = stm_crc (x ^ "_inj") c' in
+        stm,
+        Struct [
+          "crckind", Var "SEQ_PROJ";
+          "g_proj", Var ("G_" ^ string_of_tag g);
+          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
+          "arity_proj", Int arity;
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["s", ptr_crc]]]
+        ]
+      | CTvInj (tv, (r, p)) ->
+        [],
+        Struct [
+          "crckind", Var "TV_INJ";
+          "p_inj", Int (match p with Pos -> 1 | Neg -> 0);
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["seq_tv", Struct ["rid_inj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
+        ]
+      | CTvProj (tv, (r, p)) ->
+        [],
+        Struct [
+          "crckind", Var "TV_PROJ";
+          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
+        ]
+      | CFun (c1, c2) ->
+        let stm1, ptr_crc1 = stm_crc (x ^ "_fun1") c1 in
+        let stm2, ptr_crc2 = stm_crc (x ^ "_fun2") c2 in
+        stm1 @ stm2,
+        Struct [
+          "crckind", Var "FUN";
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+        ]
+      | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
+
+  (*
+  ...
+  | CList c ->
+    fprintf ppf "value %s_c;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = LIST;\n%s_temp.has_tv = ((crc*)%s_c)->has_tv;\n%s_temp.crcdat.lst_crc = (crc*)%s_c;\n%s = (value)alloc_crc(&%s_temp);" 
+      x toC_crc (c, x ^ "_c") x x x x x x x x
+  | CTuple cs ->
+    let arity = List.length cs in
+    let toC_sep ppf () = fprintf ppf "\n" in
+    let counter = ref 0 in
+    let toC_elem ppf c = 
+      let i = !counter in
+      counter := !counter + 1;
+      fprintf ppf "value %s_c%d;\n%a\n%s_crcs[%d] = (crc*)%s_c%d;" x i toC_crc (c, Printf.sprintf "%s_c%d" x i) x i x i
+    in
+    fprintf ppf "crc **%s_crcs = (crc**)GC_MALLOC(sizeof(crc*) * %d);\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = TUPLE;\n%s_temp.has_tv = 0;\n"
+      x arity (pp_print_list toC_elem ~pp_sep:toC_sep) cs x x x;
+    for i = 0 to arity - 1 do
+       fprintf ppf "%s_temp.has_tv |= ((crc*)%s_c%d)->has_tv;\n" x x i
+    done;
+    fprintf ppf "%s_temp.crcdat.tpl_crc.arity = %d;\n%s_temp.crcdat.tpl_crc.crcs = %s_crcs;\n%s = (value)alloc_crc(&%s_temp);" x arity x x x x
+  | _ -> raise @@ ToC_bug "bad coercion" *)
+
+(* ========================================= *)
+
 let app_env l n f lst =
   let lval_env = LArrow (l, "env") in
   List.mapi (fun i h -> SAssign (LIndex (lval_env, n + i), Cast (PTR VOID, f h))) lst
@@ -77,8 +171,8 @@ let rec toC_exp ~is_main ~config = function
     let app_fvs = app_env fun_x 0 (fun fv -> Var fv) fvs in
     let app_ftvs = app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs in
     SDecl (VALUE, x, Some cls) :: set_func @ app_fvs @ app_ftvs @ toC_exp ~is_main ~config f
-  | Cls.Var _ | Cls.Int _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Coercion _
-  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ as f ->
+  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
+  | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.CApp _ | Cls.Cast _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
   | _ as f -> raise @@ ToC_bug (Format.asprintf "toC_exp yet: %a" Pp.Cls.pp_exp f)
@@ -87,13 +181,14 @@ and toC_assign ~config x f =
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
-  | Cls.Coercion c ->
-    if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
-    else begin match c with
-    | CId _ -> assign_x (Cast (VALUE, (Addr "crc_id")))
-    | CSeq (CId _, CInj (Tp _)) -> raise @@ ToC_bug (Format.asprintf "yet: toC_assign crc: %a" Pp.pp_coercion c)
-    | CSeq (CId _, CInj g) -> assign_x (Cast (VALUE, (Addr ("crc_inj_" ^ string_of_tag g))))
-    | _ -> raise @@ ToC_bug (Format.asprintf "yet: toC_assign crc: %a" Pp.pp_coercion c)
+  | Cls.Coercion c -> begin match c with
+    | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
+    | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | _ ->
+      if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
+      else
+        let stm, exp = toC_crc x c in
+        stm @ [SDecl (CRC, x ^ "_tmp" , Some exp)] @ assign_x (Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))
     end
   | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
   | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
@@ -131,7 +226,8 @@ and toC_assign ~config x f =
       else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
     in
     SAssign (LVar x, cls) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
-  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))  (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
+  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
+  (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (int_of_string @@ RangeManager.find r); Int (match p with Pos -> 1 | Neg -> 0)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
@@ -188,7 +284,6 @@ let toC_ranges ranges =
 
 (* ================================ *)
 
-
 (*
 (* コアーションの定義 *)
 let toC_crccontent ppf (c, name) = 
@@ -205,12 +300,6 @@ let toC_crccontent ppf (c, name) =
       has_tv_val
       (c_of_crc c')
   | _ -> raise @@ ToC_bug (Format.asprintf "not in crccontent")
-
-let toC_crccontents ppf l = 
-  let toC_sep ppf () = fprintf ppf "\n" in
-  let toC_list ppf decls = pp_print_list toC_crccontent ppf decls ~pp_sep:toC_sep in
-  fprintf ppf "%a\n"
-    toC_list l
 
 (*型定義全体を記述*)
 let toC_crcs ppf l ~config =
@@ -238,64 +327,7 @@ let toC_crcs ppf l ~config =
 
 let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) crcs
 
-let rec check_has_tv = function
-  | CId _ | CInj _ | CProj _ -> false
-  | CList c' -> check_has_tv c'
-  | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
-  | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
-  | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
-  | CMRef _ | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
-
-let toC_crccontents crcs =
-  let toC_content c =
-    let has_tv_val = if check_has_tv c then 1 else 0 in
-    let c_of_crc c = match c with
-      | CId _ -> Addr "crc_id"
-      | CSeq (CId _, CInj g) -> Addr ("crc_inj_" ^ string_of_tag g)
-      | _ -> Addr (CrcManager.find c)
-    in match c with
-      | CSeq (CId _ as c', CInj g) ->
-        let arity = match g with Tp arity -> arity | _ -> 0 in
-        Struct [
-          "crckind", Var "SEQ_INJ";
-          "g_inj", Var ("G_" ^ string_of_tag g);
-          "arity_inj", Int arity;
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["ptr", Struct ["s", Cast (PTR CRC, c_of_crc c')]]]
-        ]
-      | CSeq (CProj (g, (r, p)), (CId _ as c')) -> 
-        let arity = match g with Tp arity -> arity | _ -> 0 in
-        Struct [
-          "crckind", Var "SEQ_PROJ";
-          "g_proj", Var ("G_" ^ string_of_tag g);
-          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
-          "arity_proj", Int arity;
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["s", Cast (PTR CRC, c_of_crc c')]]]
-        ]
-      | CTvInj (tv, (r, p)) ->
-        Struct [
-          "crckind", Var "TV_INJ";
-          "p_inj", Int (match p with Pos -> 1 | Neg -> 0);
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_inj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
-        ]
-      | CTvProj (tv, (r, p)) ->
-        Struct [
-          "crckind", Var "TV_PROJ";
-          "p_proj", Int (match p with Pos -> 1 | Neg -> 0);
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (int_of_string @@ RangeManager.find r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
-        ]
-      | CFun (c1, c2) ->
-        Struct [
-          "crckind", Var "FUN";
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["fun_crc", Struct ["c1", c_of_crc c1; "c2", c_of_crc c2]]
-        ]
-      | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crccontents yet: %a" Pp.pp_coercion c)
-  in
-  List.map (fun (c, name) -> Decl (Static, CRC, name, Some (toC_content c))) crcs
+let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc ~decl:true name c))) crcs
 
 let toC_crcs crcs = toC_crcdecls crcs, toC_crccontents crcs
 
@@ -350,86 +382,17 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   ]
   in
   inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ fundecl @ fundef @ decl @ main
-  (* 
-  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
-  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
-    (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
-      (if bench = 0 then "" else "../../"))
-    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
-    toC_tys tys
-    toC_ranges ranges
-    (toC_crcs ~config) crcs
-    (toC_fundefs ~config) toplevel
-    (if bench = 0 && not config.static then "range *range_list;\n\n" else "")
-    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
-    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
-    (toC_exp ~config ~is_main:true) f
-    "}" *)
 
 (* 
+  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
+  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
+    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
+    ...
+    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
+    ...
+*)
 
-let rec toC_crc ppf (c, x) = 
-  if CrcManager.mem c then 
-    fprintf ppf "%s = (value)&%s;" x (CrcManager.find c)
-  else match c with
-  | CId -> fprintf ppf "%s = (value)&crc_id;" x
-  | CSeqInj (CId, (I | B | U | Ar | Li as t)) ->
-    fprintf ppf "%s = (value)&crc_inj_%a;" x toC_tag t
-  | CSeqInj (CId, Tp arity) ->
-    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_TP;\n%s_temp.arity_inj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.ptr.s = &crc_id;\n%s = (value)alloc_crc(&%s_temp);"
-      x x x x arity x x x x
-  | CSeqInj (CFun _ as c1, Ar) ->
-    fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_AR;\n%s_temp.has_tv = ((crc*)%s_cfun)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c1, x ^ "_cfun") x x x x x x x x x
-  | CSeqInj (CList _ as c1, Li) ->
-    fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_LI;\n%s_temp.has_tv = ((crc*)%s_clist)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c1, x ^ "_clist") x x x x x x x x x
-  | CSeqInj (CTuple _ as c1, Tp arity) ->
-    fprintf ppf "value %s_ctuple;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_INJ;\n%s_temp.g_inj = G_TP;\n%s_temp.arity_inj = %d;\n%s_temp.has_tv = ((crc*)%s_ctuple)->has_tv;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_ctuple;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c1, x ^ "_ctuple") x x x x arity x x x x x x
-  | CSeqProj ((I | B | U | Ar | Li as t), (r, p), CId) ->
-    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_%a;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = &crc_id;\n%s = (value)alloc_crc(&%s_temp);"
-      x x x toC_tag t x (match p with Pos -> 1 | Neg -> 0) x x r x x x
-  | CSeqProj (Tp arity, (r, p), CId) ->
-    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_TP;\n%s_temp.arity_proj = %d;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 0;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)&crc_id;\n%s = (value)alloc_crc(&%s_temp);"
-      x x x x arity x (match p with Pos -> 1 | Neg -> 0) x x r x x x
-  | CSeqProj (Ar, (r, p), (CFun _ as c2)) ->
-    fprintf ppf "value %s_cfun;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_AR;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_cfun)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_cfun;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c2, x ^ "_cfun") x x x x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
-  | CSeqProj (Li, (r, p), (CList _ as c2)) ->
-    fprintf ppf "value %s_clist;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_LI;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_clist)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_clist;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c2, x ^ "_clist") x x x x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
-  | CSeqProj (Tp arity, (r, p), (CTuple _ as c2)) ->
-    fprintf ppf "value %s_ctuple;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = SEQ_PROJ;\n%s_temp.g_proj = G_TP;\n%s_temp.arity_proj = %d;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = ((crc*)%s_ctuple)->has_tv;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.s = (crc*)%s_ctuple;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c2, x ^ "_ctuple") x x x x arity x (match p with Pos -> 1 | Neg -> 0) x x x r x x x x
-  | CTvInj (tv, (r, p)) ->
-    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_INJ;\n%s_temp.p_inj = %d;\n%s_temp.has_tv = 1;\n%s_temp.crcdat.seq_tv.rid_inj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
-      x x x (match p with Pos -> 1 | Neg -> 0) x x r x (c_of_ty (TyVar tv)) x x
-  | CTvProj (tv, (r, p)) ->
-    fprintf ppf "crc %s_temp = {0};\n%s_temp.crckind = TV_PROJ;\n%s_temp.p_proj = %d;\n%s_temp.has_tv = 1;\n%s_temp.crcdat.seq_tv.rid_proj = %d;\n%s_temp.crcdat.seq_tv.ptr.tv = %s;\n%s = (value)alloc_crc(&%s_temp);"
-      x x x (match p with Pos -> 1 | Neg -> 0) x x r x (c_of_ty (TyVar tv)) x x
-  | CFun (c1, c2) ->
-    fprintf ppf "value %s_c1;\n%a\nvalue %s_c2;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = FUN;\n%s_temp.has_tv = ((crc*)%s_c1)->has_tv | ((crc*)%s_c2)->has_tv;\n%s_temp.crcdat.fun_crc.c1 = (crc*)%s_c1;\n%s_temp.crcdat.fun_crc.c2 = (crc*)%s_c2;\n%s = (value)alloc_crc(&%s_temp);"
-      x toC_crc (c1, x ^ "_c1") x toC_crc (c2, x ^ "_c2") x x x x x x x x x x x
-  | CList c ->
-    fprintf ppf "value %s_c;\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = LIST;\n%s_temp.has_tv = ((crc*)%s_c)->has_tv;\n%s_temp.crcdat.lst_crc = (crc*)%s_c;\n%s = (value)alloc_crc(&%s_temp);" 
-      x toC_crc (c, x ^ "_c") x x x x x x x x
-  | CTuple cs ->
-    let arity = List.length cs in
-    let toC_sep ppf () = fprintf ppf "\n" in
-    let counter = ref 0 in
-    let toC_elem ppf c = 
-      let i = !counter in
-      counter := !counter + 1;
-      fprintf ppf "value %s_c%d;\n%a\n%s_crcs[%d] = (crc*)%s_c%d;" x i toC_crc (c, Printf.sprintf "%s_c%d" x i) x i x i
-    in
-    fprintf ppf "crc **%s_crcs = (crc**)GC_MALLOC(sizeof(crc*) * %d);\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = TUPLE;\n%s_temp.has_tv = 0;\n"
-      x arity (pp_print_list toC_elem ~pp_sep:toC_sep) cs x x x;
-    for i = 0 to arity - 1 do
-       fprintf ppf "%s_temp.has_tv |= ((crc*)%s_c%d)->has_tv;\n" x x i
-    done;
-    fprintf ppf "%s_temp.crcdat.tpl_crc.arity = %d;\n%s_temp.crcdat.tpl_crc.crcs = %s_crcs;\n%s = (value)alloc_crc(&%s_temp);" x arity x x x x
-  | _ -> raise @@ ToC_bug "bad coercion"
+(* 
 
 (* ======================================== *)
 let rec toC_mf ppf (x, mf) ~config =
@@ -476,20 +439,7 @@ let rec toC_mf ppf (x, mf) ~config =
 let rec toC_exp ppf f ~config ~is_main = 
   let toC_exp = toC_exp ~config ~is_main in
   match f with
-  | Let (x, f1, f2) -> (* 先にxを宣言しておいて，f1の内容をxに代入する *)
-    fprintf ppf "value %s;\n%a%a"
-      x
-      toC_exp (Insert (x, f1))
-      toC_exp f2
   | Insert (x, f) -> begin match f with
-    | Var y -> 
-      fprintf ppf "%s = %s;\n" (* Insert(x, y) ~> x = y; *)
-        x
-        y
-    | Int i -> 
-      fprintf ppf "%s = %d;\n" (* Insert(x, i) ~> x.i_b_u = i; *)
-        x
-        i
     | Nil -> 
       fprintf ppf "%s = 0;\n" (* Insert(x, []) ~> x.l = (lst* )NULL; *)
         x
@@ -506,31 +456,6 @@ let rec toC_exp ppf f ~config ~is_main =
       let toC_sep ppf () = fprintf ppf "\n" in
       let toC_list ppf ys = pp_print_list (fun ppf y -> counter := !counter + 1; fprintf ppf "((tpl_raw*)%s)->fields[%d] = %s;" x !counter y) ppf ys ~pp_sep:toC_sep in
       fprintf ppf "%s = (value)GC_MALLOC(sizeof(tpl_raw) + sizeof(value) * %d);\n((tpl_raw*)%s)->hdr.arity = %d;\n%a\n" x arity x arity toC_list ys;
-    | Add (y, z) ->
-      fprintf ppf "%s = %s + %s;\n" (* Insert (x, y+z) ~> x.i_b_u = y.i_b_u + z.i_b_u; *)
-        x
-        y
-        z
-    | Sub (y, z) ->
-      fprintf ppf "%s = %s - %s;\n" (*Addと同じ*)
-        x
-        y
-        z
-    | Mul (y, z) ->
-      fprintf ppf "%s = %s * %s;\n" (*Addと同じ*)
-        x
-        y
-        z
-    | Div (y, z) ->
-      fprintf ppf "%s = %s / %s;\n" (*Addと同じ*)
-        x
-        y
-        z
-    | Mod (y, z) ->
-      fprintf ppf "%s = %s %% %s;\n" (*Addと同じ*)
-        x
-        y
-        z
     | Hd y -> (* TODO *)
       if config.eager then
         fprintf ppf "%s = ((lst*)%s)->h;\n"
@@ -567,31 +492,6 @@ let rec toC_exp ppf f ~config ~is_main =
     | Deref (y, None) -> fprintf ppf "%s = ((ref*)%s)->v;\n" x y
     | Subst (y, z, None) -> fprintf ppf "((ref*)%s)->v = %s;\n%s = 0;\n" y z x
     | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
-    | AppDDir (y, (z1, z2)) ->
-      fprintf ppf "%s = fun_%s(0, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = fun_y(z1, z2); *) (*yが直接適用できる関数の場合*)
-        x
-        y
-        z1
-        z2
-    | AppDCls (y, (z1, z2)) ->
-      fprintf ppf "%s = (((fun*)%s)->funcD)(%s, %s, %s);\n" (* Insert(x, y (z1, z2)) ~> x = appD(y, z1, z2); *) (*yがクロージャを用いて適用する関数の場合*)
-        x
-        y
-        y
-        z1
-        z2
-    | AppMDir (y, z) ->
-      fprintf ppf "%s = fun%s_%s(0, %s);\n" (* Insert(x, y z) ~> x = fun_y(z); *) (*yが直接適用できる関数の場合*)
-        x
-        (if config.alt then "_alt" else "")
-        y
-        z
-    | AppMCls (y, z) -> 
-      fprintf ppf "%s = (((fun*)%s)->funcM)(%s, %s);\n" (* Insert(x, y z) ~> x = appM(y, z); *) (*yがクロージャを用いて適用する関数の場合*)
-        x
-        y
-        y
-        z
     | AppTy (y, zs_len, outer_tvs_len, tas) ->
       let total_env_size = zs_len + List.length tas + outer_tvs_len in
       fprintf ppf "%s = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * %d);\n*((fun*)%s) = *((fun*)%s);\n%a"
@@ -611,25 +511,6 @@ let rec toC_exp ppf f ~config ~is_main =
         x
         y
         x
-    | Cast (y, u1, u2, (r, p)) -> 
-      (*
-      Insert(x, y:u1=>^(r, p)u2)
-      ~>
-      ran_pol x_r_p = { .filename = ~~, .startline = ~~, .startchr = ~~, .endline = ~~, .endchr = ~~, .polarity = ~~};
-      x = cast(y, u1, u2, x_p_r);
-      *)
-      (*filenameやrangeの出力形式はUtilsを参照*)
-      (*castの処理にはcast関数を用いる*)
-      (*型の出力形式は関数c_of_tyによる TODO *)
-      (* 名前の被りを防ぐために，Letとinsertはran_polにyではなくxを使う *)
-      let c1, c2 = c_of_ty u1, c_of_ty u2 in
-      fprintf ppf "%s = cast(%s, %s, %s, %d, %d);\n"
-        x
-        y
-        c1
-        c2
-        r
-        (match p with Pos -> 1 | Neg -> 0)
     | CApp (y, z) -> (* TODO *)
       if CrcManager.mem_inj z then
         let tag = CrcManager.find_inj z in
@@ -651,19 +532,8 @@ let rec toC_exp ppf f ~config ~is_main =
           x
           y
           z
-    | Coercion c -> (* TODO *)
-      fprintf ppf "%a\n"
-        toC_crc (c, x)
-    | CSeq (y, z) -> 
-      fprintf ppf "%s = (value)compose((crc*)%s, (crc*)%s);\n"
-        x
-        y
-        z
     (*以下は内部にexpがあるので，後者のexpまでinsertを送る
       letはf2のみに，ifはf1,f2の両方にinsertを送る*)
-    | Let (y, f1, f2) -> toC_exp ppf (Let (y, f1, Insert (x, f2)))
-    | IfEq (y, z, f1, f2) -> toC_exp ppf (IfEq (y, z, Insert (x, f1), Insert (x, f2)))
-    | IfLte (y, z, f1, f2) -> toC_exp ppf (IfLte (y, z, Insert (x, f1), Insert (x, f2)))
     | Match (y, ms) -> toC_exp ppf (Match (y, List.map (fun (mf, f) -> mf, Insert (x, f)) ms))
     | MakeCls (y, c, tvs, f) -> toC_exp ppf (MakeCls (y, c, tvs, Insert (x, f)))
     | MakeTyCls (y, c, tvs, f) -> toC_exp ppf (MakeTyCls (y, c, tvs, Insert (x, f)))
@@ -671,28 +541,6 @@ let rec toC_exp ppf f ~config ~is_main =
     (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
     | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
     end
-  | IfEq (x, y, f1, f2) ->
-    (*
-    if x = y then f1 else f2
-    ~>
-    if(x.i_b_u == y.i_b_u) {
-      f1
-    } else {
-      f2
-    }
-    *)
-    (*等価判定はint型を用いて行うので，.i_b_uを取り出す*)
-    fprintf ppf "if(%s == %s) {\n%a} else {\n%a}\n"
-      x
-      y
-      toC_exp f1
-      toC_exp f2
-  | IfLte (x, y, f1, f2) -> (*IfEqと同じ*)
-    fprintf ppf "if(%s <= %s) {\n%a} else {\n%a}\n"
-      x
-      y
-      toC_exp f1
-      toC_exp f2
   | Match (x, ms) ->
     begin match ms with
     | (mf, f) :: t ->
@@ -760,29 +608,8 @@ let rec toC_exp ppf f ~config ~is_main =
     end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
-  | Var _ | Int _ | Nil | Cons _ | Tuple _ | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Hd _ | Tl _ | Tget _ | AppDDir _ | AppDCls _ | AppMDir _ | AppMCls _ | Cast _ | AppTy _ | AppTyFun _ | CApp _ | Coercion _ | CSeq _ | Ref _ | Deref _ | Subst _ as f ->
+  | Nil | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | AppTyFun _ | Ref _ | Deref _ | Subst _ as f ->
     fprintf ppf "value retv;\n%areturn %s;\n"
       toC_exp (Insert ("retv", f))
       (if is_main then "0" else "retv")
-
-(* =================================== *)
-
-(*全体を記述*)
-let toC_program ?(bench=0) ~config ppf (Prog (toplevel, f)) =
-  let tys = TyManager.get_definitions () in
-  let ranges = RangeManager.get_definitions () in
-  let crcs = CrcManager.get_definitions () in
-  let init_crcs = if config.static then "" else "#ifdef HASH\ninit_crcs();\n#endif\n" in
-  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
-    (asprintf "#include <gc.h>\n#include \"../%slibC/runtime.h\"\n"
-      (if bench = 0 then "" else "../../"))
-    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
-    toC_tys tys
-    toC_ranges ranges
-    (toC_crcs ~config) crcs
-    (toC_fundefs ~config) toplevel
-    (if bench = 0 && not config.static then "range *range_list;\n\n" else "")
-    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
-    (if List.length ranges != 0 then "range_list = local_range_list;\n" else "")
-    (toC_exp ~config ~is_main:true) f
-    "}" *)
+*)
