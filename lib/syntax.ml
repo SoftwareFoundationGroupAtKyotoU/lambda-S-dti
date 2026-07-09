@@ -363,7 +363,6 @@ module C = struct
     | SReturn of exp
     | SIf of exp * stm list * stm list
     (* | Match of id * (matchform * exp) list *)
-    (* | SetTy of tyvar * exp *)
 
   type func_sig = {
     ret_ty: ty;

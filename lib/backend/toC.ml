@@ -172,6 +172,34 @@ let make_cls_stm ~set_func x ({ entry = _; fvs; offset = n; ftvs }: Cls.closure)
   @ app_env fun_x 0 (fun fv -> Var fv) fvs
   @ app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs
 
+let set_ty i opu = match opu with
+  | None ->
+    let name = "_ty" ^ string_of_int i in
+    name,
+    [SAssign (LArrow (LVar name, "tykind"), Var "TYVAR")]
+  | Some (TyFun (u1, u2)) ->
+    let name = "_tyfun" ^ string_of_int i in
+    name,
+    [
+      SAssign (LArrow (LVar name, "tykind"), Var "TYFUN");
+      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "left"), Malloc (PTR TY, Sizeof TY));
+      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "right"), Malloc (PTR TY, Sizeof TY));
+      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "left"), toC_ty u1);
+      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "right"), toC_ty u2);
+    ]
+  | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
+    (* 
+    | Some (TyList u) -> 
+      fprintf ppf "ty *_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;\n%a"
+        i
+        i
+        i
+        i
+        (c_of_ty u)
+        toC_exp f
+    | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
+    end *)
+
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
@@ -190,6 +218,9 @@ let rec toC_exp ~is_main ~config = function
   | Cls.MakeTyCls (x, cls, f) ->
     let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
     make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
+  | SetTy ((i, { contents = opu }), f) ->
+    let name, stm = set_ty i opu in
+    SDecl (PTR TY, name, Some (Malloc (PTR TY, Sizeof TY))) :: stm @ toC_exp ~is_main ~config f
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
@@ -261,6 +292,9 @@ and toC_assign ~config x f =
   | Cls.MakeTyCls (x, cls, f) ->
     let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
     make_cls_stm ~set_func x cls @ toC_assign ~config x f
+  | Cls.SetTy ((i, { contents = opu }), f) ->
+    let name, stm = set_ty i opu in
+    SDecl (PTR TY, name, Some (Malloc (PTR TY, Sizeof TY))) :: stm @ toC_assign ~config x f
   | _ -> raise @@ ToC_bug (Format.asprintf "toC_assign yet: %a" Pp.Cls.pp_exp f)
 
 (* ======================================= *)
@@ -542,9 +576,6 @@ let rec toC_exp ppf f ~config ~is_main =
     (*以下は内部にexpがあるので，後者のexpまでinsertを送る
       letはf2のみに，ifはf1,f2の両方にinsertを送る*)
     | Match (y, ms) -> toC_exp ppf (Match (y, List.map (fun (mf, f) -> mf, Insert (x, f)) ms))
-    | SetTy (tv, f) -> toC_exp ppf (SetTy (tv, Insert (x, f)))
-    (*insertはletの一項目には最初の一回しか入らないので，二回insertがかぶさることはない*)
-    | Insert _ -> raise @@ ToC_bug "Insert should not be doubled"
     end
   | Match (x, ms) ->
     begin match ms with
@@ -555,33 +586,6 @@ let rec toC_exp ppf f ~config ~is_main =
         toC_exp (Match (x, t))
     | [] -> 
       fprintf ppf "{\nprintf(\"didn't match\");\nexit(1);\n}\n"
-    end
-  | SetTy ((i, { contents = opu }), f) -> begin match opu with (* ここはtoC_tycontentを参照 *)
-    | None ->
-        fprintf ppf "ty *_ty%d = (ty*)GC_MALLOC(sizeof(ty));\n_ty%d->tykind = TYVAR;\n%a"
-          i
-          i
-          toC_exp f
-    | Some (TyFun (u1, u2)) -> 
-      fprintf ppf "ty *_tyfun%d = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tykind = TYFUN;\n_tyfun%d->tydat.tyfun.left = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));\n_tyfun%d->tydat.tyfun.left = %s;\n_tyfun%d->tydat.tyfun.right = %s;\n%a"
-        i
-        i
-        i
-        i
-        i
-        (c_of_ty u1)
-        i
-        (c_of_ty u2)
-        toC_exp f
-    | Some (TyList u) -> 
-      fprintf ppf "ty *_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;\n%a"
-        i
-        i
-        i
-        i
-        (c_of_ty u)
-        toC_exp f
-    | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
     end
   (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
     main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
