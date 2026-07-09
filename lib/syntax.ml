@@ -354,6 +354,7 @@ module C = struct
     | LArrow of lval * id
     | LCast of ty * lval
     | LIndex of lval * int
+    | LDeref of lval
 
   type spec = No | Static
 

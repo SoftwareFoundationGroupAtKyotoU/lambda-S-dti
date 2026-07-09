@@ -48,6 +48,12 @@ let toC_ta = function
   | Ty u -> toC_ty u
   | TyNu -> App (Var "newty", [])
 
+let toC_tycontent = function
+  | TyVar _ -> Struct ["tykind", Var "TYVAR"]
+  | TyFun (u1, u2) ->
+    Struct ["tykind", Var "TYFUN"; "tydat", Struct ["tyfun", Struct ["left", toC_ty u1; "right", toC_ty u2]]]
+  | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
+
 (* ========================================= *)
 
 let int_of_pos = function Pos -> 1 | Neg -> 0
@@ -172,22 +178,14 @@ let make_cls_stm ~set_func x ({ entry = _; fvs; offset = n; ftvs }: Cls.closure)
   @ app_env fun_x 0 (fun fv -> Var fv) fvs
   @ app_env fun_x (List.length fvs + n) (fun ftv -> Var (string_of_tyvar ftv)) ftvs
 
-let set_ty i opu = match opu with
-  | None ->
-    let name = "_ty" ^ string_of_int i in
-    name,
-    [SAssign (LArrow (LVar name, "tykind"), Var "TYVAR")]
-  | Some (TyFun (u1, u2)) ->
-    let name = "_tyfun" ^ string_of_int i in
-    name,
-    [
-      SAssign (LArrow (LVar name, "tykind"), Var "TYFUN");
-      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "left"), Malloc (PTR TY, Sizeof TY));
-      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "right"), Malloc (PTR TY, Sizeof TY));
-      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "left"), toC_ty u1);
-      SAssign (LDot (LDot (LArrow (LVar name, "tydat"), "tyfun"), "right"), toC_ty u2);
-    ]
-  | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
+let set_ty i opu =
+  let u, name = match opu with
+    | None -> TyVar (i, ref None), "_ty" ^ string_of_int i
+    | Some (TyFun _ as u) ->
+      u, "_tyfun" ^ string_of_int i
+    | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
+  in
+  name, [SAssign (LDeref (LVar name), Cast (TY, toC_tycontent u))]
     (* 
     | Some (TyList u) -> 
       fprintf ppf "ty *_tylist%d = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tykind = TYLIST;\n_tylist%d->tydat.tylist = (ty*)GC_MALLOC(sizeof(ty));\n_tylist%d->tydat.tylist = %s;\n%a"
@@ -275,7 +273,7 @@ and toC_assign ~config x f =
     toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; Cast (VALUE, Null)]))]
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
-  | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (int_of_string @@ RangeManager.find r); Int (match p with Pos -> 1 | Neg -> 0)]))
+  | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
     SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
@@ -316,14 +314,7 @@ let toC_tydecls tys = List.map (fun (_, name) -> Decl (Static, TY, name, None)) 
       name arity name  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
 *)
 
-let toC_tycontents tys =
-  let toC_content = function
-    | TyVar _ -> Struct ["tykind", Var "TYVAR"]
-    | TyFun (u1, u2) ->
-      Struct ["tykind", Var "TYFUN"; "tydat", Struct ["tyfun", Struct ["left", toC_ty u1; "right", toC_ty u2]]]
-    | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
-  in
-  List.map (fun (u, name) -> Decl (Static, TY, name, Some (toC_content u))) tys
+let toC_tycontents tys = List.map (fun (u, name) -> Decl (Static, TY, name, Some (toC_tycontent u))) tys
 
 let toC_tys tys = toC_tydecls tys, toC_tycontents tys
 

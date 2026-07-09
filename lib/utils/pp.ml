@@ -979,6 +979,7 @@ module C = struct
     | LArrow (l, x) -> fprintf ppf "%a->%s" pp_lval l x
     | LCast (t, l) -> fprintf ppf "((%a)%a)" pp_ty t pp_lval l
     | LIndex (l, i) -> fprintf ppf "%a[%d]" pp_lval l i
+    | LDeref l -> fprintf ppf "*(%a)" pp_lval l
 
   let rec pp_stm ppf = function
     | SDecl (t, x, None) -> fprintf ppf "%a %s;" pp_ty t x
