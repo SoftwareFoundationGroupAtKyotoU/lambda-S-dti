@@ -330,7 +330,10 @@ module C = struct
     | Mul of exp * exp
     | Div of exp * exp
     | Mod of exp * exp
+    | Not of exp
+    | And of exp * exp
     | Eq of exp * exp
+    | Neq of exp * exp
     | Lte of exp * exp
     | App of exp * exp list
     | Addr of id
@@ -364,7 +367,6 @@ module C = struct
     | SReturn of exp
     | SIf of exp * stm list * stm list
     | SApp of exp * exp list
-    (* | Match of id * (matchform * exp) list *)
 
   type func_sig = {
     ret_ty: ty;

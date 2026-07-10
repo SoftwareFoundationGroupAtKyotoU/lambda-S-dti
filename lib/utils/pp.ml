@@ -960,7 +960,10 @@ module C = struct
     | Mul (e1, e2) -> fprintf ppf "%a * %a" pp_exp e1 pp_exp e2
     | Div (e1, e2) -> fprintf ppf "%a / %a" pp_exp e1 pp_exp e2
     | Mod (e1, e2) -> fprintf ppf "%a %% %a" pp_exp e1 pp_exp e2
+    | Not e -> fprintf ppf "!%a" pp_exp e
+    | And (e1, e2) -> fprintf ppf "%a && %a" pp_exp e1 pp_exp e2
     | Eq (e1, e2) -> fprintf ppf "%a == %a" pp_exp e1 pp_exp e2
+    | Neq (e1, e2) -> fprintf ppf "%a != %a" pp_exp e1 pp_exp e2
     | Lte (e1, e2) -> fprintf ppf "%a <= %a" pp_exp e1 pp_exp e2
     | App (e, es) -> fprintf ppf "%a(%a)" pp_exp e (pp_print_list ~pp_sep:sep_comma pp_exp) es
     | Addr x -> fprintf ppf "&%s" x
@@ -986,6 +989,11 @@ module C = struct
     | SDecl (t, x, Some e) -> fprintf ppf "%a %s = %a;" pp_ty t x pp_exp e
     | SAssign (l, e) -> fprintf ppf "%a = %a;" pp_lval l pp_exp e
     | SReturn e -> fprintf ppf "return %a;" pp_exp e
+    | SIf (e, s1, [SIf _ as s2]) ->
+      fprintf ppf "if (%a){\n%a\n} else %a"
+        pp_exp e
+        (pp_print_list ~pp_sep:sep_newline pp_stm) s1
+        pp_stm s2
     | SIf (e, s1, s2) ->
       fprintf ppf "if (%a){\n%a\n} else {\n%a\n}"
         pp_exp e
