@@ -1,0 +1,1 @@
+print_bool ((fun (x:?) -> x) true);;

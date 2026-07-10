@@ -35,16 +35,22 @@ run_test() {
 }
 
 # 各ディレクトリの tests.sh を順に実行
-for TEST_DIR in minCaml paper issues original/bool original/dynamic original/int original/tuple; do
+for TEST_DIR in \
+  minCaml \
+  issues \
+  original/bool \
+  original/dynamic \
+  original/int \
+  original \
+  paper \
+  # original/list \
+  # original/match \
+  # original/ref \
+  # original/tuple \
+  do
   [ -f "$TEST_DIR/tests.sh" ] && source "$TEST_DIR/tests.sh"
 done
 
-# compile_test/ 直下のテスト
-TEST_DIR=""
-run_test "church_4.ml" "4"
-run_test "repeat.ml" "4"
-# run_test "lst.ml"
-# run_test "dummy_blame.ml"
 
 if [ $FAILED -eq 1 ]; then
   echo "Some tests failed."

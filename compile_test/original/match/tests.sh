@@ -1,0 +1,6 @@
+run_test "bool.ml" "10"
+run_test "cons.ml" "20"
+run_test "int.ml" "102099"
+run_test "nil.ml" "10"
+run_test "unit.ml" "42"
+run_test "wildcard.ml" "4242"
