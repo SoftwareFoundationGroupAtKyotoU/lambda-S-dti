@@ -154,9 +154,7 @@ module CC = struct
         | RefV { contents = (v, _) }, None -> v
         | RefV { contents = (v, u) }, Some u' ->
           let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
-          let v, psi = coerce ~config v s [] in
-          consume ~config psi;
-          v
+          toplevel_coerce ~config v s
         | _ -> raise @@ Eval_bug "eval: not refV deref"
       else
         begin match v with
@@ -187,10 +185,7 @@ module CC = struct
       let v1 = eval ~config env f1 in
       let v2 = eval ~config env f2 in
       begin match v2 with
-        | CoercionV c -> 
-          let v, psi = coerce ~config v1 c [] in
-          consume ~config psi;
-          v
+        | CoercionV c -> toplevel_coerce ~config v1 c
         | _ -> raise @@ Eval_bug "capp: application of non coercion value"
       end
     | CCompExp (f1, f2) ->
@@ -445,8 +440,7 @@ module CC = struct
       begin match v3 with
         | CoercionV c ->
           let k = CoercionV (compose ~config t c) in
-          let v2, psi = coerce ~config v2 s [] in
-          consume ~config psi;
+          let v2 = toplevel_coerce ~config v2 s in
           eval_app_valD ~config env v1 v2 k
         | _ -> raise @@ Eval_bug "app: application of non coercion value"
       end
@@ -455,10 +449,13 @@ module CC = struct
     | FunBV proc -> proc [] v2
     | FunDualV proc -> fst (proc []) v2
     | CoerceV (v1, CFun (s, t)) -> 
-      let v2, psi = coerce ~config v2 s [] in
-      consume ~config psi;
+      let v2 = toplevel_coerce ~config v2 s in
       eval_app_valD ~config env v1 v2 (CoercionV t)
     | _ -> raise @@ Eval_bug (asprintf "app_valM: application of non procedure value: %a" Pp.CC.pp_value v1)
+  and toplevel_coerce ~config v c =
+    let v, psi = coerce ~config v c [] in
+    consume ~config psi;
+    v
 
   let eval_program ~(config:Config.t) env p = match p with
     | Exp f ->
