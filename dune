@@ -1,1 +1,1 @@
-(dirs bin lib bench test)
+(dirs bin lib bench test libC)

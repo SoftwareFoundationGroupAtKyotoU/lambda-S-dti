@@ -123,6 +123,7 @@ let () =
     ~opt_file:!file_ref
     ()
   in
+  if !compile_ref then Resources.find_root_dir ();
   start !file_ref ~config
 
 (* clang logs/20260102-12:50:40/bench/zipwithSEC.c -D EAGER libC/*.c benchC/bench_json.c logs/20260102-12:50:40/SEC/zipwith*.c -o result/stdin.out -lgc -lcjson -O2 *)

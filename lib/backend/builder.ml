@@ -3,8 +3,9 @@ open Config
 
 exception Build_bad of string
 
-let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="") 
+let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   ~config ~bench ~profile () =
+  let libc_dir = Resources.libc_dir () in
   let intoB = config.intoB in
   let static = config.static in
   let eager = config.eager in
@@ -31,27 +32,40 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       file 
       mode_str
       (if profile then "_profile" else "")
-  else match config.opt_file with
-  | Some filename -> 
-    asprintf "clang ../result_C/%s_out.c %s%s%s%s../libC/*.c -o ../result/%s.out -lgc -g3 -O3"
-      filename
-      mode_var
-      lst_var
-      hash_var
-      static_var
-      filename
-  | None -> 
-    (* clang result_C/stdin.c libC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-    asprintf "clang result_C/stdin.c %s%s%s%slibC/*.c -o result/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
-      mode_var
-      lst_var
-      hash_var
-      static_var
+  else
+    let result_c_dir = Resources.result_c_dir () in
+    let result_dir = Resources.result_dir () in
+    match config.opt_file with
+    | Some filename ->
+      let base = Filename.basename filename in
+      asprintf "clang %s/%s_out.c %s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 -O3"
+        result_c_dir
+        base
+        mode_var
+        lst_var
+        hash_var
+        static_var
+        libc_dir
+        libc_dir
+        result_dir
+        base
+    | None ->
+      (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
+      asprintf "clang %s/stdin.c %s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
+        result_c_dir
+        mode_var
+        lst_var
+        hash_var
+        static_var
+        libc_dir
+        libc_dir
+        result_dir
 
 let build_run c_code ~config = match config.opt_file with
   | Some filename ->
     (* ファイル入力モード *)
-    let out_path = "../result_C/" ^ filename ^ "_out.c" in
+    let base = Filename.basename filename in
+    let out_path = Filename.concat (Resources.result_c_dir ()) (base ^ "_out.c") in
     let oc = open_out out_path in
     Printf.fprintf oc "%s" c_code;
     close_out oc;
@@ -60,14 +74,14 @@ let build_run c_code ~config = match config.opt_file with
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad "clang fail";
-    let cmd = ("../result/" ^ filename ^ ".out") in
+    let cmd = Filename.concat (Resources.result_dir ()) (base ^ ".out") in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad ".out fail";
     ()
   | None ->
     (* 標準入力モード *)
-    let out_path = "result_C/stdin.c" in
+    let out_path = Filename.concat (Resources.result_c_dir ()) "stdin.c" in
     let oc = open_out out_path in
     Printf.fprintf oc "%s" c_code;
     close_out oc;
@@ -76,7 +90,7 @@ let build_run c_code ~config = match config.opt_file with
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad "clang fail";
-    let cmd = "result/stdin.out" in
+    let cmd = Filename.concat (Resources.result_dir ()) "stdin.out" in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
     if i != 0 then raise @@ Build_bad ".out fail";

@@ -7,6 +7,8 @@ open Static_manage
 exception ToC_bug of string
 exception ToC_error of string
 
+let dummy_value = Cast (VALUE, Null)
+
 let string_of_tag = function
   | I -> "INT"
   | B -> "BOOL"
@@ -244,13 +246,13 @@ and toC_assign ~config x f =
   | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
   | Cls.AppDDir (l, (y1, y2)) ->
-    assign_x (App (Var ("fun_" ^ l), [Cast (VALUE, Null); Var y1; Var y2]))
+    assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
     let func = Arrow (Cast (PTR FUN, Var y), "funcD") in
     assign_x (App (func, [Var y; Var z1; Var z2]))
   | Cls.AppMDir (l, y) ->
     let alt_str = if config.alt then "alt_" else "" in
-    assign_x (App (Var ("fun_" ^ alt_str ^ l), [Cast (VALUE, Null); Var y]))
+    assign_x (App (Var ("fun_" ^ alt_str ^ l), [dummy_value; Var y]))
   | Cls.AppMCls (y, z) ->
     let func = Arrow (Cast (PTR FUN, Var y), "funcM") in
     assign_x (App (func, [Var y; Var z]))
@@ -269,7 +271,7 @@ and toC_assign ~config x f =
     in
     SAssign (LVar x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.AppTyFun (y, i1, tas, n) ->
-    toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; Cast (VALUE, Null)]))]
+    toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
@@ -402,7 +404,10 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let crcs = CrcManager.get_definitions () in
   let inc = [
     Include "<gc.h>";
-    Include (Format.asprintf "\"../%slibC/runtime.h\"" (if bench = 0 then "" else "../../"));
+    Include (
+      if bench = 0 then Format.asprintf "\"%s/runtime.h\"" (Resources.libc_dir ())
+      else "\"../../../libC/runtime.h\""
+    );
   ]
   in
   let tydecl, tydef = toC_tys tys in
