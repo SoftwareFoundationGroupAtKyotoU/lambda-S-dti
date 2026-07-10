@@ -1,8 +1,8 @@
 open Syntax
 
 let rec fv_matchform = function
-  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ -> V.empty
-  | MatchVar (x, _) -> V.singleton x
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild | MatchNil -> V.empty
+  | MatchVar x -> V.singleton x
   | MatchCons (mf1, mf2) -> V.big_union [fv_matchform mf1; fv_matchform mf2]
   | MatchTuple mfs -> V.big_union (List.map fv_matchform mfs)
 

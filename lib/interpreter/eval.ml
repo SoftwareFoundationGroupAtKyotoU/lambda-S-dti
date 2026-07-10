@@ -202,14 +202,14 @@ module CC = struct
       end
     | CoercionExp c -> CoercionV c
   and match_mf ~config env v mf = match v, mf with
-    | _, MatchVar (id, _) ->
+    | _, MatchVar id ->
       let env = Environment.add id v env in
       true, env
     | ConsV (v1, v2), MatchCons (mf1, mf2) ->
       let b1, env = match_mf ~config env v1 mf1 in
       let b2, env = match_mf ~config env v2 mf2 in
       b1&&b2, env
-    | NilV, MatchNil _ -> true, env
+    | NilV, MatchNil -> true, env
     | IntV i1, MatchILit i2 -> if i1 = i2 then (true, env) else (false, env)
     | BoolV b1, MatchBLit b2 -> if b1 = b2 then (true, env) else (false, env)
     | UnitV, MatchULit -> true, env
@@ -223,7 +223,8 @@ module CC = struct
       in
       iter env vs mfs true
     (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
-    | _, MatchWild _ -> true, env
+    | _, MatchWild -> true, env
+    | CoerceV (NilV, CList _), MatchNil -> true, env
     | CoerceV (ConsV (v1, v2), CList s), MatchCons _ ->
       let v1, psi = coerce ~config v1 s [] in
       let v2, psi = coerce ~config v2 (CList s) psi in

@@ -228,10 +228,10 @@ let matches = [
   ["let rec sum l :? = match l with [] -> 0 | h :: t -> h + sum t in sum [1; 2; 3; 4]", "?", "10: int => ?", "10<<id{int};int!>>"];
   ["let rec sum (l:?) :? = match l with [] -> 0 | h :: t -> h + sum t in sum [1; 2; 3; 4]", "?", "10: int => ?", "10<<id{int};int!>>"];
   ["match 1, true with (x, y) -> x", "int", "1", "1"];
-  ["match (1, true : ?) with (x, y) -> x", "int", "1", "1"];
+  ["match (1, true : ?) with (x, y) -> x", "?", "1: int => ?", "1<<id{int};int!>>"];
   ["match 1, (2, 3) with (x, (y, z)) -> y", "int", "2", "2"];
-  ["match (1, (2, 3) : ?) with (x, (y, z)) -> z", "int", "3", "3"];
-  ["let t = (((fun x -> x + 1), 2) : (? -> ?) * ?) in match t with (f, x) -> f x", "int", "3", "3"];
+  ["match (1, (2, 3) : ?) with (x, (y, z)) -> z", "?", "3: int => ?", "3<<id{int};int!>>"];
+  ["let t = (((fun x -> x + 1), 2) : (? -> ?) * ?) in match t with (f, x) -> f x", "?", "3: int => ?", "3<<id{int};int!>>"];
 ]
 
 let tuples = [

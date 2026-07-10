@@ -98,6 +98,56 @@ let rec unify = function
   | _ as c ->
     raise @@ Unify_error (asprintf "cannot solve a constraint: %a" pp_constr c)
 
+let rec unify_dom = function
+  | TyVar (_, { contents = Some u }) -> unify_dom u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let u1, u2 = fresh_tyvar (), fresh_tyvar () in
+    tv := Some (TyFun (u1, u2));
+    u1
+  | TyFun (u1, _) -> u1
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: dom(%a)" pp_ty u)
+
+let rec unify_cod = function
+  | TyVar (_, { contents = Some u }) -> unify_cod u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let u1, u2 = fresh_tyvar (), fresh_tyvar () in
+    tv := Some (TyFun (u1, u2));
+    u2
+  | TyFun (_, u2) -> u2
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: cod(%a)" pp_ty u)
+
+let rec unify_lelm = function
+  | TyVar (_, { contents = Some u }) -> unify_lelm u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let u = fresh_tyvar () in
+    tv := Some (TyList u);
+    u
+  | TyList u -> u
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: elm(%a)" pp_ty u)
+
+let rec unify_telm n = function
+  | TyVar (_, { contents = Some u }) -> unify_telm n u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let us = List.init n (fun _ -> fresh_tyvar ()) in
+    tv := Some (TyTuple us);
+    us
+  | TyTuple us when List.length us = n -> us
+  | TyDyn -> List.init n (fun _ -> TyDyn)
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: elm(%a)" pp_ty u)
+
+let rec unify_cont = function
+  | TyVar (_, { contents = Some u }) -> unify_cont u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let u = fresh_tyvar () in
+    tv := Some (TyRef u);
+    u
+  | TyRef u -> u
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: cont(%a)" pp_ty u)
+
 let rec unify_meet u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->

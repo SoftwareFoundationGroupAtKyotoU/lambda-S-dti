@@ -41,10 +41,7 @@ let rec subst_coercion ~monotonic s = function
   | CMRef (u1, u2) -> CMRef (subst_type s u1, subst_type s u2)
 
 let rec subst_mf s = function
-  | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
-  | MatchWild u -> MatchWild (subst_type s u)
-  | MatchVar (x, u) -> MatchVar (x, subst_type s u)
-  | MatchNil u -> MatchNil (subst_type s u)
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild | MatchNil | MatchVar _ as mf -> mf
   | MatchCons (mf1, mf2) -> MatchCons (subst_mf s mf1, subst_mf s mf2)
   | MatchTuple mfs -> MatchTuple (List.map (fun mf -> subst_mf s mf) mfs)
 

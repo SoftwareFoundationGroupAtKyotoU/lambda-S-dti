@@ -150,7 +150,7 @@ MatchForm :
   | m=LitMatchForm { m }
 
 LitMatchForm :
-  | x=ID { MatchVar (x.value, fresh_tyvar ()) }
+  | x=ID { MatchVar x.value }
   | i=INTV { MatchILit i.value }
   | TRUE   { MatchBLit true }
   | FALSE  { MatchBLit false }
@@ -158,12 +158,12 @@ LitMatchForm :
   | LBRACKET ms=separated_list(SEMI, LitMatchForm) RBRACKET {
     let rec makelist l = match l with
       | h :: t -> MatchCons (h, makelist t)
-      | [] -> MatchNil (fresh_tyvar ())
+      | [] -> MatchNil
     in makelist ms 
     }
   // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
   | LPAREN m=MatchForm RPAREN { m }
-  | UNDER { MatchWild (fresh_tyvar ()) }
+  | UNDER { MatchWild }
 
 NotMatchExpr :
   | e=NotMatchLetExpr { e }

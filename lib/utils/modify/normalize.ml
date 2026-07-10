@@ -17,10 +17,7 @@ let normalize_tyenv =
   Environment.map @@ fun (TyScheme (xs, u)) -> TyScheme (xs, normalize_type u)
 
 let rec normalize_matchform = function
-  | MatchILit _ | MatchBLit _ | MatchULit as mf -> mf
-  | MatchWild u -> MatchWild (normalize_type u)
-  | MatchVar (x, u) -> MatchVar (x, normalize_type u)
-  | MatchNil u -> MatchNil (normalize_type u)
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild | MatchVar _ | MatchNil as mf -> mf
   | MatchCons (mf1, mf2) -> MatchCons (normalize_matchform mf1, normalize_matchform mf2)
   | MatchTuple mfs -> MatchTuple (List.map (fun mf -> normalize_matchform mf) mfs)
   (* | MatchAsc (mf, u) -> MatchAsc (normalize_matchform mf, normalize_type u) *)

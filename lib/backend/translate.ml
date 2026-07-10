@@ -78,28 +78,6 @@ module ITGL = struct
   let coerce ~monotonic f r u1 u2 = (* this is not same as ldti about blame label r *)
     if u1 = u2 then f (* Omit identity coercion for better performance *)
     else CC.CAppExp (f, CC.CoercionExp (Coercion.make_s_coercion ~monotonic u1 (r, Pos) u2))
-  
-  let rec translate_mf env mf = match mf with 
-    | MatchILit _ -> env, mf, TyInt
-    | MatchBLit _ -> env, mf, TyBool
-    | MatchULit -> env, mf, TyUnit
-    | MatchWild u -> env, mf, u
-    | MatchNil u -> env, mf, TyList u
-    | MatchVar (x, u) as mf -> Environment.add x (tysc_of_ty u) env, mf, u
-    | MatchCons (mf1, mf2) -> 
-      let env, mf2, u2 = translate_mf env mf2 in
-      let env, mf1, u1 = translate_mf env mf1 in
-      env, MatchCons (mf1, mf2), meet (TyList u1) u2
-    | MatchTuple mfs ->
-      let rec iter env l r = match l with
-      | h :: t ->
-        let env, mf, u = translate_mf env h in
-        iter env t ((mf, u) :: r)
-      | [] -> 
-        let mfs, us = List.split (List.rev r) in
-        env, MatchTuple mfs, TyTuple us
-      in
-      iter env mfs []
 
   let rec translate_exp ~config env f =
     let c = if config.intoB then cast else coerce ~monotonic:config.monotonic in
@@ -155,10 +133,17 @@ module ITGL = struct
       let r1, r2 = range_of_exp e1, range_of_exp e2 in
       (* Format.fprintf std_formatter "u1: %a, u2: %a\n" Pp.pp_ty u1 Pp.pp_ty u2; *)
       CC.AppMExp (c f1 r1 u1 (TyFun (dom u1, cod u1)), c f2 r2 u2 (dom u1)), cod u1
-    | MatchExp (r, e, ms) -> 
+    | MatchExp (r, e, ms) ->
       let f, u = translate_exp ~config env e in
-      let msu, (u_match, u_exp) = translate_ms ~config env ms in
-      CC.MatchExp (c f r u u_match, List.map (fun (mf, f, u) -> mf, c f r u u_exp) msu), u_exp
+      let us, _ = List.split @@ List.map (fun (mf, _) -> Typing.type_of_mf mf []) ms in
+      let u_match = List.fold_left (fun u1 u2 -> meet u1 u2) u us in
+      let msu = List.map (fun (mf, e) ->
+        let env = Typing.env_of_mf env u_match mf in
+        let f, u = translate_exp ~config env e in
+        ((mf, f), u)
+      ) ms in
+      let u_exp = List.fold_left (fun u1 u2 -> meet u1 u2) TyDyn (List.map snd msu) in
+      CC.MatchExp (c f r u u_match, List.map (fun ((mf, f), u) -> mf, c f r u u_exp) msu), u_exp
     | LetExp (_, x, e1, e2) when Typing.ITGL.is_pure_value env e1 ->
       let f1, u1 = translate_exp ~config env e1 in
       let xs = Typing.ITGL.closure_tyvars1 u1 env e1 in
@@ -204,18 +189,6 @@ module ITGL = struct
       if Type_utils.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
       else CC.SubstExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', Some u1'), TyUnit
     (* | _ -> raise @@ Translation_bug "yet" *)
-  and translate_ms ~config env = function
-    | (mf, e) :: t ->
-      if t = [] then
-        let env', mf, u_match = translate_mf env mf in
-        let f, u_exp = translate_exp ~config env' e in
-        [mf, f, u_exp], (u_match, u_exp)
-      else
-        let env', mf, u_match = translate_mf env mf in
-        let f, u_exp = translate_exp ~config env' e in
-        let t, (u_match', u_exp') = translate_ms ~config env t in
-        (mf, f, u_exp) :: t, (meet u_match u_match', meet u_exp u_exp')
-    | [] -> raise @@ Translation_bug "translate_ms: empty match"
 
   let translate ~config env = function
     | Exp e ->
@@ -249,23 +222,6 @@ module CC = struct
   let fresh_CVar =
     let counter = ref 0 in
     fun () -> incr counter; "k" ^ string_of_int !counter
-
-  let rec translate_mf env = function
-    | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ | MatchNil _ as mf -> env, mf
-    | MatchVar (x, u) as mf -> Environment.add x (tysc_of_ty u) env, mf
-    | MatchCons (mf1, mf2) ->
-      let env, mf1 = translate_mf env mf1 in
-      let env, mf2 = translate_mf env mf2 in
-      env, MatchCons (mf1, mf2)
-    | MatchTuple mfs ->
-      let rec iter env l r = match l with
-      | h :: t ->
-        let env, mf = translate_mf env h in
-        iter env t (mf :: r)
-      | [] ->
-        env, MatchTuple (List.rev r)
-      in
-      iter env mfs []
 
   let rec translate_exp ~config env = function
     | Var (x, ys) ->
@@ -328,9 +284,9 @@ module CC = struct
       let f2, u2 = translate_exp ~config env f2 in
       LetExp (x, f1, f2), u2
     | MatchExp (f, ms) ->
-      let f, _ = translate_exp ~config env f in
+      let f, u_match = translate_exp ~config env f in
       let msu = List.map (fun (mf, f) ->
-        let env, mf = translate_mf env mf in
+        let env = Typing.env_of_mf env u_match mf in
         let f, u = translate_exp ~config env f in
         ((mf, f), u)
       ) ms in
@@ -421,9 +377,9 @@ module CC = struct
       assert (u2 = uk2);
       LetExp (x, f1, f2), uk2
     | MatchExp (f, ms) ->
-      let f, _ = translate_exp ~config env f in
+      let f, u_match = translate_exp ~config env f in
       let msu = List.map (fun (mf, f) ->
-        let env, mf = translate_mf env mf in
+        let env = Typing.env_of_mf env u_match mf in
         let f, u = translate_exp_k ~config env k uk1 uk2 f in
         ((mf, f), u)
       ) ms in

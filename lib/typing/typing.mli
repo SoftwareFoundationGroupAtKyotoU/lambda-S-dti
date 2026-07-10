@@ -6,6 +6,10 @@ exception Type_bug of string
 
 val type_of_binop : binop -> ty * ty * ty
 
+val type_of_mf : matchform -> id list -> ty * id list
+
+val env_of_mf : tysc Environment.t -> ty ->  matchform -> tysc Environment.t
+
 module ITGL : sig
   open Syntax.ITGL
 

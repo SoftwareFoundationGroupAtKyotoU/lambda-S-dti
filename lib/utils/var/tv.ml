@@ -2,9 +2,7 @@ open Syntax
 open Ftv
 
 let rec tv_matchform : matchform -> TV.t = function
-  | MatchVar (_, u) -> ftv_ty u
-  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
-  | MatchNil u -> ftv_ty u
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchWild | MatchNil | MatchVar _ -> TV.empty
   (* | MatchAsc (mf, u) -> TV.union (tv_matchform mf) (ftv_ty u) *)
   | MatchCons (mf1, mf2) -> TV.union (tv_matchform mf1) (tv_matchform mf2)
   | MatchTuple mfs -> TV.big_union (List.map tv_matchform mfs)

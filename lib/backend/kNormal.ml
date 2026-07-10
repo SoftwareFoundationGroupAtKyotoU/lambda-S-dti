@@ -11,10 +11,10 @@ let genvar x =
   Printf.sprintf "%s_%d" x !counter
 
 let rec alpha_mf idenv = function
-  | MatchILit _ | MatchBLit _ | MatchULit | MatchNil _ | MatchWild _  as mf -> mf, idenv
-  | MatchVar (x, u) ->
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchNil | MatchWild as mf -> mf, idenv
+  | MatchVar x ->
     let newx = genvar x in
-    MatchVar (newx, u), Environment.add x newx idenv
+    MatchVar newx, Environment.add x newx idenv
   | MatchCons (mf1, mf2) -> 
     let mf1, idenv = alpha_mf idenv mf1 in
     let mf2, idenv = alpha_mf idenv mf2 in
@@ -30,13 +30,13 @@ let rec alpha_mf idenv = function
     iter idenv mfs []
 
 let rec k_normalize_mf tvsenv f = function
-  | MatchILit _ | MatchNil _ | MatchWild _  as mf -> mf, tvsenv, fun f -> f
+  | MatchILit _ | MatchNil | MatchWild as mf -> mf, tvsenv, fun f -> f
   | MatchBLit b -> 
     let i = if b then 1 else 0 in
     MatchILit i, tvsenv, fun f -> f
   | MatchULit ->
     MatchILit 0, tvsenv, fun f -> f
-  | MatchVar (x, u) -> MatchWild u, Environment.add x [] tvsenv, fun f' -> KNorm.LetExp (x, f, f')
+  | MatchVar x -> MatchWild, Environment.add x [] tvsenv, fun f' -> KNorm.LetExp (x, f, f')
   | MatchCons (mf1, mf2) -> 
     let x = genvar "_var" in
     let mf1, tvsenv, decl_var1 = k_normalize_mf tvsenv (KNorm.LetExp (x, f, Hd x)) mf1 in

@@ -149,13 +149,13 @@ let gte_matchform mf1 mf2 = match mf1, mf2 with
 
 let rec pp_matchform ppf = function
   (* | MatchVar (x, u) -> fprintf ppf "(%s: %a)" x pp_ty u *)
-  | MatchVar (x, _) -> fprintf ppf "%s" x
+  | MatchVar x -> fprintf ppf "%s" x
   (* | MatchAsc (mf, u) -> fprintf ppf "(%a : %a)" pp_matchform mf pp_ty u *)
   | MatchILit i -> pp_print_int ppf i
   | MatchBLit b -> pp_print_bool ppf b
   | MatchULit -> pp_print_string ppf "()"
   (* | MatchNil u -> fprintf ppf "([] : %a)" pp_ty (TyList u) *)
-  | MatchNil _ -> fprintf ppf "[]"
+  | MatchNil -> fprintf ppf "[]"
   | MatchCons (mf1, mf2) as mf -> 
     fprintf ppf "%a :: %a"
       (with_paren (gte_matchform mf mf1) pp_matchform) mf1
@@ -165,7 +165,7 @@ let rec pp_matchform ppf = function
     let pp_list ppf matches = pp_print_list (fun ppf mf' -> (with_paren (gte_matchform mf mf') pp_matchform) ppf mf') ppf matches ~pp_sep:pp_sep in
     fprintf ppf "(%a)"
       pp_list mfs
-  | MatchWild _ -> pp_print_string ppf "_"
+  | MatchWild -> pp_print_string ppf "_"
 
 (* === pp for coercion === *)
 

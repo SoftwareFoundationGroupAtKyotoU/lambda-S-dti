@@ -94,13 +94,7 @@ let rec tv_renew_coercion c env = match c with
     CMRef (u1, u2), env
 
 let rec tv_renew_mf mf env = match mf with
-  | MatchILit _ | MatchBLit _ | MatchULit -> mf, env
-  | MatchVar (x, u) -> 
-    let u, env = tv_renew_ty u env in
-    MatchVar (x, u), env
-  | MatchNil u -> 
-    let u, env = tv_renew_ty u env in
-    MatchNil u, env
+  | MatchILit _ | MatchBLit _ | MatchULit | MatchNil | MatchWild | MatchVar _ -> mf, env
   | MatchCons (mf1, mf2) ->
     let mf1, env = tv_renew_mf mf1 env in
     let mf2, env = tv_renew_mf mf2 env in
@@ -114,9 +108,6 @@ let rec tv_renew_mf mf env = match mf with
       MatchTuple (List.rev r), env
     in
     iter env mfs []
-  | MatchWild u -> 
-    let u, env = tv_renew_ty u env in
-    MatchWild u, env
 
 module CC = struct
   open Syntax.CC

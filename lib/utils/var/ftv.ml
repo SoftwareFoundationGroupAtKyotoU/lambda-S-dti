@@ -21,8 +21,8 @@ let ftv_tyenv (env: tysc Environment.t): TV.t =
   Environment.fold (fun _ us vars -> TV.union vars (ftv_tysc us)) env TV.empty
 
 let rec ftv_matchform : matchform -> TV.t = function
-  | MatchVar _ | MatchILit _ | MatchBLit _ | MatchULit | MatchWild _ -> TV.empty
-  | MatchNil _ -> TV.empty
+  | MatchVar _ | MatchILit _ | MatchBLit _ | MatchULit | MatchWild -> TV.empty
+  | MatchNil -> TV.empty
   (* | MatchAsc (mf, u) -> TV.union (ftv_matchform mf) (ftv_ty u) *)
   | MatchCons (mf1, mf2) -> TV.union (ftv_matchform mf1) (ftv_matchform mf2)
   | MatchTuple mfs -> TV.big_union (List.map ftv_matchform mfs)

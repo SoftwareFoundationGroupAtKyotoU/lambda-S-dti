@@ -70,15 +70,15 @@ type binop = Plus | Minus | Mult | Div | Mod | Eq | Neq | Lt | Lte | Gt | Gte
 (* === Definitions for matchform === *)
 
 type matchform = (*match式でmatchさせることのできる形の種類を定義*)
-  | MatchVar of id * ty                      (*変数でmatchさせるMatchVar*)
+  | MatchVar of id                     (*変数でmatchさせるMatchVar*)
   (* | MatchAsc of matchform * ty *)
   | MatchILit of int                    (*整数とmatchするMatchILit*)
   | MatchBLit of bool                   (*bool値とmatchするMatchBLit*)
   | MatchULit
-  | MatchNil of ty                (*空列とmatchするMatchEmptyList*)
+  | MatchNil                (*空列とmatchするMatchEmptyList*)
   | MatchCons of matchform * matchform  (*リストとmatchするMatchList*)
   | MatchTuple of matchform list
-  | MatchWild of ty
+  | MatchWild
 
 (* === Definitions for coercion === *)
 
