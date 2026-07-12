@@ -62,7 +62,7 @@ let rec exist_tv l1 l2 = match l2 with
   
 let rec ty_tv tvs u = match u with
   | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn as u -> (u, fun x -> x)
-  | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> (u, fun x -> x)
+  | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> TyManager.register u; (u, fun x -> x)
   | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
   | TyFun (u1, u2) ->
     let u1, ufun1 = ty_tv tvs u1 in

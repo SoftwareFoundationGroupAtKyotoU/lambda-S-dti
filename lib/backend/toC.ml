@@ -55,24 +55,23 @@ let toC_tycontent = function
     Struct ["tykind", Var "TYFUN"; "tydat", Struct ["tyfun", Struct ["left", toC_ty u1; "right", toC_ty u2]]]
   | TyList u ->
     Struct ["tykind", Var "TYLIST"; "tydat", Struct ["tylist", toC_ty u]]
+  | TyTuple us ->
+    Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["arity", Int (List.length us); "tys", Cast (ARRAY (PTR TY), Array (List.map (fun u -> toC_ty u) us))]]] 
   | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
 
-(*型の定義*)
 (*let toC_tycontent ppf (u, name) = match u with
-  ...
-  | TyTuple us ->
-    let arity = List.length us in
-    let tys_str = String.concat ", " (List.map (fun u -> "(ty*)" ^ c_of_ty u) us) in
-    fprintf ppf "static ty *%s_tys[] = { %s };\n" name tys_str;
-    fprintf ppf "static ty %s = { .tykind = TYTUPLE, .tydat.tytuple = { .arity = %d, .tys = %s_tys } };"
-      name arity name  | u -> raise @@ ToC_bug (Format.asprintf "not tyvar, tyfun or tylist in tycontent: %a" Pp.pp_ty2 u) 
+  | TyRef _
 *)
 
 (* ========================================= *)
 
 let int_of_pos = function Pos -> 1 | Neg -> 0
 
-let rid r = int_of_string @@ RangeManager.find r
+let rid r = 
+  try
+    int_of_string @@ RangeManager.find r
+  with
+    Not_found -> raise @@ ToC_bug "rid cannot find r"
 
 let rec check_has_tv = function
   | CId _ | CInj _ | CProj _ -> false
@@ -150,6 +149,14 @@ let rec toC_crc x c =
         "has_tv", Int has_tv_val;
         "crcdat", Struct ["lst_crc", ptr_crc]
       ]
+    | CTuple cs ->
+      let stms, ptr_crcs = List.split @@ List.mapi (fun i c -> stm_crc (x ^ "_elm" ^ string_of_int i) c) cs in
+      List.flatten stms,
+      Struct [
+        "crckind", Var "TUPLE";
+        "has_tv", Int has_tv_val;
+        "crcdat", Struct ["tpl_crc", Struct ["arity", Int (List.length cs); "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
+      ]
     | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
 (*
@@ -224,21 +231,6 @@ let set_ty i opu =
     | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
     end *)
 
-(* let rec toC_mf ppf (x, mf) ~config =
-  match mf with
-  | MatchTuple mfs ->
-    let counter = ref (-1) in
-    let toC_mfi ppf mi =
-      if config.eager then
-        toC_mf ppf (counter := !counter + 1; asprintf "((tpl*)%s)->fields[%d]" x !counter, mi)
-      else
-        toC_mf ppf (counter := !counter + 1; asprintf "tget((tpl*)%s, %d)" x !counter, mi)
-    in
-    let toC_sep ppf () = fprintf ppf " && " in
-    let toC_list ppf ms = pp_print_list toC_mfi ppf ms ~pp_sep:toC_sep in
-    fprintf ppf "%a"
-      toC_list mfs *)
-
 let rec toC_mf ~config x_exp = function
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit should not appear in toC"
   | MatchILit i -> Eq (x_exp, Int i)
@@ -257,7 +249,15 @@ let rec toC_mf ~config x_exp = function
       let mf1 = toC_mf ~config (App (Var "hd", [Cast (PTR LST, x_exp)])) mf1 in
       let mf2 = toC_mf ~config (App (Var "tl", [Cast (PTR LST, x_exp)])) mf2 in
       And (Not (App (Var "is_NULL", [Cast (PTR LST, x_exp)])), And (mf1, mf2))
-  | _ as mf -> ignore config; raise @@ ToC_bug (Format.asprintf "toC_mf yet: %a" Pp.pp_matchform mf)
+  | MatchTuple mfs ->
+    let toC_mfi mf i =
+      if config.eager then
+        toC_mf ~config (Index (Arrow (Cast (PTR TPL, x_exp), "fields"), i)) mf
+      else
+        toC_mf ~config (App (Var "tget", [Cast (PTR TPL, x_exp); Int i])) mf
+    in
+    List.fold_left (fun e1 e2 -> And (e1, e2)) (Int 1) (List.mapi (fun i mf -> toC_mfi mf i) mfs)
+  (* | _ as mf -> ignore config; raise @@ ToC_bug (Format.asprintf "toC_mf yet: %a" Pp.pp_matchform mf) *)
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
@@ -284,9 +284,9 @@ let rec toC_exp ~is_main ~config = function
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
       [SApp (Var "printf", [Str "didn't match"]); SApp (Var "exit", [Int 1])] (List.rev ms)
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
-  | Cls.Nil | Cls.Cons _
+  | Cls.Nil | Cls.Cons _ | Cls.Tuple _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
-  | Cls.Hd _ | Cls.Tl _ as f ->
+  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
   | _ as f -> raise @@ ToC_bug (Format.asprintf "toC_exp yet: %a" Pp.Cls.pp_exp f)
@@ -312,6 +312,10 @@ and toC_assign ~config x f =
   | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (LDeref (LCast (PTR LST, LVar x)), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
+  | Cls.Tuple ys ->
+    let arity = List.length ys in
+    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int arity)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "arity"), Int arity)]
+    @ List.mapi (fun i y -> SAssign (LIndex (LArrow (LCast (PTR TPL_RAW, LVar x), "fields"), i), Var y)) ys
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
@@ -349,6 +353,11 @@ and toC_assign ~config x f =
       assign_x (Arrow (Cast (PTR LST, Var y), "t"))
     else
       assign_x (App (Var "tl", [Cast (PTR LST, Var y)]))
+  | Cls.Tget (y, i) ->
+    if config.eager then
+      assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), i))
+    else
+      assign_x (App (Var "tget", [Cast (PTR TPL, Var y); Int i]))
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
@@ -490,23 +499,6 @@ let rec toC_exp ppf f ~config ~is_main =
   let toC_exp = toC_exp ~config ~is_main in
   match f with
   | Insert (x, f) -> begin match f with
-    | Tuple ys ->
-      let arity = List.length ys in
-      let counter = ref (-1) in
-      let toC_sep ppf () = fprintf ppf "\n" in
-      let toC_list ppf ys = pp_print_list (fun ppf y -> counter := !counter + 1; fprintf ppf "((tpl_raw*)%s)->fields[%d] = %s;" x !counter y) ppf ys ~pp_sep:toC_sep in
-      fprintf ppf "%s = (value)GC_MALLOC(sizeof(tpl_raw) + sizeof(value) * %d);\n((tpl_raw*)%s)->hdr.arity = %d;\n%a\n" x arity x arity toC_list ys;
-    | Tget (y, i) ->
-      if config.eager then
-        fprintf ppf "%s = ((tpl*)%s)->fields[%d];\n"
-          x
-          y
-          i
-      else
-        fprintf ppf "%s = tget((tpl*)%s, %d);\n"
-          x
-          y
-          i
     | Ref (y, u) ->
       let c = c_of_ty u in
       fprintf ppf "%s = (value)GC_MALLOC(sizeof(ref));\n((ref*)%s)->v = %s;\n((ref*)%s)->u = %s;\n"

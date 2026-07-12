@@ -938,10 +938,12 @@ module C = struct
     | INT -> pp_print_string ppf "int"
     | VOID -> pp_print_string ppf "void"
     | PTR t -> fprintf ppf "%a*" pp_ty t
+    | ARRAY t -> fprintf ppf "%a[]" pp_ty t
     | VALUE -> pp_print_string ppf "value"
     | FUN -> pp_print_string ppf "fun"
     | LST -> pp_print_string ppf "lst"
     | TPL -> pp_print_string ppf "tpl"
+    | TPL_RAW -> pp_print_string ppf "tpl_raw"
     | REF -> pp_print_string ppf "ref"
     | CRC -> pp_print_string ppf "crc"
     | RANGE -> pp_print_string ppf "range"

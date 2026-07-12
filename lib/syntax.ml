@@ -313,8 +313,8 @@ end
 
 module C = struct
   type ty = 
-    | INT | VOID | PTR of ty
-    | VALUE | FUN | LST | TPL | REF | CRC
+    | INT | VOID | PTR of ty | ARRAY of ty
+    | VALUE | FUN | LST | TPL | TPL_RAW | REF | CRC
     | RANGE | TY
 
   type exp =
@@ -342,10 +342,6 @@ module C = struct
     | Sizeof of ty
     | Struct of (id * exp) list
     | Array of exp list
-    (* | Cons of id * id *)
-    (* | Tuple of id list *)
-    (* | Hd of id *)
-    (* | Tl of id *)
     (* | Tget of id * int *)
     (* | Ref of id * ty
     | Deref of id * ty option
