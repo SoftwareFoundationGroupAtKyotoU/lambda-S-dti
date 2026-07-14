@@ -21,8 +21,6 @@ let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=f
     failwith "Config error: -a and -b could not be at the same time";
   if monotonic && intoB then
     failwith "Config error: --monotonic and -b could not be at the same time";
-  if not compile && intoB && not eager then 
-    failwith "NotImplemented: lazy cast application for -b interpreter is yet";
   if not compile && hash then 
     failwith "NotImplemented: hash consing for interpreter is yet";
   if not compile && static then

@@ -432,12 +432,10 @@ module CC = struct
           pp_exp f2
     | CastExp (f1, u1, u2, _) as f ->
       begin match f1 with
-      | CastExp (_, _, u1', _) when u1 = u1' ->
+      | CastExp _ ->
         fprintf ppf "%a => %a"
           (with_paren (gt_exp f f1) pp_exp) f1
           pp_ty u2
-      | CastExp _ ->
-        raise Syntax_error
       | _ ->
         fprintf ppf "%a: %a => %a"
           (with_paren (gt_exp f f1) pp_exp) f1
@@ -553,14 +551,18 @@ module CC = struct
   (*let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t*)
 
   let gt_value v1 v2 = match v1, v2 with
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _ | Tagged _ | CoerceV _), ConsV _ -> true
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _), (Tagged _ | CoerceV _) -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _ | Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _), ConsV _ -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _), (Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _) -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
     | (FunBV _ | FunSV _ | FunDualV _ | FunTyV _ ), (FunBV _ | FunSV _ | FunDualV _ | FunTyV _) -> true
     | Tagged _, Tagged _ -> true
     | CoerceV _, CoerceV _ -> true
+    | CastFunV _, CastFunV _ -> true
+    | CastListV _, CastListV _ -> true
+    | CastTupleV _, CastTupleV _ -> true
+    | CastRefV _, CastRefV _ -> true
     | ConsV _, ConsV _ -> true
     | TupleV _, TupleV _ -> true
     | _ -> gt_value v1 v2
@@ -571,11 +573,7 @@ module CC = struct
       | IntV i -> pp_print_int ppf i
       | UnitV -> pp_print_string ppf "()"
       | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
-      | CoerceV (v1, c) as v ->
-        fprintf ppf "%a<<%a>>"
-          (with_paren (gt_value v v1) @@ pp_value refl) v1
-          pp_coercion c
-      | CoercionV c -> 
+      | CoercionV c ->
         fprintf ppf "%a"
           pp_coercion c
       | NilV -> pp_print_string ppf "[]"
@@ -595,9 +593,67 @@ module CC = struct
             (pp_value (r :: refl)) v
             pp_ty u
       | Tagged (t, v) ->
-        fprintf ppf "%a: %a => ?"
-          (pp_value refl) v
-          pp_tag t
+        begin match v with
+        | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ ->
+          fprintf ppf "%a => ?"
+            (pp_value refl) v
+        | _ -> 
+          fprintf ppf "%a: %a => ?"
+            (pp_value refl) v
+            pp_tag t
+        end
+      | CastFunV (v1, u11, u12, u21, u22, _) as v ->
+        begin match v1 with
+        | CastFunV _ ->
+          fprintf ppf "%a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyFun (u21, u22))
+        | _ ->
+          fprintf ppf "%a: %a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyFun (u11, u12))
+            pp_ty (TyFun (u21, u22))
+        end
+      | CastListV (v1, u1, u2, _) as v ->
+        begin match v1 with
+        | CastListV _ ->
+          fprintf ppf "%a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyList u2)
+        | _ ->
+          fprintf ppf "%a: %a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyList u1)
+            pp_ty (TyList u2)
+        end
+      | CastTupleV (v1, us1, us2, _) as v ->
+        begin match v1 with
+        | CastTupleV _ ->
+          fprintf ppf "%a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyTuple us2)
+        | _ ->
+          fprintf ppf "%a: %a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyTuple us1)
+            pp_ty (TyTuple us2)
+        end
+      | CastRefV (v1, u1, u2, _) as v ->
+        begin match v1 with
+        | CastRefV _ ->
+          fprintf ppf "%a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyRef u2)
+        | _ ->
+          fprintf ppf "%a: %a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyRef u1)
+            pp_ty (TyRef u2)
+        end
+      | CoerceV (v1, c) as v ->
+        fprintf ppf "%a<<%a>>"
+          (with_paren (gt_value v v1) @@ pp_value refl) v1
+          pp_coercion c
     in
     pp_value [] ppf v
 

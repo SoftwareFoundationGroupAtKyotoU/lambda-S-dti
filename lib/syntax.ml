@@ -212,6 +212,10 @@ module CC = struct
     | TupleV of value list
     | RefV of (value * ty) ref
     | Tagged of tag * value
+    | CastFunV of value * ty * ty * ty * ty * (range * polarity)
+    | CastListV of value * ty * ty * (range * polarity)
+    | CastTupleV of value * ty list * ty list * (range * polarity)
+    | CastRefV of value * ty * ty * (range * polarity)
     | CoerceV of value * coercion
 end
 

@@ -63,7 +63,7 @@ let application = [
   ["(fun (x:?) -> x 2) (fun y -> y)", "?", "2: int => ?", "2<<id{int};int!>>"];
   ["(fun (x:?) -> x 2) (fun (y: int) -> y)", "?", "2: int => ?", "2<<id{int};int!>>"];
   ["(fun (x:?) -> x 2) (fun y -> true)", "?", "true: bool => ?", "true<<id{bool};bool!>>"];
-  ["(fun (x:?) -> x) (fun y -> true)", "?", "<fun>: (? -> ?) => ?", "<fun><<'a?p->(id{bool};bool!);(? -> ?)!>>"];
+  ["(fun (x:?) -> x) (fun y -> true)", "?", "<fun>: 'a -> bool => ? -> ? => ?", "<fun><<'a?p->(id{bool};bool!);(? -> ?)!>>"];
   ["(fun x -> 1 + ((fun (y:?) -> y) x)) 2", "int", "3", "3"];
   ["(fun (x: int * ?) -> x) (1, true)", "int * ?", "(1, true: bool => ?)", "(1, true)<<id{int}*(id{bool};bool!)>>"];
   ["(fun (x: ?) -> x) (1, true)", "?", "(1: int => ?, true: bool => ?): (? * ?) => ?", "(1, true)<<(id{int};int!)*(id{bool};bool!);(? * ?)!>>"];
@@ -176,9 +176,9 @@ let let_poly_toplevel = [
     "fun x y -> f (g2 x) (g2 y)", "'a -> 'b -> ?", "<fun>", "<fun>";
   ];
   [
-    "let f = ((((fun x -> x): 'a ->'a): ?): 'a->'a)", "'a -> 'a", "<fun>", "<fun>";
+    "let f = ((((fun x -> x): 'a ->'a): ?): 'a->'a)", "'a -> 'a", "<fun>: 'a -> 'a => ? -> ? => 'a -> 'a", "<fun>";
     "f 3", "int", "3", "3";
-    "f", "int -> int", "<fun>", "<fun>";
+    "f", "int -> int", "<fun>: int -> int => ? -> ? => int -> int", "<fun>";
   ];
   [
     "let f (x: int) (y: bool) = 0", "int -> bool -> int", "<fun>", "<fun>";

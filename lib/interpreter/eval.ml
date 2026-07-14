@@ -156,11 +156,20 @@ module CC = struct
           let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
           toplevel_coerce ~config v s
         | _ -> raise @@ Eval_bug "eval: not refV deref"
-      else
-        begin match v with
-        | RefV { contents = (v, _) } -> v
+      else if config.intoB then
+        let rec deref = function
+          | CastRefV (v, u1, u2, (r, p)) ->
+            let v = deref v in
+            cast ~config v u1 u2 (r, p)
+          | RefV ({ contents = v, _ }) -> v
+          | _ -> raise @@ Eval_bug "eval: not refV deref"
+        in
+        deref v
+      else begin match v with
+        | CoerceV (RefV ({ contents = v, _ }), CRef (c1, _)) -> toplevel_coerce ~config v c1
+        | RefV ({ contents = v, _ }) -> v
         | _ -> raise @@ Eval_bug "eval: not refV deref"
-        end
+      end
     | SubstExp (f1, f2, ou) ->
       let v1 = eval ~config env f1 in
       let v2 = eval ~config env f2 in
@@ -174,9 +183,21 @@ module CC = struct
           consume ~config psi;
           UnitV
         | _ -> raise @@ Eval_bug "eval: not refV subst"
+      else if config.intoB then
+        let rec subst v1 v2 = match v1 with
+          | CastRefV (v1, u1, u2, (r, p)) ->
+            subst v1 (cast ~config v2 u2 u1 (r, neg p))
+          | RefV ({ contents = _, u } as rv) ->
+            rv := v2, u; UnitV
+          | _ -> raise @@ Eval_bug "eval: not refV subst"
+        in
+        subst v1 v2
       else begin match v1 with
-      | RefV ({ contents = _, u } as rv) -> rv := (v2, u); UnitV
-      | _ -> raise @@ Eval_bug "eval: not refV subst"
+        | CoerceV (RefV ({ contents = _, u } as rv), CRef (_, c2)) ->
+          rv := (toplevel_coerce ~config v2 c2), u; UnitV
+        | RefV ({ contents = _, u } as rv) ->
+          rv := v2, u; UnitV
+        | _ -> raise @@ Eval_bug "eval: not refV deref"
       end
     | CastExp (f, u1, u2, r_p) ->
       let v = eval ~config env f in
@@ -219,6 +240,37 @@ module CC = struct
       iter env vs mfs true
     (* | arg, MatchAsc (mf, _) -> match_mf env arg mf *)
     | _, MatchWild -> true, env
+    | CastListV (v, _, _, _), MatchNil -> match_mf ~config env v mf
+    | CastListV _, MatchCons _ ->
+      let rec destruct_cons_cast = function
+        | ConsV (v1, v2) -> Some (v1, v2)
+        | CastListV (v, u1, u2, (r, p)) ->
+          begin match destruct_cons_cast v with
+          | Some (v1, v2) ->
+            Some (cast ~config v1 u1 u2 (r, p), CastListV (v2, u1, u2, (r, p)))
+          | None -> None
+          end
+        | _ -> None
+      in
+      begin match destruct_cons_cast v with
+      | Some (v1, v2) -> match_mf ~config env (ConsV (v1, v2)) mf
+      | None -> false, env
+      end
+    | CastTupleV _, MatchTuple _ ->
+      let rec destruct_tuple_cast = function
+        | TupleV vs -> Some vs
+        | CastTupleV (v, us1, us2, (r, p)) ->
+          begin match destruct_tuple_cast v with
+          | Some vs ->
+            Some (List.map2 (fun v (u1, u2) -> cast ~config v u1 u2 (r, p)) vs (List.combine us1 us2))
+          | None -> None
+          end
+        | _ -> None
+      in
+      begin match destruct_tuple_cast v with
+      | Some vs -> match_mf ~config env (TupleV vs) mf
+      | None -> false, env
+      end
     | CoerceV (NilV, CList _), MatchNil -> true, env
     | CoerceV (ConsV (v1, v2), CList s), MatchCons _ ->
       let v1, psi = coerce ~config v1 s [] in
@@ -276,26 +328,19 @@ module CC = struct
       end
     (* AppCast *)
     | TyFun (u11, u12), TyFun (u21, u22) -> 
-      if u11 = u21 && u12 = u22 then v 
-      else begin match v with
-      | FunBV proc ->
-        FunBV (
-          fun ys x ->
-            let arg = cast ~config x u21 u11 (r, neg p) in
-            let res = proc ys arg in
-            cast ~config res u12 u22 (r, p)
-        )
-      | _ -> raise @@ Eval_bug "non procedural value"
-      end
-    | TyList u1, TyList u2 -> 
       if u1 = u2 then v 
+      else CastFunV (v, u11, u12, u21, u22, (r, p))
+    | TyList u1, TyList u2 -> 
+      if TyList u1 = TyList u2 then v
+      else if not config.eager then CastListV (v, u1, u2, (r, p))
       else begin match v with
       | NilV -> NilV
       | ConsV (h, t) -> ConsV (cast ~config h u1 u2 (r, p), cast ~config t (TyList u1) (TyList u2) (r, p))
       | _ -> raise @@ Eval_bug "non list value"
       end
     | TyTuple us1, TyTuple us2 ->
-      if us1 = us2 then v
+      if u1 = u2 then v
+      else if not config.eager then CastTupleV (v, us1, us2, (r, p))
       else begin match v with
       | TupleV vs ->
         let rec cast_list vs us1 us2 res = match vs, us1, us2 with
@@ -306,7 +351,9 @@ module CC = struct
         cast_list vs us1 us2 []
       | _ -> raise @@ Eval_bug "non tuple value"
       end
-    | TyRef _, TyRef _ -> raise @@ Eval_bug "ref cast yet"
+    | TyRef u1, TyRef u2 ->
+      if TyRef u1 = TyRef u2 then v 
+      else CastRefV (v, u1, u2, (r, p))
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
@@ -451,6 +498,10 @@ module CC = struct
     | CoerceV (v1, CFun (s, t)) -> 
       let v2 = toplevel_coerce ~config v2 s in
       eval_app_valD ~config env v1 v2 (CoercionV t)
+    | CastFunV (v1, u11, u12, u21, u22, (r, p)) ->
+      let v2 = cast ~config v2 u21 u11 (r, neg p) in
+      let v = eval_app_valM ~config env v1 v2 in
+      cast ~config v u12 u22 (r, p)
     | _ -> raise @@ Eval_bug (asprintf "app_valM: application of non procedure value: %a" Pp.CC.pp_value v1)
   and toplevel_coerce ~config v c =
     let v, psi = coerce ~config v c [] in
