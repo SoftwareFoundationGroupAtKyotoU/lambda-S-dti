@@ -397,7 +397,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					if (all_dyn) {
 						if (tag_of(x) == G_TP) {
 							value t = untag_value(x, G_TP);
-							if (((tpl*)t)->arity == arity) {
+							if (arity_of(x) == arity) {
 								return t;
 							} else {
 								blame(rid, polarity);
@@ -407,7 +407,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 					} else {
 						if (tag_of(x) == G_TP) {
-							ty *dyn_tuple = get_dyn_tuple_ty(((tpl*)untag_value(x, G_TP))->arity);
+							ty *dyn_tuple = get_dyn_tuple_ty(arity_of(x));
 							value x_ = cast(x, t1, dyn_tuple, rid, polarity);
 							return cast(x_, dyn_tuple, t2, rid, polarity); 
 						} else {
@@ -468,7 +468,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							#ifdef PROFILE
 							current_inference++;
 							#endif
-							uint16_t arity = ((tpl*)untag_value(x, G_TP))->arity;
+							uint16_t arity = arity_of(x);
 							t2->tykind = TYTUPLE;
 							t2->tydat.tytuple.arity = arity;
 							t2->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
