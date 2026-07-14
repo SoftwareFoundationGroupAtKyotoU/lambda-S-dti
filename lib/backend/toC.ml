@@ -57,11 +57,8 @@ let toC_tycontent = function
     Struct ["tykind", Var "TYLIST"; "tydat", Struct ["tylist", toC_ty u]]
   | TyTuple us ->
     Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["arity", Int (List.length us); "tys", Cast (ARRAY (PTR TY), Array (List.map (fun u -> toC_ty u) us))]]] 
+  | TyRef u -> Struct ["tykind", Var "TYREF"; "tydat", Struct ["tyref", toC_ty u]]
   | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
-
-(*let toC_tycontent ppf (u, name) = match u with
-  | TyRef _
-*)
 
 (* ========================================= *)
 
@@ -157,37 +154,27 @@ let rec toC_crc x c =
         "has_tv", Int has_tv_val;
         "crcdat", Struct ["tpl_crc", Struct ["arity", Int (List.length cs); "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
       ]
+    | CRef (c1, c2) ->
+      let stm1, ptr_crc1 = stm_crc (x ^ "_ref1") c1 in
+      let stm2, ptr_crc2 = stm_crc (x ^ "_ref2") c2 in
+      stm1 @ stm2,
+      Struct [
+        "crckind", Var "REF";
+        "has_tv", Int has_tv_val;
+        "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+      ]
     | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
 (*
 (* コアーションの定義 *)
 let toC_crccontent ppf (c, name) = 
   ...
-  | CTuple cs ->
-    let arity = List.length cs in
-    let crcs_str = String.concat ", " (List.map (fun c -> "(crc*)" ^ c_of_crc c) cs) in
-    fprintf ppf "static crc *%s_crcs[] = { %s };\n" name crcs_str;
-    fprintf ppf "static crc %s = { .crckind = TUPLE, .has_tv = %d, .crcdat.tpl_crc = { .arity = %d, .crcs = %s_crcs } };"
-      name has_tv_val arity name
+  | CMRef _ -> ...
 *)
 
   (*
   ...
-  | CTuple cs ->
-    let arity = List.length cs in
-    let toC_sep ppf () = fprintf ppf "\n" in
-    let counter = ref 0 in
-    let toC_elem ppf c = 
-      let i = !counter in
-      counter := !counter + 1;
-      fprintf ppf "value %s_c%d;\n%a\n%s_crcs[%d] = (crc*)%s_c%d;" x i toC_crc (c, Printf.sprintf "%s_c%d" x i) x i x i
-    in
-    fprintf ppf "crc **%s_crcs = (crc**)GC_MALLOC(sizeof(crc*) * %d);\n%a\ncrc %s_temp = {0};\n%s_temp.crckind = TUPLE;\n%s_temp.has_tv = 0;\n"
-      x arity (pp_print_list toC_elem ~pp_sep:toC_sep) cs x x x;
-    for i = 0 to arity - 1 do
-       fprintf ppf "%s_temp.has_tv |= ((crc*)%s_c%d)->has_tv;\n" x x i
-    done;
-    fprintf ppf "%s_temp.crcdat.tpl_crc.arity = %d;\n%s_temp.crcdat.tpl_crc.crcs = %s_crcs;\n%s = (value)alloc_crc(&%s_temp);" x arity x x x x
+  | CMRef _ -> ...
   | _ -> raise @@ ToC_bug "bad coercion" *)
 
 (* ========================================= *)
@@ -223,11 +210,14 @@ let set_ty i opu =
       u, "_tyfun" ^ string_of_int i
     | Some (TyList _ as u) ->
       u, "_tylist" ^ string_of_int i
+    | Some (TyTuple _ as u) ->
+      u, "_tytuple" ^ string_of_int i
+    | Some (TyRef _ as u) ->
+      u, "_tyref" ^ string_of_int i
     | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
   in
   name, [SAssign (LDeref (LVar name), Cast (TY, toC_tycontent u))]
     (* 
-    | Some (TyTuple us) -> ... 
     | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
     end *)
 
@@ -283,19 +273,28 @@ let rec toC_exp ~is_main ~config = function
   | Cls.Match (x, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
       [SApp (Var "printf", [Str "didn't match"]); SApp (Var "exit", [Int 1])] (List.rev ms)
-  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.CComp _
-  | Cls.Nil | Cls.Cons _ | Cls.Tuple _
+  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _
+  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ 
+  | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Cons _ | Cls.Subst _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
-  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ as f ->
+    as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
-  | _ as f -> raise @@ ToC_bug (Format.asprintf "toC_exp yet: %a" Pp.Cls.pp_exp f)
 and toC_assign ~config x f =
   let assign_x e = SAssign (LVar x, e) :: [] in
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
   | Cls.Nil -> assign_x dummy_value
+  | Cls.Tuple ys ->
+    let arity = List.length ys in
+    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int arity)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "arity"), Int arity)]
+    @ List.mapi (fun i y -> SAssign (LIndex (LArrow (LCast (PTR TPL_RAW, LVar x), "fields"), i), Var y)) ys
+  | Cls.Ref (y, u) ->
+    if config.monotonic then
+      let c = toC_ty u in
+      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (PTR REF, LVar x)), Cast (REF, Struct ["v", Var y; "u", c]))]
+    else assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (REF, LVar x)), Var y)]
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
     | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
@@ -305,17 +304,38 @@ and toC_assign ~config x f =
         let stm, exp = toC_crc x c in
         stm @ [SDecl (CRC, x ^ "_tmp" , Some exp)] @ assign_x (Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))
     end
+  | Cls.Hd y ->
+    if config.eager then
+      assign_x (Arrow (Cast (PTR LST, Var y), "h"))
+    else
+      assign_x (App (Var "hd", [Cast (PTR LST, Var y)]))
+  | Cls.Tl y ->
+    if config.eager then
+      assign_x (Arrow (Cast (PTR LST, Var y), "t"))
+    else
+      assign_x (App (Var "tl", [Cast (PTR LST, Var y)]))
+  | Cls.Tget (y, i) ->
+    if config.eager then
+      assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), i))
+    else
+      assign_x (App (Var "tget", [Cast (PTR TPL, Var y); Int i]))
+  | Cls.Deref (y, _) ->
+    if config.monotonic then
+      assign_x (Arrow (Cast (PTR REF, Var y), "v"))
+    else
+      assign_x (Deref (Cast (REF, Var y)))
   | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
   | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
   | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
   | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
   | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (LDeref (LCast (PTR LST, LVar x)), Cast (LST, Struct ["h", Var y; "t", Var z]))]
+  | Cls.Subst (y, z, _) ->
+    if config.monotonic then
+      SAssign (LArrow (LCast (PTR REF, LVar y), "v"), Var z) :: assign_x (Int 0)
+    else
+      SAssign (LDeref (LCast (REF, LVar y)), Var z) :: assign_x (Int 0)
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
-  | Cls.Tuple ys ->
-    let arity = List.length ys in
-    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int arity)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "arity"), Int arity)]
-    @ List.mapi (fun i y -> SAssign (LIndex (LArrow (LCast (PTR TPL_RAW, LVar x), "fields"), i), Var y)) ys
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
@@ -343,21 +363,6 @@ and toC_assign ~config x f =
     SAssign (LVar x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.AppTyFun (y, i1, tas, n) ->
     toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
-  | Cls.Hd y ->
-    if config.eager then
-      assign_x (Arrow (Cast (PTR LST, Var y), "h"))
-    else
-      assign_x (App (Var "hd", [Cast (PTR LST, Var y)]))
-  | Cls.Tl y ->
-    if config.eager then
-      assign_x (Arrow (Cast (PTR LST, Var y), "t"))
-    else
-      assign_x (App (Var "tl", [Cast (PTR LST, Var y)]))
-  | Cls.Tget (y, i) ->
-    if config.eager then
-      assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), i))
-    else
-      assign_x (App (Var "tget", [Cast (PTR TPL, Var y); Int i]))
   | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
@@ -383,7 +388,6 @@ and toC_assign ~config x f =
   | Cls.Match (y, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var y) mf, toC_assign ~config x f, stm)])
       [SApp (Var "printf", [Str "didn't match"]); SApp (Var "exit", [Int 1])] (List.rev ms)
-  | _ -> raise @@ ToC_bug (Format.asprintf "toC_assign yet: %a" Pp.Cls.pp_exp f)
 
 (* ======================================= *)
 

@@ -43,10 +43,10 @@ for TEST_DIR in \
   original/int \
   original/list \
   original/match \
+  original/ref \
   original/tuple \
   original \
   paper \
-  # original/ref \
   do
   [ -f "$TEST_DIR/tests.sh" ] && source "$TEST_DIR/tests.sh"
 done

@@ -1,6 +1,6 @@
-let make_counter () =
+let make_counter x =
   let n = ref 0 in
-  fun () -> n := !n + 1; !n
+  (fun x -> n := !n + 1; !n)
 in
 let c = make_counter () in
 print_int (c ());

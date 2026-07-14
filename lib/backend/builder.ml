@@ -10,20 +10,23 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let static = config.static in
   let eager = config.eager in
   let alt = config.alt in
+  let monotonic = config.monotonic in
   let hash = config.hash in
   let mode_var = (if intoB && not static then "-D CAST " else if alt && not static then "-D ALT " else "") in
-  let lst_var = (if eager && not static then "-D EAGER " else "") in
+  let eager_var = (if eager && not static then "-D EAGER " else "") in
+  let monotonic_var = (if monotonic then "-D MONOTONIC " else "") in
   let hash_var = (if hash && not static then "-D HASH " else "") in
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then 
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir 
       file 
       mode_str
       (if profile then "_profile" else "")
       mode_var
-      lst_var
+      eager_var
+      monotonic_var
       hash_var
       static_var
       profile_var
@@ -38,11 +41,12 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
     match config.opt_file with
     | Some filename ->
       let base = Filename.basename filename in
-      asprintf "clang %s/%s_out.c %s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 -O3"
+      asprintf "clang %s/%s_out.c %s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 -O3"
         result_c_dir
         base
         mode_var
-        lst_var
+        eager_var
+        monotonic_var
         hash_var
         static_var
         libc_dir
@@ -51,10 +55,11 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
         base
     | None ->
       (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-      asprintf "clang %s/stdin.c %s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
+      asprintf "clang %s/stdin.c %s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
         result_c_dir
         mode_var
-        lst_var
+        eager_var
+        monotonic_var
         hash_var
         static_var
         libc_dir

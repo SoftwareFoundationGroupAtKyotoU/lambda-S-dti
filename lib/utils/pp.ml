@@ -1033,6 +1033,8 @@ module C = struct
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_content) l
     | Array es ->
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_exp) es
+    | Deref e ->
+      fprintf ppf "*(%a)" pp_exp e
 
   let rec pp_lval ppf = function
     | LVar x -> pp_print_string ppf x

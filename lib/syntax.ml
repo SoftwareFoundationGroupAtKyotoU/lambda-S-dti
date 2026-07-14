@@ -346,10 +346,7 @@ module C = struct
     | Sizeof of ty
     | Struct of (id * exp) list
     | Array of exp list
-    (* | Tget of id * int *)
-    (* | Ref of id * ty
-    | Deref of id * ty option
-    | Subst of id * id * ty option *)
+    | Deref of exp
 
   type lval =
     | LVar of id
