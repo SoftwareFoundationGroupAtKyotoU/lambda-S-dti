@@ -101,7 +101,18 @@ let rec ty_tv tvs u = match u with
         | _ -> raise @@ Static_manage_bug "not tyvar was created"
       in
       (newu, fun x -> List.fold_left (fun x ufun -> ufun x) (SetTy (newtv, x)) (List.rev ufuns))
-  | TyRef _ -> raise @@ Static_manage_bug "yet"
+  | TyRef u' ->
+    let u', ufun' = ty_tv tvs u' in
+    if not (exist_tv (TV.elements (ftv_ty u)) tvs) then begin
+      TyManager.register u;
+      (u, fun x -> x)
+    end else
+      let newu = Type_utils.fresh_tyvar () in
+      let newtv = match newu with
+        | TyVar (i, u) -> u := Some (TyRef u'); (i, u)
+        | _ -> raise @@ Static_manage_bug "not tyvar was created"
+      in
+      (newu, fun x -> ufun' (SetTy (newtv, x)))
   | TyCoercion _ -> raise @@ Static_manage_bug "yet"
 
 let ta_tv tvs = function

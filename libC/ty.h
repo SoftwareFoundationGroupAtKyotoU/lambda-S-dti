@@ -40,7 +40,7 @@ extern ty tybool;
 extern ty tyunit;
 extern ty tyar;
 extern ty tyli;
-extern ty tyref;
+extern ty tyrf;
 
 ty *(newty)();
 

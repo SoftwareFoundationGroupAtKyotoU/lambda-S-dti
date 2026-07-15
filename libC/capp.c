@@ -8,6 +8,7 @@
 #include "fun.h"
 #include "lst.h"
 #include "tpl.h"
+#include "ref.h"
 #include "app.h"
 #include "ty.h"
 
@@ -38,6 +39,7 @@ static inline value tag_value(value v, uint8_t t) {
 		case G_AR:
 		case G_LI:
 		case G_TP:
+		case G_RF:
 			return (value)(v | t);
 		default: {
 			printf("%d is not ground_ty", t);
@@ -55,6 +57,7 @@ static inline value untag_value(value v, uint8_t t) {
 		case G_AR:
 		case G_LI:
 		case G_TP:
+		case G_RF:
 			return (value)(v & ~0b111);
 		default: {
 			printf("%d is not ground_ty", t);
@@ -329,6 +332,49 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			}
 			break;
 		}
+		case TYREF: {
+			switch(tk2) {
+				case TYREF: { 				// when t1 and t2 are reference type
+					#ifdef PROFILE
+					int cur = 1;
+					ref *tmp = (ref*)x;
+					while(tmp->u1_tag & 0b1) {
+						cur++;
+						tmp = tmp->w;
+					}
+					update_longest(cur);
+					#endif
+					value retx;
+					// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function
+					retx = (value)GC_MALLOC(sizeof(ref));
+					((ref*)retx)->w = (ref*)x;
+					((ref*)retx)->u1_tag = (uintptr_t)t1 | 0b1;
+					((ref*)retx)->u2_p = (uintptr_t)t2 | polarity;
+					((ref*)retx)->rid = rid;
+					return retx;
+				}
+				case DYN: {
+					if (t1->tydat.tyref->tykind == DYN) {
+						#ifdef PROFILE
+						int cur = 1;
+						ref *tmp = (ref*)x;
+						while(tmp->u1_tag & 0b1) {
+							cur++;
+							tmp = (ref*)tmp->w;
+						}
+						update_longest(cur);
+						#endif
+						return tag_value(x, G_RF); // define x:G=>? as dynamic type value
+					} else {			// when t1 is reference type and t2 is ?
+						// printf("cast ground\n");
+						value x_ = cast(x, t1, &tyrf, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
+						return cast(x_, &tyrf, t2, rid, polarity);
+					}
+				}
+				default: break;
+			}
+			break;
+		}
 		case DYN: {
 			switch(tk2) {
 				case BASE_INT: {			// when t1 is ? and t2 is ground type
@@ -415,6 +461,21 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 					}
 				}
+				case TYREF: {
+					if (t2->tydat.tyref->tykind == DYN) {
+						if (tag_of(x) == G_RF) {													// when t1's injection ground type equals t2
+							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
+							return untag_value(x, G_RF);
+						} else {											// when t1's injection ground type dosen't equal t2
+							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+							blame(rid, polarity);
+						}
+					} else {			// when t1 is ? and t2 is function type
+						// printf("cast expand\n");
+						value x_ = cast(x, t1, &tyrf, rid, polarity);									// R_EXPAND (x:?=>U -> x:?=>G=>U)
+						return cast(x_, &tyrf, t2, rid, polarity); 
+					}
+				}
 				case TYVAR: {			// when t1 is ? and t2 is type variable
 					switch(tag_of(x)) {
 						case(G_INT): {											// when t1's injection ground type is int
@@ -479,6 +540,16 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							}
 							return cast(untag_value(x, G_TP), get_dyn_tuple_ty(arity), t2, rid, polarity);
 						}
+						case(G_RF):	{												// when t1's injection ground type is ? ref
+							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':? ref=>?=>X -[X:=X_1 ref]> x':? ref=>X_1 ref)
+							#ifdef PROFILE
+							current_inference++;
+							#endif
+							t2->tykind = TYREF;
+							t2->tydat.tyref = (ty*)GC_MALLOC(sizeof(ty));
+							t2->tydat.tyref->tykind = TYVAR;
+							return cast(untag_value(x, G_RF), &tyrf, t2, rid, polarity);
+						}
 					}
 				}
 				case DYN: {
@@ -509,6 +580,8 @@ value coerce(value v, crc *s) {
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
 	if (s == &crc_inj_AR) return tag_value(v, G_AR);
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);
+	// tuple is intentionally omitted
+	if (s == &crc_inj_RF) return tag_value(v, G_RF);
 	crc *mid_crc;
 	switch (s->crckind) {
 		case ID: goto OPTIMIZATION_UNCAUGHT;
@@ -622,6 +695,30 @@ value coerce(value v, crc *s) {
 			}
 			#endif
 		}
+		case REF: 
+		CASE_REF: { // v<ref(s')>
+			if (((ref*)v)->c_tag & 0b1) { // u<<ref(s)>><ref(s')>
+				crc *c = compose_refs((crc*)(((ref*)v)->c_tag & ~0b1), s);
+				if (c->crckind == ID) {    // u<<ref(s)>><ref(s')> -> u<id> -> u
+					return (value)((ref*)v)->w;
+				} else {										 // u<<ref(s)>><ref(s')> -> u<ref(s;;s')> -> u<<ref(s;;s')>>
+					value retv;
+					retv = (value)GC_MALLOC(sizeof(ref));
+					((ref*)retv)->w = ((ref*)v)->w;
+					((ref*)retv)->c_tag = (uintptr_t)c | 0b1;
+					return retv;
+				}
+			} else {                   // u<ref(s')> -> u<<ref(s')>>
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
+				value retv;
+				retv = (value)GC_MALLOC(sizeof(ref));
+				((ref*)retv)->w = (ref*)v;
+				((ref*)retv)->c_tag = (uintptr_t)s | 0b1;
+				return retv;
+			}
+		}
 		case TV_INJ: {
 			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
 			s = normalize_tv_inj(s);
@@ -719,6 +816,22 @@ value coerce(value v, crc *s) {
 					return tag_value((value)retv, G_TP);
 					#endif
 				}
+				case REF: 
+				CASE_SEQ_INJ_REF: { // v<ref(s');G!>
+					value retv;
+					retv = (value)GC_MALLOC(sizeof(ref));
+					if (((ref*)v)->c_tag & 0b1) {  // u<<ref(s)>><ref(s');G!>
+						((ref*)retv)->w = ((ref*)v)->w;
+						((ref*)retv)->c_tag = (uintptr_t)compose_refs((crc*)(((ref*)v)->c_tag & ~0b1), mid_crc) | 0b1;
+					} else { // u<ref(s');G!> -> u<<ref(s');G!>>
+						#ifdef PROFILE
+						update_longest(1);
+						#endif
+						((ref*)retv)->w = (ref*)v;
+						((ref*)retv)->c_tag = (uintptr_t)mid_crc | 0b1;
+					}
+					return tag_value(retv, G_RF);
+				}
 				default: { // v<id;G!> -> v<<id;G!>>
 					return tag_value(v, s->g_inj);
 					// goto OPTIMIZATION_UNCAUGHT;
@@ -768,6 +881,7 @@ value coerce(value v, crc *s) {
 				case FUN: goto CASE_FUN;
 				case LIST: goto CASE_LIST;
 				case TUPLE: goto CASE_TUPLE;
+				case REF: goto CASE_REF;
 				default: {
 					printf("seq_proj should have only g\n");
 					exit(1);
@@ -790,6 +904,7 @@ value coerce(value v, crc *s) {
 				case FUN: goto CASE_SEQ_INJ_FUN;
 				case LIST: goto CASE_SEQ_INJ_LIST;
 				case TUPLE: goto CASE_SEQ_INJ_TUPLE;
+				case REF: goto CASE_SEQ_INJ_REF;
 				default: {    // u<<d>><s> -> u<g;G!> -> u<<g;G!>>
 					printf("seq_proj should have only g\n");
 					exit(1);
