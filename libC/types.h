@@ -46,10 +46,10 @@ typedef struct tpl_raw tpl;
 typedef struct tpl_header tpl;
 #endif
 
-#ifdef MONOTONIC
-typedef struct ref ref;
-#else
+#ifdef STATIC
 typedef value *ref;
+#else
+typedef struct ref ref;
 #endif
 
 #if !defined(CAST) && !defined(STATIC)

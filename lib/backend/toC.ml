@@ -294,7 +294,10 @@ and toC_assign ~config x f =
     if config.monotonic then
       let c = toC_ty u in
       assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (PTR REF, LVar x)), Cast (REF, Struct ["v", Var y; "u", c]))]
-    else assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (REF, LVar x)), Var y)]
+    else if config.static then
+      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (REF, LVar x)), Var y)]
+    else
+      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LArrow (LCast (PTR REF, LVar x), "v"), Var y)]
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
     | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
@@ -322,8 +325,10 @@ and toC_assign ~config x f =
   | Cls.Deref (y, _) ->
     if config.monotonic then
       assign_x (Arrow (Cast (PTR REF, Var y), "v"))
-    else
+    else if config.static then
       assign_x (Deref (Cast (REF, Var y)))
+    else
+      assign_x (App (Var "deref", [Cast (PTR REF, Var y)]))
   | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
   | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
   | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
@@ -333,8 +338,10 @@ and toC_assign ~config x f =
   | Cls.Subst (y, z, _) ->
     if config.monotonic then
       SAssign (LArrow (LCast (PTR REF, LVar y), "v"), Var z) :: assign_x (Int 0)
-    else
+    else if config.static then
       SAssign (LDeref (LCast (REF, LVar y)), Var z) :: assign_x (Int 0)
+    else
+      SApp (Var "subst", [Cast (PTR REF, Var y); Var z]) :: assign_x (Int 0)
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
