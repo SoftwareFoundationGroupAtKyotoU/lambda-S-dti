@@ -27,7 +27,7 @@ value hd(lst *l) {
 		ty *u2 = (ty*)erase_1bit_tag(l->wrap_info.u2_p);
 		return cast(hd(l->w), u1->tydat.tylist, u2->tydat.tylist, l->wrap_info.rid, l->wrap_info.u2_p & 0b1);
 		#else
-		return coerce(l->w->h, ((crc*)erase_1bit_tag(l->c_tag))->crcdat.lst_crc);
+		return toplevel_coerce(l->w->h, ((crc*)erase_1bit_tag(l->c_tag))->crcdat.lst_crc);
 		#endif
 	} else {
 		return l->h;
@@ -41,7 +41,7 @@ value tl(lst *l) {
 		ty *u2 = (ty*)erase_1bit_tag(l->wrap_info.u2_p);
 		return cast(tl(l->w), u1, u2, l->wrap_info.rid, l->wrap_info.u2_p & 0b1);
 		#else
-		return coerce(l->w->t, (crc*)erase_1bit_tag(l->c_tag));
+		return toplevel_coerce(l->w->t, (crc*)erase_1bit_tag(l->c_tag));
 		#endif
 	} else {
 		return l->t;

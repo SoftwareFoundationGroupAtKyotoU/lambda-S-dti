@@ -3,6 +3,8 @@
  (files
   (app.c as libC/app.c)
   (app.h as libC/app.h)
+  (blame.c as libC/blame.c)
+  (blame.h as libC/blame.h)
   (capp.c as libC/capp.c)
   (capp.h as libC/capp.h)
   (crc.c as libC/crc.c)

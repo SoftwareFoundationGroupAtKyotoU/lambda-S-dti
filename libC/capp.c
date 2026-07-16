@@ -11,6 +11,7 @@
 #include "ref.h"
 #include "app.h"
 #include "ty.h"
+#include "blame.h"
 
 #include "capp.h"
 
@@ -80,52 +81,6 @@ static inline uint16_t arity_of(value v) {
 }
 
 #ifdef CAST
-#include "ty.h"
-
-int ty_equal (ty *t1, ty *t2) {
-	if (t1 == t2) return 1;
-	enum tykind tk1 = t1->tykind;
-	enum tykind tk2 = t2->tykind;
-	if (t1->tykind == t2->tykind) {
-		switch (t1->tykind) {
-			case DYN:
-			case BASE_INT:
-			case BASE_BOOL:
-			case BASE_UNIT:
-				return 1;
-			case TYFUN:
-				return ty_equal(t1->tydat.tyfun.left, t2->tydat.tyfun.left) && ty_equal(t1->tydat.tyfun.right, t2->tydat.tyfun.right);
-			case TYLIST:
-				return ty_equal(t1->tydat.tylist, t2->tydat.tylist);
-			case TYTUPLE: {
-				if (t1->tydat.tytuple.arity != t2->tydat.tytuple.arity) return 0;
-				for (int i = 0; i < t1->tydat.tytuple.arity; i++) {
-					if (!ty_equal(t1->tydat.tytuple.tys[i], t2->tydat.tytuple.tys[i])) return 0;
-				}
-				return 1;
-			}
-			case TYREF: {
-				return ty_equal(t1->tydat.tyref, t2->tydat.tyref);
-			}
-			case TYVAR:
-				return t1 == t2;
-		} 
-	} else {
-		return 0;
-	}
-}
-
-ty *get_dyn_tuple_ty(uint16_t arity) {
-	ty *retty = (ty*)GC_MALLOC(sizeof(ty));
-	retty->tykind = TYTUPLE;
-	retty->tydat.tytuple.arity = arity;
-	retty->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
-	for (int i = 0; i < arity; i++) {
-		retty->tydat.tytuple.tys[i] = &tydyn;
-	}
-	return retty;
-}
-
 value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input = x:t1=>t2
 	#ifdef PROFILE
 	current_cast++;
@@ -569,6 +524,50 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 	exit(1);
 }
 #else // CAST
+
+#ifdef MONOTONIC
+SuspendedCasts psi = { NULL, 0, 0 };
+
+void sc_init(uint64_t initial_capacity) {
+    psi.data = (RefTyPair*)GC_MALLOC(sizeof(RefTyPair) * initial_capacity);
+    psi.count = 0;
+    psi.capacity = initial_capacity;
+}
+
+void sc_push(ref* r, ty* u) {
+    if (psi.count == psi.capacity) {
+        psi.capacity *= 2;
+        RefTyPair* new_data = (RefTyPair*)GC_REALLOC(psi.data, sizeof(RefTyPair) * psi.capacity);
+        psi.data = new_data;
+    }
+    psi.data[psi.count].r = r;
+    psi.data[psi.count].u = u;
+    psi.count++;
+}
+
+void consume(void) {
+	uint64_t cursor = 0;
+	while (cursor < psi.count) {
+        ref* r = psi.data[cursor].r;
+		ty* u = psi.data[cursor].u;
+		value v = r->v;
+		ty* u_ = r->u;
+		ty* u__ = unify_meet(u, u_);
+		if (!ty_equal(u_, u__)) {
+			crc* s = make_s_coercion(u_, u__);
+			value v_ = coerce(v, s);
+			r->v = v_;
+			r->u = u__;
+		}
+		psi.data[cursor].r = NULL;
+		psi.data[cursor].u = NULL;
+        cursor++;
+	}
+	psi.count = 0;
+}
+
+#endif
+
 value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
 	#ifdef PROFILE
@@ -697,6 +696,10 @@ value coerce(value v, crc *s) {
 		}
 		case REF: 
 		CASE_REF: { // v<ref(s')>
+			#ifdef MONOTONIC
+			sc_push((ref*) v, s->crcdat.mref_crc);
+			return v;
+			#else
 			if (((ref*)v)->c_tag & 0b1) { // u<<ref(s)>><ref(s')>
 				crc *c = compose_refs((crc*)(((ref*)v)->c_tag & ~0b1), s);
 				if (c->crckind == ID) {    // u<<ref(s)>><ref(s')> -> u<id> -> u
@@ -718,6 +721,7 @@ value coerce(value v, crc *s) {
 				((ref*)retv)->c_tag = (uintptr_t)s | 0b1;
 				return retv;
 			}
+			#endif
 		}
 		case TV_INJ: {
 			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
@@ -818,6 +822,10 @@ value coerce(value v, crc *s) {
 				}
 				case REF: 
 				CASE_SEQ_INJ_REF: { // v<ref(s');G!>
+					#ifdef MONOTONIC
+					sc_push((ref*)v, mid_crc->crcdat.mref_crc);
+					return tag_value(v, G_RF);
+					#else
 					value retv;
 					retv = (value)GC_MALLOC(sizeof(ref));
 					if (((ref*)v)->c_tag & 0b1) {  // u<<ref(s)>><ref(s');G!>
@@ -831,6 +839,7 @@ value coerce(value v, crc *s) {
 						((ref*)retv)->c_tag = (uintptr_t)mid_crc | 0b1;
 					}
 					return tag_value(retv, G_RF);
+					#endif
 				}
 				default: { // v<id;G!> -> v<<id;G!>>
 					return tag_value(v, s->g_inj);
@@ -931,16 +940,5 @@ value coerce(value v, crc *s) {
 	exit(1);
 }		
 #endif	
-
-__attribute__((noreturn)) void blame(uint32_t rid, uint8_t polarity) {
-	if(polarity == 1) {
-		printf("Blame on the expression side:\n");
-	} else {
-		printf("Blame on the environment side:\n");
-	}
-	range r = range_list[rid];
-	printf("%sline %d, character %d -- line %d, character %d\n", r.filename, r.startline, r.startchr, r.endline, r.endchr);
-	exit(0);
-}
 
 #endif

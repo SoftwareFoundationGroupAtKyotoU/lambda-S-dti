@@ -24,7 +24,6 @@ typedef struct crc {
 		LIST, //11
 		TUPLE, //12
 		REF, //13
-		MREF, //14
 	} crckind;
 	uint8_t p_proj  : 1;
     uint8_t p_inj   : 1;
@@ -55,15 +54,16 @@ typedef struct crc {
 			uint16_t arity;
 			crc **crcs;
 		} tpl_crc;
+		#ifdef MONOTONIC
+		ty *mref_crc; // for MREF
+		#else
 		struct ref_crc { // for REF
 			crc *c1;
 			crc *c2;
 		} ref_crc;
-		ty *mref_crc; // for MREF
+		#endif
 	} crcdat;
 } crc;
-
-void dti(const ground_ty g, const uint16_t arity, ty *tv);
 
 crc *compose(crc*, crc*);
 crc *compose_funs(crc*, crc*);
@@ -91,6 +91,9 @@ void register_static_crc(crc*);
 void clear_crc_caches();
 #endif //HASH
 
+#ifdef MONOTONIC
+crc *make_s_coercion(ty*, ty*);
 #endif
 
+#endif
 #endif

@@ -19,7 +19,12 @@ crc crc_inj_BOOL = { .crckind = SEQ_INJ, .g_inj = G_BOOL, .crcdat = { .seq_tv = 
 crc crc_inj_UNIT = { .crckind = SEQ_INJ, .g_inj = G_UNIT, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_AR = { .crckind = SEQ_INJ, .g_inj = G_AR, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
 crc crc_inj_LI = { .crckind = SEQ_INJ, .g_inj = G_LI, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
+#ifdef MONOTONIC
+crc dyn_mref = { .crckind = REF, .crcdat = { .mref_crc = &tydyn } };
+crc crc_inj_RF = { .crckind = SEQ_INJ, .g_inj = G_RF, .crcdat = { .seq_tv = { .ptr = { .s = &dyn_mref } } } };
+#else
 crc crc_inj_RF = { .crckind = SEQ_INJ, .g_inj = G_RF, .crcdat = { .seq_tv = { .ptr = { .s = &crc_id } } } };
+#endif
 
 static inline crc* create_new_crc(crc* candidate) {
 	#ifdef PROFILE
@@ -61,12 +66,14 @@ static uint32_t hash_crc(const crc *c) {
             }
             break;
 		case REF:
+			#ifdef MONOTONIC
+			h = (h * 31) + (uintptr_t)c->crcdat.mref_crc;
+			break;
+			#else
             h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c1;
             h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c2;
             break;
-		case MREF:
-            h = (h * 31) + (uintptr_t)c->crcdat.mref_crc;
-            break;
+			#endif
         default:
             h = (h * 31) + c->crcdat.seq_tv.rid_proj;
             h = (h * 31) + c->crcdat.seq_tv.rid_inj;
@@ -108,10 +115,12 @@ static int eq_crc(const crc *a, const crc *b) {
             }
             return 1;
 		case REF:
+			#ifdef MONOTONIC
+            return a->crcdat.mref_crc == b->crcdat.mref_crc;
+			#else
             return a->crcdat.ref_crc.c1 == b->crcdat.ref_crc.c1 &&
                    a->crcdat.ref_crc.c2 == b->crcdat.ref_crc.c2;
-		case MREF:
-            return a->crcdat.mref_crc == b->crcdat.mref_crc;
+        	#endif
         default:
             return a->crcdat.seq_tv.rid_proj == b->crcdat.seq_tv.rid_proj &&
                    a->crcdat.seq_tv.rid_inj  == b->crcdat.seq_tv.rid_inj  &&
@@ -254,6 +263,15 @@ static inline crc* new_tuple(uint16_t arity, crc **crcs) {
     return alloc_crc(&temp);
 }
 
+#ifdef MONOTONIC
+static inline crc* new_mref(ty *u) {
+    crc temp = {0};
+    temp.crckind = REF;
+	// temp.has_tv = c1->has_tv | c2->has_tv; TODO yet
+    temp.crcdat.mref_crc = u;
+    return alloc_crc(&temp);
+}
+#else
 static inline crc* new_ref(crc *c1, crc *c2) {
     crc temp = {0};
     temp.crckind = REF;
@@ -262,14 +280,7 @@ static inline crc* new_ref(crc *c1, crc *c2) {
     temp.crcdat.ref_crc.c2 = c2;
     return alloc_crc(&temp);
 }
-
-static inline crc* new_mref(ty *u) {
-    crc temp = {0};
-    temp.crckind = MREF;
-	// temp.has_tv = c1->has_tv | c2->has_tv;
-    temp.crcdat.mref_crc = u;
-    return alloc_crc(&temp);
-}
+#endif
 
 static inline crc *new_bot(const uint8_t p, const uint32_t rid, const uint8_t is_occur) {
     crc temp = {0};
@@ -471,6 +482,10 @@ static inline crc *normalize_tv_inj_tuple(crc *c) {
 static inline crc *normalize_tv_inj_ref(crc *c) {
     ty *inner = c->crcdat.seq_tv.ptr.tv->tydat.tyref;
 
+	#ifdef MONOTONIC
+	crc *cref = new_mref(inner);
+	// TODO: This might be wrong but work. In reality, we can simply return &crc_inj_RF
+	#else
     crc tr = {0};
     tr.crckind = TV_INJ;
 	tr.p_inj = c->p_inj;
@@ -488,6 +503,7 @@ static inline crc *normalize_tv_inj_ref(crc *c) {
     crc *cw = alloc_crc(&tw);
 
     crc *cref = new_ref(cr, cw);
+	#endif
 
     crc ts = {0};
     ts.crckind = SEQ_INJ;
@@ -600,6 +616,9 @@ static inline crc *normalize_tv_proj_tuple(crc *c) {
 static inline crc *normalize_tv_proj_ref(crc *c) {
     ty *inner = c->crcdat.seq_tv.ptr.tv->tydat.tyref;
 
+	#ifdef MONOTONIC
+	crc *cref = new_mref(inner);
+	#else
     crc tr = {0};
     tr.crckind = TV_PROJ;
 	tr.p_proj = c->p_proj;
@@ -617,6 +636,7 @@ static inline crc *normalize_tv_proj_ref(crc *c) {
     crc *cw = alloc_crc(&tw);
 
     crc *cref = new_ref(cr, cw);
+	#endif
 
     crc ts = {0};
     ts.crckind = SEQ_PROJ;
@@ -747,6 +767,10 @@ static inline crc *normalize_tv_proj_inj_tuple(crc *c) {
 static inline crc *normalize_tv_proj_inj_ref(crc *c) {
     ty *inner = c->crcdat.seq_tv.ptr.tv->tydat.tyref;
 
+	#ifdef MONOTONIC
+	crc *cref = new_mref(inner);
+	// TODO: This might be wrong but work. In reality, we can simply return new_mref(&tydyn)
+	#else
     crc tr = {0};
     tr.crckind = TV_PROJ_INJ;
 	tr.p_proj = c->p_proj;
@@ -768,6 +792,7 @@ static inline crc *normalize_tv_proj_inj_ref(crc *c) {
     crc *cw = alloc_crc(&tw);
 
     crc *cref = new_ref(cr, cw);
+	#endif
 
     crc ts = {0};
     ts.crckind = SEQ_PROJ_INJ;
@@ -876,6 +901,14 @@ inline crc *compose_tuples(crc *c1, crc *c2) {
     }
 }
 
+#ifdef MONOTONIC
+inline crc* compose_refs(crc *c1, crc *c2) {
+	if (c1 == &crc_id) return c2;
+	if (c2 == &crc_id) return c1;
+	ty *meet = unify_meet(c1->crcdat.mref_crc, c2->crcdat.mref_crc);
+	return new_mref(meet);
+}
+#else
 inline crc* compose_refs(crc *c1, crc *c2) {
 	if (c1 == &crc_id) return c2;
 	if (c2 == &crc_id) return c1;
@@ -887,6 +920,7 @@ inline crc* compose_refs(crc *c1, crc *c2) {
 		return new_ref(cref1, cref2);
 	}
 }
+#endif
 
 static inline crc *compose_g(crc *c1, crc *c2) {
 	if (c2 == &crc_id) return c1; // s;;id -> s
@@ -941,69 +975,13 @@ static inline int occur_check(crc* c, const ty *tv) {
             }
             return 0;
         }
-		case REF: return occur_check (c->crcdat.ref_crc.c1, tv) || occur_check(c->crcdat.ref_crc.c2, tv);
+		case REF:
+			#ifdef MONOTONIC
+			// TODO
+			#else
+			return occur_check (c->crcdat.ref_crc.c1, tv) || occur_check(c->crcdat.ref_crc.c2, tv);
+			#endif
 		default: return 0;
-	}
-}
-
-inline void dti(const ground_ty g, const uint16_t arity, ty *tv) {
-	#ifdef PROFILE
-	current_inference++;
-	#endif
-	switch(g) {
-		case G_INT: {
-			// printf("DTI : int was inferred\n");
-			// printf("%p <- int\n", tv);
-			*tv = tyint;
-			return;
-		}
-		case G_BOOL: {
-			// printf("DTI : bool was inferred\n");
-			// printf("%p <- bool\n", tv);
-			*tv = tybool;
-			return;
-		}
-		case G_UNIT: {
-			// printf("DTI : unit was inferred\n");
-			// printf("%p <- unit\n", tv);
-			*tv = tyunit;
-			return;
-		}
-		case G_AR: {
-			// printf("DTI : arrow was inferred\n");
-			// printf("%p <- X1->X2\n", tv);
-			tv->tykind = TYFUN;
-			tv->tydat.tyfun.left = newty();
-			tv->tydat.tyfun.right = newty();
-			return;
-		}
-		case G_LI: {
-			// printf("DTI : list was inferred\n");
-			// printf("%p <- [X]\n", tv);
-			tv->tykind = TYLIST;
-			tv->tydat.tylist = newty();
-			return;
-		}
-		case G_TP: {
-			tv->tykind = TYTUPLE;
-			tv->tydat.tytuple.arity = arity;
-			tv->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
-			for (int i = 0; i < arity; i++) {
-				tv->tydat.tytuple.tys[i] = newty();
-			}
-			return;
-		}
-		case G_RF: {
-			// printf("DTI : ref was inferred\n");
-			// printf("%p <- X ref\n", tv);
-			tv->tykind = TYREF;
-			tv->tydat.tyref = newty();
-			return;
-		}
-		default: {
-			printf("got G_NONE");
-			exit(1);
-		}
 	}
 }
 
@@ -1480,5 +1458,168 @@ crc* compose(crc *c1, crc *c2) {
     return internal_compose(c1, c2);
 	#endif //HASH
 }
+
+#ifdef MONOTONIC
+// blame label is not implemented, yet TODO
+crc *make_s_coercion(ty *u1, ty *u2) {
+	if (ty_equal(u1, u2)) return &crc_id;
+    switch (u1->tykind) {
+        case DYN: {
+			switch (u2->tykind) {
+				case DYN: return &crc_id;
+				case BASE_INT: {
+					crc temp = (crc){ .g_proj = G_INT };
+					return new_seq_proj(&temp, &crc_id);
+				}
+				case BASE_BOOL: {
+					crc temp = (crc){ .g_proj = G_BOOL };
+					return new_seq_proj(&temp, &crc_id);
+				}
+				case BASE_UNIT: {
+					crc temp = (crc){ .g_proj = G_UNIT };
+					return new_seq_proj(&temp, &crc_id);
+				}
+				case TYFUN: {
+					crc temp = (crc){ .g_proj = G_AR };
+					return new_seq_proj(&temp, make_s_coercion(&tyar, u2));
+				}
+				case TYLIST: {
+					crc temp = (crc){ .g_proj = G_LI };
+					return new_seq_proj(&temp, make_s_coercion(&tyli, u2));
+				}
+				case TYTUPLE: {
+					uint16_t arity = u2->tydat.tytuple.arity;
+					crc temp = (crc){ .g_proj = G_TP, .arity_proj = arity };
+					return new_seq_proj(&temp, make_s_coercion(get_dyn_tuple_ty(arity), u2));
+				}
+				case TYREF: {
+					crc temp = (crc){ .g_proj = G_RF };
+					return new_seq_proj(&temp, make_s_coercion(&tyrf, u2));
+				}
+				case TYVAR: {
+					crc temp = (crc){ };
+					return new_tv_proj(&temp, u2);
+				}
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+				default: break;
+			}
+		}
+        case BASE_INT: {
+            switch (u2->tykind) {
+                case DYN: return &crc_inj_INT;
+                case BASE_INT: return &crc_id;
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+				default: break;
+            }
+        }
+        case BASE_BOOL: {
+            switch (u2->tykind) {
+                case DYN: return &crc_inj_BOOL;
+                case BASE_BOOL: return &crc_id;
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+				default: break;
+            }
+        }
+        case BASE_UNIT: {
+            switch (u2->tykind) {
+                case DYN: return &crc_inj_UNIT;
+                case BASE_UNIT: return &crc_id;
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+				default: break;
+            }
+        }
+        case TYFUN: {
+            switch (u2->tykind) {
+                case DYN: {
+					crc temp = (crc){ .g_inj = G_AR };
+					return new_seq_inj(make_s_coercion(u1, &tyar), &temp);
+				}
+                case TYFUN: {
+					crc *c1 = make_s_coercion(u2->tydat.tyfun.left, u1->tydat.tyfun.left);
+					crc *c2 = make_s_coercion(u1->tydat.tyfun.right, u2->tydat.tyfun.right);
+					if (c1 == &crc_id && c2 == &crc_id) {
+						return &crc_id;
+					} else {
+						return new_fun(c1, c2);
+					}
+                }
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case TYLIST: {
+            switch (u2->tykind) {
+                case DYN: {
+					crc temp = (crc){ .g_inj = G_LI };
+					return new_seq_inj(make_s_coercion(u1, &tyli), &temp);
+				}
+                case TYLIST: {
+					crc *c = make_s_coercion(u2->tydat.tylist, u1->tydat.tylist);
+					if (c == &crc_id) {
+						return &crc_id;
+					} else {
+						return new_list(c);
+					}
+                }
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case TYTUPLE: {
+			uint16_t arity = u1->tydat.tytuple.arity;
+            switch (u2->tykind) {
+                case DYN: {
+					crc temp = (crc){ .g_inj = G_TP, .arity_inj = arity };
+					return new_seq_inj(make_s_coercion(u1, get_dyn_tuple_ty(arity)), &temp);
+				}
+                case TYTUPLE: {
+					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * arity);
+					int all_id = 1;
+                    
+					for (int i = 0; i < arity; i++) {
+						crcs[i] = make_s_coercion(u1->tydat.tytuple.tys[i], u2->tydat.tytuple.tys[i]);
+						if (crcs[i] != &crc_id) all_id = 0;
+					}
+
+                    if (all_id) {
+                        return &crc_id;
+                    } else {
+                        return new_tuple(arity, crcs);
+                    }
+                }
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case TYREF: {
+            switch (u2->tykind) {
+                case DYN: {
+					crc temp = (crc){ .g_inj = G_RF };
+					return new_seq_inj(make_s_coercion(u1, &tyrf), &temp);
+				}
+                case TYREF: {
+                    return new_mref(u2->tydat.tyref);
+                }
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case TYVAR: {
+            switch (u2->tykind) {
+                case DYN: {
+					crc temp = (crc){ };
+					return new_tv_inj(u1, &temp);
+				}
+				case TYVAR: {
+					return &crc_id;
+				}
+				case SUBSTITUTED: return make_s_coercion(u1, ty_find(u2));
+                default: break;
+            }
+        }
+		case SUBSTITUTED: return make_s_coercion(ty_find(u1), u2);
+    }
+}
+#endif
 
 #endif

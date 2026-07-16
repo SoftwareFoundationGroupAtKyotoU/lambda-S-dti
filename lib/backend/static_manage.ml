@@ -61,7 +61,7 @@ let rec exist_tv l1 l2 = match l2 with
   | [] -> false
   
 let rec ty_tv tvs u = match u with
-  | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn as u -> (u, fun x -> x)
+  | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn as u -> (u, fun x -> x)
   | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> TyManager.register u; (u, fun x -> x)
   | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
   | TyFun (u1, u2) ->
@@ -120,7 +120,7 @@ let ta_tv tvs = function
   | TyNu -> (TyNu, fun x -> x)
 
 let rec static_crc tvs c = 
-  let is_static c = 
+  let is_defined c = 
     let cached = CrcManager.mem c in
     let constant = match c with
     | CId _
@@ -131,56 +131,83 @@ let rec static_crc tvs c =
     | CSeq (CId _, CInj Li) -> true
     | CSeq (CId _, CInj (Tp _)) -> false
     | CSeq (CId _, CInj Rf) -> true
+    | CSeq (CMRef (_, TyDyn), CInj Rf) -> true
     | _ -> false
     in
     cached || constant
   in
   match c with
-  | CId _ -> ()
-  | CSeq (CProj (_, (r, _)), c') ->
+  | CId _ -> c, fun x -> x
+  | CSeq (CProj (g, (r, p)), c') ->
     RangeManager.register r;
-    static_crc tvs c';
-    if is_static c' then CrcManager.register c
-  | CSeq (CId _, CInj (Tp _)) -> CrcManager.register c
-  | CSeq (CId _, CInj _ ) -> ()
-  | CSeq (c', CInj _) ->
-    static_crc tvs c';
-    if is_static c' then CrcManager.register c
+    let c', f = static_crc tvs c' in
+    let c = CSeq (CProj (g, (r, p)), c') in
+    if is_defined c' then CrcManager.register c;
+    c, f
+  | CSeq (CId _, CInj (Tp _)) ->
+    CrcManager.register c; c, fun x -> x
+  | CSeq (CId _, CInj _ ) -> c, fun x -> x
+  | CSeq (CMRef (_, TyDyn), CInj Rf) -> c, fun x -> x
+  | CSeq (c', CInj g) ->
+    let c', f = static_crc tvs c' in
+    let c = CSeq (c', CInj g) in
+    if is_defined c' then CrcManager.register c;
+    c, f
   | CInj _ | CProj _ | CSeq _ -> raise @@ Static_manage_bug "bad coercion"
   | CTvInj (tv, (r, _)) ->
     RangeManager.register r;
     if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
-    end
+    end;
+    c, fun x -> x
   | CTvProj (tv, (r, _)) ->
     RangeManager.register r;
     if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
-    end
+    end;
+    c, fun x -> x
   | CTvProjInj (tv, (r1, _), (r2, _)) ->
     RangeManager.register r1;
     RangeManager.register r2;
     if not (List.mem tv tvs) then begin
       TyManager.register (TyVar tv);
       CrcManager.register c
-    end
+    end;
+    c, fun x -> x
   | CFun (c1, c2) ->
-    static_crc tvs c1;
-    static_crc tvs c2;
-    if is_static c1 && is_static c2 then CrcManager.register c
+    let c1, f1 = static_crc tvs c1 in
+    let c2, f2 = static_crc tvs c2 in
+    let c = CFun (c1, c2) in
+    if is_defined c1 && is_defined c2 then CrcManager.register c;
+    c, fun x -> f1 (f2 x)
   | CList c' ->
-    static_crc tvs c';
-    if is_static c' then CrcManager.register c
+    let c', f = static_crc tvs c' in
+    let c = CList c' in
+    if is_defined c' then CrcManager.register c;
+    c, f
   | CTuple cs ->
-    List.iter (fun c -> static_crc tvs c) cs;
-    if List.for_all (fun c -> is_static c) cs then CrcManager.register c
+    let cs, fs = List.split @@ List.map (fun c -> static_crc tvs c) cs in
+    let c = CTuple cs in
+    if List.for_all (fun c -> is_defined c) cs then CrcManager.register c;
+    c, fun x -> List.fold_left (fun e f -> f e) x (List.rev fs)
   | CRef (c1, c2) ->
-    static_crc tvs c1;
-    static_crc tvs c2;
-    if is_static c1 && is_static c2 then CrcManager.register c
-  | CMRef _ -> raise @@ Static_manage_bug "CMRef yet"
+    let c1, f1 = static_crc tvs c1 in
+    let c2, f2 = static_crc tvs c2 in
+    let c = CRef (c1, c2) in
+    if is_defined c1 && is_defined c2 then CrcManager.register c;
+    c, fun x -> f1 (f2 x)
+  | CMRef (u1, u2) ->
+    let u1, f1 = ty_tv tvs u1 in
+    let u2, f2 = ty_tv tvs u2 in
+    let c = CMRef (u1, u2) in
+    let is_defined_ty = function
+      | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn -> true
+      | u -> TyManager.mem u
+    in
+    if is_defined_ty u1 && is_defined_ty u2 then CrcManager.register c;
+    c, fun x -> f1 (f2 x)
   | CFail _ -> raise @@ Static_manage_bug "yet"
 
 let rec static_exp tvs = function
@@ -199,8 +226,8 @@ let rec static_exp tvs = function
     let u, udeclfun = ty_tv tvs u in
     udeclfun (Subst (x, y, Some u))
   | Coercion c ->
-    static_crc tvs c;
-    Coercion c
+    let c, udeclfun = static_crc tvs c in
+    udeclfun (Coercion c)
   | AppTy (x, i1, tas, i2) -> 
     let uandf = List.map (ta_tv tvs) tas in
     let rec destruct_uandf l ru rf = match l with

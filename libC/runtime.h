@@ -16,6 +16,7 @@
 
 #include "app.h"
 #include "capp.h"
+#include "blame.h"
 
 #include "stdlib.h"
 

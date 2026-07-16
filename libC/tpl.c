@@ -15,7 +15,7 @@ value tget(tpl *t, uint16_t i) {
         
         #else
         value inner_val = ((tpl_raw*)tw->w)->fields[i];
-        return coerce(inner_val, tw->c->crcdat.tpl_crc.crcs[i]);
+        return toplevel_coerce(inner_val, tw->c->crcdat.tpl_crc.crcs[i]);
         #endif
 
     } else {

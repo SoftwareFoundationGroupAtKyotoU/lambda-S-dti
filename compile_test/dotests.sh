@@ -46,7 +46,7 @@ for TEST_DIR in \
   original/ref \
   original/tuple \
   original \
-  paper \
+  paper
   do
   [ -f "$TEST_DIR/tests.sh" ] && source "$TEST_DIR/tests.sh"
 done

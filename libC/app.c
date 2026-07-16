@@ -39,7 +39,7 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 	#else // CAST
     crc *c1 = c->crcdat.fun_crc.c1;
     crc *c2 = c->crcdat.fun_crc.c2;
-    value _arg = coerce(arg, c1);
+    value _arg = toplevel_coerce(arg, c1);
 	if (c2 == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg);
 	} else {
@@ -62,7 +62,7 @@ value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
     crc *c1 = c->crcdat.fun_crc.c1;
     crc *c2 = c->crcdat.fun_crc.c2;
     crc *_arg2_crc = compose(c2, (crc*)arg2);
-    value _arg1 = coerce(arg1, c1);
+    value _arg1 = toplevel_coerce(arg1, c1);
 	#ifdef ALT
 	if (_arg2_crc == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg1);

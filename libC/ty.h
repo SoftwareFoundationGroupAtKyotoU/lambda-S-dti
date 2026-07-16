@@ -44,9 +44,20 @@ extern ty tyrf;
 
 ty *(newty)();
 
+void dti(const ground_ty g, const uint16_t arity, ty *tv);
+
 #ifndef CAST
 ty *(ty_find)(ty*);
 #endif //CAST
+
+#if defined(CAST) || defined(MONOTONIC)
+int ty_equal(ty*, ty*);
+ty *get_dyn_tuple_ty(uint16_t);
+#endif
+
+#ifdef MONOTONIC
+ty *unify_meet(ty*, ty*);
+#endif
 
 #endif //STATIC
 

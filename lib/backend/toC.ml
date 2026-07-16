@@ -76,12 +76,22 @@ let rec check_has_tv = function
   | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
   | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
-  | CMRef _ | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
+  | CMRef (u1, u2) ->
+    let rec has_tv_ty = function
+      | TyVar _ -> true
+      | TyFun (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
+      | TyList u' | TyRef u' -> has_tv_ty u'
+      | TyTuple us -> List.exists has_tv_ty us
+      | _ -> false
+    in
+    has_tv_ty u1 || has_tv_ty u2
+  | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
 
 let rec toC_crc x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
     | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+    | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr ("crc_inj_RF")
     | _ ->
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
@@ -162,6 +172,13 @@ let rec toC_crc x c =
         "crckind", Var "REF";
         "has_tv", Int has_tv_val;
         "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+      ]
+    | CMRef (_, u) ->
+      [],
+      Struct [
+        "crckind", Var "REF";
+        "has_tv", Int has_tv_val;
+        "crcdat", Struct ["mref_crc", toC_ty u]
       ]
     | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
@@ -301,6 +318,7 @@ and toC_assign ~config x f =
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
     | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
     | _ ->
       if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
       else
@@ -322,9 +340,10 @@ and toC_assign ~config x f =
       assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), i))
     else
       assign_x (App (Var "tget", [Cast (PTR TPL, Var y); Int i]))
-  | Cls.Deref (y, _) ->
-    if config.monotonic then
-      assign_x (Arrow (Cast (PTR REF, Var y), "v"))
+  | Cls.Deref (y, ou) ->
+    if config.monotonic then match ou with
+      | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
+      | Some u -> assign_x (App (Var "toplevel_coerce", [Arrow (Cast (PTR REF, Var y), "v"); App (Var "make_s_coercion", [Arrow (Cast (PTR REF, Var y), "u"); toC_ty u])]))
     else if config.static then
       assign_x (Deref (Cast (REF, Var y)))
     else
@@ -335,9 +354,10 @@ and toC_assign ~config x f =
   | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
   | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (LDeref (LCast (PTR LST, LVar x)), Cast (LST, Struct ["h", Var y; "t", Var z]))]
-  | Cls.Subst (y, z, _) ->
-    if config.monotonic then
-      SAssign (LArrow (LCast (PTR REF, LVar y), "v"), Var z) :: assign_x (Int 0)
+  | Cls.Subst (y, z, ou) ->
+    if config.monotonic then match ou with
+      | None -> SAssign (LArrow (LCast (PTR REF, LVar y), "v"), Var z) :: assign_x (Int 0)
+      | Some u -> SAssign (LArrow (LCast (PTR REF, LVar y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")])])) :: SApp (Var "consume", []) :: assign_x (Int 0)
     else if config.static then
       SAssign (LDeref (LCast (REF, LVar y)), Var z) :: assign_x (Int 0)
     else
@@ -370,7 +390,7 @@ and toC_assign ~config x f =
     SAssign (LVar x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.AppTyFun (y, i1, tas, n) ->
     toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
-  | Cls.CApp (y, z) -> assign_x (App (Var "coerce", [Var y; Cast (PTR CRC, Var z)]))
+  | Cls.CApp (y, z) -> assign_x (App (Var "toplevel_coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
@@ -487,6 +507,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
       No,
       { ret_ty = INT; fname = "main"; params = []},
       (if config.hash then [SApp (Var "init_crcs", [])] else [])
+        @ (if config.monotonic then [SApp (Var "sc_init", [Int 16])] else [])
         @ (if List.length ranges <> 0 then [SAssign (LVar "range_list", Var "local_range_list")] else [])
         @ toC_exp ~is_main:true ~config f
     )
