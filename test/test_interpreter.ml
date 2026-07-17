@@ -27,15 +27,18 @@ let run state program ~config =
   | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame+"
   | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame-"
 
-let config_B = create ~intoB:true ~eager:true ~monotonic:false ()
-let config_S = create ()
-let config_A = create ~alt:true ()
+let config_B_eager              = create ~intoB:true ~eager:true ~monotonic:false ()
+let config_B_lazy               = create ~intoB:true ~eager:false ~monotonic:false ()
+let config_S_lazy_monotonic     = create ()
+let config_S_eager_monotonic    = create ~eager:true ()
+let config_S_lazy_nonmonotonic  = create ~monotonic:false ()
+let config_S_eager_nonmonotonic = create ~eager:true ~monotonic:false ()
+let config_A_lazy_monotonic     = create ~alt:true ()
+let config_A_eager_monotonic    = create ~alt:true ~eager:true ()
+let config_A_lazy_nonmonotonic  = create ~alt:true ~monotonic:false ()
+let config_A_eager_nonmonotonic = create ~alt:true ~eager:true ~monotonic:false ()
 
-let ext_B (a, b, c, _) = (a, b, c)
-let ext_S (a, b, _, d) = (a, b, d)
-let ext_A (a, b, _, d) = (a, b, d)
-
-let test_examples config ext =
+let test_examples config =
   let state = Pipeline.init_state () ~config in
   let create_test i cases =
     let test_name = match cases with
@@ -54,15 +57,21 @@ let test_examples config ext =
         cases
   in
   let create_suite (category_name, category_cases) =
-    let extracted_cases = List.map (fun l -> List.map ext l) category_cases in
-    category_name >::: List.mapi create_test extracted_cases
+    category_name >::: List.mapi create_test category_cases
   in
 
   (* すべてのカテゴリを処理してリストにする *)
-  List.map create_suite Testcases.suites
+  List.map create_suite (Testcases.suites ~config)
 
 let suite = [
-  "test_B"   >::: test_examples config_B ext_B;
-  "test_S"   >::: test_examples config_S ext_S;
-  "test_A"   >::: test_examples config_A ext_A;
+  "test_B_eager"              >::: test_examples config_B_eager;
+  "test_B_lazy"               >::: test_examples config_B_lazy;
+  "test_S_lazy_monotonic"     >::: test_examples config_S_lazy_monotonic;
+  "test_S_eager_monotonic"    >::: test_examples config_S_eager_monotonic;
+  "test_S_lazy_nonmonotonic"  >::: test_examples config_S_lazy_nonmonotonic;
+  "test_S_eager_nonmonotonic" >::: test_examples config_S_eager_nonmonotonic;
+  "test_A_lazy_monotonic"     >::: test_examples config_A_lazy_monotonic;
+  "test_A_eager_monotonic"    >::: test_examples config_A_eager_monotonic;
+  "test_A_lazy_nonmonotonic"  >::: test_examples config_A_lazy_nonmonotonic;
+  "test_A_eager_nonmonotonic" >::: test_examples config_A_eager_nonmonotonic;
 ]
