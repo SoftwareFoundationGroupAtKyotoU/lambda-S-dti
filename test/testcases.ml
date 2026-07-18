@@ -54,6 +54,10 @@ module Static = struct
   let application = [
     ["(fun x -> x + 1) 3", "int", "4"];
     ["(fun x y -> x + y) 3 4", "int", "7"];
+    ["let add x y z = x + y + z in add 1 2 3", "int", "6"];
+    ["let add x y = x + y in let add5 = add 5 in add5 10", "int", "15"];
+    ["(fun x -> fun y -> x + y) 1 2", "int", "3"];
+    ["let compose f g x = f (g x) in compose (fun x -> x + 1) (fun x -> x * 2) 3", "int", "7"];
   ]
 
   let sequence = [
@@ -150,11 +154,18 @@ module Static = struct
     ["let rec sum l = match l with [] -> 0 | h :: t -> h + sum t in sum [1; 2; 3; 4]", "int", "10"];
     ["match 1, true with (x, y) -> x", "int", "1"];
     ["match 1, (2, 3) with (x, (y, z)) -> y", "int", "2"];
+    ["let f l = match l with h :: h2 :: t -> h + h2 | _ -> 0 in f [1; 2; 3]", "int", "3"];
+    ["match ([] : int list) with [] -> 0 | h :: t -> h", "int", "0"];
+    ["match (1, 2, 3) with (x, y, z) -> x + y + z", "int", "6"];
+    ["match 1 with _ -> 99", "int", "99"];
   ]
 
   let tuples = [
     ["1, true", "int * bool", "(1, true)"];
     ["1 + 2, 3 * 4", "int * int", "(3, 12)"];
+    ["1, 2, 3", "int * int * int", "(1, 2, 3)"];
+    ["(1, true), 2", "(int * bool) * int", "((1, true), 2)"];
+    ["let f x y = x, y in f 1 true", "int * bool", "(1, true)"];
   ]
 
   let refs = [
@@ -171,6 +182,15 @@ module Static = struct
   let stdlibs = [
     ["succ 2", "int", "3"];
     ["prec 0", "int", "-1"];
+    ["not true", "bool", "false"];
+    ["not false", "bool", "true"];
+    ["min 3 5", "int", "3"];
+    ["max 3 5", "int", "5"];
+    ["abs (-5)", "int", "5"];
+    ["ignore 5", "unit", "()"];
+    ["ignore true", "unit", "()"];
+    ["succ (succ 1)", "int", "3"];
+    ["prec (prec 10)", "int", "8"];
   ]
 end
 
@@ -281,12 +301,18 @@ module Gradual = struct
   ]
 
   let tuples ~config = ext ~config [
+    ["match ((1, 2, 3): ?) with (x, y, z) -> x + y + z", "int", "6", "6"];
     ["((1, 2, 3 : ?) : int * int)", "int * int", "blame+", "blame+"];
   ]
 
   let refs ~config = ext ~config [
     ["ref (1 : ?)", "? ref", "{ contents = 1: int => ?, ? }", "{ contents = 1<<id{int};int!>>, ? }"];
     ["!(ref (1 : ?))", "?", "1: int => ?", "1<<id{int};int!>>"];
+    ["let r : ? ref = ref 1 in !r", "?", "1: int => ?", "1<<id{int};int!>>"];
+    ["let r : ? ref = ref 1 in r := (2:?); !r", "?", "2: int => ?", "2<<id{int};int!>>"];
+    ["let r = ref 1 in let s : ? ref = r in s := 2; !r", "int", "2", "2"];
+    ["let r : ? ref = ref 1 in let s = r in s := 2; !s", "?", "2: int => ?", "2<<id{int};int!>>"];
+    ["let r : ? ref = ref 1 in let s = r in s := 2; !r", "?", "2: int => ?", "2<<id{int};int!>>"];
   ]
 end
 
