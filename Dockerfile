@@ -76,7 +76,7 @@ shift\n\
 \n\
 case "$COMMAND" in\n\
   bench)\n\
-    exec dune exec ./_build/default/bin/bench.exe -- "$@"\n\
+    exec dune exec ./_build/default/bench/bench.exe -- "$@"\n\
     ;; \n\
   main)\n\
     exec dune exec ./_build/default/bin/main.exe -- "$@"\n\
@@ -86,7 +86,9 @@ case "$COMMAND" in\n\
     exec "$COMMAND" "$@"\n\
     ;;\n\
 esac\n\
-' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
 # コンテナの入り口をスクリプトに固定
-ENTRYPOINT ["/app/entrypoint.sh"]
+# (/app の外に置くことで、`-v $(pwd):/app` で host のリポジトリを
+#  bind mount しても entrypoint.sh が隠れないようにする)
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

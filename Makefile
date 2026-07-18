@@ -70,7 +70,7 @@ test: check-ocaml check-ocaml-pkgs
 
 # ベンチ（core_bench / owl）
 benchmark: check-ocaml check-ocaml-pkgs
-	@$(call OPAM_RUN, dune exec ./bin/bench.exe)
+	@$(call OPAM_RUN, dune exec ./bench/bench.exe)
 
 # グラフ生成（uv venv + 依存導入 + 実行）
 plot: check-python check-uv

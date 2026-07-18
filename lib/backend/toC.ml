@@ -505,7 +505,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let main = [
     FunDef (
       No,
-      { ret_ty = INT; fname = "main"; params = []},
+      { ret_ty = INT; fname = if bench = 0 then "main" else "mutant" ^ string_of_int bench; params = []},
       (if config.hash then [SApp (Var "init_crcs", [])] else [])
         @ (if config.monotonic then [SApp (Var "sc_init", [Int 16])] else [])
         @ (if List.length ranges <> 0 then [SAssign (LVar "range_list", Var "local_range_list")] else [])
