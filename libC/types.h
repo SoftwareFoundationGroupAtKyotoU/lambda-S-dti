@@ -24,7 +24,7 @@ typedef enum ground_ty : uint8_t {
 	G_INT,
 	G_BOOL,
 	G_UNIT,
-	G_AR,
+	G_FN,
 	G_LI,
 	G_TP,
 	G_RF,

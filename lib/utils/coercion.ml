@@ -59,7 +59,7 @@ let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
       end
   | TyDyn, TyDyn -> CId TyDyn
   | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
-  | TyFun _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyFun (TyDyn, TyDyn)), CInj Ar)
+  | TyFun _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyFun (TyDyn, TyDyn)), CInj Fn)
   | TyList _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyList TyDyn), CInj Li)
   | TyTuple us as u, TyDyn ->
     let n = List.length us in
@@ -68,7 +68,7 @@ let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
   | TyRef _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyRef TyDyn), CInj Rf)
   | TyVar tv, TyDyn -> CTvInj (tv, (r, p))
   | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
-  | TyDyn, (TyFun _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion ~monotonic (TyFun (TyDyn, TyDyn)) (r, p) u)
+  | TyDyn, (TyFun _ as u) -> CSeq (CProj (Fn, (r, p)), make_s_coercion ~monotonic (TyFun (TyDyn, TyDyn)) (r, p) u)
   | TyDyn, (TyList _ as u) -> CSeq (CProj (Li, (r, p)), make_s_coercion ~monotonic (TyList TyDyn) (r, p) u)
   | TyDyn, (TyTuple us as u) ->
     let n = List.length us in
@@ -93,7 +93,7 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
   | CTvProj ((a1, _ as tv), p), CTvInj ((a2, _), q) when a1 = a2 -> CTvProjInj (tv, p, q)
   (* X! ;;; t *)
   | CTvInj (tv, p), CId TyDyn -> CTvInj (tv, p)
-  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Ar, _), c2) ->
+  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Fn, _), c2) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
@@ -152,12 +152,12 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
   | CTvProjInj (tv, p, q), c2 ->
     compose (CTvProj (tv, p)) (compose (CTvInj (tv, q)) c2)
   (* | CTvProjInj (tv, p), CId TyDyn -> CTvProjInj (tv, p)
-  | CTvProjInj ((_, uref), p), CSeq (CProj (Ar, (r', q)), c2) ->
+  | CTvProjInj ((_, uref), p), CSeq (CProj (Fn, (r', q)), c2) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
     | TyVar tv1, TyVar tv2 ->
-      compose (CSeq (CProj (Ar, p), CFun (CTvProjInj (tv1, (r', neg q)), CTvProjInj (tv2, p)))) c2
+      compose (CSeq (CProj (Fn, p), CFun (CTvProjInj (tv1, (r', neg q)), CTvProjInj (tv2, p)))) c2
     | _ -> raise @@ Coercion_bug "compose: unexpected type of coercion"
     end
   | CTvProjInj ((_, uref), p), CSeq (CProj (t, _), c2) -> 
@@ -174,7 +174,7 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
   | CSeq (c1, CInj t), CSeq (CProj (t', p), c2) ->
     if t = t' then compose c1 c2 
     else CFail (t, p, t')
-  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), (r, p)) ->
+  | CSeq (c1, CInj Fn), CTvProj ((_, uref as tv), (r, p)) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyFun (x1, x2));
     uref := Some (TyFun (x1, x2));
@@ -220,12 +220,12 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
     compose c1 (CId u)
   | CSeq (_, (CInj _)) as c1, CTvProjInj (tv, p, q) ->
     compose (compose c1 (CTvProj (tv, p))) (CTvInj (tv, q))
-  (* | CSeq (c1, CInj Ar), CTvProjInj ((_, uref), (r, p)) ->
+  (* | CSeq (c1, CInj Fn), CTvProjInj ((_, uref), (r, p)) ->
     let x1, x2 = fresh_tyvar (), fresh_tyvar () in
     uref := Some (TyFun (x1, x2));
     begin match x1, x2 with
       | TyVar tv1, TyVar tv2 ->
-        compose c1 (CSeq (CFun (CTvProjInj (tv1, (r, neg p)), CTvProjInj (tv2, (r, p))), CInj Ar))
+        compose c1 (CSeq (CFun (CTvProjInj (tv1, (r, neg p)), CTvProjInj (tv2, (r, p))), CInj Fn))
       | _ -> raise @@ Eval_bug "compose: unexpected type of coercion"
     end
   | CSeq (c1, CInj t), CTvProjInj ((_, uref), _) ->

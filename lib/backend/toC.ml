@@ -13,7 +13,7 @@ let string_of_tag = function
   | I -> "INT"
   | B -> "BOOL"
   | U -> "UNIT"
-  | Ar -> "AR"
+  | Fn -> "FN"
   | Li -> "LI"
   | Tp _ -> "TP"
   | Rf -> "RF"
@@ -25,7 +25,7 @@ let toC_ty = function
   | TyBool -> Addr "tybool"
   | TyUnit -> Addr "tyunit"
   | TyDyn -> Addr "tydyn"
-  | TyFun (TyDyn, TyDyn) -> Addr "tyar"
+  | TyFun (TyDyn, TyDyn) -> Addr "tyfn"
   | TyFun (_, _) as u -> Addr (TyManager.find u)
   | TyList TyDyn -> Addr "tyli"
   | TyList _ as u -> Addr (TyManager.find u)
@@ -71,7 +71,7 @@ let rid r =
     Not_found -> raise @@ ToC_bug "rid cannot find r"
 
 let rec check_has_tv = function
-  | CId _ | CInj _ | CProj _ -> false
+  | CId _ | CInj _ | CProj _ | CFail _ -> false
   | CList c' -> check_has_tv c'
   | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
   | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
@@ -85,12 +85,11 @@ let rec check_has_tv = function
       | _ -> false
     in
     has_tv_ty u1 || has_tv_ty u2
-  | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "check_has_tv yet: %a" Pp.pp_coercion c)
 
 let rec toC_crc x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
-    | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr ("crc_inj_RF")
     | _ ->
       if CrcManager.mem c then [], Addr (CrcManager.find c)
@@ -317,7 +316,7 @@ and toC_assign ~config x f =
       assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LArrow (LCast (PTR REF, LVar x), "v"), Var y)]
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
-    | CSeq (CId _, CInj (I | B | U | Ar | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
     | _ ->
       if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))

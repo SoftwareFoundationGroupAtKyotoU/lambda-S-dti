@@ -197,7 +197,7 @@ module CC = struct
       "x * y + z * x", BinOp (Plus, BinOp (Mult, x, y), BinOp (Mult, z, x));
       "(x + y) * (z + x)", BinOp (Mult, BinOp (Plus, x, y), BinOp (Plus, z, x));
       "(fun (x: ?) -> x)<(? -> ?)!>",
-      CAppExp (FunExp ([], FunB (("x", TyDyn), x)), CoercionExp (CInj Ar));
+      CAppExp (FunExp ([], FunB (("x", TyDyn), x)), CoercionExp (CInj Fn));
       "x<int!>", CAppExp (x, CoercionExp (CInj I));
       "x<int!><bool?p>", CAppExp (CAppExp (x, CoercionExp (CInj I)), CoercionExp (CProj (B, (r, Pos))));
       "(fun (x: ?) -> x) (fun (y: ?) -> y)",

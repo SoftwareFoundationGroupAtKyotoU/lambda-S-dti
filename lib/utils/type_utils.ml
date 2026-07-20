@@ -86,7 +86,7 @@ let type_of_tag = function
   | I -> TyInt
   | B -> TyBool
   | U -> TyUnit
-  | Ar -> TyFun (TyDyn, TyDyn)
+  | Fn -> TyFun (TyDyn, TyDyn)
   | Li -> TyList TyDyn
   | Tp n -> TyTuple (List.init n (fun _ -> TyDyn))
   | Rf -> TyRef TyDyn
@@ -95,7 +95,7 @@ let rec tag_of_ty = function
   | TyInt -> I
   | TyBool -> B
   | TyUnit -> U
-  | TyFun (TyDyn, TyDyn) -> Ar
+  | TyFun (TyDyn, TyDyn) -> Fn
   | TyList TyDyn -> Li
   | TyTuple us ->
     if List.fold_left (fun b u -> b && u = TyDyn) true us then Tp (List.length us) else assert false

@@ -10,7 +10,7 @@ ty tydyn = { .tykind = DYN };
 ty tyint = { .tykind = BASE_INT };
 ty tybool = { .tykind = BASE_BOOL };
 ty tyunit = { .tykind = BASE_UNIT };
-ty tyar = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
+ty tyfn = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
 ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
 ty tyrf = { .tykind = TYREF, .tydat = { .tyref = &tydyn } };
 
@@ -20,7 +20,7 @@ inline ty *newty() {
 	return retty;
 }
 
-inline void dti(const ground_ty g, const uint16_t arity, ty *tv) {
+inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 	#ifdef PROFILE
 	current_inference++;
 	#endif
@@ -43,7 +43,7 @@ inline void dti(const ground_ty g, const uint16_t arity, ty *tv) {
 			*tv = tyunit;
 			return;
 		}
-		case G_AR: {
+		case G_FN: {
 			// printf("DTI : arrow was inferred\n");
 			// printf("%p <- X1->X2\n", tv);
 			tv->tykind = TYFUN;
@@ -60,9 +60,9 @@ inline void dti(const ground_ty g, const uint16_t arity, ty *tv) {
 		}
 		case G_TP: {
 			tv->tykind = TYTUPLE;
-			tv->tydat.tytuple.arity = arity;
-			tv->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
-			for (int i = 0; i < arity; i++) {
+			tv->tydat.tytuple.size = size;
+			tv->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * size);
+			for (int i = 0; i < size; i++) {
 				tv->tydat.tytuple.tys[i] = newty();
 			}
 			return;
@@ -119,8 +119,8 @@ int ty_equal (ty *t1, ty *t2) {
 			case TYLIST:
 				return ty_equal(t1->tydat.tylist, t2->tydat.tylist);
 			case TYTUPLE: {
-				if (t1->tydat.tytuple.arity != t2->tydat.tytuple.arity) return 0;
-				for (int i = 0; i < t1->tydat.tytuple.arity; i++) {
+				if (t1->tydat.tytuple.size != t2->tydat.tytuple.size) return 0;
+				for (int i = 0; i < t1->tydat.tytuple.size; i++) {
 					if (!ty_equal(t1->tydat.tytuple.tys[i], t2->tydat.tytuple.tys[i])) return 0;
 				}
 				return 1;
@@ -137,12 +137,12 @@ int ty_equal (ty *t1, ty *t2) {
 	}
 }
 
-ty *get_dyn_tuple_ty(uint16_t arity) {
+ty *get_dyn_tuple_ty(uint16_t size) {
 	ty *retty = (ty*)GC_MALLOC(sizeof(ty));
 	retty->tykind = TYTUPLE;
-	retty->tydat.tytuple.arity = arity;
-	retty->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
-	for (int i = 0; i < arity; i++) {
+	retty->tydat.tytuple.size = size;
+	retty->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * size);
+	for (int i = 0; i < size; i++) {
 		retty->tydat.tytuple.tys[i] = &tydyn;
 	}
 	return retty;
@@ -200,7 +200,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     return retu;
                 }
                 case TYVAR:
-                    dti(G_AR, 0, u2);
+                    dti(G_FN, 0, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
                 default: break;
@@ -223,22 +223,22 @@ ty *unify_meet(ty* u1, ty* u2) {
             }
         }
         case TYTUPLE: {
-            uint16_t arity = u1->tydat.tytuple.arity;
+            uint16_t size = u1->tydat.tytuple.size;
             switch (u2->tykind) {
                 case DYN: return u1;
                 case TYTUPLE: {
-                    if (arity != u2->tydat.tytuple.arity) break;
+                    if (size != u2->tydat.tytuple.size) break;
                     ty *retu = (ty*)GC_MALLOC(sizeof(ty));
                     retu->tykind = TYTUPLE;
-                    retu->tydat.tytuple.arity = arity;
-                    retu->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty) * arity);
-                    for (int i = 0; i < arity; i++) {
+                    retu->tydat.tytuple.size = size;
+                    retu->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty) * size);
+                    for (int i = 0; i < size; i++) {
                         retu->tydat.tytuple.tys[i] = unify_meet(u1->tydat.tytuple.tys[i], u2->tydat.tytuple.tys[i]);
                     }
                     return retu;
                 }
                 case TYVAR:
-                    dti(G_TP, arity, u2);
+                    dti(G_TP, size, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
                 default: break;
@@ -266,9 +266,9 @@ ty *unify_meet(ty* u1, ty* u2) {
                 case BASE_INT: dti(G_INT, 0, u1); return u2;
                 case BASE_BOOL: dti(G_BOOL, 0, u1); return u2;
                 case BASE_UNIT: dti(G_UNIT, 0, u1); return u2;
-                case TYFUN: dti(G_AR, 0, u1); return unify_meet(u1, u2);
+                case TYFUN: dti(G_FN, 0, u1); return unify_meet(u1, u2);
                 case TYLIST: dti(G_LI, 0, u1); return unify_meet(u1, u2);
-                case TYTUPLE: dti(G_TP, u2->tydat.tytuple.arity, u1); return unify_meet(u1, u2);
+                case TYTUPLE: dti(G_TP, u2->tydat.tytuple.size, u1); return unify_meet(u1, u2);
                 case TYREF: dti(G_RF, 0, u1); return unify_meet(u1, u2);
                 case TYVAR:
                     u1->tykind = SUBSTITUTED;

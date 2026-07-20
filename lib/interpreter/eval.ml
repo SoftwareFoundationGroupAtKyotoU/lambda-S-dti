@@ -314,7 +314,7 @@ module CC = struct
       | Tagged (B, v), TyBool -> v
       | Tagged (I, v), TyInt -> v
       | Tagged (U, v), TyUnit -> v
-      | Tagged (Ar, v), TyFun (TyDyn, TyDyn) -> v
+      | Tagged (Fn, v), TyFun (TyDyn, TyDyn) -> v
       | Tagged (Li, v), TyList TyDyn -> v
       | Tagged (Rf, v), TyRef TyDyn -> v
       | Tagged _, _ -> raise @@ Blame (r, p)
@@ -358,7 +358,7 @@ module CC = struct
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
     | TyUnit, TyDyn -> Tagged (U, v)
-    | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Ar, v)
+    | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Fn, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
     | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)
     | TyRef TyDyn, TyDyn -> Tagged (Rf, v)
@@ -406,7 +406,7 @@ module CC = struct
             Pp.pp_ty u;
           x := Some u;
           v
-        | Tagged (Ar, v) ->
+        | Tagged (Fn, v) ->
           let u = TyFun (fresh_tyvar (), fresh_tyvar ()) in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'

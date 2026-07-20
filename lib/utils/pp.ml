@@ -173,7 +173,7 @@ let pp_tag ppf = function
   | I -> pp_print_string ppf "int"
   | B -> pp_print_string ppf "bool"
   | U -> pp_print_string ppf "unit"
-  | Ar -> pp_print_string ppf "(? -> ?)"
+  | Fn -> pp_print_string ppf "(? -> ?)"
   | Li -> pp_print_string ppf "[?]"
   | Tp n ->
     let rec pp_dyn_tuple ppf i =

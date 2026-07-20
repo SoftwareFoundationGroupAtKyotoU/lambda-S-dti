@@ -87,7 +87,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Ar | Li | Tp of int | Rf
+type tag = I | B | U | Fn | Li | Tp of int | Rf
 
 type coercion =
   | CInj of tag

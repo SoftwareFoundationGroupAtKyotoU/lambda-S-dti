@@ -220,7 +220,7 @@ let implementations_direct ~config = [
     "is_bool", CC.is_some B ~config, is_some_type;
     "is_int", CC.is_some I ~config, is_some_type;
     "is_unit", CC.is_some U ~config, is_some_type;
-    "is_fun", CC.is_some Ar ~config, is_some_type;
+    "is_fun", CC.is_some Fn ~config, is_some_type;
     "is_list", CC.is_some Li ~config, is_some_type;
     "max_int", IntV max_int, tysc_of_ty TyInt;
     "min_int", IntV min_int, tysc_of_ty TyInt;

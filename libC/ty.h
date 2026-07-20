@@ -27,7 +27,7 @@ typedef struct ty {
 		} tyfun;
 		ty *tylist;
 		struct tytuple {
-			uint16_t arity;
+			uint16_t size;
 			ty **tys;
 		} tytuple;
 		ty *tyref;
@@ -38,7 +38,7 @@ extern ty tydyn;
 extern ty tyint;
 extern ty tybool;
 extern ty tyunit;
-extern ty tyar;
+extern ty tyfn;
 extern ty tyli;
 extern ty tyrf;
 

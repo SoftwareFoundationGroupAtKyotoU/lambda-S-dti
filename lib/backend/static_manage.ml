@@ -127,7 +127,7 @@ let rec static_crc tvs c =
     | CSeq (CId _, CInj I) 
     | CSeq (CId _, CInj B) 
     | CSeq (CId _, CInj U) 
-    | CSeq (CId _, CInj Ar) 
+    | CSeq (CId _, CInj Fn) 
     | CSeq (CId _, CInj Li) -> true
     | CSeq (CId _, CInj (Tp _)) -> false
     | CSeq (CId _, CInj Rf) -> true

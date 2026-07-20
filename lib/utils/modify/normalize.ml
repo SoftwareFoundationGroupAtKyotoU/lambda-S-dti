@@ -68,7 +68,7 @@ end
 
 let rec make_static_proj_coercion ~monotonic u (r, p) = match normalize_type u with
   | TyInt | TyBool | TyUnit as g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
-  | TyFun (u1, u2) -> CSeq (CProj (Ar, (r, p)), CFun (make_static_inj_coercion ~monotonic u1 (r, neg p), make_static_proj_coercion ~monotonic u2 (r, p)))
+  | TyFun (u1, u2) -> CSeq (CProj (Fn, (r, p)), CFun (make_static_inj_coercion ~monotonic u1 (r, neg p), make_static_proj_coercion ~monotonic u2 (r, p)))
   | TyList u -> CSeq (CProj (Li, (r, p)), CList (make_static_proj_coercion ~monotonic u (r, p)))
   | TyTuple us ->
     let n = List.length us in
@@ -81,7 +81,7 @@ let rec make_static_proj_coercion ~monotonic u (r, p) = match normalize_type u w
   | TyDyn -> raise @@ Normalize_bug "static_proj: not static"
 and make_static_inj_coercion ~monotonic u (r, p) = match normalize_type u with
   | TyInt | TyBool | TyUnit as g -> CSeq (CId g, CInj (tag_of_ty g))
-  | TyFun (u1, u2) -> CSeq (CFun (make_static_proj_coercion ~monotonic u1 (r, neg p), make_static_inj_coercion ~monotonic u2 (r, p)), CInj Ar)
+  | TyFun (u1, u2) -> CSeq (CFun (make_static_proj_coercion ~monotonic u1 (r, neg p), make_static_inj_coercion ~monotonic u2 (r, p)), CInj Fn)
   | TyList u -> CSeq (CList (make_static_inj_coercion ~monotonic u (r, p)), CInj Li)
   | TyTuple us ->
     let n = List.length us in
@@ -98,7 +98,7 @@ let rec make_static_projinj_coercion ~monotonic (r1, p1) u (r2, p2) = match u wi
   | TyFun (u1, u2) ->
     let c1 = make_static_projinj_coercion ~monotonic (r2, neg p2) u1 (r1, neg p1) in
     let c2 = make_static_projinj_coercion ~monotonic (r1, p1) u2 (r2, p2) in
-    CSeq (CProj (Ar, (r1, p1)), CSeq (CFun (c1, c2), CInj Ar))
+    CSeq (CProj (Fn, (r1, p1)), CSeq (CFun (c1, c2), CInj Fn))
   | TyList u ->
     let c = make_static_projinj_coercion ~monotonic (r1, p1) u (r2, p2) in
     CSeq (CProj (Li, (r1, p1)), CSeq (CList c, CInj Li))
