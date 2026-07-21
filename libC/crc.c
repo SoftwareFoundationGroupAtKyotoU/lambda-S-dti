@@ -339,7 +339,7 @@ crc *normalize_tv(crc *c) {
 			};
 			return new_fun(c, new_tv(&inv_c, tv->tydat.tyfun.left, &inv_c), new_tv(c, tv->tydat.tyfun.right, c), c);
 		}
-		case TYLIST: return new_list(c, new_tv(c, tv, c), c);
+		case TYLIST: return new_list(c, new_tv(c, tv->tydat.tylist, c), c);
 		case TYTUPLE: {
 			uint16_t size = tv->tydat.tytuple.size; 
 			crc **new_crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
@@ -355,7 +355,7 @@ crc *normalize_tv(crc *c) {
 			if (c->has_inj) {
 				return new_mref(c, &tydyn, c);
 			} else {
-				return new_mref(c, tv, c);
+				return new_mref(c, tv->tydat.tyref, c);
 			}
 			#else
 			crc inv_c = {
@@ -363,7 +363,7 @@ crc *normalize_tv(crc *c) {
 				.p_proj = c->crcdat.tv.p_inj ^ 1, .rid_proj = c->crcdat.tv.rid_inj,
 				.crcdat.tv = { .rid_inj = c->rid_proj, .p_inj = c->p_proj ^ 1 }
 			};
-			return new_ref(c, new_tv(c, tv, c), new_tv(&inv_c, tv, &inv_c), c);
+			return new_ref(c, new_tv(c, tv->tydat.tyref, c), new_tv(&inv_c, tv->tydat.tyref, &inv_c), c);
 			#endif
 		}
 		case TYVAR: return c;
