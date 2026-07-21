@@ -47,6 +47,8 @@ exception Parser_bug of string
 %right SEMI
 %right SUBSTITUTE
 %right prec_if
+%nonassoc prec_match
+%nonassoc VBAR
 %right RARROW
 %right LOR
 %right LAND
@@ -141,8 +143,8 @@ MatchExpr :
     }
 
 MatchCondExpr :
-  | m=MatchForm RARROW e=Expr { [(m, e)] }
-  | m=MatchForm RARROW e=NotMatchExpr VBAR ms=MatchCondExpr { (m, e) :: ms }
+  | m=MatchForm RARROW e=Expr %prec prec_match { [(m, e)] }
+  | m=MatchForm RARROW e=Expr VBAR ms=MatchCondExpr { (m, e) :: ms }
 
 MatchForm :
   | m1=LitMatchForm COMMA ms=separated_nonempty_list(COMMA, LitMatchForm) { MatchTuple (m1 :: ms) }
@@ -164,40 +166,6 @@ LitMatchForm :
   // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
   | LPAREN m=MatchForm RPAREN { m }
   | UNDER { MatchWild }
-
-NotMatchExpr :
-  | e=NotMatchLetExpr { e }
-  | e=NotMatchFunExpr { e }
-  | e=SeqExpr { e }
-
-NotMatchLetExpr :
-  | start=LET x=ID params=list(Param) u1=OptTypeAnnot EQ e1=Expr IN e2=NotMatchExpr {
-      let r = join_range start (range_of_exp e2) in
-      let e1 = match u1 with None -> e1 | Some u1 -> AscExp (range_of_exp e1, e1, u1) in
-      let e1 = List.fold_right (param_to_fun r) params e1 in
-      LetExp (r, x.value, e1, e2)
-    }
-  | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e1=Expr IN e2=NotMatchExpr {
-      let r = join_range start (range_of_exp e2) in
-      let u2 = opt_ty_to_fresh_ty u2 in
-      match params with
-      | [] ->
-        raise @@ Parser_bug "params must not be empty"
-      | (y, None) :: params ->
-        let u1 = fresh_tyvar () in
-        let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
-      | (y, Some u1) :: params ->
-        let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e1), e2)
-    }
-
-NotMatchFunExpr :
-  | start=FUN params=nonempty_list(Param) u=OptSimpleTypeAnnot RARROW e=NotMatchExpr {
-      let r = join_range start (range_of_exp e) in
-      let e = match u with None -> e | Some u -> AscExp (range_of_exp e, e, u) in
-      List.fold_right (param_to_fun r) params e
-    }
 
 SeqExpr :
   | e1=SeqExpr SEMI e2=SeqExpr {
