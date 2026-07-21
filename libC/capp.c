@@ -37,7 +37,7 @@ static inline value tag_value(value v, uint8_t t) {
 		case G_BOOL:
 		case G_UNIT:
 			return (value)(v << 3 | t);
-		case G_AR:
+		case G_FN:
 		case G_LI:
 		case G_TP:
 		case G_RF:
@@ -55,7 +55,7 @@ static inline value untag_value(value v, uint8_t t) {
 		case G_BOOL:
 		case G_UNIT:
 			return (value)(v >> 3);
-		case G_AR:
+		case G_FN:
 		case G_LI:
 		case G_TP:
 		case G_RF:
@@ -67,13 +67,13 @@ static inline value untag_value(value v, uint8_t t) {
 	}
 }
 
-static inline uint16_t arity_of(value v) {
+static inline uint16_t size_of(value v) {
 	switch(tag_of(v)) {
 		case G_TP: {
 			#ifdef EAGER
-			return ((tpl*)untag_value(v, G_TP))->hdr.arity;
+			return ((tpl*)untag_value(v, G_TP))->hdr.size;
 			#else
-			return ((tpl*)untag_value(v, G_TP))->arity;
+			return ((tpl*)untag_value(v, G_TP))->size;
 			#endif
 		}
 		default: return 0;
@@ -148,11 +148,11 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 						update_longest(cur);
 						#endif
-						return tag_value(x, G_AR); // define x:G=>? as dynamic type value
+						return tag_value(x, G_FN); // define x:G=>? as dynamic type value
 					} else {			// when t1 is function type and t2 is ?
 						// printf("cast ground\n");
-						value x_ = cast(x, t1, &tyar, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
-						return cast(x_, &tyar, t2, rid, polarity);
+						value x_ = cast(x, t1, &tyfn, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
+						return cast(x_, &tyfn, t2, rid, polarity);
 					}
 				}
 				default: break;
@@ -224,13 +224,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			break;
 		}
 		case TYTUPLE: {
-			uint16_t arity = t1->tydat.tytuple.arity;
+			uint16_t size = t1->tydat.tytuple.size;
 			switch(tk2) {
 				case TYTUPLE: {
 					#ifdef EAGER
-					value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * arity);
-					((tpl*)retv)->hdr.arity = arity;
-					for (int i = 0; i < arity; i++) {
+					value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * size);
+					((tpl*)retv)->hdr.size = size;
+					for (int i = 0; i < size; i++) {
 						value inner_val = ((tpl*)x)->fields[i];
 						((tpl*)retv)->fields[i] = cast(inner_val, t1->tydat.tytuple.tys[i], t2->tydat.tytuple.tys[i], rid, polarity);
 					}
@@ -247,7 +247,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					update_longest(cur);
 					#endif
 					value retx = (value)GC_MALLOC(sizeof(tpl_wrap));
-					((tpl_wrap*)retx)->hdr.arity = arity;
+					((tpl_wrap*)retx)->hdr.size = size;
 					((tpl_wrap*)retx)->hdr.wrap = 1;
                     ((tpl_wrap*)retx)->hdr.rid = rid;
                     ((tpl_wrap*)retx)->hdr.polarity = polarity;
@@ -259,7 +259,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case DYN: {
 					int all_dyn = 1;
-					for(int i = 0; i < arity; i++) {
+					for(int i = 0; i < size; i++) {
 						if (t1->tydat.tytuple.tys[i]->tykind != DYN) { all_dyn = 0; break; }
 					}
 					if (all_dyn) {
@@ -278,7 +278,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						#endif
 						return tag_value(x, G_TP);
 					} else {
-						ty *dyn_tuple = get_dyn_tuple_ty(arity);
+						ty *dyn_tuple = get_dyn_tuple_ty(size);
 						value x_ = cast(x, t1, dyn_tuple, rid, polarity);
 						return cast(x_, dyn_tuple, t2, rid, polarity);
 					}
@@ -361,17 +361,17 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case TYFUN: {
 					if (t2->tydat.tyfun.left->tykind == DYN && t2->tydat.tyfun.right->tykind == DYN) {
-						if (tag_of(x) == G_AR) {													// when t1's injection ground type equals t2
+						if (tag_of(x) == G_FN) {													// when t1's injection ground type equals t2
 							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
-							return untag_value(x, G_AR);
+							return untag_value(x, G_FN);
 						} else {											// when t1's injection ground type dosen't equal t2
-							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_AR);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_FN);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
 							blame(rid, polarity);
 						}
 					} else {			// when t1 is ? and t2 is function type
 						// printf("cast expand\n");
-						value x_ = cast(x, t1, &tyar, rid, polarity);									// R_EXPAND (x:?=>U -> x:?=>G=>U)
-						return cast(x_, &tyar, t2, rid, polarity);
+						value x_ = cast(x, t1, &tyfn, rid, polarity);									// R_EXPAND (x:?=>U -> x:?=>G=>U)
+						return cast(x_, &tyfn, t2, rid, polarity);
 					}
 				}
 				case TYLIST: {
@@ -391,14 +391,14 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 				}
 				case TYTUPLE: {
 					int all_dyn = 1;
-					uint16_t arity = t2->tydat.tytuple.arity;
-					for(int i = 0; i < arity; i++) {
+					uint16_t size = t2->tydat.tytuple.size;
+					for(int i = 0; i < size; i++) {
 						if (t2->tydat.tytuple.tys[i]->tykind != DYN) { all_dyn = 0; break; }
 					}
 					if (all_dyn) {
 						if (tag_of(x) == G_TP) {
 							value t = untag_value(x, G_TP);
-							if (arity_of(x) == arity) {
+							if (size_of(x) == size) {
 								return t;
 							} else {
 								blame(rid, polarity);
@@ -408,7 +408,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						}
 					} else {
 						if (tag_of(x) == G_TP) {
-							ty *dyn_tuple = get_dyn_tuple_ty(arity_of(x));
+							ty *dyn_tuple = get_dyn_tuple_ty(size_of(x));
 							value x_ = cast(x, t1, dyn_tuple, rid, polarity);
 							return cast(x_, dyn_tuple, t2, rid, polarity); 
 						} else {
@@ -457,7 +457,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							*t2 = tyunit;
 							return untag_value(x, G_UNIT);
 						}
-						case(G_AR):	{												// when t1's injection ground type is ?->?
+						case(G_FN):	{												// when t1's injection ground type is ?->?
 							// printf("DTI : arrow was inferenced\n");							// R_INSTARROW (x':?->?=>?=>X -[X:=X_1->X_2]> x':?->?=>X_1->X_2)
 							#ifdef PROFILE
 							current_inference++;
@@ -467,7 +467,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							t2->tydat.tyfun.right = (ty*)GC_MALLOC(sizeof(ty));
 							t2->tydat.tyfun.left->tykind = TYVAR;
 							t2->tydat.tyfun.right->tykind = TYVAR;
-							return cast(untag_value(x, G_AR), &tyar, t2, rid, polarity);
+							return cast(untag_value(x, G_FN), &tyfn, t2, rid, polarity);
 						}
 						case(G_LI):	{												// when t1's injection ground type is [?]
 							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':[?]=>?=>X -[X:=[X_1]]> x':[?]=>[X_1])
@@ -484,16 +484,16 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							#ifdef PROFILE
 							current_inference++;
 							#endif
-							uint16_t arity = arity_of(x);
+							uint16_t size = size_of(x);
 							t2->tykind = TYTUPLE;
-							t2->tydat.tytuple.arity = arity;
-							t2->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * arity);
-							ty *new_tvs = (ty*)GC_MALLOC(sizeof(ty) * arity);
-							for (int i = 0; i < arity; i++) {
+							t2->tydat.tytuple.size = size;
+							t2->tydat.tytuple.tys = (ty**)GC_MALLOC(sizeof(ty*) * size);
+							ty *new_tvs = (ty*)GC_MALLOC(sizeof(ty) * size);
+							for (int i = 0; i < size; i++) {
 								t2->tydat.tytuple.tys[i] = &new_tvs[i];
 								t2->tydat.tytuple.tys[i]->tykind = TYVAR;
 							}
-							return cast(untag_value(x, G_TP), get_dyn_tuple_ty(arity), t2, rid, polarity);
+							return cast(untag_value(x, G_TP), get_dyn_tuple_ty(size), t2, rid, polarity);
 						}
 						case(G_RF):	{												// when t1's injection ground type is ? ref
 							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':? ref=>?=>X -[X:=X_1 ref]> x':? ref=>X_1 ref)
@@ -565,8 +565,26 @@ void consume(void) {
 	}
 	psi.count = 0;
 }
-
 #endif
+
+static inline value remove_inj(const value v, const ground_ty g, const uint16_t size, const crc *s) {
+	if (s->has_proj) {
+		if (tag_of(v) != g || size_of(v) != size) {
+			blame(s->rid_proj, s->p_proj);
+		}
+		return untag_value(v, g);
+	} else {
+		return v;
+	}
+}
+
+static inline value apply_inj(const value v, const ground_ty g, const crc *s) {
+	if (s->has_inj) {
+		return tag_value(v, g);
+	} else {
+		return v;
+	}
+}
 
 value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
@@ -577,367 +595,183 @@ value coerce(value v, crc *s) {
 	if (s == &crc_inj_INT) return tag_value(v, G_INT);
 	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
-	if (s == &crc_inj_AR) return tag_value(v, G_AR);
+	if (s == &crc_inj_FN) return tag_value(v, G_FN);
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);
 	// tuple is intentionally omitted
 	if (s == &crc_inj_RF) return tag_value(v, G_RF);
-	crc *mid_crc;
 	switch (s->crckind) {
-		case ID: goto OPTIMIZATION_UNCAUGHT;
-		case BOT: 
-		CASE_BOT: blame(s->crcdat.seq_tv.rid_proj, s->p_proj); // v<bot^p> -> blame p
-		case FUN: 
-		CASE_FUN: { // v<s'=>t'>
+		case C_ID: { // v<(G?;)id(;G!)>
+			value retv = remove_inj(v, s->crcdat.id.g, s->crcdat.id.size, s);
+			return apply_inj(retv, s->crcdat.id.g, s);
+		}
+		case C_FUN: { // v<(G?p;)s'=>t'(;G!)>
+			v = remove_inj(v, G_FN, 0, s);
+			fun *f;
+			crc *c1, *c2;
 			if (((fun*)v)->funcD == fun_wrapped_call_funcD) { // u<<s=>t>><s'=>t'>
-				crc *c = compose_funs((crc*)((fun*)v)->env[1], s);
-				if (c->crckind == ID) {    // u<<s=>t>><s'=>t'> -> u<id> -> u
-					return (value)(fun*)((fun*)v)->env[0];
-				} else {										 // u<<s=>t>><s'=>t'> -> u<s';;s=>t;;t'> -> u<<s';;s=>t;;t'>>
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-					((fun*)retv)->funcD = fun_wrapped_call_funcD;
-					#ifdef ALT
-					((fun*)retv)->funcM = fun_wrapped_call_funcM;
-					#endif // ALT
-					((fun*)retv)->env[0] = (void*)((fun*)v)->env[0];
-					((fun*)retv)->env[1] = (void*)c;
-					return retv;
+				f = (fun*)(((fun*)v)->env[0]);
+				c1 = compose(s->crcdat.fun_crc.c1, (crc*)((fun*)v)->env[1]);
+				c2 = compose((crc*)((fun*)v)->env[2], s->crcdat.fun_crc.c2);
+				if (c1 == &crc_id && c2 == &crc_id) {    // u<<s=>t>><s'=>t'> -> u<id> -> u
+					return apply_inj((value)f, G_FN, s);
 				}
 			} else {                   // u<s'=>t'> -> u<<s'=>t'>>
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				value retv;
-				retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-				((fun*)retv)->funcD = fun_wrapped_call_funcD;
-				#ifdef ALT
-				((fun*)retv)->funcM = fun_wrapped_call_funcM;
-				#endif // ALT
-				((fun*)retv)->env[0] = (void*)(fun*)v;
-				((fun*)retv)->env[1] = (void*)s;
-				return retv;
+				f = (fun*)v;
+				c1 = s->crcdat.fun_crc.c1;
+				c2 = s->crcdat.fun_crc.c2;
 			}
+			value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 3);
+			((fun*)retv)->funcD = fun_wrapped_call_funcD;
+			#ifdef ALT
+			((fun*)retv)->funcM = fun_wrapped_call_funcM;
+			#endif // ALT
+			((fun*)retv)->env[0] = (void*)f;
+			((fun*)retv)->env[1] = (void*)c1;
+			((fun*)retv)->env[2] = (void*)c2;
+			return apply_inj(retv, G_FN, s);
 		}
-		case LIST: 
-		CASE_LIST: { // v<[s']>
+		case C_LIST: { // v<(G?p;)[s'](;G!)>
+			v = remove_inj(v, G_LI, 0, s);
 			#ifdef EAGER
 			value retv = 0;
-    		value *dest = &retv;
-    		value curr_src = v;
+			value *dest = &retv;
+			value curr_src = v;
 			crc *clist = s->crcdat.lst_crc;
-    		while ((lst*)curr_src != NULL) {
-    		    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
-    		    *dest = (value)new_lst;
-    		    new_lst->h = coerce(((lst*)curr_src)->h, clist);
-    		    dest = &new_lst->t;
-    		    curr_src = ((lst*)curr_src)->t;
-    		}
-    		*dest = 0;
-    		return retv;
+			while ((lst*)curr_src != NULL) {
+			    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
+			    *dest = (value)new_lst;
+			    new_lst->h = coerce(((lst*)curr_src)->h, clist);
+			    dest = &new_lst->t;
+			    curr_src = ((lst*)curr_src)->t;
+			}
+			*dest = 0;
+			return apply_inj(retv, G_LI, s);
 			#else
-			if ((lst*)v != NULL && (((lst*)v)->t & 0b1)) { // u<<[s]>><[s']>
-				crc *c = compose_lists((crc*)(((lst*)v)->t & ~0b1), s);
-				if (c->crckind == ID) {    						// u<<[s]>><[s']> -> u<id> -> u
-					return (value)((lst*)v)->w;
-				} else {										// u<<[s]>><[s']> -> u<[s;;s']> -> u<<[s;;s']>>
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(lst));
-					((lst*)retv)->w = ((lst*)v)->w;
-					((lst*)retv)->c_tag = (uintptr_t)c | 0b1;
-					return retv;
-				}
+			lst *w;
+			crc *c;
+			if ((lst*)v != NULL && (((lst*)v)->c_tag & 0b1)) { // u<<[s]>><[s']>
+				w = ((lst*)v)->w;
+				c = compose((crc*)(((lst*)v)->c_tag & ~0b1), s->crcdat.lst_crc);
+				if (c == &crc_id) return apply_inj((value)w, G_LI, s); // u<<[s]>><[s']> -> u<id> -> u
 			} else {                   // u<[s']> -> u<<[s']>>
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				value retv;
-				retv = (value)GC_MALLOC(sizeof(lst));
-				((lst*)retv)->w = (lst*)v;
-				((lst*)retv)->c_tag = (uintptr_t)s | 0b1;
-				return retv;
+				w = (lst*)v;
+				c = s->crcdat.lst_crc;
 			}
+			value retv = (value)GC_MALLOC(sizeof(lst));
+			((lst*)retv)->w = w;
+			((lst*)retv)->c_tag = (uintptr_t)c | 0b1;
+			return apply_inj(retv, G_LI, s);
 			#endif
 		}
-		case TUPLE: 
-		CASE_TUPLE: { // v<(s1*...*sn)>
-			uint16_t arity = s->crcdat.tpl_crc.arity;
+		case C_TUPLE: { // v<(G?p;)(s1*...*sn)(;G!)>
+			uint16_t size = s->crcdat.tpl_crc.size;
+			v = remove_inj(v, G_TP, size, s);
 			#ifdef EAGER
-			value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * arity);
-			((tpl*)retv)->hdr.arity = arity;
-			for (int i = 0; i < arity; i++) {
+			value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * size);
+			((tpl*)retv)->hdr.size = size;
+			for (int i = 0; i < size; i++) {
 				value inner_val = ((tpl*)v)->fields[i];
 				((tpl*)retv)->fields[i] = coerce(inner_val, s->crcdat.tpl_crc.crcs[i]);
 			}
-			return retv;
-
+			return apply_inj(retv, G_TP, s);
 			#else // not EAGER
-			value retv = (value)GC_MALLOC(sizeof(tpl_wrap));
-			((tpl_wrap*)retv)->hdr.arity = arity;
-			((tpl_wrap*)retv)->hdr.wrap = 1;
-
-			if (((tpl*)v)->wrap) { // u<<(s1*...*sn)>><(s'1*...*s'n)>
-				crc *c = compose_tuples(((tpl_wrap*)v)->c, s);
-				if (c->crckind == ID) {    // u<<(s1*...*sn)>><(s'1*...*s'n)> -> u<id> -> u
-					return (value)((tpl_wrap*)v)->w;
-				} else {
-					((tpl_wrap*)retv)->w = ((tpl_wrap*)v)->w;
-					((tpl_wrap*)retv)->c = c;
-					return retv;
+			tpl_header *w;
+			crc **cs;
+			if (((tpl_header*)v)->wrap) { // u<<(s1*...*sn)>><(s'1*...*s'n)>
+				tpl_wrap *vw = (tpl_wrap*)v;
+				w = vw->w;
+				cs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+				int all_id = 1;
+				for (int i = 0; i < size; i++) {
+					cs[i] = compose(vw->cs[i], s->crcdat.tpl_crc.crcs[i]);
+					if (cs[i] != &crc_id) all_id = 0;
 				}
+				if (all_id) return apply_inj((value)w, G_TP, s); // u<<(s1*...*sn)>><(s'1*...*s'n)> -> u<id> -> u
 			} else { // u<(s'1*...*s'n)> -> u<<(s'1*...*s'n)>>
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				((tpl_wrap*)retv)->w = (tpl*)v;
-				((tpl_wrap*)retv)->c = s;
-				return retv;
+				w = (tpl_header*)v;
+				cs = s->crcdat.tpl_crc.crcs;
 			}
+			value retv = (value)GC_MALLOC(sizeof(tpl_wrap));
+			((tpl_wrap*)retv)->hdr.size = size;
+			((tpl_wrap*)retv)->hdr.wrap = 1;
+			((tpl_wrap*)retv)->w = w;
+			((tpl_wrap*)retv)->cs = cs;
+			return apply_inj(retv, G_TP, s);
 			#endif
 		}
-		case REF: 
-		CASE_REF: { // v<ref(s')>
+		case C_REF: { // v<(G?p;)ref(s')(;G!)>
+			v = remove_inj(v, G_RF, 0, s);
 			#ifdef MONOTONIC
-			sc_push((ref*) v, s->crcdat.mref_crc);
-			return v;
+			sc_push((ref*)v, s->crcdat.mref_crc);
+			return apply_inj(v, G_RF, s);
 			#else
-			if (((ref*)v)->c_tag & 0b1) { // u<<ref(s)>><ref(s')>
-				crc *c = compose_refs((crc*)(((ref*)v)->c_tag & ~0b1), s);
-				if (c->crckind == ID) {    // u<<ref(s)>><ref(s')> -> u<id> -> u
-					return (value)((ref*)v)->w;
-				} else {										 // u<<ref(s)>><ref(s')> -> u<ref(s;;s')> -> u<<ref(s;;s')>>
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(ref));
-					((ref*)retv)->w = ((ref*)v)->w;
-					((ref*)retv)->c_tag = (uintptr_t)c | 0b1;
-					return retv;
-				}
+			ref *w;
+			crc *c1, *c2;
+			if (((ref*)v)->c1_tag & 0b1) { // u<<ref(s)>><ref(s')>
+				w = ((ref*)v)->w;
+				c1 = compose((crc*)(((ref*)v)->c1_tag & ~0b1), s->crcdat.ref_crc.c1); // read: old then new
+				c2 = compose(s->crcdat.ref_crc.c2, (crc*)((ref*)v)->c2);              // write: new then old
+				if (c1 == &crc_id && c2 == &crc_id) return apply_inj((value)w, G_RF, s); // u<<ref(s)>><ref(s')> -> u<id> -> u
 			} else {                   // u<ref(s')> -> u<<ref(s')>>
 				#ifdef PROFILE
 				update_longest(1);
 				#endif
-				value retv;
-				retv = (value)GC_MALLOC(sizeof(ref));
-				((ref*)retv)->w = (ref*)v;
-				((ref*)retv)->c_tag = (uintptr_t)s | 0b1;
-				return retv;
+				w = (ref*)v;
+				c1 = s->crcdat.ref_crc.c1;
+				c2 = s->crcdat.ref_crc.c2;
 			}
+			value retv = (value)GC_MALLOC(sizeof(ref));
+			((ref*)retv)->w = w;
+			((ref*)retv)->c1_tag = (uintptr_t)c1 | 0b1;
+			((ref*)retv)->c2 = (uintptr_t)c2;
+			return apply_inj(retv, G_RF, s);
 			#endif
 		}
-		case TV_INJ: {
-			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_inj(s);
-			if (s == &crc_inj_INT) return tag_value(v, G_INT);
-			if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
-			if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
-			// fallthrough
-		}
-		case SEQ_INJ: {
-			mid_crc = s->crcdat.seq_tv.ptr.s;
-			switch(mid_crc->crckind) {
-				case FUN: 
-				CASE_SEQ_INJ_FUN: { // v<s'=>t';G!>
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 2);
-					((fun*)retv)->funcD = fun_wrapped_call_funcD;
-					#ifdef ALT
-					((fun*)retv)->funcM = fun_wrapped_call_funcM;
-					#endif // ALT
-					if (((fun*)v)->funcD == fun_wrapped_call_funcD) {  // u<<s=>t>><s'=>t';G!>
-						((fun*)retv)->env[0] = ((fun*)v)->env[0];
-						((fun*)retv)->env[1] = (void*)compose_funs((crc*)((fun*)v)->env[1], mid_crc);
-					} else { // u<s'=>t';G!> -> u<<s'=>t';G!>>
-						#ifdef PROFILE
-						update_longest(1);
-						#endif
-						((fun*)retv)->env[0] = (void*)v;
-						((fun*)retv)->env[1] = (void*)mid_crc;
-					}
-					return tag_value(retv, G_AR);
+		case C_TV: { // v<?pX!q>, v<X?p>, v<X!q>
+			ty *tv = s->crcdat.tv.tv_ptr;
+			switch (tv->tykind) {
+				case TYVAR: { // s should not be X!q
+					dti(tag_of(v), size_of(v), tv);
+					break;
 				}
-				case LIST: 
-				CASE_SEQ_INJ_LIST: { // v<[s'];G!>
-					#ifdef EAGER
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					value retv = 0;
-    				value *dest = &retv;
-    				value curr_src = v;
-					crc *clist = mid_crc->crcdat.lst_crc;
-    				while ((lst*)curr_src != NULL) {
-    				    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
-    				    *dest = (value)new_lst;
-    				    new_lst->h = coerce(((lst*)curr_src)->h, clist);
-    				    dest = &new_lst->t;
-    				    curr_src = ((lst*)curr_src)->t;
-    				}
-    				*dest = 0;
-    				return tag_value(retv, G_LI);
-					#else
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(lst));
-					if ((lst*)v != NULL && (((lst*)v)->c_tag & 0b1)) {   // u<<[s]>><[s'];G!>
-						((lst*)retv)->w = ((lst*)v)->w;
-						((lst*)retv)->c_tag = (uintptr_t)compose_lists((crc*)(((lst*)v)->c_tag & ~0b1), mid_crc) | 0b1;
-					} else { // u<[s'];G!> -> u<<[s'];G!>>
-						#ifdef PROFILE
-						update_longest(1);
-						#endif
-						((lst*)retv)->w = (lst*)v;
-						((lst*)retv)->c_tag = (uintptr_t)mid_crc | 0b1;
-					}
-					return tag_value(retv, G_LI);
-					#endif
+				case SUBSTITUTED: {
+					s->crcdat.tv.tv_ptr = ty_find(tv);
+					break;
 				}
-				case TUPLE: 
-				CASE_SEQ_INJ_TUPLE: { // v<(s'1*...*s'n);G!>
-					uint16_t arity = mid_crc->crcdat.tpl_crc.arity;
-					#ifdef EAGER
-					#ifdef PROFILE
-					update_longest(1);
-					#endif
-					value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * arity);
-					((tpl*)retv)->hdr.arity = arity;
-					for (int i = 0; i < arity; i++) {
-						value inner_val = ((tpl_raw*)v)->fields[i];
-						((tpl_raw*)retv)->fields[i] = coerce(inner_val, mid_crc->crcdat.tpl_crc.crcs[i]);
-					}
-					return tag_value(retv, G_TP);
-					#else // not EAGER
-					value retv = (value)GC_MALLOC(sizeof(tpl_wrap));
-					((tpl_wrap*)retv)->hdr.arity = arity;
-					((tpl_wrap*)retv)->hdr.wrap = 1;
-					if (v != 0 && ((tpl*)v)->wrap) {   // u<<(s1*...*sn)>><(s'1*...*s'n);G!>
-						((tpl_wrap*)retv)->w = ((tpl_wrap*)v)->w;
-						((tpl_wrap*)retv)->c = compose_tuples(((tpl_wrap*)v)->c, mid_crc);
-					} else { // u<(s'1*...*s'n);G!> -> u<<(s'1*...*s'n);G!>>
-						#ifdef PROFILE
-						update_longest(1);
-						#endif
-						((tpl_wrap*)retv)->w = (tpl*)v;
-						((tpl_wrap*)retv)->c = mid_crc;
-					}
-					return tag_value((value)retv, G_TP);
-					#endif
-				}
-				case REF: 
-				CASE_SEQ_INJ_REF: { // v<ref(s');G!>
-					#ifdef MONOTONIC
-					sc_push((ref*)v, mid_crc->crcdat.mref_crc);
-					return tag_value(v, G_RF);
-					#else
-					value retv;
-					retv = (value)GC_MALLOC(sizeof(ref));
-					if (((ref*)v)->c_tag & 0b1) {  // u<<ref(s)>><ref(s');G!>
-						((ref*)retv)->w = ((ref*)v)->w;
-						((ref*)retv)->c_tag = (uintptr_t)compose_refs((crc*)(((ref*)v)->c_tag & ~0b1), mid_crc) | 0b1;
-					} else { // u<ref(s');G!> -> u<<ref(s');G!>>
-						#ifdef PROFILE
-						update_longest(1);
-						#endif
-						((ref*)retv)->w = (ref*)v;
-						((ref*)retv)->c_tag = (uintptr_t)mid_crc | 0b1;
-					}
-					return tag_value(retv, G_RF);
-					#endif
-				}
-				default: { // v<id;G!> -> v<<id;G!>>
-					return tag_value(v, s->g_inj);
-					// goto OPTIMIZATION_UNCAUGHT;
-				}	
+				default: break;
 			}
+			return coerce(v, normalize_tv(s));
 		}
-
-		case TV_PROJ: { // v<X?p> = u<<d>><X?p>
-			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj(s);
-			if (s->crckind != TV_PROJ) goto CASE_SEQ_PROJ;
-			dti(tag_of(v), arity_of(v), s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj(s);
-			goto CASE_SEQ_PROJ;
-		}
-
-		case TV_PROJ_INJ: { // v<?pX!> = u<<d>><?pX!>
-			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj_inj(s);
-			if (s->crckind != TV_PROJ_INJ) goto CASE_SEQ_PROJ_INJ;
-			dti(tag_of(v), arity_of(v), s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj_inj(s);
-			goto CASE_SEQ_PROJ_INJ;
-		}
-
-		case TV_PROJ_OCCUR: {
-			s->crcdat.seq_tv.ptr.tv = ty_find(s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj_occur(s);
-			if (s->crckind != TV_PROJ_OCCUR) goto CASE_SEQ_PROJ_BOT;
-			dti(tag_of(v), arity_of(v), s->crcdat.seq_tv.ptr.tv);
-			s = normalize_tv_proj_occur(s);
-			goto CASE_SEQ_PROJ_BOT;
-		}
-
-		case SEQ_PROJ: 
-		CASE_SEQ_PROJ: {				// v<G?p;g> = u<<d>><G?p;g>
-			uint8_t tag = tag_of(v);
-			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-
-			v = untag_value(v, tag);
-			s = s->crcdat.seq_tv.ptr.s;
-
-			if (s == &crc_id) return v; // u<<d>><s> -> u<id> -> u
-
-			switch(s->crckind) {
-				case ID: goto OPTIMIZATION_UNCAUGHT;
-				case FUN: goto CASE_FUN;
-				case LIST: goto CASE_LIST;
-				case TUPLE: goto CASE_TUPLE;
-				case REF: goto CASE_REF;
-				default: {
-					printf("seq_proj should have only g\n");
-					exit(1);
+		case C_BOT: { // v<(G?p;)⊥q>, v<(X?p;)⊥q>
+			if (s->crcdat.bot.kind_proj) {
+				ty *tv = s->crcdat.bot.tv_ptr;
+				switch (tv->tykind) {
+					case TYVAR: { // s should not be ⊥q
+						dti(tag_of(v), size_of(v), tv);
+						break;
+					}
+					case SUBSTITUTED: {
+						s->crcdat.bot.tv_ptr = ty_find(tv);
+						break;
+					}
+					default: break;
 				}
+				return coerce(v, normalize_bot_tv(s));
+			} else {
+				remove_inj(v, s->crcdat.bot.proj.g, s->crcdat.bot.proj.size, s);
 			}
-		}
-
-		case SEQ_PROJ_INJ: 
-		CASE_SEQ_PROJ_INJ: {
-			uint8_t tag = tag_of(v);
-			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-
-			v = untag_value(v, tag);
-			mid_crc = s->crcdat.seq_tv.ptr.s;
-
-			if (mid_crc == &crc_id) return tag_value(v, s->g_inj); // u<<d>><s> -> u<id> -> u
-
-			switch(mid_crc->crckind) {
-				case ID: goto OPTIMIZATION_UNCAUGHT;
-				case FUN: goto CASE_SEQ_INJ_FUN;
-				case LIST: goto CASE_SEQ_INJ_LIST;
-				case TUPLE: goto CASE_SEQ_INJ_TUPLE;
-				case REF: goto CASE_SEQ_INJ_REF;
-				default: {    // u<<d>><s> -> u<g;G!> -> u<<g;G!>>
-					printf("seq_proj should have only g\n");
-					exit(1);
-				}
-			}
-		}
-
-		case SEQ_PROJ_BOT: 
-		CASE_SEQ_PROJ_BOT: {
-			uint8_t tag = tag_of(v);
-			if (tag != s->g_proj) blame(s->crcdat.seq_tv.rid_proj, s->p_proj);
-			s = s->crcdat.seq_tv.ptr.s;
-			goto CASE_BOT;
-		}
-
-		default: {
-			printf("yet");
-			exit(1);
+			blame(s->crcdat.bot.rid_bot, s->crcdat.bot.p_bot); // v<bot^p> -> blame p
 		}
 	}
-
-	OPTIMIZATION_UNCAUGHT: 
-	printf("optimization for coercion %d is not caught", s->crckind);
-	exit(1);
 }		
 #endif	
 

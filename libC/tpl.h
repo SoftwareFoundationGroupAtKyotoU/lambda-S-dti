@@ -4,7 +4,7 @@
 #include "types.h"
 
 typedef struct tpl_header {
-    uint16_t arity;
+    uint16_t size;
     #if !defined(EAGER) && !defined(STATIC)
     uint8_t wrap : 1;
     #ifdef CAST
@@ -28,7 +28,7 @@ typedef struct tpl_wrap {
     ty **u1;
     ty **u2;
     #else
-    crc *c;
+    crc **cs;
     #endif
 } tpl_wrap;
 #endif

@@ -202,7 +202,7 @@ crc* alloc_crc(crc *candidate) {
 		case C_BOT: {
 			if (candidate->crcdat.bot.kind_proj == 1) {
 				ty *tv = ty_find(candidate->crcdat.bot.tv_ptr);
-				candidate->crcdat.tv.tv_ptr = tv;
+				candidate->crcdat.bot.tv_ptr = tv;
     	        if (tv->tykind != TYVAR) candidate = normalize_bot_tv(candidate); 
 				break;
 			}
@@ -378,7 +378,7 @@ crc *normalize_tv(crc *c) {
 	}
 }
 
-static inline crc *normalize_bot_tv(crc *c) {
+crc *normalize_bot_tv(crc *c) {
 	ty *tv = c->crcdat.bot.tv_ptr;
 	switch(tv->tykind) {
 		case BASE_INT: return new_bot(c, G_INT, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
@@ -400,7 +400,7 @@ static inline crc *normalize_bot_tv(crc *c) {
 	}
 }
 
-static inline int occur_check_ty(const ty *u, const ty *tv) {
+static inline int occur_check_ty(ty *u, const ty *tv) {
 	switch (u->tykind) {
 		case DYN:
 		case BASE_INT:
@@ -465,7 +465,7 @@ static inline crc *rewrite_inj(crc *base, crc *inj) {
 	return alloc_crc(&temp);
 }
 
-static inline compose_s_tv(crc *c1, const ground_ty g, const uint16_t size,  crc *c2) {
+static inline crc *compose_s_tv(crc *c1, const ground_ty g, const uint16_t size,  crc *c2) {
 	ty *tv = c2->crcdat.tv.tv_ptr;
 	switch (tv->tykind) {
 		case TYVAR: {
@@ -485,7 +485,7 @@ static inline compose_s_tv(crc *c1, const ground_ty g, const uint16_t size,  crc
 	return compose(c1, normalize_tv(c2));
 }
 
-static inline compose_s_bot(crc *c1, const ground_ty g, const uint16_t size, crc *c2) {
+static inline crc *compose_s_bot(crc *c1, const ground_ty g, const uint16_t size, crc *c2) {
 	if (c2->has_proj) {
 		if (c2->crcdat.bot.kind_proj) {
 			ty *tv = c2->crcdat.bot.tv_ptr;
@@ -514,7 +514,7 @@ static inline compose_s_bot(crc *c1, const ground_ty g, const uint16_t size, crc
 	return rewrite_proj(c1, c2);
 }
 
-static inline compose_tv_tv(crc *c1, ty *tv, crc *c2) {
+static inline crc *compose_tv_tv(crc *c1, ty *tv, crc *c2) {
 	ty *tv_ = c2->crcdat.tv.tv_ptr;
 	switch (tv_->tykind) {
 		case TYVAR: {
@@ -533,7 +533,7 @@ static inline compose_tv_tv(crc *c1, ty *tv, crc *c2) {
 	return compose(c1, normalize_tv(c2));
 }
 
-static inline compose_tv_bot(crc *c1, ty *tv, crc *c2) {
+static inline crc *compose_tv_bot(crc *c1, ty *tv, crc *c2) {
 	if (c2->has_proj) {
 		if (c2->crcdat.bot.kind_proj) { // (X!q, ?pX!q) ;;; ?p'Y;⊥q'
 			ty *tv_ = c2->crcdat.bot.tv_ptr;
@@ -585,7 +585,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 				}
 				case C_TV: { // (G?p;)id{U}(;G!) ;;; (X?q, ?qX!r, X!r)
 					if (c1->has_inj) {
-						return compose_s_tv(c1, c1->crcdat.id.g, c2->crcdat.id.size, c2);
+						return compose_s_tv(c1, c1->crcdat.id.g, c1->crcdat.id.size, c2);
 					} else { // id{X} ;;; X!r (because c2 does not have proj and U is not X when c1 has proj)
 						return c2;
 					}
@@ -612,7 +612,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 					}
 				}
 				case C_TV: { // (G?p;)s1->s2(;G!) ;;; (X?q, ?qX!r, X!r)
-					return compose_s_tv(c1, c2->crcdat.tv.tv_ptr, G_FN, c2);
+					return compose_s_tv(c1, G_FN, 0, c2);
 				}
 				case C_BOT: { // (G?p;)s1->s2(;G!) ;;; ((H?q;)⊥r, (X?q;)⊥r)
 					return compose_s_bot(c1, G_FN, 0, c2);
@@ -713,19 +713,19 @@ static crc* internal_compose(crc *c1, crc *c2) {
 					switch (c2->crckind) {
 						case C_ID: dti(c2->crcdat.id.g, c2->crcdat.id.size, tv); break;
 						case C_FUN: {
-							if (occur_check_crc(c1, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
 							dti(G_FN, 0, tv); break;
 						}
 						case C_LIST: {
-							if (occur_check_crc(c1, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
 							dti(G_LI, 0, tv); break;
 						}
 						case C_TUPLE: {
-							if (occur_check_crc(c1, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
 							dti(G_TP, c2->crcdat.tpl_crc.size, tv); break;
 						}
 						case C_REF: {
-							if (occur_check_crc(c1, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
 							dti(G_RF, 0, tv); break;
 						}
 						case C_TV: {
@@ -735,6 +735,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 							return compose_tv_bot(c1, tv, c2);
 						}
 					}
+					break;
 				}
 				case SUBSTITUTED: {
 					c1->crcdat.tv.tv_ptr = ty_find(tv);
@@ -753,32 +754,31 @@ crc* compose(crc *c1, crc *c2) {
 	#ifdef PROFILE
 	current_compose++;
 	#endif //PROFILE
-	#ifdef HASH
+
     if (c2 == &crc_id) return c1;
     if (c1 == &crc_id) return c2;
 
+	#ifdef HASH
 	if (c1->has_tv || c2->has_tv) {
         return internal_compose(c1, c2);
     }
-
     uint32_t hash = (((uintptr_t)c1 >> 3) ^ ((uintptr_t)c2 >> 3)) % CACHE_SIZE;
-
     if (compose_cache[hash].c1 == c1 && compose_cache[hash].c2 == c2) {
 		#ifdef PROFILE
 		compose_cached++;
 		#endif //PROFILE
         return compose_cache[hash].result;
     }
-
     crc *result = internal_compose(c1, c2);
-
     compose_cache[hash].c1 = c1;
     compose_cache[hash].c2 = c2;
     compose_cache[hash].result = result;
-
     return result;
+
 	#else //HASH
-    return internal_compose(c1, c2);
+    
+	return internal_compose(c1, c2);
+	
 	#endif //HASH
 }
 

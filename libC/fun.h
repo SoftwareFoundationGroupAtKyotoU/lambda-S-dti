@@ -36,7 +36,8 @@ typedef struct fun {
  * (C) WRAPされたクロージャ (CASTオフ時)
  * [ funcM / funcD = fun_wrapped_call_funcM / fun_wrapped_call_funcD ]
  * [ env[0] = (void*)元の関数(fun*)  ]
- * [ env[1] = (void*)コアーション(crc*) ]
+ * [ env[1] = (void*)coercion for the argument(crc*) ]
+ * [ env[2] = (void*)coercion for the return value(crc*) ]
  * 
  * (D) WRAPされたクロージャ (CASTオン時): (\x. ...): t1 =>^r_p t2
  * [ funcM = fun_wrapped_call_funcM ]

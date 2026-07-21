@@ -21,7 +21,8 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 	uint32_t rid = (uint32_t)(uintptr_t)((fun*)cls)->env[3];
 	uint8_t polarity = (uint8_t)(uintptr_t)((fun*)cls)->env[4];
 	#else // CAST
-    crc *c = (crc*)((fun*)cls)->env[1];
+    crc *c1 = (crc*)((fun*)cls)->env[1];
+    crc *c2 = (crc*)((fun*)cls)->env[2];
 	#endif // CAST
 
 	value inner_f_val = (value)inner_f;
@@ -37,8 +38,6 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 	value ret = inner_f->funcM(inner_f_val, _arg);
 	return cast(ret, t12, t22, rid, polarity);
 	#else // CAST
-    crc *c1 = c->crcdat.fun_crc.c1;
-    crc *c2 = c->crcdat.fun_crc.c2;
     value _arg = toplevel_coerce(arg, c1);
 	if (c2 == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg);
@@ -54,13 +53,12 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
 	// closureから関数と、wrapしている情報を取り出す
     fun *inner_f = (fun*)((fun*)cls)->env[0];
-    crc *c = (crc*)((fun*)cls)->env[1];
+    crc *c1 = (crc*)((fun*)cls)->env[1];
+    crc *c2 = (crc*)((fun*)cls)->env[2];
 
     value inner_f_val = (value)inner_f;
 
 	// Coercion 適用し、return
-    crc *c1 = c->crcdat.fun_crc.c1;
-    crc *c2 = c->crcdat.fun_crc.c2;
     crc *_arg2_crc = compose(c2, (crc*)arg2);
     value _arg1 = toplevel_coerce(arg1, c1);
 	#ifdef ALT

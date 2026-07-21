@@ -56,7 +56,7 @@ let toC_tycontent = function
   | TyList u ->
     Struct ["tykind", Var "TYLIST"; "tydat", Struct ["tylist", toC_ty u]]
   | TyTuple us ->
-    Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["arity", Int (List.length us); "tys", Cast (ARRAY (PTR TY), Array (List.map (fun u -> toC_ty u) us))]]] 
+    Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["size", Int (List.length us); "tys", Cast (ARRAY (PTR TY), Array (List.map (fun u -> toC_ty u) us))]]] 
   | TyRef u -> Struct ["tykind", Var "TYREF"; "tydat", Struct ["tyref", toC_ty u]]
   | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
 
@@ -98,100 +98,102 @@ let rec toC_crc x c =
         SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (LVar x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
+  let c, info_proj_inj = match c with
+    | CSeq (CProj (_, (r, p)), (CSeq (c, CInj _))) -> c, ["has_proj", Int 1; "has_inj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
+    | CSeq (CProj (_, (r, p)), c) -> c, ["has_proj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
+    | CSeq (c, CInj _) -> c, ["has_inj", Int 1]
+    | CTvProjInj (_, (r, p), _) as c -> c, ["has_proj", Int 1; "has_inj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
+    | CTvProj (_, (r, p)) as c -> c, ["has_proj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
+    | CTvInj _ as c -> c, ["has_inj", Int 1]
+    | c -> c, []
+  in
   match c with
-    | CSeq (c', CInj g) ->
-      let arity = match g with Tp arity -> arity | _ -> 0 in
-      let stm, ptr_crc = stm_crc (x ^ "_inj") c' in
-      stm,
-      Struct [
-        "crckind", Var "SEQ_INJ";
-        "g_inj", Var ("G_" ^ string_of_tag g);
-        "arity_inj", Int arity;
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["seq_tv", Struct ["ptr", Struct ["s", ptr_crc]]]
-      ]
-    | CSeq (CProj (g, (r, p)), c') ->
-      let arity = match g with Tp arity -> arity | _ -> 0 in
-      let stm, ptr_crc = stm_crc (x ^ "_inj") c' in
-      stm,
-      Struct [
-        "crckind", Var "SEQ_PROJ";
-        "g_proj", Var ("G_" ^ string_of_tag g);
-        "p_proj", Int (int_of_pos p);
-        "arity_proj", Int arity;
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (rid r); "ptr", Struct ["s", ptr_crc]]]
-      ]
-    | CTvInj (tv, (r, p)) ->
+    | CId u ->
+      let g, size = match u with
+        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFun _ -> "G_FN", 0
+        | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0
+        | TyDyn | TyVar _ | TyCoercion _ -> raise @@ ToC_bug "Seq CId shouldn't have tydyn, tyvar, tycoercion"
+      in
       [],
-      Struct [
-        "crckind", Var "TV_INJ";
-        "p_inj", Int (int_of_pos p);
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["seq_tv", Struct ["rid_inj", Int (rid r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
-      ]
-    | CTvProj (tv, (r, p)) ->
-      [],
-      Struct [
-        "crckind", Var "TV_PROJ";
-        "p_proj", Int (int_of_pos p);
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["seq_tv", Struct ["rid_proj", Int (rid r); "ptr", Struct ["tv", toC_ty (TyVar tv)]]]
-      ]
+      Struct (
+        ("crckind", Var "C_ID") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["id", Struct ["g", Var g; "size", Int size]]
+        ]
+      )
     | CFun (c1, c2) ->
       let stm1, ptr_crc1 = stm_crc (x ^ "_fun1") c1 in
       let stm2, ptr_crc2 = stm_crc (x ^ "_fun2") c2 in
       stm1 @ stm2,
-      Struct [
-        "crckind", Var "FUN";
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
-      ]
+      Struct (
+        ("crckind", Var "C_FUN") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+        ]
+      )
     | CList c ->
       let stm, ptr_crc = stm_crc (x ^ "_list") c in
       stm,
-      Struct [
-        "crckind", Var "LIST";
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["lst_crc", ptr_crc]
-      ]
+      Struct (
+        ("crckind", Var "C_LIST") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["lst_crc", ptr_crc]
+        ]
+      )
     | CTuple cs ->
       let stms, ptr_crcs = List.split @@ List.mapi (fun i c -> stm_crc (x ^ "_elm" ^ string_of_int i) c) cs in
       List.flatten stms,
-      Struct [
-        "crckind", Var "TUPLE";
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["tpl_crc", Struct ["arity", Int (List.length cs); "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
-      ]
+      Struct (
+        ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["tpl_crc", Struct ["size", Int (List.length cs); "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
+        ]
+      )
     | CRef (c1, c2) ->
       let stm1, ptr_crc1 = stm_crc (x ^ "_ref1") c1 in
       let stm2, ptr_crc2 = stm_crc (x ^ "_ref2") c2 in
       stm1 @ stm2,
-      Struct [
-        "crckind", Var "REF";
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
-      ]
+      Struct (
+        ("crckind", Var "C_REF") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+        ]
+      )
     | CMRef (_, u) ->
       [],
-      Struct [
-        "crckind", Var "REF";
-        "has_tv", Int has_tv_val;
-        "crcdat", Struct ["mref_crc", toC_ty u]
-      ]
-    | _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
+      Struct (
+        ("crckind", Var "C_REF") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["mref_crc", toC_ty u]
+        ]
+      )
+    | CTvInj (tv, (r, p)) ->
+      [],
+      Struct (
+        ("crckind", Var "C_TV") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["tv", Struct ["rid_inj", Int (rid r); "p_inj", Int (int_of_pos p); "tv_ptr", toC_ty (TyVar tv)]]
+        ]
+      )
+    | CTvProj (tv, _) ->
+      [],
+      Struct (
+        ("crckind", Var "C_TV") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["tv", Struct ["tv_ptr", toC_ty (TyVar tv)]]
+        ]
+      )
+    | CTvProjInj (tv, _, (r, p)) ->
+      [],
+      Struct (
+        ("crckind", Var "C_TV") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["tv", Struct ["rid_inj", Int (rid r); "p_inj", Int (int_of_pos p); "tv_ptr", toC_ty (TyVar tv)]]
+        ]
+      )
+    | CSeq _ | CProj _ | CInj _ as c -> raise @@ ToC_bug (Format.asprintf "%a should not be passed to toC_crc" Pp.pp_coercion c)
+    | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
-(*
-(* コアーションの定義 *)
-let toC_crccontent ppf (c, name) = 
-  ...
-  | CMRef _ -> ...
-*)
-
-  (*
-  ...
-  | CMRef _ -> ...
-  | _ -> raise @@ ToC_bug "bad coercion" *)
 
 (* ========================================= *)
 
@@ -303,8 +305,8 @@ and toC_assign ~config x f =
   | Cls.Int i -> assign_x (Int i)
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
-    let arity = List.length ys in
-    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int arity)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "arity"), Int arity)]
+    let size = List.length ys in
+    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int size)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "size"), Int size)]
     @ List.mapi (fun i y -> SAssign (LIndex (LArrow (LCast (PTR TPL_RAW, LVar x), "fields"), i), Var y)) ys
   | Cls.Ref (y, u) ->
     if config.monotonic then
@@ -447,7 +449,7 @@ let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, S
 let toC_crcs ~config crcs = 
   let register = 
     List.map (fun str -> SApp (Var "register_static_crc", [Addr str]))
-      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_AR"; "crc_inj_LI"; "crc_inj_RF"]
+      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"]
       @ (List.map snd crcs))
   in
   let crcinit =
@@ -530,13 +532,6 @@ let rec toC_exp ppf f ~config ~is_main =
   let toC_exp = toC_exp ~config ~is_main in
   match f with
   | Insert (x, f) -> begin match f with
-    | Ref (y, u) ->
-      let c = c_of_ty u in
-      fprintf ppf "%s = (value)GC_MALLOC(sizeof(ref));\n((ref*)%s)->v = %s;\n((ref*)%s)->u = %s;\n"
-        x x y x c
-    | Deref (y, None) -> fprintf ppf "%s = ((ref*)%s)->v;\n" x y
-    | Subst (y, z, None) -> fprintf ppf "((ref*)%s)->v = %s;\n%s = 0;\n" y z x
-    | Deref _ | Subst _ -> raise @@ ToC_bug "yet"
     | CApp (y, z) -> (* TODO *)
       if CrcManager.mem_inj z then
         let tag = CrcManager.find_inj z in
@@ -558,13 +553,4 @@ let rec toC_exp ppf f ~config ~is_main =
           x
           y
           z
-    (*以下は内部にexpがあるので，後者のexpまでinsertを送る
-      letはf2のみに，ifはf1,f2の両方にinsertを送る*)
-    end
-  (*以下は項の中にexpを含まないので，main関数かどうかを判定してreturn文を変える必要がある．
-    main関数ならreturn 0;でプログラムを終える．main関数でなければ，その値自体をreturnする．*)
-  | Tuple _ | Tget _ | Ref _ | Deref _ | Subst _ as f ->
-    fprintf ppf "value retv;\n%areturn %s;\n"
-      toC_exp (Insert ("retv", f))
-      (if is_main then "0" else "retv")
 *)

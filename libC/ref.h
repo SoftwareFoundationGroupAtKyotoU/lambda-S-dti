@@ -12,20 +12,19 @@ typedef struct ref {
 } ref;
 #else
 typedef struct ref {
-	// 1ワード目
     union {
         value v;        // unwrap の場合
         ref *w;         // wrap の場合
     };
 
-	// 2ワード目
     #if defined(CAST)
     uintptr_t u1_tag; // ty *u1 のポインタ + 下位1bit(wrap)
     uintptr_t u2_p;   // ty *u2 のポインタ + 下位1bit(polarity)
     uint32_t rid;
 
     #else
-    uintptr_t c_tag;      // coercionポインタ ＋ 下位1bitフラグ(wrap)
+    uintptr_t c1_tag;      // coercionポインタ ＋ 下位1bitフラグ(wrap)
+    uintptr_t c2;
 	#endif
 } ref;
 
