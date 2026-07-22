@@ -53,17 +53,11 @@ typedef struct crc {
 			ty *tv_ptr;
 		} tv;
 		struct bot { // for BOT
-			union {
-				struct {
-					ground_ty g;
-					uint16_t size;
-				} proj;
-				ty *tv_ptr;
-			};
-			uint8_t kind_proj : 1; // 0 for g and size, 1 for tv_ptr
-			uint8_t kind_bot : 1; // 0 for BOT, 1 for OCCUR
-		    uint8_t p_bot : 1;
+			ground_ty g;
+			uint16_t size;
 			uint32_t rid_bot;
+		    uint8_t p_bot : 1;
+			uint8_t kind_bot : 1; // 0 for BOT, 1 for OCCUR
 		} bot;
 	} crcdat;
 } crc;

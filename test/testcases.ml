@@ -351,17 +351,23 @@ module EagerLazy = struct
   ]
 end
 
-(*
-let refs = [
-  (* TODO: [
-    "let f : ? = fun (x:?) -> x", "?", "<fun>: (? -> ?) => ?", "<fun><<id{? -> ?};(? -> ?)!>>";
-    "let r : ? = ref (f, (():?))", "?", "{ contents = (<fun>, (): unit => ?), int * ? }", "{ contents = (<fun><<id{? -> ?};(? -> ?)!>>, ()<<id{unit};unit!>>), ? * ? }<<mref(?);:?:!>>";
-    "r := (f, r)", "unit", "()", "()";
-    "let g (x : ((? -> int) * ((int -> ?) * ?) ref) ref) = match !x with (y, z) -> (y:?) 42", "((? -> int) * ((int -> ?) * ?) ref) ref -> ?", "<fun>", "<fun>";
-    "g r", "?", "", "42<<id{int};int!>>";
-  ] *)
-]
-*)
+module Monotonic = struct
+  let ext ~config ts = List.map (fun t -> List.map (fun (p, u, v_B, v_S_m, v_S_n) -> match config.intoB, config.monotonic with
+    | true, _ -> p, u, v_B
+    | false, true -> p, u, v_S_m
+    | false, false -> p, u, v_S_n
+    ) t) ts
+
+  let refs ~config = ext ~config [
+    [
+      "let f : ? = fun (x:?) -> x", "?", "<fun>: (? -> ?) => ?", "<fun><<id{? -> ?};(? -> ?)!>>", "<fun><<id{? -> ?};(? -> ?)!>>";
+      "let r : ? = ref (f, (():?))", "?", "{ contents = (<fun>: (? -> ?) => ?, (): unit => ?), ? * ? }: (? * ?) ref => ? ref => ?", "{ contents = (<fun><<id{? -> ?};(? -> ?)!>>, ()<<id{unit};unit!>>), ? * ? }<<mref(?);:?:!>>", "{ contents = (<fun><<id{? -> ?};(? -> ?)!>>, ()<<id{unit};unit!>>), ? * ? }<<ref(id{? * ?};(? * ?)!,(? * ?)?p;id{? * ?});:?:!>>";
+      "r := (f, r)", "unit", "()", "()", "()";
+      "let g (x : ((? -> int) * ((int -> ?) * ?) ref) ref) = match !x with (y, z) -> (y:?) 42", "((? -> int) * ((int -> ?) * ?) ref) ref -> ?", "<fun>", "<fun>", "<fun>";
+      "g r", "?", "42: int => ?", "42<<id{int};int!>>", "42<<id{int};int!>>";
+    ]
+  ]
+end
 
 (* ["match (1, true) : ? with ((x:int), (y:bool)) -> x", "int", "1", "1", "1", "1"]; *)
 (* ["match (1, true) : ? with ((x:bool), (y:bool)) -> x", "bool", "blame+", "blame+", "blame+", "blame+"]; *)
@@ -406,5 +412,6 @@ let suites ~config =
     "Tuple (EagerLazy)", EagerLazy.tuples ~config;
     "Reference", Static.refs;
     "Reference (Gradual)", Gradual.refs ~config;
+    "Reference (Monotonic)", Monotonic.refs ~config;
     "Functions in Standard Library", Static.stdlibs;
   ]

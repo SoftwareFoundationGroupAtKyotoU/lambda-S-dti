@@ -751,24 +751,8 @@ value coerce(value v, crc *s) {
 			}
 			return coerce(v, normalize_tv(s));
 		}
-		case C_BOT: { // v<(G?p;)⊥q>, v<(X?p;)⊥q>
-			if (s->crcdat.bot.kind_proj) {
-				ty *tv = s->crcdat.bot.tv_ptr;
-				switch (tv->tykind) {
-					case TYVAR: { // s should not be ⊥q
-						dti(tag_of(v), size_of(v), tv);
-						break;
-					}
-					case SUBSTITUTED: {
-						s->crcdat.bot.tv_ptr = ty_find(tv);
-						break;
-					}
-					default: break;
-				}
-				return coerce(v, normalize_bot_tv(s));
-			} else {
-				remove_inj(v, s->crcdat.bot.proj.g, s->crcdat.bot.proj.size, s);
-			}
+		case C_BOT: { // v<(G?p;)⊥q>
+			remove_inj(v, s->crcdat.bot.g, s->crcdat.bot.size, s);
 			blame(s->crcdat.bot.rid_bot, s->crcdat.bot.p_bot); // v<bot^p> -> blame p
 		}
 	}

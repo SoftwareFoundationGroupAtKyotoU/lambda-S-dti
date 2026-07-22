@@ -76,7 +76,7 @@ static uint32_t hash_crc(const crc *c) {
             h = (h * 31) + ((uintptr_t)c->crcdat.tv.tv_ptr | c->crcdat.tv.p_inj);
             break;
 		case C_BOT: 
-		    h = (h * 31) + (uintptr_t)c->crcdat.bot.tv_ptr + c->crcdat.bot.kind_proj + c->crcdat.bot.kind_bot + c->crcdat.bot.p_bot;
+		    h = (h * 31) + (uintptr_t)c->crcdat.bot.g + c->crcdat.bot.size + c->crcdat.bot.kind_bot + c->crcdat.bot.p_bot;
 			h = (h * 31) + c->crcdat.bot.rid_bot;
 			break;
     }
@@ -124,11 +124,11 @@ static int eq_crc(const crc *a, const crc *b) {
                    a->crcdat.tv.p_inj   == b->crcdat.tv.p_inj   &&
                    a->crcdat.tv.tv_ptr  == b->crcdat.tv.tv_ptr;
 		case C_BOT:
-            return a->crcdat.bot.rid_bot   == b->crcdat.bot.rid_bot   &&
-                   a->crcdat.bot.p_bot     == b->crcdat.bot.p_bot     &&
-                   a->crcdat.bot.kind_bot  == b->crcdat.bot.kind_bot  &&
-                   a->crcdat.bot.kind_proj == b->crcdat.bot.kind_proj &&
-                   a->crcdat.bot.tv_ptr    == b->crcdat.bot.tv_ptr;
+            return a->crcdat.bot.rid_bot  == b->crcdat.bot.rid_bot  &&
+                   a->crcdat.bot.p_bot    == b->crcdat.bot.p_bot    &&
+                   a->crcdat.bot.kind_bot == b->crcdat.bot.kind_bot &&
+                   a->crcdat.bot.g        == b->crcdat.bot.g        &&
+                   a->crcdat.bot.size     == b->crcdat.bot.size;
     }
 }
 
@@ -192,24 +192,13 @@ crc* alloc_crc(crc *candidate) {
 	current_alloc++;
 	#endif
     #ifdef HASH
-	switch(candidate->crckind) {
-		case C_TV: {
-			ty *tv = ty_find(candidate->crcdat.tv.tv_ptr);
-			candidate->crcdat.tv.tv_ptr = tv;
-        	if (tv->tykind != TYVAR) candidate = normalize_tv(candidate);
-			break;
-    	} 
-		case C_BOT: {
-			if (candidate->crcdat.bot.kind_proj == 1) {
-				ty *tv = ty_find(candidate->crcdat.bot.tv_ptr);
-				candidate->crcdat.bot.tv_ptr = tv;
-    	        if (tv->tykind != TYVAR) candidate = normalize_bot_tv(candidate); 
-				break;
-			}
-			break;
-    	}
-		default:
-			break;
+	if (candidate->crckind == C_TV) {
+		ty *tv = candidate->crcdat.tv.tv_ptr;
+		switch (tv->tykind) {
+			case TYVAR: break;
+			case SUBSTITUTED: candidate->crcdat.tv.tv_ptr = ty_find(tv); // fall-through
+			default: candidate = normalize_tv(candidate);
+		}
 	}
     if (candidate->has_tv) return create_new_crc(candidate);
     return intern_crc(candidate);
@@ -307,20 +296,11 @@ static inline crc *new_tv(const crc *proj, ty *tv, const crc *inj) {
     return alloc_crc(&temp);
 }
 
-static inline crc *new_bot_tv(const crc *proj, ty *tv_ptr, const uint8_t p_bot, const uint32_t rid_bot) {
-    crc temp = {
-		.crckind = C_BOT, .has_proj = proj->has_proj,
-		.has_tv = 1, .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
-		.crcdat.bot = { .tv_ptr = tv_ptr, .kind_proj = 1, .kind_bot = 1, .p_bot = p_bot, .rid_bot = rid_bot }
-	};
-    return alloc_crc(&temp);
-}
-
 static inline crc *new_bot(const crc *proj, const ground_ty g, const uint16_t size, const uint8_t kind_bot, const uint8_t p_bot, const uint32_t rid_bot) {
     crc temp = {
 		.crckind = C_BOT, .has_proj = proj->has_proj,
 		.p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
-		.crcdat.bot = { .proj = { .g = g, .size = size }, .kind_bot = kind_bot, .p_bot = p_bot, .rid_bot = rid_bot }
+		.crcdat.bot = { .g = g, .size = size, .kind_bot = kind_bot, .p_bot = p_bot, .rid_bot = rid_bot }
 	};
     return alloc_crc(&temp);
 }
@@ -350,13 +330,7 @@ crc *normalize_tv(crc *c) {
 		}
 		case TYREF: {
 			#ifdef MONOTONIC
-			// Even if tv is a concrete tyref type, mref should hold tydyn if the coercion has injection
-			// X!q ~> mref(dyn);RF!, ?pX!q ~> RF?p;mref(dyn);RF!, X?p ~> RF?p;mref(X') (when X is X' ref)
-			if (c->has_inj) {
-				return new_mref(c, &tydyn, c);
-			} else {
-				return new_mref(c, tv->tydat.tyref, c);
-			}
+			return new_mref(c, tv->tydat.tyref, c);
 			#else
 			crc inv_c = {
 				.crckind = C_TV, .has_proj = c->has_inj, .has_inj = c->has_proj,
@@ -373,28 +347,6 @@ crc *normalize_tv(crc *c) {
 		}
 		case SUBSTITUTED: {
 			printf("SUBSTITUTED is given to normalize_tv\n");
-			exit(1);
-		}
-	}
-}
-
-crc *normalize_bot_tv(crc *c) {
-	ty *tv = c->crcdat.bot.tv_ptr;
-	switch(tv->tykind) {
-		case BASE_INT: return new_bot(c, G_INT, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case BASE_BOOL: return new_bot(c, G_BOOL, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case BASE_UNIT: return new_bot(c, G_UNIT, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case TYFUN: return new_bot(c, G_FN, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case TYLIST: return new_bot(c, G_LI, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case TYTUPLE: return new_bot(c, G_TP, tv->tydat.tytuple.size, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case TYREF: return new_bot(c, G_RF, 0, c->crcdat.bot.kind_bot, c->crcdat.bot.p_bot, c->crcdat.bot.rid_bot);
-		case TYVAR: return c;
-		case DYN: {
-			printf("tydyn is substituted to tyvar (in normalize_bot_tv)\n");
-			exit(1);
-		}
-		case SUBSTITUTED: {
-			printf("SUBSTITUTED is given to normalize_bot_tv\n");
 			exit(1);
 		}
 	}
@@ -444,10 +396,8 @@ static inline int occur_check_crc(const crc* c, const ty *tv) {
 			#else
 			return occur_check_crc(c->crcdat.ref_crc.c1, tv) || occur_check_crc(c->crcdat.ref_crc.c2, tv);
 			#endif
-		case C_TV:
-			return occur_check_ty(c->crcdat.tv.tv_ptr, tv);
-		case C_BOT:
-			return c->crcdat.bot.kind_proj && occur_check_ty(c->crcdat.bot.tv_ptr, tv);
+		case C_TV: return occur_check_ty(c->crcdat.tv.tv_ptr, tv);
+		case C_BOT: return 0;
 	}
 }
 
@@ -465,12 +415,13 @@ static inline crc *rewrite_inj(crc *base, crc *inj) {
 	return alloc_crc(&temp);
 }
 
-static inline crc *compose_s_tv(crc *c1, const ground_ty g, const uint16_t size,  crc *c2) {
+static inline crc *compose_s_tv(crc *c1, const ground_ty g, const uint16_t size, crc *c2) {
 	ty *tv = c2->crcdat.tv.tv_ptr;
 	switch (tv->tykind) {
 		case TYVAR: {
 			if (occur_check_crc(c1, tv)) {
-				return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj); // (G?p;)⊥q (when X occurs in s1 or s2)
+				dti(g, size, tv);
+				return new_bot(c1, g, size, 1, c2->p_proj, c2->rid_proj); // (G?p;)⊥q (when X occurs in s1 or s2)
 			} else {
 				dti(g, size, tv); // DTI(G, X)
 				break;
@@ -486,30 +437,8 @@ static inline crc *compose_s_tv(crc *c1, const ground_ty g, const uint16_t size,
 }
 
 static inline crc *compose_s_bot(crc *c1, const ground_ty g, const uint16_t size, crc *c2) {
-	if (c2->has_proj) {
-		if (c2->crcdat.bot.kind_proj) {
-			ty *tv = c2->crcdat.bot.tv_ptr;
-			switch (tv->tykind) {
-				case TYVAR: {
-					if (occur_check_crc(c1, tv)) {
-						return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj); // (G?p;)⊥q (when X occurs in s1 or s2)
-					} else {
-						dti(g, size, tv); // DTI(G, X)
-						break;
-					}
-				}
-				case SUBSTITUTED: {
-					c2->crcdat.bot.tv_ptr = ty_find(tv);
-					break;
-				}
-				default: break;
-			}
-			return compose(c1, normalize_bot_tv(c2));
-		} else {
-			if (g != c2->crcdat.bot.proj.g || size != c2->crcdat.bot.proj.size) {
-				return new_bot(c1, g, size, 0, c2->p_proj, c2->rid_proj);
-			}
-		}
+	if (c2->has_proj && (g != c2->crcdat.bot.g || size != c2->crcdat.bot.size)) {
+		return new_bot(c1, g, size, 0, c2->p_proj, c2->rid_proj);
 	}
 	return rewrite_proj(c1, c2);
 }
@@ -530,32 +459,11 @@ static inline crc *compose_tv_tv(crc *c1, ty *tv, crc *c2) {
 		}
 		default: break;
 	}
-	return compose(c1, normalize_tv(c2));
+	return compose(normalize_tv(c1), normalize_tv(c2));
 }
 
-static inline crc *compose_tv_bot(crc *c1, ty *tv, crc *c2) {
-	if (c2->has_proj) {
-		if (c2->crcdat.bot.kind_proj) { // (X!q, ?pX!q) ;;; ?p'Y;⊥q'
-			ty *tv_ = c2->crcdat.bot.tv_ptr;
-			switch (tv_->tykind) {
-				case TYVAR: {
-					if (tv != tv_) {
-						tv->tykind = SUBSTITUTED;
-						tv->tydat.tv = tv_;
-					}
-					return new_bot_tv(c1, tv_, c2->crcdat.bot.p_bot, c2->crcdat.bot.rid_bot);
-				}
-				case SUBSTITUTED: {
-					c2->crcdat.bot.tv_ptr = ty_find(tv_);
-					break;
-				}
-				default: break;
-			}
-			return compose(c1, normalize_bot_tv(c2));
-		} else {
-			dti(c2->crcdat.bot.proj.g, c2->crcdat.bot.proj.size, tv);
-		}
-	}
+static inline crc *compose_tv_bot(crc *c1, ty *tv, crc *c2) { // X?p should not be passed to this function
+	dti(c2->crcdat.bot.g, c2->crcdat.bot.size, tv);
 	return rewrite_proj(c1, c2); // (G?p;)⊥r
 }
 
@@ -713,19 +621,19 @@ static crc* internal_compose(crc *c1, crc *c2) {
 					switch (c2->crckind) {
 						case C_ID: dti(c2->crcdat.id.g, c2->crcdat.id.size, tv); break;
 						case C_FUN: {
-							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot(c1, G_FN, 0, 1, c2->p_proj, c2->rid_proj);
 							dti(G_FN, 0, tv); break;
 						}
 						case C_LIST: {
-							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot(c1, G_LI, 0, 1, c2->p_proj, c2->rid_proj);
 							dti(G_LI, 0, tv); break;
 						}
 						case C_TUPLE: {
-							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot(c1, G_TP, c2->crcdat.tpl_crc.size, 1, c2->p_proj, c2->rid_proj);
 							dti(G_TP, c2->crcdat.tpl_crc.size, tv); break;
 						}
 						case C_REF: {
-							if (occur_check_crc(c2, tv)) return new_bot_tv(c1, tv, c2->p_proj, c2->rid_proj);
+							if (occur_check_crc(c2, tv)) return new_bot(c1, G_RF, 0, 1, c2->p_proj, c2->rid_proj);
 							dti(G_RF, 0, tv); break;
 						}
 						case C_TV: {
@@ -745,7 +653,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 			}
 			return compose(normalize_tv(c1), c2);
 		}
-		case C_BOT: return c1; // ((G?p;)⊥q, X?p;⊥q) ;;; s = (G?p;)⊥q, X?p;⊥q
+		case C_BOT: return c1; // (G?p;)⊥q ;;; s = (G?p;)⊥q
 	}
 }
 
@@ -796,10 +704,38 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 				case BASE_INT: return new_id(&temp_proj, G_INT, 0, &temp);
 				case BASE_BOOL: return new_id(&temp_proj, G_BOOL, 0, &temp);
 				case BASE_UNIT: return new_id(&temp_proj, G_UNIT, 0, &temp);
-				case TYFUN: return new_id(&temp_proj, G_FN, 0, &temp);
-				case TYLIST: return new_id(&temp_proj, G_LI, 0, &temp);
-				case TYTUPLE: return new_id(&temp_proj, G_TP, u2->tydat.tytuple.size, &temp);
-				case TYREF: return new_id(&temp_proj, G_RF, 0, &temp);
+				case TYFUN: {
+					crc *c1 = make_s_coercion(u2->tydat.tyfun.left, &tydyn);
+					crc *c2 = make_s_coercion(&tydyn, u2->tydat.tyfun.right);
+					if (c1 == &crc_id && c2 == &crc_id) {
+						return new_id(&temp_proj, G_FN, 0, &temp);
+					} else {
+						return new_fun(&temp_proj, c1, c2, &temp);
+					}
+				}
+				case TYLIST: {
+					crc *c = make_s_coercion(&tydyn, u2->tydat.tylist);
+					if (c == &crc_id) {
+						return new_id(&temp_proj, G_LI, 0, &temp);
+					} else {
+						return new_list(&temp_proj, c, &temp);
+					}
+				}
+				case TYTUPLE: {
+					uint16_t size = u2->tydat.tytuple.size;
+					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+					int all_id = 1;
+					for (int i = 0; i < size; i++) {
+						crcs[i] = make_s_coercion(&tydyn, u2->tydat.tytuple.tys[i]);
+						if (crcs[i] != &crc_id) all_id = 0;
+					}
+					if (all_id) {
+						return new_id(&temp_proj, G_TP, size, &temp);
+					} else {
+						return new_tuple(&temp_proj, size, crcs, &temp);
+					}
+				}
+				case TYREF: return new_mref(&temp_proj, u2->tydat.tyref, &temp);
 				case TYVAR: return new_tv(&temp_proj, u2, &temp);
 				case SUBSTITUTED: {
 					u2 = ty_find(u2);
