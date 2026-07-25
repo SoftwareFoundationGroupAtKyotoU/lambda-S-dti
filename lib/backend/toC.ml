@@ -17,6 +17,7 @@ let string_of_tag = function
   | Li -> "LI"
   | Tp _ -> "TP"
   | Rf -> "RF"
+  | Ar -> "AR"
 
 let string_of_tyvar (i, _) = "_ty" ^ string_of_int i
 
@@ -32,6 +33,8 @@ let toC_ty = function
   | TyTuple _ as u -> Addr (TyManager.find u)
   | TyRef TyDyn -> Addr "tyrf"
   | TyRef _ as u -> Addr (TyManager.find u)
+  | TyArray TyDyn -> Addr "tyar"
+  | TyArray _ as u -> Addr (TyManager.find u)
   | TyVar (i, { contents = None }) as u ->
     begin try 
       Addr (TyManager.find u)
@@ -42,6 +45,7 @@ let toC_ty = function
   | TyVar (i, { contents = Some (TyList _) }) -> Var (Format.asprintf "_tylist%d" i)
   | TyVar (i, { contents = Some (TyTuple _) }) -> Var (Format.asprintf "_tytuple%d" i)
   | TyVar (i, { contents = Some (TyRef _) }) -> Var (Format.asprintf "_tyref%d" i)
+  | TyVar (i, { contents = Some (TyArray _) }) -> Var (Format.asprintf "_tyarray%d" i)
   | TyVar _ -> raise @@ ToC_bug "tyvar should not contain other than constructor type"
   | TyCoercion _ -> raise @@ ToC_error "toC_ty tycoercion"
 
@@ -58,6 +62,7 @@ let toC_tycontent = function
   | TyTuple us ->
     Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["size", Int (List.length us); "tys", Cast (ARRAY (PTR TY), Array (List.map (fun u -> toC_ty u) us))]]] 
   | TyRef u -> Struct ["tykind", Var "TYREF"; "tydat", Struct ["tyref", toC_ty u]]
+  | TyArray u -> Struct ["tykind", Var "TYARRAY"; "tydat", Struct ["tyarray", toC_ty u]]
   | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
 
 (* ========================================= *)
@@ -70,27 +75,27 @@ let rid r =
   with
     Not_found -> raise @@ ToC_bug "rid cannot find r"
 
+let rec has_tv_ty = function
+  | TyVar _ -> true
+  | TyFun (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
+  | TyList u' | TyRef u' | TyArray u' -> has_tv_ty u'
+  | TyTuple us -> List.exists has_tv_ty us
+  | _ -> false
+
 let rec check_has_tv = function
   | CId _ | CInj _ | CProj _ | CFail _ -> false
   | CList c' -> check_has_tv c'
   | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
-  | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
+  | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) | CArray (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
-  | CMRef (u1, u2) ->
-    let rec has_tv_ty = function
-      | TyVar _ -> true
-      | TyFun (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
-      | TyList u' | TyRef u' -> has_tv_ty u'
-      | TyTuple us -> List.exists has_tv_ty us
-      | _ -> false
-    in
-    has_tv_ty u1 || has_tv_ty u2
+  | CMRef (u1, u2) | CMArray (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
 
 let rec toC_crc x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
-    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr ("crc_inj_RF")
+    | CSeq (CMArray (_, TyDyn), CInj Ar) -> [], Addr ("crc_inj_AR")
     | _ ->
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
@@ -111,7 +116,7 @@ let rec toC_crc x c =
     | CId u ->
       let g, size = match u with
         | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFun _ -> "G_FN", 0
-        | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0
+        | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0 | TyArray _ -> "G_AR", 0
         | TyDyn | TyVar _ | TyCoercion _ -> raise @@ ToC_bug "Seq CId shouldn't have tydyn, tyvar, tycoercion"
       in
       [],
@@ -165,6 +170,24 @@ let rec toC_crc x c =
         ("crckind", Var "C_REF") :: info_proj_inj @ [
           "has_tv", Int has_tv_val;
           "crcdat", Struct ["mref_crc", toC_ty u]
+        ]
+      )
+    | CArray (c1, c2) ->
+      let stm1, ptr_crc1 = stm_crc (x ^ "_array1") c1 in
+      let stm2, ptr_crc2 = stm_crc (x ^ "_array2") c2 in
+      stm1 @ stm2,
+      Struct (
+        ("crckind", Var "C_ARRAY") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["array_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
+        ]
+      )
+    | CMArray (_, u) ->
+      [],
+      Struct (
+        ("crckind", Var "C_ARRAY") :: info_proj_inj @ [
+          "has_tv", Int has_tv_val;
+          "crcdat", Struct ["marray_crc", toC_ty u]
         ]
       )
     | CTvInj (tv, (r, p)) ->
@@ -232,6 +255,8 @@ let set_ty i opu =
       u, "_tytuple" ^ string_of_int i
     | Some (TyRef _ as u) ->
       u, "_tyref" ^ string_of_int i
+    | Some (TyArray _ as u) ->
+      u, "_tyarray" ^ string_of_int i
     | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
   in
   name, [SAssign (LDeref (LVar name), Cast (TY, toC_tycontent u))]
@@ -449,7 +474,7 @@ let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, S
 let toC_crcs ~config crcs = 
   let register = 
     List.map (fun str -> SApp (Var "register_static_crc", [Addr str]))
-      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"]
+      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
       @ (List.map snd crcs))
   in
   let crcinit =

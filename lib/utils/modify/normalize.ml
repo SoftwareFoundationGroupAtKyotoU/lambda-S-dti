@@ -11,6 +11,7 @@ let rec normalize_type = function
   | TyList u -> TyList (normalize_type u)
   | TyTuple us -> TyTuple (List.map (fun u -> normalize_type u) us)
   | TyRef u -> TyRef (normalize_type u)
+  | TyArray u -> TyArray (normalize_type u)
   | _ as u -> u
 
 let normalize_tyenv =
@@ -52,7 +53,9 @@ module ITGL = struct
     | RefExp (r, e) -> RefExp (r, normalize_exp e)
     | DerefExp (r, e) -> DerefExp (r, normalize_exp e)
     | SubstExp (r, e1, e2) -> SubstExp (r, normalize_exp e1, normalize_exp e2)
-    (* | _ -> raise @@ Type_bug "yet" *)
+    | MakeArrayExp (r, e1, e2) -> MakeArrayExp (r, normalize_exp e1, normalize_exp e2)
+    | GetExp (r, e1, e2) -> GetExp (r, normalize_exp e1, normalize_exp e2)
+    | PutExp (r, e1, e2, e3) -> PutExp (r, normalize_exp e1, normalize_exp e2,normalize_exp e3)
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)
@@ -76,6 +79,9 @@ let rec make_static_proj_coercion ~monotonic u (r, p) = match normalize_type u w
   | TyRef u ->
     if monotonic then CSeq (CProj (Rf, (r, p)), CMRef (u, TyDyn))
     else CSeq (CProj (Rf, (r, p)), CRef (make_static_proj_coercion ~monotonic u (r, p), make_static_inj_coercion ~monotonic u (r, p)))
+  | TyArray u ->
+    if monotonic then CSeq (CProj (Ar, (r, p)), CMArray (u, TyDyn))
+    else CSeq (CProj (Ar, (r, p)), CArray (make_static_proj_coercion ~monotonic u (r, p), make_static_inj_coercion ~monotonic u (r, p)))
   | TyVar tv -> CTvProj (tv, (r, p))
   | TyCoercion _ -> raise @@ Normalize_bug "static_proj: TyCoercion is inserted"
   | TyDyn -> raise @@ Normalize_bug "static_proj: not static"
@@ -89,6 +95,9 @@ and make_static_inj_coercion ~monotonic u (r, p) = match normalize_type u with
   | TyRef u ->
     if monotonic then CSeq (CMRef (u, TyDyn), CInj Rf)
     else CSeq (CRef (make_static_proj_coercion ~monotonic u (r, p), make_static_inj_coercion ~monotonic u (r, p)), CInj Rf)
+  | TyArray u ->
+    if monotonic then CSeq (CMArray (u, TyDyn), CInj Ar)
+    else CSeq (CArray (make_static_proj_coercion ~monotonic u (r, p), make_static_inj_coercion ~monotonic u (r, p)), CInj Ar)
   | TyVar tv -> CTvInj (tv, (r, p))
   | TyCoercion _ -> raise @@ Normalize_bug "static_inj: TyCoercion is inserted"
   | TyDyn -> raise @@ Normalize_bug "static_inj: not static"
@@ -115,6 +124,15 @@ let rec make_static_projinj_coercion ~monotonic (r1, p1) u (r2, p2) = match u wi
         CRef (c1, c2)
     in
       CSeq (CProj (Rf, (r1, p1)), CSeq (c, CInj Rf))
+  | TyArray u ->
+    let c = 
+      if monotonic then CMArray (TyDyn, u)
+      else
+        let c1 = make_static_projinj_coercion ~monotonic (r1, p1) u (r2, p2) in
+        let c2 = make_static_projinj_coercion ~monotonic (r2, neg p2) u (r1, neg p1) in
+        CArray (c1, c2)
+    in
+      CSeq (CProj (Ar, (r1, p1)), CSeq (c, CInj Ar))
   | TyVar tv -> CTvProjInj (tv, (r1, p1), (r2, p2))
   | TyCoercion _ -> raise @@ Normalize_bug "static_projinj: TyCoercion is inserted"
   | TyDyn -> raise @@ Normalize_bug "static_projinj: not static"
@@ -164,4 +182,12 @@ let rec normalize_coercion ~monotonic c = match c with
     | _ -> CRef (c1, c2)
     end
   | CMRef (u1, u2) -> CMRef (normalize_type u1, normalize_type u2)
+  | CArray (c1, c2) ->
+    let c1 = normalize_coercion ~monotonic c1 in
+    let c2 = normalize_coercion ~monotonic c2 in
+    begin match c1, c2 with
+    | CId u, CId _ -> CId (TyArray u)
+    | _ -> CArray (c1, c2)
+    end
+  | CMArray (u1, u2) -> CMArray (normalize_type u1, normalize_type u2)
   | c -> raise @@ Normalize_bug (Format.asprintf "cannot normalize coercion: %a" Pp.pp_coercion c)

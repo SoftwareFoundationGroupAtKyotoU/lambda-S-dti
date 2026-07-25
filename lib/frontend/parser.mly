@@ -36,6 +36,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
+%token <Utils.Error.range> MAKEARRAY DOT LARROW
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -44,15 +45,14 @@ exception Parser_bug of string
 %type <Syntax.ITGL.program> toplevel
 
 (* Ref: https://caml.inria.fr/pub/docs/manual-ocaml/expr.html *)
-%right SEMI
-%right SUBSTITUTE
-%right prec_if
 %nonassoc prec_match
-%nonassoc VBAR
+%right SEMI
+%nonassoc prec_if
+%right SUBSTITUTE LARROW
 %right RARROW
 %right LOR
 %right LAND
-%left  EQ NEQ LT LTE GT GTE
+%left  EQ NEQ LT LTE GT GTE VBAR
 %right COLCOL
 %left  PLUS MINUS
 %left  STAR DIV MOD
@@ -176,6 +176,10 @@ SeqExpr :
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       SubstExp (r, e1, e2)
     }
+  | e1=PrefixExpr DOT LPAREN e2=Expr RPAREN LARROW e3=SeqExpr {
+      let r = join_range (range_of_exp e1) (range_of_exp e3) in
+      PutExp (r, e1, e2, e3)
+  }
   | start=IF e1=SeqExpr THEN e2=SeqExpr ELSE e3=SeqExpr %prec prec_if {
       let r = join_range start (range_of_exp e3) in
       IfExp (r, e1, e2, e3)
@@ -235,6 +239,14 @@ AppExpr :
       let r = join_range start_r (range_of_exp e) in
       RefExp (r, e)
     }
+  | start_r=MAKEARRAY e1=PrefixExpr e2=PrefixExpr {
+      let r = join_range start_r (range_of_exp e2) in
+      MakeArrayExp (r, e1, e2)
+  }
+  | e1=PrefixExpr DOT LPAREN e2=Expr end_r=RPAREN {
+      let r = join_range (range_of_exp e1) end_r in
+      GetExp (r, e1, e2)
+  }
   | PrefixExpr { $1 }
 
 PrefixExpr :

@@ -188,7 +188,7 @@ module ITGL = struct
       let u1' = cont u1 in
       if Type_utils.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
       else CC.SubstExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', Some u1'), TyUnit
-    (* | _ -> raise @@ Translation_bug "yet" *)
+    | _ -> raise @@ Translation_bug "yet"
 
   let translate ~config env = function
     | Exp e ->

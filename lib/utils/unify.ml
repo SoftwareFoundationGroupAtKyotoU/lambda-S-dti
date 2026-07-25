@@ -148,6 +148,16 @@ let rec unify_cont = function
   | TyDyn -> TyDyn
   | _ as u -> raise @@ Unify_error (asprintf "failed to match: cont(%a)" pp_ty u)
 
+let rec unify_cont_array = function
+  | TyVar (_, { contents = Some u }) -> unify_cont_array u
+  | TyVar (_, ({ contents = None } as tv)) ->
+    let u = fresh_tyvar () in
+    tv := Some (TyArray u);
+    u
+  | TyArray u -> u
+  | TyDyn -> TyDyn
+  | _ as u -> raise @@ Unify_error (asprintf "failed to match: cont_array(%a)" pp_ty u)
+
 let rec unify_meet u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->

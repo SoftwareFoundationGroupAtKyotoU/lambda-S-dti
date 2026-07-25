@@ -257,7 +257,23 @@ module ITGL = struct
       let cont = unify_cont u1 in
       unify @@ CConsistent (cont, u2);
       TyUnit
-    (* | _ -> raise @@ Type_bug "yet" *)
+    | MakeArrayExp (_, e1, e2) ->
+      let u1 = type_of_exp env e1 in
+      unify @@ CConsistent (u1, TyInt);
+      TyArray (type_of_exp env e2)
+    | GetExp (_, e1, e2) ->
+      let u1 = type_of_exp env e1 in
+      let u2 = type_of_exp env e2 in
+      unify @@ CConsistent (u2, TyInt);
+      unify_cont_array u1
+    | PutExp (_, e1, e2, e3) ->
+      let u1 = type_of_exp env e1 in
+      let u2 = type_of_exp env e2 in
+      let u3 = type_of_exp env e3 in
+      unify @@ CConsistent (u2, TyInt);
+      let cont = unify_cont_array u1 in
+      unify @@ CConsistent (cont, u3);
+      TyUnit
 
   let type_of_program env p =
     try match p with
@@ -291,6 +307,10 @@ let type_of_coercion c =
       let u1, u2 = coerce_pair c1 in
       TyRef u1, TyRef u2
     | CMRef (u1, u2) -> TyRef u1, TyRef u2
+    | CArray (c1, _) ->
+      let u1, u2 = coerce_pair c1 in
+      TyArray u1, TyArray u2
+    | CMArray (u1, u2) -> TyArray u1, TyArray u2
     | CId u -> u, u
     | CSeq (c1, c2) ->
       let u11, u12 = coerce_pair c1 in

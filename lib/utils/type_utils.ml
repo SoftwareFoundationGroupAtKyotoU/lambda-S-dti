@@ -9,8 +9,9 @@ let rec is_ground = function
   | TyInt | TyBool | TyUnit -> true (* base type *)
   | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
   | TyList TyDyn -> true
-  | TyTuple us -> List.fold_left (fun b u -> b && u = TyDyn) true us
+  | TyTuple us when List.for_all (fun u -> u = TyDyn) us -> true
   | TyRef TyDyn -> true
+  | TyArray TyDyn -> true
   | TyVar (_, { contents = Some u }) -> is_ground u
   | _ -> false
 
@@ -36,6 +37,7 @@ let rec is_consistent u1 u2 = match u1, u2 with
       List.fold_left2 (fun b u1 u2 -> b && is_consistent u1 u2) true us1 us2
     with Invalid_argument _ -> false end
   | TyRef u1, TyRef u2 -> is_consistent u1 u2
+  | TyArray u1, TyArray u2 -> is_consistent u1 u2
   | _ -> false
 
 let rec is_equal u1 u2 = match u1, u2 with
@@ -51,6 +53,7 @@ let rec is_equal u1 u2 = match u1, u2 with
   | TyList u1, TyList u2 -> is_equal u1 u2
   | TyTuple us1, TyTuple us2 -> List.fold_left2 (fun b u1 u2 -> b && u1 = u2) true us1 us2
   | TyRef u1, TyRef u2 -> is_equal u1 u2
+  | TyArray u1, TyArray u2 -> is_equal u1 u2
   | _ -> false
 
 let rec is_static_type = function
@@ -60,6 +63,7 @@ let rec is_static_type = function
   | TyList u -> is_static_type u
   | TyTuple us -> List.fold_left (fun b u -> b && is_static_type u) true us
   | TyRef u -> is_static_type u
+  | TyArray u -> is_static_type u
   | _ -> true
 
 let fresh_tyvar =
@@ -90,6 +94,7 @@ let type_of_tag = function
   | Li -> TyList TyDyn
   | Tp n -> TyTuple (List.init n (fun _ -> TyDyn))
   | Rf -> TyRef TyDyn
+  | Ar -> TyArray TyDyn
 
 let rec tag_of_ty = function
   | TyInt -> I
@@ -100,5 +105,6 @@ let rec tag_of_ty = function
   | TyTuple us ->
     if List.fold_left (fun b u -> b && u = TyDyn) true us then Tp (List.length us) else assert false
   | TyRef TyDyn -> Rf
+  | TyArray TyDyn -> Ar
   | TyVar (_, {contents = Some u}) -> tag_of_ty u
   | _ -> assert false

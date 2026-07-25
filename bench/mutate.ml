@@ -57,8 +57,8 @@ let rec count_fun_params (t : exp) : int = match t with
   | FunExp (_, _, e) -> 1 + count_fun_params e
   | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
   | FixExp (_, _, _, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) -> count_fun_params e
-  | BinOp (_, _, e1 , e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
-  | IfExp (_, e1, e2, e3) -> count_fun_params e1 + count_fun_params e2 + count_fun_params e3
+  | BinOp (_, _, e1 , e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
+  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fun_params e1 + count_fun_params e2 + count_fun_params e3
   | MatchExp (_, e, ms) -> count_fun_params e + List.fold_left (fun n (_, e) -> n + count_fun_params e) 0 ms
   | TupleExp (_, es) -> List.fold_left (fun n e -> n + count_fun_params e) 0 es
 
@@ -66,8 +66,8 @@ let rec count_fix_nodes (t : exp) : int = match t with
   | FixExp (_, _, _, _, e) -> 1 + count_fix_nodes e
   | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
   | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) -> count_fix_nodes e
-  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
-  | IfExp (_, e1, e2, e3) -> count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
+  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
+  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
   | MatchExp (_, e, ms) -> count_fix_nodes e + List.fold_left (fun n (_, e) -> n + count_fix_nodes e) 0 ms
   | TupleExp (_, es) -> List.fold_left (fun n e -> n + count_fix_nodes e) 0 es
 
@@ -129,11 +129,11 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list = match
     (c1, fixc1, my_links @ ls_body)
   | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) ->
     collect_links c fixc e
-  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) ->
+  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) ->
     let c1, f1, l1 = collect_links c fixc e1 in
     let c2, f2, l2 = collect_links c1 f1 e2 in
     (c2, f2, l1 @ l2)
-  | IfExp (_, e1, e2, e3) ->
+  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) ->
     let c1, f1, l1 = collect_links c fixc e1 in
     let c2, f2, l2 = collect_links c1 f1 e2 in
     let c3, f3, l3 = collect_links c2 f2 e3 in
@@ -298,6 +298,19 @@ let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:
     let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
     let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
     (lamc2, fixc2, tappc2, SubstExp (r, e1', e2'))
+  | MakeArrayExp (r, e1, e2) ->
+    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
+    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
+    (lamc2, fixc2, tappc2, MakeArrayExp (r, e1', e2'))
+  | GetExp (r, e1, e2) ->
+    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
+    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
+    (lamc2, fixc2, tappc2, GetExp (r, e1', e2'))
+  | PutExp (r, e1, e2, e3) ->
+    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
+    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
+    let lamc3, fixc3, tappc3, e3' = apply a sel lamc2 fixc2 tappc2 e3 in
+    (lamc3, fixc3, tappc3, PutExp (r, e1', e2', e3'))
 
 
 (* ---------- 公開 API ---------- *)

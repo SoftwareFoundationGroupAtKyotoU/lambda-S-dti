@@ -113,6 +113,18 @@ let rec ty_tv tvs u = match u with
         | _ -> raise @@ Static_manage_bug "not tyvar was created"
       in
       (newu, fun x -> ufun' (SetTy (newtv, x)))
+  | TyArray u' ->
+    let u', ufun' = ty_tv tvs u' in
+    if not (exist_tv (TV.elements (ftv_ty u)) tvs) then begin
+      TyManager.register u;
+      (u, fun x -> x)
+    end else
+      let newu = Type_utils.fresh_tyvar () in
+      let newtv = match newu with
+        | TyVar (i, u) -> u := Some (TyArray u'); (i, u)
+        | _ -> raise @@ Static_manage_bug "not tyvar was created"
+      in
+      (newu, fun x -> ufun' (SetTy (newtv, x)))
   | TyCoercion _ -> raise @@ Static_manage_bug "yet"
 
 let ta_tv tvs = function
@@ -130,8 +142,10 @@ let rec static_crc tvs c =
     | CSeq (CId _, CInj Fn) 
     | CSeq (CId _, CInj Li) -> true
     | CSeq (CId _, CInj (Tp _)) -> false
-    | CSeq (CId _, CInj Rf) -> true
-    | CSeq (CMRef (_, TyDyn), CInj Rf) -> true
+    | CSeq (CId _, CInj Rf)
+    | CSeq (CMRef (_, TyDyn), CInj Rf)
+    | CSeq (CId _, CInj Ar)
+    | CSeq (CMArray (_, TyDyn), CInj Ar) -> true
     | _ -> false
     in
     cached || constant
@@ -148,6 +162,7 @@ let rec static_crc tvs c =
     CrcManager.register c; c, fun x -> x
   | CSeq (CId _, CInj _ ) -> c, fun x -> x
   | CSeq (CMRef (_, TyDyn), CInj Rf) -> c, fun x -> x
+  | CSeq (CMArray (_, TyDyn), CInj Ar) -> c, fun x -> x
   | CSeq (c', CInj g) ->
     let c', f = static_crc tvs c' in
     let c = CSeq (c', CInj g) in
@@ -203,7 +218,23 @@ let rec static_crc tvs c =
     let u2, f2 = ty_tv tvs u2 in
     let c = CMRef (u1, u2) in
     let is_defined_ty = function
-      | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn -> true
+      | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn -> true
+      | u -> TyManager.mem u
+    in
+    if is_defined_ty u1 && is_defined_ty u2 then CrcManager.register c;
+    c, fun x -> f1 (f2 x)
+  | CArray (c1, c2) ->
+    let c1, f1 = static_crc tvs c1 in
+    let c2, f2 = static_crc tvs c2 in
+    let c = CArray (c1, c2) in
+    if is_defined c1 && is_defined c2 then CrcManager.register c;
+    c, fun x -> f1 (f2 x)
+  | CMArray (u1, u2) ->
+    let u1, f1 = ty_tv tvs u1 in
+    let u2, f2 = ty_tv tvs u2 in
+    let c = CMArray (u1, u2) in
+    let is_defined_ty = function
+      | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn -> true
       | u -> TyManager.mem u
     in
     if is_defined_ty u1 && is_defined_ty u2 then CrcManager.register c;

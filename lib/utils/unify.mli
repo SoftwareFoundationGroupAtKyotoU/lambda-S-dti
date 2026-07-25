@@ -14,4 +14,6 @@ val unify_telm : int -> ty -> ty list
 
 val unify_cont : ty -> ty
 
+val unify_cont_array : ty -> ty
+
 val unify_meet : ty -> ty -> ty

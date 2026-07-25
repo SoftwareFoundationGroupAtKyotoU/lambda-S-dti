@@ -13,7 +13,7 @@ let with_paren flag ppf_e ppf e =
 let rec level_ty = function
   | TyVar (_, { contents = Some u }) -> level_ty u
   | TyDyn | TyVar _ | TyInt | TyBool | TyUnit -> 100
-  | TyList _ | TyRef _ -> 90
+  | TyList _ | TyRef _ | TyArray _ -> 90
   | TyTuple _ -> 80
   | TyFun _ | TyCoercion _ -> 70
 
@@ -41,6 +41,7 @@ let pp_ty_main ppf ~pp_tyvar u =
       fprintf ppf "%a"
         pp_list us
     | TyRef u' as u -> fprintf ppf "%a ref" (with_paren (gt_ty u u') pp_ty) u'
+    | TyArray u' as u -> fprintf ppf "%a array" (with_paren (gt_ty u u') pp_ty) u'
     | TyCoercion (u1, u2) ->
       fprintf ppf "%a ~> %a"
         (with_paren (gte_ty u u1) pp_ty) u1
@@ -183,10 +184,11 @@ let pp_tag ppf = function
     fprintf ppf "(%a)"
       pp_dyn_tuple n
   | Rf -> pp_print_string ppf ":?:"
+  | Ar -> pp_print_string ppf "[|?|]"
 
 let level_coercion = function
   | CInj _ | CProj _ | CTvInj _ | CTvProj _ | CTvProjInj _ | CId _ | CFail _ -> 100
-  | CList _ | CRef _ | CMRef _ -> 80
+  | CList _ | CRef _ | CMRef _ | CArray _ | CMArray _ -> 80
   | CTuple _ -> 60
   | CFun _ -> 40
   | CSeq _ -> 0
@@ -240,6 +242,13 @@ let pp_coercion_main ppf ~pp_ty c =
     | CMRef (_, u) ->
       fprintf ppf "mref(%a)"
         pp_ty u
+    | CArray (c1, c2) ->
+      fprintf ppf "array(%a,%a)"
+        pp_coercion c1
+        pp_coercion c2
+    | CMArray (_, u) ->
+      fprintf ppf "marray(%a)"
+        pp_ty u
     | CId u ->
       fprintf ppf "id{%a}" 
         pp_ty u
@@ -265,13 +274,13 @@ module ITGL = struct
 
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
-    | DerefExp _ -> 90
-    | AppExp _ | RefExp _ -> 80
+    | DerefExp _ | GetExp _ -> 90
+    | AppExp _ | RefExp _ | MakeArrayExp _ -> 80
     | BinOp (_, (Mult | Div | Mod), _, _) -> 70
     | BinOp (_, (Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
-    | SubstExp _ -> 20
+    | SubstExp _ | PutExp _ -> 20
     | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
   let gt_exp e1 e2 =
@@ -340,7 +349,13 @@ module ITGL = struct
       fprintf ppf "!%a" (with_paren (gt_exp e e') pp_exp) e'  
     | SubstExp (_, e1, e2) as e ->
       fprintf ppf "%a := %a" (with_paren (gte_exp e e1) pp_exp) e1 (with_paren (gt_exp e e2) pp_exp) e2
-    
+    | MakeArrayExp (_, e1, e2) as e ->
+      fprintf ppf "Array.make %a %a" (with_paren (gte_exp e e1) pp_exp) e1 (with_paren (gte_exp e e2) pp_exp) e2
+    | GetExp (_, e1, e2) as e ->
+      fprintf ppf "%a.(%a)" (with_paren (gt_exp e e1) pp_exp) e1 pp_exp e2
+    | PutExp (_, e1, e2, e3) as e ->
+      fprintf ppf "%a.(%a) <- %a" (with_paren (gt_exp e e1) pp_exp) e1 pp_exp e2 (with_paren (gt_exp e e3) pp_exp) e3
+
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf " | %a -> %a%a"

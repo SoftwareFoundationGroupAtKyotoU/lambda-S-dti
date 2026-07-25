@@ -8,6 +8,7 @@ let rec ftv_ty: ty -> TV.t = function
   | TyList u -> ftv_ty u
   | TyTuple us -> TV.big_union (List.map ftv_ty us)
   | TyRef u -> ftv_ty u
+  | TyArray u -> ftv_ty u
   | _ -> TV.empty
 
 let ftv_tysc: tysc -> TV.t = function
@@ -35,6 +36,8 @@ let rec ftv_coercion = function
   | CTuple cs -> TV.big_union (List.map ftv_coercion cs)
   | CRef (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CMRef (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
+  | CArray (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
+  | CMArray (u1, u2) -> TV.union (ftv_ty u1) (ftv_ty u2)
   | CId u -> ftv_ty u
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
@@ -63,6 +66,9 @@ module ITGL = struct
     | RefExp (_, e) -> ftv_exp e
     | DerefExp (_, e) -> ftv_exp e
     | SubstExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
+    | MakeArrayExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
+    | GetExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
+    | PutExp (_, e1, e2, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
 end
 
 module CC = struct

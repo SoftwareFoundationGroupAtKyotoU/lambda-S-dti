@@ -33,6 +33,9 @@ let rec tv_renew_ty u env = match u with
   | TyRef u ->
     let u, env = tv_renew_ty u env in
     TyRef u, env
+  | TyArray u ->
+    let u, env = tv_renew_ty u env in
+    TyArray u, env
   | TyCoercion (u1, u2) ->
     let u1, env = tv_renew_ty u1 env in
     let u2, env = tv_renew_ty u2 env in
@@ -92,6 +95,14 @@ let rec tv_renew_coercion c env = match c with
     let u1, env = tv_renew_ty u1 env in
     let u2, env = tv_renew_ty u2 env in
     CMRef (u1, u2), env
+  | CArray (c1, c2) ->
+    let c1, env = tv_renew_coercion c1 env in
+    let c2, env = tv_renew_coercion c2 env in
+    CArray (c1, c2), env
+  | CMArray (u1, u2) ->
+    let u1, env = tv_renew_ty u1 env in
+    let u2, env = tv_renew_ty u2 env in
+    CMArray (u1, u2), env
 
 let rec tv_renew_mf mf env = match mf with
   | MatchILit _ | MatchBLit _ | MatchULit | MatchNil | MatchWild | MatchVar _ -> mf, env

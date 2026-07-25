@@ -37,6 +37,7 @@ type ty =
   | TyList of ty
   | TyTuple of ty list
   | TyRef of ty
+  | TyArray of ty
   | TyCoercion of ty * ty
 and tyvar = int * ty option ref
 (* int value is used to identify type variables.
@@ -87,7 +88,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Fn | Li | Tp of int | Rf
+type tag = I | B | U | Fn | Li | Tp of int | Rf | Ar
 
 type coercion =
   | CInj of tag
@@ -100,6 +101,8 @@ type coercion =
   | CTuple of coercion list
   | CRef of coercion * coercion
   | CMRef of ty * ty
+  | CArray of coercion * coercion
+  | CMArray of ty * ty
   | CId of ty
   | CSeq of coercion * coercion
   | CFail of tag * (range * polarity) * tag
@@ -131,6 +134,9 @@ module ITGL = struct
     | RefExp of range * exp
     | DerefExp of range * exp
     | SubstExp of range * exp * exp
+    | MakeArrayExp of range * exp * exp
+    | GetExp of range * exp * exp
+    | PutExp of range * exp * exp * exp
 
   let range_of_exp = function
     | Var (r, _, _)
@@ -150,7 +156,10 @@ module ITGL = struct
     | TupleExp (r, _)
     | RefExp (r, _) 
     | DerefExp (r, _)
-    | SubstExp (r, _, _) -> r
+    | SubstExp (r, _, _)
+    | MakeArrayExp (r, _, _)
+    | GetExp (r, _, _)
+    | PutExp (r, _, _, _) -> r
 
   type program =
     | Exp of exp

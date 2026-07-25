@@ -13,6 +13,7 @@ let subst_type (s : substitutions) (u : ty) =
     | TyList u -> TyList (subst u s0)
     | TyTuple us -> TyTuple (List.map (fun u -> subst u s0) us)
     | TyRef u -> TyRef (subst u s0)
+    | TyArray u -> TyArray (subst u s0)
     | TyVar (a, { contents = None }) when a = a' -> u'
     | TyVar (_, { contents = Some u }) -> subst u s0
     | _ as u -> u
@@ -39,6 +40,8 @@ let rec subst_coercion ~monotonic s = function
   | CFail _ as c -> c
   | CRef (c1, c2) -> CRef (subst_coercion ~monotonic s c1, subst_coercion ~monotonic s c2)
   | CMRef (u1, u2) -> CMRef (subst_type s u1, subst_type s u2)
+  | CArray (c1, c2) -> CArray (subst_coercion ~monotonic s c1, subst_coercion ~monotonic s c2)
+  | CMArray (u1, u2) -> CMArray (subst_type s u1, subst_type s u2)
 
 let rec subst_mf s = function
   | MatchILit _ | MatchBLit _ | MatchULit | MatchWild | MatchNil | MatchVar _ as mf -> mf
