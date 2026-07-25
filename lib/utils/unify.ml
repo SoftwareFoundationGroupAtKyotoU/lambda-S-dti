@@ -61,6 +61,15 @@ let rec unify = function
     else let y = fresh_tyvar () in
     unify @@ CEqual (TyVar x, TyRef y);
     unify @@ CConsistent (y, u)
+  (* U1 array ~ U2 array *)
+  | CConsistent (TyArray u1, TyArray u2) -> 
+    unify @@ CConsistent (u1, u2)
+  (* U array ~ X or X ~ U array *)
+  | CConsistent (TyArray u, TyVar x) | CConsistent (TyVar x, TyArray u) as c ->
+    if TV.mem x (ftv_ty (TyArray u)) then raise @@ Unify_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
+    else let y = fresh_tyvar () in
+    unify @@ CEqual (TyVar x, TyArray y);
+    unify @@ CConsistent (y, u)
   (* U ~ X or X ~ U *)
   | CConsistent (u, TyVar x) | CConsistent (TyVar x, u) ->
     unify @@ CEqual (TyVar x, u)
@@ -80,7 +89,7 @@ let rec unify = function
   | CEqual (TyFun (t11, t12), TyFun (t21, t22)) ->
     unify @@ CEqual (t11, t21);
     unify @@ CEqual (t12, t22)
-  (* [T1] = [T2] *)
+  (* T1 list = T2 list *)
   | CEqual (TyList t1, TyList t2) ->
     unify @@ CEqual (t1, t2)
   (* (U11,...,U1n) = (U21,...,U2n) *)
@@ -90,6 +99,12 @@ let rec unify = function
     with
       Invalid_argument _ -> raise @@ Unify_error (asprintf "cannot solve a constraint because of the difference of the tuple length: %a" pp_constr c)
     end
+  (* T1 ref = T2 ref *)
+  | CEqual (TyRef t1, TyRef t2) ->
+    unify @@ CEqual (t1, t2)
+  (* T1 array = T2 array *)
+  | CEqual (TyArray t1, TyArray t2) ->
+    unify @@ CEqual (t1, t2)
   (* T = X or X = T *)
   | CEqual (t, TyVar (_, tref as tv)) (*when not (is_tyvar t)*) | CEqual (TyVar (_, tref as tv), t) as c ->
     if TV.mem tv (ftv_ty t) then raise @@ Unify_error (asprintf "cannot solve a constraint because of occurance: %a" pp_constr c)
@@ -180,4 +195,5 @@ let rec unify_meet u1 u2 = match u1, u2 with
   | TyTuple us1, TyTuple us2 ->
     TyTuple (List.map2 (fun u1 u2 -> unify_meet u1 u2) us1 us2)
   | TyRef u1, TyRef u2 -> TyRef (unify_meet u1 u2)
+  | TyArray u1, TyArray u2 -> TyRef (unify_meet u1 u2)
   | u1, u2 -> raise @@ Unify_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
