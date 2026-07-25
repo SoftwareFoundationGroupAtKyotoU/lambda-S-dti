@@ -21,7 +21,6 @@ let reservedWords = [
   ("match", fun r -> Parser.MATCH r);
   ("with", fun r -> Parser.WITH r);
   ("ref", fun r -> Parser.REF r);
-  ("Array.make", fun r -> Parser.MAKEARRAY r);
 ]
 
 let range_of lexbuf =
@@ -43,8 +42,8 @@ rule main = parse
   }
 | "(" { Parser.LPAREN (range_of lexbuf) }
 | ")" { Parser.RPAREN (range_of lexbuf) }
-| "[" { Parser.LBRACKET (range_of lexbuf)}
-| "]" { Parser.RBRACKET (range_of lexbuf)}
+| "[" { Parser.LBRACKET (range_of lexbuf) }
+| "]" { Parser.RBRACKET (range_of lexbuf) }
 | "," { Parser.COMMA (range_of lexbuf) }
 | ":" { Parser.COLON (range_of lexbuf) }
 | ";" { Parser.SEMI (range_of lexbuf) }
@@ -68,9 +67,10 @@ rule main = parse
 | ">=" { Parser.GTE (range_of lexbuf) }
 | "&&" { Parser.LAND (range_of lexbuf) }
 | "||" { Parser.LOR (range_of lexbuf) }
-| "|" { Parser.VBAR (range_of lexbuf)}
-| "_" { Parser.UNDER (range_of lexbuf)}
-| "." { Parser.DOT (range_of lexbuf)}
+| "|" { Parser.VBAR (range_of lexbuf) }
+| "_" { Parser.UNDER (range_of lexbuf) }
+| "." { Parser.DOT (range_of lexbuf) }
+| "Array.make" { Parser.MAKEARRAY (range_of lexbuf) }
 | ['a'-'z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
   {
     let id = Lexing.lexeme lexbuf in

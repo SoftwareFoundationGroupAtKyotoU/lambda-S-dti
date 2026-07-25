@@ -195,5 +195,5 @@ let rec unify_meet u1 u2 = match u1, u2 with
   | TyTuple us1, TyTuple us2 ->
     TyTuple (List.map2 (fun u1 u2 -> unify_meet u1 u2) us1 us2)
   | TyRef u1, TyRef u2 -> TyRef (unify_meet u1 u2)
-  | TyArray u1, TyArray u2 -> TyRef (unify_meet u1 u2)
+  | TyArray u1, TyArray u2 -> TyArray (unify_meet u1 u2)
   | u1, u2 -> raise @@ Unify_error (asprintf "failed to generate constraints: meet(%a, %a)" pp_ty u1 pp_ty u2)
