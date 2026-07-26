@@ -81,6 +81,9 @@ module CC = struct
     | RefExp (f, u) -> RefExp (subst_exp ~monotonic s f, subst_type s u)
     | DerefExp (f, uo) -> DerefExp (subst_exp ~monotonic s f, Option.map (subst_type s) uo)
     | SubstExp (f1, f2, uo) -> SubstExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, Option.map (subst_type s) uo)
+    | MakeArrayExp (f1, f2, u) -> MakeArrayExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_type s u)
+    | GetExp (f1, f2, uo) -> GetExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, Option.map (subst_type s) uo)
+    | PutExp (f1, f2, f3, uo) -> PutExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3, Option.map (subst_type s) uo)
   and subst_fund ~monotonic s = function
     | FunB ((x, u), f) -> FunB ((x, subst_type s u), subst_exp ~monotonic s f)
     | FunS ((x, u1), (k, uk), f) ->

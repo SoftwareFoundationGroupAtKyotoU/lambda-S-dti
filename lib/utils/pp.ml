@@ -378,14 +378,14 @@ module CC = struct
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | TupleExp _ | CoercionExp _ -> 100
     | CCompExp _ -> 95
-    | DerefExp _ -> 90
-    | AppDExp _ | AppMExp _ | RefExp _ -> 80
+    | DerefExp _ | GetExp _ -> 90
+    | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ -> 80
     | CAppExp _ -> 75
     | BinOp ((Mult | Div | Mod), _, _) -> 70
     | BinOp ((Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
-    | SubstExp _  -> 20
+    | SubstExp _ | PutExp _ -> 20
     | CastExp _ -> 15
     | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
@@ -499,7 +499,31 @@ module CC = struct
         (with_paren (gte_exp f f1) pp_exp) f1
         (with_paren (gte_exp f f2) pp_exp) f2
         pp_ty u
-    (* | _ -> raise @@ Failure "yet" *)
+    | MakeArrayExp (f1, f2, u) as f ->
+      fprintf ppf "Array.make %a %a@%a"
+        (with_paren (gte_exp f f1) pp_exp) f1
+        (with_paren (gte_exp f f2) pp_exp) f2
+        pp_ty u
+    | GetExp (f1, f2, None) as f ->
+      fprintf ppf "%a.(%a)"
+        (with_paren (gte_exp f f1) pp_exp) f1
+        pp_exp f2
+    | GetExp (f1, f2, Some u) as f ->
+      fprintf ppf "%a.(%a)@%a"
+        (with_paren (gt_exp f f1) pp_exp) f1
+        pp_exp f2
+        pp_ty u
+    | PutExp (f1, f2, f3, None) as f ->
+      fprintf ppf "%a.(%a) <- %a"
+        (with_paren (gte_exp f f1) pp_exp) f1
+        pp_exp f2
+        (with_paren (gte_exp f f3) pp_exp) f3
+    | PutExp (f1, f2, f3, Some u) as f ->
+      fprintf ppf "%a.(%a) <- %a@%a"
+        (with_paren (gte_exp f f1) pp_exp) f1
+        pp_exp f2
+        (with_paren (gte_exp f f3) pp_exp) f3
+        pp_ty u
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf " | %a -> %a%a"
@@ -563,11 +587,9 @@ module CC = struct
         x
         pp_exp f
 
-  (*let pp_tag ppf t = pp_ty ppf @@ tag_to_ty t*)
-
   let gt_value v1 v2 = match v1, v2 with
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _ | Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _), ConsV _ -> true
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | CoercionV _), (Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _) -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _ | Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _), ConsV _ -> true
+    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _), (Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _) -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
@@ -580,6 +602,8 @@ module CC = struct
     | CastRefV _, CastRefV _ -> true
     | ConsV _, ConsV _ -> true
     | TupleV _, TupleV _ -> true
+    | RefV _, RefV _ -> true
+    | ArrayV _, ArrayV _ -> true
     | _ -> gt_value v1 v2
 
   let pp_value_main ppf ~pp_ty ~pp_coercion v =
@@ -601,15 +625,21 @@ module CC = struct
         let pp_list ppf vals = pp_print_list (pp_value refl) ppf vals ~pp_sep:pp_sep in
         fprintf ppf "(%a)"
           pp_list vs
-      | RefV ({ contents = (v, u) } as r) ->
-        if List.mem r refl then fprintf ppf "<cycle>"
+      | RefV { contents = (v', u) } as v ->
+        if List.mem v refl then fprintf ppf "<cycle>"
         else
           fprintf ppf "{ contents = %a, %a }"
-            (pp_value (r :: refl)) v
+            (pp_value (v :: refl)) v'
+            pp_ty u
+      | ArrayV { contents = (vs, u) } as v ->
+        if List.mem v refl then fprintf ppf "<cycle>"
+        else
+          fprintf ppf "[| %a, %a |]"
+            (pp_print_list ~pp_sep:(fun ppf () -> fprintf ppf "; ") (pp_value (v :: refl))) (Array.to_list vs)
             pp_ty u
       | Tagged (t, v) ->
         begin match v with
-        | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ ->
+        | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _ ->
           fprintf ppf "%a => ?"
             (pp_value refl) v
         | _ -> 
@@ -664,6 +694,18 @@ module CC = struct
             (with_paren (gt_value v v1) @@ pp_value refl) v1
             pp_ty (TyRef u1)
             pp_ty (TyRef u2)
+        end
+      | CastArrayV (v1, u1, u2, _) as v ->
+        begin match v1 with
+        | CastArrayV _ ->
+          fprintf ppf "%a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyArray u2)
+        | _ ->
+          fprintf ppf "%a: %a => %a"
+            (with_paren (gt_value v v1) @@ pp_value refl) v1
+            pp_ty (TyArray u1)
+            pp_ty (TyArray u2)
         end
       | CoerceV (v1, c) as v ->
         fprintf ppf "%a<<%a>>"

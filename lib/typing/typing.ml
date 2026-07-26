@@ -405,28 +405,48 @@ module CC = struct
       let u' = type_of_exp env f in
       assert (u = u');
       TyRef u
-    | DerefExp (f, None) ->
+    | DerefExp (f, ou) ->
       let u = type_of_exp env f in
-      begin match u with
-      | TyRef u -> u
+      begin match u, ou with
+      | TyRef u, None -> u
+      | TyRef u, Some u' when u = u' -> u
       | _ -> raise @@ Type_bug "deref"
       end
-    | DerefExp (f, Some u) ->
-      let u' = type_of_exp env f in
-      begin match u' with
-      | TyRef u' when u = u' -> u
-      | _ -> raise @@ Type_bug "derefAnot"
+    | SubstExp (f1, f2, ou) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      assert (u1 = TyRef u2);
+      begin match ou with
+      | None -> TyUnit
+      | Some u when u2 = u -> TyUnit
+      | _ -> raise @@ Type_bug "subst"
       end
-    | SubstExp (f1, f2, None) ->
+    | MakeArrayExp (f1, f2, u) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
-      if u1 = TyRef u2 then TyUnit
-      else raise @@ Type_bug "subst"
-    | SubstExp (f1, f2, Some u) ->
+      assert (u1 = TyInt);
+      assert (u2 = u);
+      TyArray u
+    | GetExp (f1, f2, ou) ->
       let u1 = type_of_exp env f1 in
       let u2 = type_of_exp env f2 in
-      if u1 = TyRef u2 && u2 = u then TyUnit
-      else raise @@ Type_bug "substAnot"
+      assert (u2 = TyInt);
+      begin match u1, ou with
+      | TyArray u, None -> u
+      | TyArray u, Some u' when u = u' -> u
+      | _ -> raise @@ Type_bug "get"
+      end
+    | PutExp (f1, f2, f3, ou) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      let u3 = type_of_exp env f3 in
+      assert (u2 = TyInt);
+      assert (u1 = TyArray u3);
+      begin match ou with
+      | None -> TyUnit
+      | Some u when u3 = u -> TyUnit
+      | _ -> raise @@ Type_bug "subst"
+      end
     | CoercionExp c -> type_of_coercion c
     | CAppExp (f1, f2) ->
       let u1 = type_of_exp env f1 in

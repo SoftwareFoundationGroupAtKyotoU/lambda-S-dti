@@ -149,14 +149,7 @@ module CC = struct
       RefV (ref (v, u))
     | DerefExp (f, ou) ->
       let v = eval ~config env f in
-      if monotonic then
-        match v, ou with
-        | RefV { contents = (v, _) }, None -> v
-        | RefV { contents = (v, u) }, Some u' ->
-          let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
-          toplevel_coerce ~config v s
-        | _ -> raise @@ Eval_bug "eval: not refV deref"
-      else if config.intoB then
+      if config.intoB then
         let rec deref = function
           | CastRefV (v, u1, u2, (r, p)) ->
             let v = deref v in
@@ -165,25 +158,18 @@ module CC = struct
           | _ -> raise @@ Eval_bug "eval: not refV deref"
         in
         deref v
-      else begin match v with
-        | CoerceV (RefV ({ contents = v, _ }), CRef (c1, _)) -> toplevel_coerce ~config v c1
-        | RefV ({ contents = v, _ }) -> v
+      else begin match v, ou with
+        | RefV { contents = (v, u) }, Some u' when monotonic ->
+          let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
+          toplevel_coerce ~config v s
+        | RefV ({ contents = v, _ }), _ -> v
+        | CoerceV (RefV ({ contents = v, _ }), CRef (c1, _)), _ when not monotonic -> toplevel_coerce ~config v c1
         | _ -> raise @@ Eval_bug "eval: not refV deref"
       end
     | SubstExp (f1, f2, ou) ->
       let v1 = eval ~config env f1 in
       let v2 = eval ~config env f2 in
-      if monotonic then
-        match v1, ou with
-        | RefV ({ contents = (_, u) } as rv), None -> rv := v2, u; UnitV
-        | RefV ({ contents = (_, u) } as rv), Some u' ->
-          let s = make_s_coercion ~monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u) in (* TODO *)
-          let v, psi = coerce ~config v2 s [] in
-          rv := v, u;
-          consume ~config psi;
-          UnitV
-        | _ -> raise @@ Eval_bug "eval: not refV subst"
-      else if config.intoB then
+      if config.intoB then
         let rec subst v1 v2 = match v1 with
           | CastRefV (v1, u1, u2, (r, p)) ->
             subst v1 (cast ~config v2 u2 u1 (r, neg p))
@@ -192,12 +178,79 @@ module CC = struct
           | _ -> raise @@ Eval_bug "eval: not refV subst"
         in
         subst v1 v2
-      else begin match v1 with
-        | CoerceV (RefV ({ contents = _, u } as rv), CRef (_, c2)) ->
-          rv := (toplevel_coerce ~config v2 c2), u; UnitV
-        | RefV ({ contents = _, u } as rv) ->
+      else begin match v1, ou with
+        | RefV ({ contents = (_, u) } as rv), Some u' when monotonic ->
+          let s = make_s_coercion ~monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u) in (* TODO *)
+          let v, psi = coerce ~config v2 s [] in
+          rv := v, u;
+          consume ~config psi;
+          UnitV
+        | RefV ({ contents = _, u } as rv), _ ->
           rv := v2, u; UnitV
+        | CoerceV (RefV ({ contents = _, u } as rv), CRef (_, c2)), _ when not monotonic ->
+          rv := (toplevel_coerce ~config v2 c2), u; UnitV
         | _ -> raise @@ Eval_bug "eval: not refV deref"
+      end
+    | MakeArrayExp (f1, f2, u) ->
+      let v1 = eval ~config env f1 in
+      let v2 = eval ~config env f2 in
+      begin match v1 with
+      | IntV i -> ArrayV (ref (Array.make i v2, u))
+      | _ -> raise @@ Eval_bug "eval: not int in MakeArrayExp"
+      end
+    | GetExp (f1, f2, ou) ->
+      let v1 = eval ~config env f1 in
+      let v2 = eval ~config env f2 in
+      begin match v2 with
+      | IntV i -> 
+        if config.intoB then
+          let rec get v = match v with
+            | CastArrayV (v, u1, u2, (r, p)) ->
+              let v = get v in
+              cast ~config v u1 u2 (r, p)
+            | ArrayV { contents = vs, _ } -> vs.(i)
+            | _ -> raise @@ Eval_bug "eval: not arrayV get"
+          in
+          get v1
+        else begin match v1, ou with
+          | ArrayV { contents = vs, u }, Some u' when monotonic ->
+            let s = make_s_coercion ~monotonic (normalize_type u) (Utils.Error.dummy_range, Pos) (normalize_type u') in (* TODO *)
+            toplevel_coerce ~config vs.(i) s
+          | ArrayV { contents = vs, _ }, _ -> vs.(i)
+          | CoerceV (ArrayV { contents = vs, _ }, CArray (c1, _)), _ when not monotonic -> toplevel_coerce ~config vs.(i) c1
+          | _ -> raise @@ Eval_bug "eval: not refV deref"
+        end
+      | _ -> raise @@ Eval_bug "eval: not IntV GetExp"
+      end
+    | PutExp (f1, f2, f3, ou) ->
+      let v1 = eval ~config env f1 in
+      let v2 = eval ~config env f2 in
+      let v3 = eval ~config env f3 in
+      begin match v2 with
+      | IntV i ->
+        if config.intoB then
+          let rec put v1 v2 = match v1 with
+            | CastArrayV (v1, u1, u2, (r, p)) ->
+              put v1 (cast ~config v2 u2 u1 (r, neg p))
+            | ArrayV { contents = vs, _ } ->
+              vs.(i) <- v3; UnitV
+            | _ -> raise @@ Eval_bug "eval: not refV subst"
+          in
+          put v1 v2
+        else begin match v1, ou with
+          | ArrayV { contents = vs, u }, Some u' when monotonic ->
+            let s = make_s_coercion ~monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u) in (* TODO *)
+            let v, psi = coerce ~config v3 s [] in
+            vs.(i) <- v;
+            consume ~config psi;
+            UnitV
+          | ArrayV { contents = vs, _ }, _ ->
+            vs.(i) <- v3; UnitV
+          | CoerceV (ArrayV { contents = vs, _ }, CArray (_, c2)), _ when not monotonic ->
+            vs.(i) <- toplevel_coerce ~config v3 c2; UnitV
+          | _ -> raise @@ Eval_bug "eval: not refV deref"
+        end
+      | _ -> raise @@ Eval_bug "eval: not IntV PutExp"
       end
     | CastExp (f, u1, u2, r_p) ->
       let v = eval ~config env f in
@@ -309,7 +362,7 @@ module CC = struct
     (* IdStar *)
     | TyDyn, TyDyn -> v
     (* Succeed / Fail *)
-    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn as u2) ->
+    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u2) ->
       begin match v, u2 with
       | Tagged (B, v), TyBool -> v
       | Tagged (I, v), TyInt -> v
@@ -317,10 +370,11 @@ module CC = struct
       | Tagged (Fn, v), TyFun (TyDyn, TyDyn) -> v
       | Tagged (Li, v), TyList TyDyn -> v
       | Tagged (Rf, v), TyRef TyDyn -> v
+      | Tagged (Ar, v), TyArray TyDyn -> v
       | Tagged _, _ -> raise @@ Blame (r, p)
       | _ -> raise @@ Eval_bug "untagged value"
       end
-    | TyDyn, TyTuple us when List.fold_left (fun b u -> u = TyDyn && b) true us ->
+    | TyDyn, TyTuple us when List.for_all (fun u -> u = TyDyn) us ->
       begin match v with
       | Tagged (Tp n, v) when n = List.length us -> v
       | Tagged _ -> raise @@ Blame (r, p)
@@ -354,6 +408,9 @@ module CC = struct
     | TyRef u1, TyRef u2 ->
       if TyRef u1 = TyRef u2 then v 
       else CastRefV (v, u1, u2, (r, p))
+    | TyArray u1, TyArray u2 ->
+      if TyArray u1 = TyArray u2 then v 
+      else CastArrayV (v, u1, u2, (r, p))
     (* Tagged *)
     | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
@@ -362,6 +419,7 @@ module CC = struct
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
     | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)
     | TyRef TyDyn, TyDyn -> Tagged (Rf, v)
+    | TyArray TyDyn, TyDyn -> Tagged (Ar, v)
     (* Ground *)
     | TyFun _, TyDyn ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -379,6 +437,10 @@ module CC = struct
       let dref = TyRef TyDyn in
       let v = cast ~config v u1 dref (r, p) in
       cast ~config v dref u2 (r, p)
+    | TyArray _, TyDyn ->
+      let darray = TyArray TyDyn in
+      let v = cast ~config v u1 darray (r, p) in
+      cast ~config v darray u2 (r, p)
     (* Expand *)
     | TyDyn, TyFun _ ->
       let dfun = TyFun (TyDyn, TyDyn) in
@@ -396,6 +458,10 @@ module CC = struct
       let dref = TyRef TyDyn in
       let v = cast ~config v TyDyn dref (r, p) in
       cast ~config v dref u2 (r, p)
+    | TyDyn, TyArray _ ->
+      let darray = TyArray TyDyn in
+      let v = cast ~config v TyDyn darray (r, p) in
+      cast ~config v darray u2 (r, p)
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({ contents = None } as x)) as x') -> begin
         match v with
@@ -434,10 +500,17 @@ module CC = struct
             Pp.pp_ty u;
           x := Some u;
           cast ~config v (TyRef TyDyn) u (r, p)
+        | Tagged (Ar, v) ->
+          let u = TyArray (fresh_tyvar ()) in
+          print_debug "DTI: %a is instantiated to %a@."
+            Pp.pp_ty x'
+            Pp.pp_ty u;
+          x := Some u;
+          cast ~config v (TyArray TyDyn) u (r, p)
         | _ -> raise @@ Eval_bug "cannot instantiate"
       end
     | _ -> raise @@ Eval_bug (asprintf "cannot cast value: %a" Pp.CC.pp_value v)
-  and coerce ~config v c (psi: ((value * ty) ref * ty) list) =
+  and coerce ~config v c (psi: (value * ty) list) =
     let print_debug f = Utils.Format.make_print_debug config.debug f in
     print_debug "coer <-- %a<%a>@." Pp.CC.pp_value v Pp.pp_coercion c;
     let eager = config.eager in
@@ -459,21 +532,45 @@ module CC = struct
       | _ -> TupleV (List.rev res), psi
       in
       tp_c vs ss psi []
-    | RefV rv, CMRef (_, u) when monotonic -> RefV rv, psi @ [rv, u]
+    | RefV rv, CMRef (_, u) when monotonic -> RefV rv, psi @ [RefV rv, u]
+    | ArrayV rv, CMArray (_, u) when monotonic -> ArrayV rv, psi @ [ArrayV rv, u]
     | v, c when is_d c -> CoerceV (v, c), psi
     | _ -> raise @@ Eval_bug (asprintf "cannot coercion value: %a <%a>" Pp.CC.pp_value v Pp.pp_coercion c)
   and consume ~config = function
-    | ({ contents = v, u' } as rv, u) :: psi ->
+    | (v, u) :: psi ->
       let print_debug f = Utils.Format.make_print_debug config.debug f in
-      print_debug "cons <-- (%a, %a), %a@." Pp.CC.pp_value v Pp.pp_ty u' Pp.pp_ty u;
-      let u'' = try unify_meet u' u with Typing.Type_error _ -> raise @@ Blame (Utils.Error.dummy_range, Pos) in (* TODO *)
-      if u'' = u' then
-        consume ~config psi
-      else begin
-        let s = make_s_coercion ~monotonic:config.monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u'') in (* TODO *)
-        let v, psi = coerce ~config v s psi in
-        rv := v, u'';
-        consume ~config psi
+      print_debug "cons <-- %a, %a@." Pp.CC.pp_value v Pp.pp_ty u;
+      begin match v with
+      | RefV ({ contents = v, u' } as rv) ->
+        let u'' = try unify_meet u' u with Typing.Type_error _ -> raise @@ Blame (Utils.Error.dummy_range, Pos) in (* TODO *)
+        if u'' = u' then
+          consume ~config psi
+        else begin
+          let s = make_s_coercion ~monotonic:config.monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u'') in (* TODO *)
+          let v, psi = coerce ~config v s psi in
+          rv := v, u'';
+          consume ~config psi
+        end
+      | ArrayV ({ contents = vs, u' } as rv) ->
+        let u'' = try unify_meet u' u with Typing.Type_error _ -> raise @@ Blame (Utils.Error.dummy_range, Pos) in (* TODO *)
+        if u'' = u' then
+          consume ~config psi
+        else begin
+          let s = make_s_coercion ~monotonic:config.monotonic (normalize_type u') (Utils.Error.dummy_range, Pos) (normalize_type u'') in (* TODO *)
+          let n = Array.length vs in
+          let vs' = Array.make n (IntV 0) in
+          let rec loop i psi =
+            if i = n then psi
+            else
+              let v, psi = coerce ~config vs.(i) s psi in
+              vs'.(i) <- v;
+              loop (i + 1) psi
+          in
+          let psi = loop 0 psi in
+          rv := vs', u'';
+          consume ~config psi
+        end
+      | _ -> raise @@ Eval_bug "not ref or array is passed to consume"
       end
     | [] -> ()
   and eval_app_valD ~config env v1 v2 v3 = match v1 with (*値まで評価しきっているので，論文のようなlet k = t;;c in ~~とはできない*)

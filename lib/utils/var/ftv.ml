@@ -98,6 +98,11 @@ module CC = struct
     | DerefExp (f, Some u) -> TV.union (ftv_exp f) (ftv_ty u)
     | SubstExp (f1, f2, None) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | SubstExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
+    | MakeArrayExp (f1, f2, u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
+    | GetExp (f1, f2, None) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | GetExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
+    | PutExp (f1, f2, f3, None) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
+    | PutExp (f1, f2, f3, Some u) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) (ftv_ty u)
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CCompExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)

@@ -7,9 +7,9 @@ module CC : sig
   
   val eval_program : config:Config.t -> value Environment.t -> program -> value Environment.t * id * value
   
-  val coerce : config:Config.t -> value -> coercion -> ((value * ty) ref * ty) list -> (value * ((value * ty) ref * ty) list)
+  val coerce : config:Config.t -> value -> coercion -> (value * ty) list -> (value * (value * ty) list)
 
-  val consume :  config:Config.t ->((value * ty) ref * ty) list -> unit
+  val consume :  config:Config.t ->(value * ty) list -> unit
 end 
 
 

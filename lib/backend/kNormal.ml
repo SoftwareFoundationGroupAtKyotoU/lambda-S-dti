@@ -89,6 +89,9 @@ module CC = struct
     | RefExp (f, u) -> RefExp (alpha_exp idenv f, u)
     | DerefExp (f, u) -> DerefExp (alpha_exp idenv f, u)
     | SubstExp (f1, f2, u) -> SubstExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
+    | MakeArrayExp (f1, f2, u) -> MakeArrayExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
+    | GetExp (f1, f2, u) -> GetExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
+    | PutExp (f1, f2, f3, u) -> PutExp (alpha_exp idenv f1, alpha_exp idenv f2, alpha_exp idenv f3, u)
   and alpha_fund idenv = function
     | FunB ((x, u), f) ->
       let newx = genvar x in
@@ -198,8 +201,8 @@ module CC = struct
         | Var _ | BConst _ | IfExp _ | AppMExp _ | AppDExp _ | LetExp _ | CastExp _ | CAppExp _ | MatchExp _ as f ->
           let f = k_normalize_exp tvsenv f in 
           insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunExp _ | FixExp _  | CCompExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _ -> raise @@ KNormal_bug "if-cond type should bool"
-        | _ -> raise @@ Failure "yet"
+        | IConst _ | UConst | FunExp _ | FixExp _  | CCompExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _
+        | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ -> raise @@ KNormal_bug "if-cond type should bool"
       end
     | FunExp (tvs, fund) ->
       assert (tvs = []);
@@ -270,6 +273,7 @@ module CC = struct
         let f2 = k_normalize_exp (Environment.add x [] tvsenv) f2 in
         KNorm.LetExp (x, f1, f2)
       end
+    | _ -> raise @@ KNormal_bug "yet"
   and k_normalize_fund ~static tvsenv = function
     | FunB ((x, _), f) ->
       let f = k_normalize_exp ~static (Environment.add x [] tvsenv) f in

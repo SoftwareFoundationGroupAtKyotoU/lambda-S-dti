@@ -165,6 +165,28 @@ module CC = struct
         | Some u -> let u, env = tv_renew_ty u env in Some u, env
       in
       SubstExp (e1, e2, uo), env
+    | MakeArrayExp (e1, e2, u) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let u, env = tv_renew_ty u env in
+      MakeArrayExp (e1, e2, u), env
+    | GetExp (e1, e2, uo) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let uo, env = match uo with
+        | None -> None, env
+        | Some u -> let u, env = tv_renew_ty u env in Some u, env
+      in
+      GetExp (e1, e2, uo), env
+    | PutExp (e1, e2, e3, uo) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let e3, env = tv_renew_exp e3 env in
+      let uo, env = match uo with
+        | None -> None, env
+        | Some u -> let u, env = tv_renew_ty u env in Some u, env
+      in
+      PutExp (e1, e2, e3, uo), env
     | AppMExp (e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in

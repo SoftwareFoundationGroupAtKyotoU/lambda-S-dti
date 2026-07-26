@@ -190,6 +190,9 @@ module CC = struct
     | RefExp of exp * ty
     | DerefExp of exp * ty option
     | SubstExp of exp * exp * ty option
+    | MakeArrayExp of exp * exp * ty
+    | GetExp of exp * exp * ty option
+    | PutExp of exp * exp * exp * ty option
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CCompExp of exp * exp
@@ -220,11 +223,13 @@ module CC = struct
     | ConsV of value * value
     | TupleV of value list
     | RefV of (value * ty) ref
+    | ArrayV of (value array * ty) ref
     | Tagged of tag * value
     | CastFunV of value * ty * ty * ty * ty * (range * polarity)
     | CastListV of value * ty * ty * (range * polarity)
     | CastTupleV of value * ty list * ty list * (range * polarity)
     | CastRefV of value * ty * ty * (range * polarity)
+    | CastArrayV of value * ty * ty * (range * polarity)
     | CoerceV of value * coercion
 end
 

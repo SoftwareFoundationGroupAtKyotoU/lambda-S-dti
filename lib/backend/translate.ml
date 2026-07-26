@@ -39,6 +39,14 @@ let cont = function
   | _ as u ->
     raise @@ Translation_bug (asprintf "failed to match: cont(%a)" pp_ty u)
 
+let cont_array = function
+  | TyVar (_, { contents = Some _ }) ->
+    raise @@ Translation_bug "cont: instantiated tyvar is given"
+  | TyArray u -> u
+  | TyDyn -> TyDyn
+  | _ as u ->
+    raise @@ Translation_bug (asprintf "failed to match: cont_array(%a)" pp_ty u)
+
 let rec meet u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some _ }), _
   | _, TyVar (_, { contents = Some _ }) ->
@@ -52,6 +60,7 @@ let rec meet u1 u2 = match u1, u2 with
   | TyList u1, TyList u2 -> TyList (meet u1 u2)
   | TyTuple us1, TyTuple us2 -> TyTuple (List.map2 (fun u1 u2 -> meet u1 u2) us1 us2)
   | TyRef u1, TyRef u2 -> TyRef (meet u1 u2)
+  | TyArray u1, TyArray u2 -> TyArray (meet u1 u2)
   | _ ->
     raise @@ Translation_bug (asprintf "failed to match: meet(%a, %a)" pp_ty u1 pp_ty u2)
 
@@ -168,7 +177,7 @@ module ITGL = struct
     | ConsExp (r, e1, e2) ->
       let f1, u1 = translate_exp ~config env e1 in
       let f2, u2 = translate_exp ~config env e2 in
-      let u_elm = meet u1 (elm u2) in (* TyDyn であれば TyList TyDyn にする *)
+      let u_elm = meet u1 (elm u2) in
       let u_list = TyList u_elm in
       CC.ConsExp (c f1 r u1 u_elm, c f2 r u2 u_list), u_list
     | TupleExp (_, es) ->
@@ -188,7 +197,24 @@ module ITGL = struct
       let u1' = cont u1 in
       if Type_utils.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
       else CC.SubstExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', Some u1'), TyUnit
-    | _ -> raise @@ Translation_bug "yet"
+    | MakeArrayExp (r, e1, e2) ->
+      let f1, u1 = translate_exp ~config env e1 in
+      let f2, u2 = translate_exp ~config env e2 in
+      CC.MakeArrayExp (c f1 r u1 TyInt, f2, u2), TyArray u2
+    | GetExp (r, e1, e2) ->
+      let f1, u1 = translate_exp ~config env e1 in
+      let f2, u2 = translate_exp ~config env e2 in
+      let u1' = cont_array u1 in
+      if Type_utils.is_static_type u1 then CC.GetExp (f1, c f2 r u2 TyInt, None), u1'
+      else CC.GetExp (c f1 r u1 (TyRef u1'), c f2 r u2 TyInt, Some u1'), u1'
+    | PutExp (r, e1, e2, e3) ->
+      let f1, u1 = translate_exp ~config env e1 in
+      let f2, u2 = translate_exp ~config env e2 in
+      let f3, u3 = translate_exp ~config env e3 in
+      let u1' = cont_array u1 in
+      if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, f2, f3, None), TyUnit
+      else CC.PutExp (c f1 r u1 (TyRef u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
+    (* | _ -> raise @@ Translation_bug "yet" *)
 
   let translate ~config env = function
     | Exp e ->
@@ -270,6 +296,30 @@ module CC = struct
       assert (u1 = TyRef u2);
       (match u_opt with Some u -> assert (u = u2) | None -> ());
       SubstExp (f1, f2, u_opt), TyUnit
+    | MakeArrayExp (f1, f2, u) ->
+      let f1, u1 = translate_exp ~config env f1 in
+      let f2, u2 = translate_exp ~config env f2 in
+      assert (u1 = TyInt);
+      assert (u2 = u);
+      MakeArrayExp (f1, f2, u), TyArray u
+    | GetExp (f1, f2, u_opt) ->
+      let f1, u1 = translate_exp ~config env f1 in
+      let f2, u2 = translate_exp ~config env f2 in
+      assert (u2 = TyInt);
+      begin match u1 with
+      | TyRef u1 ->
+        (match u_opt with Some u' -> assert (u1 = u') | None -> ());
+        GetExp (f1, f2, u_opt), u1
+      | _ -> raise @@ Translation_bug "DerefExp"
+      end
+    | PutExp (f1, f2, f3, u_opt) ->
+      let f1, u1 = translate_exp ~config env f1 in
+      let f2, u2 = translate_exp ~config env f2 in
+      let f3, u3 = translate_exp ~config env f3 in
+      assert (u2 = TyInt);
+      assert (u1 = TyRef u3);
+      (match u_opt with Some u -> assert (u = u3) | None -> ());
+      PutExp (f1, f2, f3, u_opt), TyUnit
     | IfExp (f1, f2, f3) ->
       let f1, u1 = translate_exp ~config env f1 in
       let f2, u2 = translate_exp ~config env f2 in
@@ -358,7 +408,7 @@ module CC = struct
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | BinOp _ | FunExp _ | FixExp _
-    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ as f ->
+    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ as f ->
       let f, u = translate_exp ~config env f in
       assert (u = uk1);
       CAppExp (f, k), uk2
