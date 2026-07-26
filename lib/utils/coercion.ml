@@ -13,10 +13,13 @@ let is_d = function
   | CSeq (CTuple _, CInj _)
   | CSeq (CRef _, CInj _)
   | CSeq (CMRef _, CInj _)
+  | CSeq (CArray _, CInj _)
+  | CSeq (CMArray _, CInj _)
   | CFun _
   | CList _
   | CTuple _
-  | CRef _ -> true
+  | CRef _
+  | CArray _ -> true
   | _ -> false
 
 (* Cast insertion translation *)
@@ -57,6 +60,17 @@ let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
       | CId u, CId _ -> CId (TyRef u)
       | _ -> CRef (c_r, c_w)
       end
+  | TyArray u1, TyArray u2 ->
+    if monotonic then
+      if u1 = u2 then CId (TyArray u1)
+      else CMArray (u1, u2)
+    else
+      let c_r = make_s_coercion ~monotonic u1 (r, p) u2 in
+      let c_w = make_s_coercion ~monotonic u2 (r, neg p) u1 in
+      begin match c_r, c_w with
+      | CId u, CId _ -> CId (TyArray u)
+      | _ -> CArray (c_r, c_w)
+      end
   | TyDyn, TyDyn -> CId TyDyn
   | g, TyDyn when is_ground g -> CSeq (CId g, CInj (tag_of_ty g))
   | TyFun _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyFun (TyDyn, TyDyn)), CInj Fn)
@@ -66,6 +80,7 @@ let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
     let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
     CSeq (make_s_coercion ~monotonic u (r, p) dtuple, CInj (Tp n))
   | TyRef _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyRef TyDyn), CInj Rf)
+  | TyArray _ as u, TyDyn -> CSeq (make_s_coercion ~monotonic u (r, p) (TyArray TyDyn), CInj Ar)
   | TyVar tv, TyDyn -> CTvInj (tv, (r, p))
   | TyDyn, g when is_ground g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
   | TyDyn, (TyFun _ as u) -> CSeq (CProj (Fn, (r, p)), make_s_coercion ~monotonic (TyFun (TyDyn, TyDyn)) (r, p) u)
@@ -75,6 +90,7 @@ let rec make_s_coercion ~monotonic u1 (r, p) u2 = match u1, u2 with
     let dtuple = TyTuple (List.map (fun _ -> TyDyn) us) in
     CSeq (CProj (Tp n, (r, p)), make_s_coercion ~monotonic dtuple (r, p) u)
   | TyDyn, (TyRef _ as u) -> CSeq (CProj (Rf, (r, p)), make_s_coercion ~monotonic (TyRef TyDyn) (r, p) u)
+  | TyDyn, (TyArray _ as u) -> CSeq (CProj (Ar, (r, p)), make_s_coercion ~monotonic (TyArray TyDyn) (r, p) u)
   | TyDyn, TyVar tv -> CTvProj (tv, (r, p))
   | _ -> raise @@ Coercion_bug (Format.asprintf "cannot exist such coercion: %a and %a in %a" Pp.pp_ty u1 Pp.pp_ty u2 Utils.Error.pp_range r)
   
@@ -213,6 +229,16 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
         else compose c1 (CRef (CTvProj (tv1, (r, p)), CTvInj (tv1, (r, neg p))))
       | _ -> raise @@ Coercion_bug "compose: unexpected type of coercion"
     end
+  | CSeq (c1, CInj Ar), CTvProj ((_, uref as tv), (r, p)) ->
+    let x1 = fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyArray x1);
+    uref := Some (TyArray x1);
+    begin match x1 with
+      | TyVar tv1 ->
+        if config.monotonic then compose c1 (CMArray (TyDyn, x1))
+        else compose c1 (CArray (CTvProj (tv1, (r, p)), CTvInj (tv1, (r, neg p))))
+      | _ -> raise @@ Coercion_bug "compose: unexpected type of coercion"
+    end
   | CSeq (c1, CInj t), CTvProj ((_, uref as tv), _) ->
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;
@@ -274,4 +300,17 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
       let u2 = unify_meet u12 u22 in
       CMRef (u1, u2)
     with Typing.Type_error _ -> CFail (Rf, (Utils.Error.dummy_range, Pos), Rf) end (* TODO *)
+  | CArray (c_r1, c_w1), CArray (c_r2, c_w2) ->
+    let c_r = compose c_r1 c_r2 in
+    let c_w = compose c_w2 c_w1 in
+    begin match c_r, c_w with
+    | CId u, CId _ -> CId (TyArray u)
+    | _ -> CArray (c_r, c_w)
+    end
+  | CMArray (u11, u12), CMArray (u21, u22) ->
+    begin try
+      let u1 = unify_meet u11 u21 in
+      let u2 = unify_meet u12 u22 in
+      CMArray (u1, u2)
+    with Typing.Type_error _ -> CFail (Ar, (Utils.Error.dummy_range, Pos), Ar) end (* TODO *)
   | _ -> raise @@ Coercion_bug "cannot compose coercions"

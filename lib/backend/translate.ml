@@ -206,14 +206,14 @@ module ITGL = struct
       let f2, u2 = translate_exp ~config env e2 in
       let u1' = cont_array u1 in
       if Type_utils.is_static_type u1 then CC.GetExp (f1, c f2 r u2 TyInt, None), u1'
-      else CC.GetExp (c f1 r u1 (TyRef u1'), c f2 r u2 TyInt, Some u1'), u1'
+      else CC.GetExp (c f1 r u1 (TyArray u1'), c f2 r u2 TyInt, Some u1'), u1'
     | PutExp (r, e1, e2, e3) ->
       let f1, u1 = translate_exp ~config env e1 in
       let f2, u2 = translate_exp ~config env e2 in
       let f3, u3 = translate_exp ~config env e3 in
       let u1' = cont_array u1 in
       if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, f2, f3, None), TyUnit
-      else CC.PutExp (c f1 r u1 (TyRef u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
+      else CC.PutExp (c f1 r u1 (TyArray u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
     (* | _ -> raise @@ Translation_bug "yet" *)
 
   let translate ~config env = function
@@ -307,7 +307,7 @@ module CC = struct
       let f2, u2 = translate_exp ~config env f2 in
       assert (u2 = TyInt);
       begin match u1 with
-      | TyRef u1 ->
+      | TyArray u1 ->
         (match u_opt with Some u' -> assert (u1 = u') | None -> ());
         GetExp (f1, f2, u_opt), u1
       | _ -> raise @@ Translation_bug "DerefExp"
@@ -317,7 +317,7 @@ module CC = struct
       let f2, u2 = translate_exp ~config env f2 in
       let f3, u3 = translate_exp ~config env f3 in
       assert (u2 = TyInt);
-      assert (u1 = TyRef u3);
+      assert (u1 = TyArray u3);
       (match u_opt with Some u -> assert (u = u3) | None -> ());
       PutExp (f1, f2, f3, u_opt), TyUnit
     | IfExp (f1, f2, f3) ->
