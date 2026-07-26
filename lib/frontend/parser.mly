@@ -36,7 +36,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
-%token <Utils.Error.range> MAKEARRAY DOT LARROW
+%token <Utils.Error.range> ARRAY MAKEARRAY DOT LARROW
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -292,6 +292,7 @@ TupleType :
 PostType :
   | u=PostType LIST { TyList u }
   | u=PostType REF { TyRef u }
+  | u=PostType ARRAY { TyArray u }
   | SimpleType { $1 }
 
 SimpleType :

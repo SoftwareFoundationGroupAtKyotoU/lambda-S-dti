@@ -148,6 +148,16 @@ let rec compose ~(config:Config.t) c1 c2 = (* TODO : blame *)
         else compose (CRef (CTvInj (tv1, (r, p)), CTvProj (tv1, (r, neg p)))) c2
       | _ -> raise @@ Coercion_bug "compose: unexpected type of coercion"
     end
+  | CTvInj ((_, uref as tv), (r, p)), CSeq (CProj (Ar, _), c2) ->
+    let x1 = fresh_tyvar () in
+    if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty (TyArray x1);
+    uref := Some (TyArray x1);
+    begin match x1 with
+      | TyVar tv1 ->
+        if config.monotonic then compose (CMArray (x1, TyDyn)) c2
+        else compose (CArray (CTvInj (tv1, (r, p)), CTvProj (tv1, (r, neg p)))) c2
+      | _ -> raise @@ Coercion_bug "compose: unexpected type of coercion"
+    end
   | CTvInj ((_, uref as tv), _), CSeq (CProj (t, _), c2) -> 
     let u = type_of_tag t in
     if debug then fprintf err_formatter "DTI: %a is instantiated to %a@." Pp.pp_ty (TyVar tv) Pp.pp_ty u;

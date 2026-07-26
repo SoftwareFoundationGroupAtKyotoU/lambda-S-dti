@@ -21,6 +21,7 @@ let reservedWords = [
   ("match", fun r -> Parser.MATCH r);
   ("with", fun r -> Parser.WITH r);
   ("ref", fun r -> Parser.REF r);
+  ("array", fun r -> Parser.ARRAY r);
 ]
 
 let range_of lexbuf =
