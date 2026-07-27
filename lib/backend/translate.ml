@@ -212,7 +212,7 @@ module ITGL = struct
       let f2, u2 = translate_exp ~config env e2 in
       let f3, u3 = translate_exp ~config env e3 in
       let u1' = cont_array u1 in
-      if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, f2, f3, None), TyUnit
+      if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, c f2 r u2 TyInt, f3, None), TyUnit
       else CC.PutExp (c f1 r u1 (TyArray u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
     (* | _ -> raise @@ Translation_bug "yet" *)
 
