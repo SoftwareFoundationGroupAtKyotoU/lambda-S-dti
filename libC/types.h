@@ -20,7 +20,6 @@ typedef struct range {
 } range;
 
 typedef enum ground_ty : uint8_t {
-	G_NONE, // this is dummy in the present implementation
 	G_INT,
 	G_BOOL,
 	G_UNIT,
@@ -28,6 +27,7 @@ typedef enum ground_ty : uint8_t {
 	G_LI,
 	G_TP,
 	G_RF,
+	G_AR,
 } ground_ty;
 
 typedef struct ty ty;
@@ -50,6 +50,12 @@ typedef struct tpl_header tpl;
 typedef value *ref;
 #else
 typedef struct ref ref;
+#endif
+
+#if defined(MONOTONIC) || defined(STATIC)
+typedef struct arr_raw arr;
+#else
+typedef struct arr_header arr;
 #endif
 
 #if !defined(CAST) && !defined(STATIC)

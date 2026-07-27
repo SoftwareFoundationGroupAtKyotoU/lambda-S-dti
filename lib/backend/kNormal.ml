@@ -144,9 +144,8 @@ module CC = struct
     | KNorm.Var x -> k x
     | _ as f -> 
       let x = genvar "_var" in
-      let f' = k x in (* Var以外に自由な型変数への代入などは存在しないので、ここは[]で大丈夫 *)
-      KNorm.LetExp (x, f, f') (* todo:考える。とりあえず[] *)
-      (*多分大丈夫、applicationにしか不要で、(fun x...) vなら既に代入済み、(fun (x:?)...) vならcast済み*)
+      let f' = k x in
+      KNorm.LetExp (x, f, f')
 
   let rec k_normalize_exp tvsenv f ~static = 
     let k_normalize_exp = k_normalize_exp ~static in 
@@ -258,6 +257,19 @@ module CC = struct
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Subst (x, y, u)
+    | MakeArrayExp (f1, f2, u) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.MakeArray (x, y, u)
+    | GetExp (f1, f2, u) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Get (x, y, u)
+    | PutExp (f1, f2, f3, u) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      let f3 = k_normalize_exp tvsenv f3 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> insert_let f3 @@ fun z -> KNorm.Put (x, y, z, u)
     | LetExp (x, f1, f2) ->
       begin match f1 with
       | FunExp (tvs, fund) ->
@@ -273,7 +285,7 @@ module CC = struct
         let f2 = k_normalize_exp (Environment.add x [] tvsenv) f2 in
         KNorm.LetExp (x, f1, f2)
       end
-    | _ -> raise @@ KNormal_bug "yet"
+    (* | _ -> raise @@ KNormal_bug "yet" *)
   and k_normalize_fund ~static tvsenv = function
     | FunB ((x, _), f) ->
       let f = k_normalize_exp ~static (Environment.add x [] tvsenv) f in
@@ -338,6 +350,9 @@ module KNorm = struct
     | Ref (x, u) -> Ref (find x idenv, u)
     | Deref (x, u) -> Deref (find x idenv, u)
     | Subst (x, y, u) -> Subst (find x idenv, find y idenv, u)
+    | MakeArray (x, y, u) -> MakeArray (find x idenv, find y idenv, u)
+    | Get (x, y, u) -> Get (find x idenv, find y idenv, u)
+    | Put (x, y, z, u) -> Put (find x idenv, find y idenv, find z idenv, u)
     | IfEqExp (x, y, f1, f2) ->
       IfEqExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
     | IfLteExp (x, y, f1, f2) ->
@@ -414,14 +429,3 @@ let kNorm_funs (tvsenv, alphaenv, betaenv) f =
     else iter betaenv fassoc
   in let kf, kfunenvs = iter betaenv f in
   kf, kfunenvs
-
-(* let kNorm_funs_LS (tvsenv, alphaenv, betaenv) f = 
-  let f, alphaenv = CC.alpha_program alphaenv f in
-  let f, tvsenv = CC.k_normalize_program tvsenv f ~static:false in
-  let rec iter betaenv f =
-    let fbeta, betaenv = KNorm.beta_program betaenv f in
-    let fassoc = KNorm.assoc_program fbeta in
-    if f = fassoc then f, (tvsenv, alphaenv, betaenv)
-    else iter betaenv fassoc
-  in let kf, kfunenvs = iter betaenv f in
-  kf, kfunenvs *)

@@ -61,7 +61,7 @@ let rec exist_tv l1 l2 = match l2 with
   | [] -> false
   
 let rec ty_tv tvs u = match u with
-  | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn as u -> (u, fun x -> x)
+  | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u -> (u, fun x -> x)
   | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> TyManager.register u; (u, fun x -> x)
   | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
   | TyFun (u1, u2) ->
@@ -245,6 +245,7 @@ let rec static_exp tvs = function
   | Var _ | Int _ | Nil | Add _ | Sub _ | Mul _ | Div _ | Mod _
   | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ 
   | Deref (_, None) | Subst (_, _, None)
+  | Get (_, _, None) | Put (_, _, _, None)
   | AppDCls _ | AppDDir _ | AppMCls _ | AppMDir _ 
   | CApp _ | CComp _ as f -> f
   | Ref (x, u) ->
@@ -256,6 +257,15 @@ let rec static_exp tvs = function
   | Subst (x, y, Some u) ->
     let u, udeclfun = ty_tv tvs u in
     udeclfun (Subst (x, y, Some u))
+  | MakeArray (x, y, u) ->
+    let u, udeclfun = ty_tv tvs u in
+    udeclfun (MakeArray (x, y, u))
+  | Get (x, y, Some u) ->
+    let u, udeclfun = ty_tv tvs u in
+    udeclfun (Get (x, y, Some u))
+  | Put (x, y, z, Some u) ->
+    let u, udeclfun = ty_tv tvs u in
+    udeclfun (Put (x, y, z, Some u))
   | Coercion c ->
     let c, udeclfun = static_crc tvs c in
     udeclfun (Coercion c)

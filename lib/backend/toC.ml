@@ -100,7 +100,7 @@ let rec toC_crc x c =
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
         let stm, exp = toC_crc x c in
-        SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (LVar x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
+        SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
   let c, info_proj_inj = match c with
@@ -221,24 +221,24 @@ let rec toC_crc x c =
 (* ========================================= *)
 
 let app_env l n f lst =
-  let lval_env = LArrow (l, "env") in
-  List.mapi (fun i h -> SAssign (LIndex (lval_env, n + i), Cast (PTR VOID, f h))) lst
+  let lval_env = Arrow (l, "env") in
+  List.mapi (fun i h -> SAssign (Index (lval_env, Int (n + i)), Cast (PTR VOID, f h))) lst
 
 let alloc_closure env_size =
-  Malloc (VALUE, Add (Sizeof FUN, Mul (Sizeof (PTR VOID), Int env_size)))
+  Malloc (VALUE, BinOp (Sizeof FUN, Add, BinOp (Sizeof (PTR VOID), Mul, Int env_size)))
 
 let set_func_stm ~config fun_x func_d func_m =
   if config.intoB || config.static then
-    [SAssign (LArrow (fun_x, "funcM"), func_m)]
+    [SAssign (Arrow (fun_x, "funcM"), func_m)]
   else if config.alt then
-    [SAssign (LArrow (fun_x, "funcD"), func_d);
-     SAssign (LArrow (fun_x, "funcM"), func_m)]
+    [SAssign (Arrow (fun_x, "funcD"), func_d);
+     SAssign (Arrow (fun_x, "funcM"), func_m)]
   else
-    [SAssign (LArrow (fun_x, "funcD"), func_d)]
+    [SAssign (Arrow (fun_x, "funcD"), func_d)]
 
 let make_cls_stm ~set_func x ({ entry = _; fvs; offset = n; ftvs }: Cls.closure) =
   let env_size = List.length fvs + n + List.length ftvs in
-  let fun_x = LCast (PTR FUN, LVar x) in
+  let fun_x = Cast (PTR FUN, Var x) in
   SDecl (VALUE, x, Some (alloc_closure env_size))
   :: set_func fun_x
   @ app_env fun_x 0 (fun fv -> Var fv) fvs
@@ -259,46 +259,46 @@ let set_ty i opu =
       u, "_tyarray" ^ string_of_int i
     | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
   in
-  name, [SAssign (LDeref (LVar name), Cast (TY, toC_tycontent u))]
+  name, [SAssign (PreOp (Deref, (Var name)), Cast (TY, toC_tycontent u))]
     (* 
     | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
     end *)
 
 let rec toC_mf ~config x_exp = function
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit should not appear in toC"
-  | MatchILit i -> Eq (x_exp, Int i)
+  | MatchILit i -> BinOp (x_exp, Eq, Int i)
   | MatchWild -> Int 1
   | MatchNil ->
     if config.eager then
-      Eq (Cast (PTR LST, x_exp), Null)
+      BinOp (Cast (PTR LST, x_exp), Eq, Null)
     else
       App (Var "is_NULL", [Cast (PTR LST, x_exp)])
   | MatchCons (mf1, mf2) ->
     if config.eager then
       let mf1 = toC_mf ~config (Arrow (Cast (PTR LST, x_exp), "h")) mf1 in
       let mf2 = toC_mf ~config (Arrow (Cast (PTR LST, x_exp), "t")) mf2 in
-      And (Neq (Cast (PTR LST, x_exp), Null), And (mf1, mf2))
+      BinOp (BinOp (Cast (PTR LST, x_exp), Neq, Null), And, BinOp (mf1, And, mf2))
     else
       let mf1 = toC_mf ~config (App (Var "hd", [Cast (PTR LST, x_exp)])) mf1 in
       let mf2 = toC_mf ~config (App (Var "tl", [Cast (PTR LST, x_exp)])) mf2 in
-      And (Not (App (Var "is_NULL", [Cast (PTR LST, x_exp)])), And (mf1, mf2))
+      BinOp (PreOp (Not, (App (Var "is_NULL", [Cast (PTR LST, x_exp)]))), And, BinOp (mf1, And, mf2))
   | MatchTuple mfs ->
     let toC_mfi mf i =
       if config.eager then
-        toC_mf ~config (Index (Arrow (Cast (PTR TPL, x_exp), "fields"), i)) mf
+        toC_mf ~config (Index (Arrow (Cast (PTR TPL, x_exp), "fields"), Int i)) mf
       else
         toC_mf ~config (App (Var "tget", [Cast (PTR TPL, x_exp); Int i])) mf
     in
-    List.fold_left (fun e1 e2 -> And (e1, e2)) (Int 1) (List.mapi (fun i mf -> toC_mfi mf i) mfs)
+    List.fold_left (fun e1 e2 -> BinOp (e1, And, e2)) (Int 1) (List.mapi (fun i mf -> toC_mfi mf i) mfs)
   (* | _ as mf -> ignore config; raise @@ ToC_bug (Format.asprintf "toC_mf yet: %a" Pp.pp_matchform mf) *)
 
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
   | Cls.IfEq (x, y, f1, f2) ->
-    SIf (Eq (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
+    SIf (BinOp (Var x, Eq, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.IfLte (x, y, f1, f2) ->
-    SIf (Lte (Var x, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
+    SIf (BinOp (Var x, Lte, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.MakeCls (x, cls, f) ->
     let set_func fun_x =
       let alt_str = if config.alt then "alt_" else "" in
@@ -308,39 +308,48 @@ let rec toC_exp ~is_main ~config = function
     in
     make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
   | Cls.MakeTyCls (x, cls, f) ->
-    let set_func fun_x = [SAssign (LArrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
+    let set_func fun_x = [SAssign (Arrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
     make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
   | Cls.SetTy ((i, { contents = opu }), f) ->
     let name, stm = set_ty i opu in
     SDecl (PTR TY, name, Some (Malloc (PTR TY, Sizeof TY))) :: stm @ toC_exp ~is_main ~config f
   | Cls.Match (x, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
-      [SApp (Var "printf", [Str "didn't match"]); SApp (Var "exit", [Int 1])] (List.rev ms)
-  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _
-  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ 
-  | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Cons _ | Cls.Subst _ | Cls.CComp _
+      [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
+  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
+  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _
+  | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
     as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
 and toC_assign ~config x f =
-  let assign_x e = SAssign (LVar x, e) :: [] in
+  let assign_x e = SAssign (Var x, e) :: [] in
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
     let size = List.length ys in
-    assign_x (Malloc (VALUE, Add (Sizeof TPL_RAW, Mul (Sizeof VALUE, Int size)))) @ [SAssign (LDot (LArrow (LCast (PTR TPL_RAW, LVar x), "hdr"), "size"), Int size)]
-    @ List.mapi (fun i y -> SAssign (LIndex (LArrow (LCast (PTR TPL_RAW, LVar x), "fields"), i), Var y)) ys
+    assign_x (Malloc (VALUE, BinOp (Sizeof TPL_RAW, Add, BinOp (Sizeof VALUE, Mul, Int size)))) @ [SAssign (Dot (Arrow (Cast (PTR TPL_RAW, Var x), "hdr"), "size"), Int size)]
+    @ List.mapi (fun i y -> SAssign (Index (Arrow (Cast (PTR TPL_RAW, Var x), "fields"), Int i), Var y)) ys
   | Cls.Ref (y, u) ->
+    assign_x (Malloc (VALUE, Sizeof REF)) @ 
     if config.monotonic then
-      let c = toC_ty u in
-      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (PTR REF, LVar x)), Cast (REF, Struct ["v", Var y; "u", c]))]
+      [SAssign (PreOp (Deref, (Cast (PTR REF, Var x))), Cast (REF, Struct ["v", Var y; "u", toC_ty u]))]
     else if config.static then
-      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LDeref (LCast (REF, LVar x)), Var y)]
+      [SAssign (PreOp (Deref, (Cast (REF, Var x))), Var y)]
     else
-      assign_x (Malloc (VALUE, Sizeof REF)) @ [SAssign (LArrow (LCast (PTR REF, LVar x), "v"), Var y)]
+      [SAssign (Arrow (Cast (PTR REF, Var x), "v"), Var y)]
+  | Cls.MakeArray (y, z, u) ->
+    assign_x (Malloc (VALUE, BinOp (Sizeof ARR_RAW, Add, BinOp (Sizeof VALUE, Mul, Var y)))) @ [SAssign (Arrow (Cast (PTR ARR_RAW, Var x), "length"), Var y)] @
+    [SFor ((SDecl (INT, "i", Some (Int 0)), BinOp (Var "i", Lt, Var y), PostOp (Var "i", Incr)),
+      [SAssign (Index (Arrow (Cast (PTR ARR_RAW, Var x), "vs"), Var "i"), Var z)])]
+    @
+    if config.monotonic then
+      [SAssign (Arrow (Cast (PTR ARR_RAW, Var x), "u"), toC_ty u)]
+    else 
+      []
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
     | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
@@ -363,7 +372,7 @@ and toC_assign ~config x f =
       assign_x (App (Var "tl", [Cast (PTR LST, Var y)]))
   | Cls.Tget (y, i) ->
     if config.eager then
-      assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), i))
+      assign_x (Index (Arrow (Cast (PTR TPL, Var y), "fields"), Int i))
     else
       assign_x (App (Var "tget", [Cast (PTR TPL, Var y); Int i]))
   | Cls.Deref (y, ou) ->
@@ -371,23 +380,39 @@ and toC_assign ~config x f =
       | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
       | Some u -> assign_x (App (Var "toplevel_coerce", [Arrow (Cast (PTR REF, Var y), "v"); App (Var "make_s_coercion", [Arrow (Cast (PTR REF, Var y), "u"); toC_ty u])]))
     else if config.static then
-      assign_x (Deref (Cast (REF, Var y)))
+      assign_x (PreOp (Deref, (Cast (REF, Var y))))
     else
       assign_x (App (Var "deref", [Cast (PTR REF, Var y)]))
-  | Cls.Add (y, z) -> assign_x (Add (Var y, Var z))
-  | Cls.Sub (y, z) -> assign_x (Sub (Var y, Var z))
-  | Cls.Mul (y, z) -> assign_x (Mul (Var y, Var z))
-  | Cls.Div (y, z) -> assign_x (Div (Var y, Var z))
-  | Cls.Mod (y, z) -> assign_x (Mod (Var y, Var z))
-  | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (LDeref (LCast (PTR LST, LVar x)), Cast (LST, Struct ["h", Var y; "t", Var z]))]
+  | Cls.Get (y, z, ou) ->
+    if config.monotonic then match ou with
+      | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
+      | Some u -> assign_x (App (Var "toplevel_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); App (Var "make_s_coercion", [Arrow (Cast (PTR ARR, Var y), "u"); toC_ty u])]))
+    else if config.static then
+      assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
+    else
+      assign_x (App (Var "get", [Cast (PTR ARR, Var y); Cast (INT, Var z)]))
+  | Cls.Add (y, z) -> assign_x (BinOp (Var y, Add, Var z))
+  | Cls.Sub (y, z) -> assign_x (BinOp (Var y, Sub, Var z))
+  | Cls.Mul (y, z) -> assign_x (BinOp (Var y, Mul, Var z))
+  | Cls.Div (y, z) -> assign_x (BinOp (Var y, Div, Var z))
+  | Cls.Mod (y, z) -> assign_x (BinOp (Var y, Mod, Var z))
+  | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (PreOp (Deref, (Cast (PTR LST, Var x))), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
-      | None -> SAssign (LArrow (LCast (PTR REF, LVar y), "v"), Var z) :: assign_x (Int 0)
-      | Some u -> SAssign (LArrow (LCast (PTR REF, LVar y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")])])) :: SApp (Var "consume", []) :: assign_x (Int 0)
+      | None -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), Var z) :: assign_x (Int 0)
+      | Some u -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")])])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
     else if config.static then
-      SAssign (LDeref (LCast (REF, LVar y)), Var z) :: assign_x (Int 0)
+      SAssign (PreOp (Deref, (Cast (REF, Var y))), Var z) :: assign_x (Int 0)
     else
-      SApp (Var "subst", [Cast (PTR REF, Var y); Var z]) :: assign_x (Int 0)
+      SExp (App (Var "subst", [Cast (PTR REF, Var y); Var z])) :: assign_x (Int 0)
+  | Cls.Put (y, z, v_x, ou) ->
+    if config.monotonic then match ou with
+      | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
+      | Some u -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR ARR, Var y), "u")])])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+    else if config.static then
+      SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
+    else
+      SExp (App (Var "put", [Cast (PTR ARR, Var y); Cast (INT, Var z); Var v_x])) :: assign_x (Int 0)
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
@@ -402,7 +427,7 @@ and toC_assign ~config x f =
     assign_x (App (func, [Var y; Var z]))
   | Cls.AppTy (y, i1, tas, n) ->
     let env_size = i1 + List.length tas + n in
-    let fun_x = LCast (PTR FUN, LVar x) in
+    let fun_x = Cast (PTR FUN, Var x) in
     let fun_y = Cast (PTR FUN, Var y) in
     let set_func =
       let func_d = Arrow (fun_y, "funcD") in
@@ -411,19 +436,19 @@ and toC_assign ~config x f =
     in
     let rec copy i n =
       if i = n then []
-      else SAssign (LIndex (LArrow (fun_x, "env"), i), Index (Arrow (fun_y, "env"), i)) :: copy (i + 1) n
+      else SAssign (Index (Arrow (fun_x, "env"), Int i), Index (Arrow (fun_y, "env"), Int i)) :: copy (i + 1) n
     in
-    SAssign (LVar x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
+    SAssign (Var x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.AppTyFun (y, i1, tas, n) ->
-    toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (LVar x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
+    toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (Var x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
   | Cls.CApp (y, z) -> assign_x (App (Var "toplevel_coerce", [Var y; Cast (PTR CRC, Var z)]))
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.IfEq (y, z, f1, f2) ->
-    SIf (Eq (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
+    SIf (BinOp (Var y, Eq, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.IfLte (y, z, f1, f2) ->
-    SIf (Lte (Var y, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
+    SIf (BinOp (Var y, Lte, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.MakeCls (y, cls, f) ->
     let set_func fun_y =
       let alt_str = if config.alt then "alt_" else "" in
@@ -433,14 +458,14 @@ and toC_assign ~config x f =
     in
     make_cls_stm ~set_func y cls @ toC_assign ~config x f
   | Cls.MakeTyCls (y, cls, f) ->
-    let set_func fun_y = [SAssign (LArrow (fun_y, "funcM"), Var ("tfun_" ^ cls.entry))] in
+    let set_func fun_y = [SAssign (Arrow (fun_y, "funcM"), Var ("tfun_" ^ cls.entry))] in
     make_cls_stm ~set_func y cls @ toC_assign ~config x f
   | Cls.SetTy ((i, { contents = opu }), f) ->
     let name, stm = set_ty i opu in
     SDecl (PTR TY, name, Some (Malloc (PTR TY, Sizeof TY))) :: stm @ toC_assign ~config x f
   | Cls.Match (y, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var y) mf, toC_assign ~config x f, stm)])
-      [SApp (Var "printf", [Str "didn't match"]); SApp (Var "exit", [Int 1])] (List.rev ms)
+      [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
 
 (* ======================================= *)
 
@@ -473,7 +498,7 @@ let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, S
 
 let toC_crcs ~config crcs = 
   let register = 
-    List.map (fun str -> SApp (Var "register_static_crc", [Addr str]))
+    List.map (fun str -> SExp (App (Var "register_static_crc", [Addr str])))
       (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
       @ (List.map snd crcs))
   in
@@ -487,7 +512,7 @@ let toC_crcs ~config crcs =
 (* ================================ *)
 
 let pick_env x fvs ftvs =
-  let pick_x t i = Cast (t, Index (Arrow (Cast (PTR FUN, Var x), "env"), i)) in
+  let pick_x t i = Cast (t, Index (Arrow (Cast (PTR FUN, Var x), "env"), Int i)) in
   List.mapi (fun i fv -> SDecl (VALUE, fv, Some (pick_x VALUE i))) fvs @
     List.mapi (fun i ftv -> SDecl (PTR TY, string_of_tyvar ftv, Some (pick_x (PTR TY) (i + List.length fvs)))) ftvs
 
@@ -532,9 +557,9 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     FunDef (
       No,
       { ret_ty = INT; fname = if bench = 0 then "main" else "mutant" ^ string_of_int bench; params = []},
-      (if config.hash then [SApp (Var "init_crcs", [])] else [])
-        @ (if config.monotonic then [SApp (Var "sc_init", [Int 16])] else [])
-        @ (if List.length ranges <> 0 then [SAssign (LVar "range_list", Var "local_range_list")] else [])
+      (if config.hash then [SExp (App (Var "init_crcs", []))] else [])
+        @ (if config.monotonic then [SExp (App (Var "sc_init", [Int 16]))] else [])
+        @ (if List.length ranges <> 0 then [SAssign (Var "range_list", Var "local_range_list")] else [])
         @ toC_exp ~is_main:true ~config f
     )
   ]

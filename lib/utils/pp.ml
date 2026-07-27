@@ -723,15 +723,10 @@ module KNorm = struct
   open Syntax.KNorm
 
   let gt_exp e e1 = match e, e1 with
-    | (Var _ | IConst _ | Nil), _ -> raise @@ Syntax_error(* "gt_exp: value-exp was given as e"*)
-    | (Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Tuple _ | AppDExp _ | AppTy _ | AppMExp _ | Hd _ | Tl _ | Tget _), _ -> raise @@ Syntax_error(* "gt_exp : expression not contain exp was given as e"*)
     | (IfEqExp _ | IfLteExp _ | MatchExp _), (LetExp _ | LetFunExp _) -> true
     | _ -> false
   
   let gte_exp e e1 = match e, e1 with
-    (* | Add _, Add _ | Sub _, Sub _ | Mul _, Mul _ | Div _, Div _ | Mod _, Mod _ | Cons _, Cons _ | Tuple _, Tuple _ -> true *)
-    (* | AppTy _, AppTy _ | AppDExp _, AppDExp _ | AppMExp _, AppMExp _ -> true *)
-    (* | Hd _, Hd _ | Tl _, Tl _ | Tget _, Tget _ -> true *)
     | (LetExp _ | LetFunExp _) , (LetExp _ | LetFunExp _) -> true
     | (IfEqExp _ | IfLteExp _), (IfEqExp _ | IfLteExp _) -> true
     | MatchExp _, MatchExp _ -> true
@@ -760,6 +755,11 @@ module KNorm = struct
     | Deref (x, Some u) -> fprintf ppf "!%s@%a" x pp_ty u
     | Subst (x, y, None) -> fprintf ppf "%s := %s" x y
     | Subst (x, y, Some u) -> fprintf ppf "%s := %s@%a" x y pp_ty u
+    | MakeArray (x, y, u) -> fprintf ppf "Make.array %s %s@%a" x y pp_ty u
+    | Get (x, y, None) -> fprintf ppf "%s.(%s)" x y
+    | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
+    | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
+    | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
     | IfEqExp (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -888,6 +888,11 @@ module Cls = struct
     | Deref (x, Some u) -> fprintf ppf "!%s@%a" x pp_ty u
     | Subst (x, y, None) -> fprintf ppf "%s := %s" x y
     | Subst (x, y, Some u) -> fprintf ppf "%s := %s@%a" x y pp_ty u
+    | MakeArray (x, y, u) -> fprintf ppf "Make.array %s %s@%a" x y pp_ty u
+    | Get (x, y, None) -> fprintf ppf "%s.(%s)" x y
+    | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
+    | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
+    | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
     | IfEq (x, y, e1, e2) ->
       fprintf ppf "if %s=%s then %a else %a"
         x
@@ -1057,29 +1062,43 @@ module C = struct
     | LST -> pp_print_string ppf "lst"
     | TPL -> pp_print_string ppf "tpl"
     | TPL_RAW -> pp_print_string ppf "tpl_raw"
+    | ARR -> pp_print_string ppf "arr"
+    | ARR_RAW -> pp_print_string ppf "arr_raw"
     | REF -> pp_print_string ppf "ref"
     | CRC -> pp_print_string ppf "crc"
     | RANGE -> pp_print_string ppf "range"
     | TY -> pp_print_string ppf "ty"
+
+  let pp_preop ppf = function
+    | Not -> fprintf ppf "!"
+    | Deref -> fprintf ppf "*"
+
+  let pp_postop ppf = function
+    | Incr -> fprintf ppf "++"
+
+  let pp_binop ppf = function
+    | Add -> fprintf ppf "+"
+    | Sub -> fprintf ppf "-"
+    | Mul -> fprintf ppf "*"
+    | Div -> fprintf ppf "/"
+    | Mod -> fprintf ppf "%%"
+    | And -> fprintf ppf "&&"
+    | Eq -> fprintf ppf "=="
+    | Neq -> fprintf ppf "!="
+    | Lte -> fprintf ppf "<="
+    | Lt -> fprintf ppf "<"
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | Dot (e, x) -> fprintf ppf "%a.%s" pp_exp e x
     | Arrow (e, x) -> fprintf ppf "%a->%s" pp_exp e x
     | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
-    | Index (e, i) -> fprintf ppf "%a[%d]" pp_exp e i
+    | Index (e1, e2) -> fprintf ppf "%a[%a]" pp_exp e1 pp_exp e2
     | Int i -> pp_print_int ppf i
     | Str s -> fprintf ppf "\"%s\"" s
-    | Add (e1, e2) -> fprintf ppf "%a + %a" pp_exp e1 pp_exp e2
-    | Sub (e1, e2) -> fprintf ppf "%a - %a" pp_exp e1 pp_exp e2
-    | Mul (e1, e2) -> fprintf ppf "%a * %a" pp_exp e1 pp_exp e2
-    | Div (e1, e2) -> fprintf ppf "%a / %a" pp_exp e1 pp_exp e2
-    | Mod (e1, e2) -> fprintf ppf "%a %% %a" pp_exp e1 pp_exp e2
-    | Not e -> fprintf ppf "!%a" pp_exp e
-    | And (e1, e2) -> fprintf ppf "%a && %a" pp_exp e1 pp_exp e2
-    | Eq (e1, e2) -> fprintf ppf "%a == %a" pp_exp e1 pp_exp e2
-    | Neq (e1, e2) -> fprintf ppf "%a != %a" pp_exp e1 pp_exp e2
-    | Lte (e1, e2) -> fprintf ppf "%a <= %a" pp_exp e1 pp_exp e2
+    | PreOp (op, e) -> fprintf ppf "%a(%a)" pp_preop op pp_exp e
+    | PostOp (e, op) -> fprintf ppf "%a%a" pp_exp e pp_postop op 
+    | BinOp (e1, op, e2) -> fprintf ppf "%a %a %a" pp_exp e1 pp_binop op pp_exp e2
     | App (e, es) -> fprintf ppf "%a(%a)" pp_exp e (pp_print_list ~pp_sep:sep_comma pp_exp) es
     | Addr x -> fprintf ppf "&%s" x
     | Null -> pp_print_string ppf "NULL"
@@ -1090,21 +1109,11 @@ module C = struct
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_content) l
     | Array es ->
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_exp) es
-    | Deref e ->
-      fprintf ppf "*(%a)" pp_exp e
-
-  let rec pp_lval ppf = function
-    | LVar x -> pp_print_string ppf x
-    | LDot (l, x) -> fprintf ppf "%a.%s" pp_lval l x
-    | LArrow (l, x) -> fprintf ppf "%a->%s" pp_lval l x
-    | LCast (t, l) -> fprintf ppf "((%a)%a)" pp_ty t pp_lval l
-    | LIndex (l, i) -> fprintf ppf "%a[%d]" pp_lval l i
-    | LDeref l -> fprintf ppf "*(%a)" pp_lval l
 
   let rec pp_stm ppf = function
     | SDecl (t, x, None) -> fprintf ppf "%a %s;" pp_ty t x
     | SDecl (t, x, Some e) -> fprintf ppf "%a %s = %a;" pp_ty t x pp_exp e
-    | SAssign (l, e) -> fprintf ppf "%a = %a;" pp_lval l pp_exp e
+    | SAssign (e1, e2) -> fprintf ppf "%a = %a;" pp_exp e1 pp_exp e2
     | SReturn e -> fprintf ppf "return %a;" pp_exp e
     | SIf (e, s1, [SIf _ as s2]) ->
       fprintf ppf "if (%a){\n%a\n} else %a"
@@ -1116,7 +1125,13 @@ module C = struct
         pp_exp e
         (pp_print_list ~pp_sep:sep_newline pp_stm) s1
         (pp_print_list ~pp_sep:sep_newline pp_stm) s2
-    | SApp (e, es) -> fprintf ppf "%a(%a);" pp_exp e (pp_print_list ~pp_sep:sep_comma pp_exp) es
+    | SFor ((s, e1, e2), ss) ->
+      fprintf ppf "for (%a %a; %a){\n%a\n}"
+        pp_stm s
+        pp_exp e1
+        pp_exp e2
+        (pp_print_list ~pp_sep:sep_newline pp_stm) ss
+    | SExp e -> fprintf ppf "%a;" pp_exp e
 
   let pp_spec ppf = function
     | Static -> pp_print_string ppf "static "

@@ -12,6 +12,7 @@ typedef struct crc {
 		C_LIST,
 		C_TUPLE,
 		C_REF,
+		C_ARRAY,
 		C_TV,
 		C_BOT
 	} crckind;
@@ -41,11 +42,16 @@ typedef struct crc {
 		} tpl_crc;
 		#ifdef MONOTONIC
 		ty *mref_crc; // for MREF
+		ty *marray_crc; // for MARRAY
 		#else
 		struct ref_crc { // for REF
 			crc *c1;
 			crc *c2;
 		} ref_crc;
+		struct array_crc { // for ARRAY
+			crc *c1;
+			crc *c2;
+		} array_crc;
 		#endif
 		struct tv {
 			uint32_t rid_inj;
@@ -74,6 +80,7 @@ extern crc crc_inj_UNIT;
 extern crc crc_inj_FN;
 extern crc crc_inj_LI;
 extern crc crc_inj_RF;
+extern crc crc_inj_AR;
 
 crc* alloc_crc(crc*);
 

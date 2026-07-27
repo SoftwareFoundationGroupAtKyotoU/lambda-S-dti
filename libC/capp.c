@@ -9,6 +9,7 @@
 #include "lst.h"
 #include "tpl.h"
 #include "ref.h"
+#include "arr.h"
 #include "app.h"
 #include "ty.h"
 #include "blame.h"
@@ -28,11 +29,11 @@ static inline uint8_t tag_of(value v) {
 	return (v & 0b111);
 }
 
-static inline value tag_value(value v, uint8_t t) {
+static inline value tag_value(value v, ground_ty t) {
 	#ifdef PROFILE
 	update_longest(1);
 	#endif
-	switch(t) {
+	switch (t) {
 		case G_INT:
 		case G_BOOL:
 		case G_UNIT:
@@ -41,16 +42,13 @@ static inline value tag_value(value v, uint8_t t) {
 		case G_LI:
 		case G_TP:
 		case G_RF:
+		case G_AR:
 			return (value)(v | t);
-		default: {
-			printf("%d is not ground_ty", t);
-			exit(1);
-		}
 	}
 }
 
-static inline value untag_value(value v, uint8_t t) {
-	switch(t) {
+static inline value untag_value(value v, ground_ty t) {
+	switch (t) {
 		case G_INT:
 		case G_BOOL:
 		case G_UNIT:
@@ -59,16 +57,13 @@ static inline value untag_value(value v, uint8_t t) {
 		case G_LI:
 		case G_TP:
 		case G_RF:
+		case G_AR:
 			return (value)(v & ~0b111);
-		default: {
-			printf("%d is not ground_ty", t);
-			exit(1);
-		}
 	}
 }
 
 static inline uint16_t size_of(value v) {
-	switch(tag_of(v)) {
+	switch (tag_of(v)) {
 		case G_TP: {
 			#ifdef EAGER
 			return ((tpl*)untag_value(v, G_TP))->hdr.size;
@@ -92,30 +87,30 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 	enum tykind tk1 = t1->tykind;
 	enum tykind tk2 = t2->tykind;
 	
-	switch(tk1) {
+	switch (tk1) {
 		case BASE_INT: {			// when t1 is ground and t2 is ?
-			switch(tk2) {
+			switch (tk2) {
 				case DYN: return tag_value(x, G_INT); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
 		}
 		case BASE_BOOL: {
-			switch(tk2) {
+			switch (tk2) {
 				case DYN: return tag_value(x, G_BOOL); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
 		}
 		case BASE_UNIT: {
-			switch(tk2) {
+			switch (tk2) {
 				case DYN: return tag_value(x, G_UNIT); // define x:G=>? as dynamic type value
 				default: break;
 			}
 			break;
 		}
 		case TYFUN: {
-			switch(tk2) {
+			switch (tk2) {
 				case TYFUN: { 				// when t1 and t2 are function type
 					#ifdef PROFILE
 					int cur = 1;
@@ -160,7 +155,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			break;
 		}
 		case TYLIST: {
-			switch(tk2) {
+			switch (tk2) {
 				case TYLIST: {
 					#ifdef EAGER
 					value retv = 0;
@@ -225,7 +220,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 		}
 		case TYTUPLE: {
 			uint16_t size = t1->tydat.tytuple.size;
-			switch(tk2) {
+			switch (tk2) {
 				case TYTUPLE: {
 					#ifdef EAGER
 					value retv = (value)GC_MALLOC(sizeof(tpl) + sizeof(value) * size);
@@ -288,7 +283,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			break;
 		}
 		case TYREF: {
-			switch(tk2) {
+			switch (tk2) {
 				case TYREF: { 				// when t1 and t2 are reference type
 					#ifdef PROFILE
 					int cur = 1;
@@ -300,7 +295,6 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 					update_longest(cur);
 					#endif
 					value retx;
-					// printf("defined as a wrapped function\n");						// define x:U1->U2=>U3->U4 as wrapped function
 					retx = (value)GC_MALLOC(sizeof(ref));
 					((ref*)retx)->w = (ref*)x;
 					((ref*)retx)->u1_tag = (uintptr_t)t1 | 0b1;
@@ -330,8 +324,52 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			}
 			break;
 		}
+		case TYARRAY: {
+			switch (tk2) {
+				case TYARRAY: { 				// when t1 and t2 are array type
+					#ifdef PROFILE
+					int cur = 1;
+					arr *tmp = (arr*)x;
+					while(tmp->wrap & 0b1) {
+						cur++;
+						tmp = (arr*)((arr_wrap*)tmp)->w;
+					}
+					update_longest(cur);
+					#endif
+					value retx;
+					retx = (value)GC_MALLOC(sizeof(arr_wrap));
+					((arr_wrap*)retx)->hdr.wrap = 1;
+					((arr_wrap*)retx)->hdr.rid = rid;
+					((arr_wrap*)retx)->hdr.polarity = polarity;
+					((arr_wrap*)retx)->w = (arr*)x;
+					((arr_wrap*)retx)->u1 = t1;
+					((arr_wrap*)retx)->u2 = t2;
+					return retx;
+				}
+				case DYN: {
+					if (t1->tydat.tyarray->tykind == DYN) {
+						#ifdef PROFILE
+						int cur = 1;
+						arr *tmp = (arr*)x;
+						while (tmp->wrap) {
+							cur++;
+							tmp = ((arr_wrap*)tmp)->w;
+						}
+						update_longest(cur);
+						#endif
+						return tag_value(x, G_AR); // define x:G=>? as dynamic type value
+					} else {			// when t1 is reference type and t2 is ?
+						// printf("cast ground\n");
+						value x_ = cast(x, t1, &tyar, rid, polarity);									// R_GROUND (x:U=>? -> x:U=>G=>?)
+						return cast(x_, &tyar, t2, rid, polarity);
+					}
+				}
+				default: break;
+			}
+			break;
+		}
 		case DYN: {
-			switch(tk2) {
+			switch (tk2) {
 				case BASE_INT: {			// when t1 is ? and t2 is ground type
 					if (tag_of(x) == G_INT) {													// when t1's injection ground type equals t2
 						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
@@ -431,8 +469,23 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						return cast(x_, &tyrf, t2, rid, polarity); 
 					}
 				}
+				case TYARRAY: {
+					if (t2->tydat.tyarray->tykind == DYN) {
+						if (tag_of(x) == G_AR) {													// when t1's injection ground type equals t2
+							// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
+							return untag_value(x, G_AR);
+						} else {											// when t1's injection ground type dosen't equal t2
+							// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_LI);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+							blame(rid, polarity);
+						}
+					} else {			// when t1 is ? and t2 is function type
+						// printf("cast expand\n");
+						value x_ = cast(x, t1, &tyar, rid, polarity);									// R_EXPAND (x:?=>U -> x:?=>G=>U)
+						return cast(x_, &tyar, t2, rid, polarity); 
+					}
+				}
 				case TYVAR: {			// when t1 is ? and t2 is type variable
-					switch(tag_of(x)) {
+					switch (tag_of(x)) {
 						case(G_INT): {											// when t1's injection ground type is int
 							// printf("DTI : int was inferred\n");							// R_INSTBASE (x':int=>?=>X -[X:=int]> x')
 							#ifdef PROFILE
@@ -480,7 +533,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							return cast(untag_value(x, G_LI), &tyli, t2, rid, polarity);
 						}
 						case(G_TP):	{												// when t1's injection ground type is (?,...,?)
-							// printf("DTI : list was inferenced\n");							// R_INSTTUPLE (x':(?,...,?)=>?=>X -[X:=(X_1,...,Xn)]> x':(?,...,?)=>(X_1,...,Xn))
+							// printf("DTI : tuple was inferenced\n");							// R_INSTTUPLE (x':(?,...,?)=>?=>X -[X:=(X_1,...,Xn)]> x':(?,...,?)=>(X_1,...,Xn))
 							#ifdef PROFILE
 							current_inference++;
 							#endif
@@ -496,7 +549,7 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							return cast(untag_value(x, G_TP), get_dyn_tuple_ty(size), t2, rid, polarity);
 						}
 						case(G_RF):	{												// when t1's injection ground type is ? ref
-							// printf("DTI : list was inferenced\n");							// R_INSTLIST (x':? ref=>?=>X -[X:=X_1 ref]> x':? ref=>X_1 ref)
+							// printf("DTI : ref was inferenced\n");							// R_INSTREF (x':? ref=>?=>X -[X:=X_1 ref]> x':? ref=>X_1 ref)
 							#ifdef PROFILE
 							current_inference++;
 							#endif
@@ -505,14 +558,20 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							t2->tydat.tyref->tykind = TYVAR;
 							return cast(untag_value(x, G_RF), &tyrf, t2, rid, polarity);
 						}
+						case(G_AR):	{												// when t1's injection ground type is ? ref
+							// printf("DTI : array was inferenced\n");							// R_INSTARRAY (x':? array=>?=>X -[X:=X_1 array]> x':? array=>X_1 array)
+							#ifdef PROFILE
+							current_inference++;
+							#endif
+							t2->tykind = TYARRAY;
+							t2->tydat.tyref = (ty*)GC_MALLOC(sizeof(ty));
+							t2->tydat.tyref->tykind = TYVAR;
+							return cast(untag_value(x, G_AR), &tyar, t2, rid, polarity);
+						}
 					}
 				}
 				case DYN: {
 					printf("Dyn and Dyn should be omitted by id");
-					exit(1);
-				}
-				default: {
-					printf("yet");
 					exit(1);
 				}
 			}
@@ -529,18 +588,19 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 SuspendedCasts psi = { NULL, 0, 0 };
 
 void sc_init(uint64_t initial_capacity) {
-    psi.data = (RefTyPair*)GC_MALLOC(sizeof(RefTyPair) * initial_capacity);
+    psi.data = (ValueTyPair*)GC_MALLOC(sizeof(ValueTyPair) * initial_capacity);
     psi.count = 0;
     psi.capacity = initial_capacity;
 }
 
-void sc_push(ref* r, ty* u) {
+void sc_push(value r, valkind k, ty* u) {
     if (psi.count == psi.capacity) {
         psi.capacity *= 2;
-        RefTyPair* new_data = (RefTyPair*)GC_REALLOC(psi.data, sizeof(RefTyPair) * psi.capacity);
+        ValueTyPair* new_data = (ValueTyPair*)GC_REALLOC(psi.data, sizeof(ValueTyPair) * psi.capacity);
         psi.data = new_data;
     }
     psi.data[psi.count].r = r;
+    psi.data[psi.count].k = k;
     psi.data[psi.count].u = u;
     psi.count++;
 }
@@ -548,20 +608,45 @@ void sc_push(ref* r, ty* u) {
 void consume(void) {
 	uint64_t cursor = 0;
 	while (cursor < psi.count) {
-        ref* r = psi.data[cursor].r;
+        value r = psi.data[cursor].r;
+        valkind k = psi.data[cursor].k;
 		ty* u = psi.data[cursor].u;
-		value v = r->v;
-		ty* u_ = r->u;
-		ty* u__ = unify_meet(u, u_);
-		if (!ty_equal(u_, u__)) {
-			crc* s = make_s_coercion(u_, u__);
-			value v_ = coerce(v, s);
-			r->v = v_;
-			r->u = u__;
+		switch (k) {
+			case PSI_REF: {
+				ty* u_ = ((ref*)r)->u;
+				ty* u__ = unify_meet(u, u_);
+				if (!ty_equal(u_, u__)) {
+					value v = ((ref*)r)->v;
+					crc* s = make_s_coercion(u_, u__);
+					value v_ = coerce(v, s);
+					((ref*)r)->v = v_;
+					((ref*)r)->u = u__;
+				}
+				psi.data[cursor].r = (value)NULL;
+				psi.data[cursor].u = NULL;
+        		cursor++;
+				break;
+			}
+			case PSI_ARRAY: {
+				ty* u_ = ((arr*)r)->u;
+				ty* u__ = unify_meet(u, u_);
+				if (!ty_equal(u_, u__)) {
+					uint32_t length = ((arr*)r)->length;
+					value vs[length];
+					crc* s = make_s_coercion(u_, u__);
+					for (int i = 0; i < length; i++) {
+						vs[i] = coerce(((arr*)r)->vs[i], s);
+					}
+					for (int i = 0; i < length; i++) {
+						((arr*)r)->vs[i] = vs[i];
+					}
+					((arr*)r)->u = u__;
+				}
+				psi.data[cursor].r = (value)NULL;
+				psi.data[cursor].u = NULL;
+        		cursor++;
+			}
 		}
-		psi.data[cursor].r = NULL;
-		psi.data[cursor].u = NULL;
-        cursor++;
 	}
 	psi.count = 0;
 }
@@ -599,6 +684,7 @@ value coerce(value v, crc *s) {
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);
 	// tuple is intentionally omitted
 	if (s == &crc_inj_RF) return tag_value(v, G_RF);
+	if (s == &crc_inj_AR) return tag_value(v, G_AR);
 	switch (s->crckind) {
 		case C_ID: { // v<(G?;)id(;G!)>
 			value retv = remove_inj(v, s->crcdat.id.g, s->crcdat.id.size, s);
@@ -711,7 +797,7 @@ value coerce(value v, crc *s) {
 		case C_REF: { // v<(G?p;)ref(s')(;G!)>
 			v = remove_inj(v, G_RF, 0, s);
 			#ifdef MONOTONIC
-			sc_push((ref*)v, s->crcdat.mref_crc);
+			sc_push(v, PSI_REF, s->crcdat.mref_crc);
 			return apply_inj(v, G_RF, s);
 			#else
 			ref *w;
@@ -734,6 +820,35 @@ value coerce(value v, crc *s) {
 			((ref*)retv)->c1_tag = (uintptr_t)c1 | 0b1;
 			((ref*)retv)->c2 = (uintptr_t)c2;
 			return apply_inj(retv, G_RF, s);
+			#endif
+		}
+		case C_ARRAY: { // v<(G?p;)arr(s')(;G!)>
+			v = remove_inj(v, G_AR, 0, s);
+			#ifdef MONOTONIC
+			sc_push(v, PSI_ARRAY, s->crcdat.marray_crc);
+			return apply_inj(v, G_AR, s);
+			#else
+			arr *w;
+			crc *c1, *c2;
+			if (((arr*)v)->wrap) { // u<<arr(s)>><arr(s')>
+				w = ((arr_wrap*)v)->w;
+				c1 = compose(((arr_wrap*)v)->c1, s->crcdat.array_crc.c1); // read: old then new
+				c2 = compose(s->crcdat.array_crc.c2, ((arr_wrap*)v)->c2);              // write: new then old
+				if (c1 == &crc_id && c2 == &crc_id) return apply_inj((value)w, G_AR, s); // u<<arr(s)>><arr(s')> -> u<id> -> u
+			} else {                   // u<arr(s')> -> u<<arr(s')>>
+				#ifdef PROFILE
+				update_longest(1);
+				#endif
+				w = (arr*)v;
+				c1 = s->crcdat.array_crc.c1;
+				c2 = s->crcdat.array_crc.c2;
+			}
+			value retv = (value)GC_MALLOC(sizeof(arr_wrap));
+			((arr_wrap*)retv)->hdr.wrap = 1;
+			((arr_wrap*)retv)->w = w;
+			((arr_wrap*)retv)->c1 = c1;
+			((arr_wrap*)retv)->c2 = c2;
+			return apply_inj(retv, G_AR, s);
 			#endif
 		}
 		case C_TV: { // v<?pX!q>, v<X?p>, v<X!q>

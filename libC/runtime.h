@@ -13,6 +13,7 @@
 #include "lst.h"
 #include "tpl.h"
 #include "ref.h"
+#include "arr.h"
 
 #include "app.h"
 #include "capp.h"

@@ -13,6 +13,7 @@ ty tyunit = { .tykind = BASE_UNIT };
 ty tyfn = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
 ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
 ty tyrf = { .tykind = TYREF, .tydat = { .tyref = &tydyn } };
+ty tyar = { .tykind = TYARRAY, .tydat = { .tyarray = &tydyn } };
 
 inline ty *newty() {
 	ty *retty = (ty*)GC_MALLOC(sizeof(ty));
@@ -24,7 +25,7 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 	#ifdef PROFILE
 	current_inference++;
 	#endif
-	switch(g) {
+	switch (g) {
 		case G_INT: {
 			// printf("DTI : int was inferred\n");
 			// printf("%p <- int\n", tv);
@@ -74,9 +75,12 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 			tv->tydat.tyref = newty();
 			return;
 		}
-		default: {
-			printf("got G_NONE");
-			exit(1);
+		case G_AR: {
+			// printf("DTI : array was inferred\n");
+			// printf("%p <- X array\n", tv);
+			tv->tykind = TYARRAY;
+			tv->tydat.tyarray = newty();
+			return;
 		}
 	}
 }
@@ -125,9 +129,10 @@ int ty_equal (ty *t1, ty *t2) {
 				}
 				return 1;
 			}
-			case TYREF: {
+			case TYREF:
 				return ty_equal(t1->tydat.tyref, t2->tydat.tyref);
-			}
+            case TYARRAY:
+                return ty_equal(t1->tydat.tyarray, t2->tydat.tyarray);
 			case TYVAR:
 				return t1 == t2;
             default: return 0;
@@ -260,6 +265,22 @@ ty *unify_meet(ty* u1, ty* u2) {
                 default: break;
             }
         }
+        case TYARRAY: {
+            switch (u2->tykind) {
+                case DYN: return u1;
+                case TYARRAY: {
+                    ty *retu = (ty*)GC_MALLOC(sizeof(ty));
+                    retu->tykind = TYARRAY;
+                    retu->tydat.tyarray = unify_meet(u1->tydat.tyarray, u2->tydat.tyarray);
+                    return retu;
+                }
+                case TYVAR:
+                    dti(G_AR, 0, u2);
+                    return unify_meet(u1, u2);
+                case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
+                default: break;
+            }
+        }
         case TYVAR: {
             switch (u2->tykind) {
                 case DYN: return u1;
@@ -270,6 +291,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                 case TYLIST: dti(G_LI, 0, u1); return unify_meet(u1, u2);
                 case TYTUPLE: dti(G_TP, u2->tydat.tytuple.size, u1); return unify_meet(u1, u2);
                 case TYREF: dti(G_RF, 0, u1); return unify_meet(u1, u2);
+                case TYARRAY: dti(G_AR, 0, u1); return unify_meet(u1, u2);
                 case TYVAR:
                     u1->tykind = SUBSTITUTED;
                     u1->tydat.tv = u2;

@@ -22,8 +22,11 @@ let rec toCls_exp known tvs args funty = function
   | Tl x -> Cls.Tl x
   | Tget (x, i) -> Tget (x, i)
   | Ref (x, u) -> Cls.Ref (x, u)
-  | Deref (x, ou) -> Cls.Deref (x, ou)
-  | Subst (x, y, ou) -> Cls.Subst (x, y, ou)
+  | Deref (x, u) -> Cls.Deref (x, u)
+  | Subst (x, y, u) -> Cls.Subst (x, y, u)
+  | MakeArray (x, y, u) -> Cls.MakeArray (x, y, u)
+  | Get (x, y, u) -> Cls.Get (x, y, u)
+  | Put (x, y, z, u) -> Cls.Put (x, y, z, u)
   | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args funty f) ms)
   | IfEqExp (x, y, f1, f2) -> Cls.IfEq (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
   | IfLteExp (x, y, f1, f2) -> Cls.IfLte (x, y, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)

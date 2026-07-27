@@ -251,6 +251,9 @@ module KNorm = struct
     | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option
+    | MakeArray of id * id * ty
+    | Get of id * id * ty option
+    | Put of id * id * id * ty option
     | IfEqExp of id * id * exp * exp
     | IfLteExp of id * id * exp * exp
     | AppMExp of id * id
@@ -302,6 +305,9 @@ module Cls = struct
     | Ref of id * ty
     | Deref of id * ty option
     | Subst of id * id * ty option
+    | MakeArray of id * id * ty
+    | Get of id * id * ty option
+    | Put of id * id * id * ty option
     | IfEq of id * id * exp * exp
     | IfLte of id * id * exp * exp
     | Match of id * (matchform * exp) list
@@ -332,27 +338,24 @@ end
 module C = struct
   type ty = 
     | INT | VOID | PTR of ty | ARRAY of ty
-    | VALUE | FUN | LST | TPL | TPL_RAW | REF | CRC
+    | VALUE | FUN | LST | TPL | TPL_RAW | REF | ARR_RAW | ARR | CRC
     | RANGE | TY
+
+  type preop = Not | Deref
+  type postop = Incr 
+  type binop = Add | Sub | Mul | Div | Mod | And | Eq | Neq | Lte | Lt
 
   type exp =
     | Var of id
     | Dot of exp * id
     | Arrow of exp * id
     | Cast of ty * exp
-    | Index of exp * int
+    | Index of exp * exp
     | Int of int
     | Str of string
-    | Add of exp * exp
-    | Sub of exp * exp
-    | Mul of exp * exp
-    | Div of exp * exp
-    | Mod of exp * exp
-    | Not of exp
-    | And of exp * exp
-    | Eq of exp * exp
-    | Neq of exp * exp
-    | Lte of exp * exp
+    | PreOp of preop * exp
+    | PostOp of exp * postop
+    | BinOp of exp * binop * exp
     | App of exp * exp list
     | Addr of id
     | Null
@@ -360,24 +363,16 @@ module C = struct
     | Sizeof of ty
     | Struct of (id * exp) list
     | Array of exp list
-    | Deref of exp
-
-  type lval =
-    | LVar of id
-    | LDot of lval * id
-    | LArrow of lval * id
-    | LCast of ty * lval
-    | LIndex of lval * int
-    | LDeref of lval
 
   type spec = No | Static
 
   type stm =
     | SDecl of ty * id * exp option
-    | SAssign of lval * exp
+    | SAssign of exp * exp
     | SReturn of exp
     | SIf of exp * stm list * stm list
-    | SApp of exp * exp list
+    | SFor of (stm * exp * exp) * stm list
+    | SExp of exp
 
   type func_sig = {
     ret_ty: ty;

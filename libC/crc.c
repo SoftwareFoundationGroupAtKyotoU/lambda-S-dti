@@ -21,8 +21,10 @@ crc crc_inj_FN = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_FN } };
 crc crc_inj_LI = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_LI } };
 #ifdef MONOTONIC
 crc crc_inj_RF = { .crckind = C_REF, .has_inj = 1, .crcdat = { .mref_crc = &tydyn } };
+crc crc_inj_AR = { .crckind = C_ARRAY, .has_inj = 1, .crcdat = { .marray_crc = &tydyn } };
 #else
 crc crc_inj_RF = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_RF } };
+crc crc_inj_AR = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_AR } };
 #endif
 
 static inline crc* create_new_crc(crc* candidate) {
@@ -44,7 +46,7 @@ static uint32_t hash_crc(const crc *c) {
     h = (h * 31) + ((c->has_proj << 3) | (c->has_inj << 2) | (c->has_tv << 1) | c->p_proj);
     h = (h * 31) + c->rid_proj;
 
-    switch(c->crckind) {
+    switch (c->crckind) {
 		case C_ID:
 			h = (h * 31) + c->crcdat.id.g;
 			h = (h * 31) + c->crcdat.id.size;
@@ -69,6 +71,15 @@ static uint32_t hash_crc(const crc *c) {
 			#else
             h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c1;
             h = (h * 31) + (uintptr_t)c->crcdat.ref_crc.c2;
+            break;
+			#endif
+		case C_ARRAY:
+			#ifdef MONOTONIC
+			h = (h * 31) + (uintptr_t)c->crcdat.marray_crc;
+			break;
+			#else
+            h = (h * 31) + (uintptr_t)c->crcdat.array_crc.c1;
+            h = (h * 31) + (uintptr_t)c->crcdat.array_crc.c2;
             break;
 			#endif
 		case C_TV:
@@ -97,7 +108,7 @@ static int eq_crc(const crc *a, const crc *b) {
         return 0;
     }
 
-    switch(a->crckind) {
+    switch (a->crckind) {
 		case C_ID:
 			return a->crcdat.id.g    == b->crcdat.id.g &&
 		           a->crcdat.id.size == b->crcdat.id.size;
@@ -118,6 +129,13 @@ static int eq_crc(const crc *a, const crc *b) {
 			#else
             return a->crcdat.ref_crc.c1 == b->crcdat.ref_crc.c1 &&
                    a->crcdat.ref_crc.c2 == b->crcdat.ref_crc.c2;
+        	#endif
+		case C_ARRAY:
+			#ifdef MONOTONIC
+            return a->crcdat.marray_crc == b->crcdat.marray_crc;
+			#else
+            return a->crcdat.array_crc.c1 == b->crcdat.array_crc.c1 &&
+                   a->crcdat.array_crc.c2 == b->crcdat.array_crc.c2;
         	#endif
         case C_TV:
             return a->crcdat.tv.rid_inj == b->crcdat.tv.rid_inj &&
@@ -221,10 +239,7 @@ static inline crc *new_id(const crc *proj, const ground_ty g, const uint16_t siz
 				return alloc_crc(&temp);
 			}
 			case G_RF: return &crc_inj_RF;
-			default: {
-				printf("got G_NONE\n");
-				exit(1);
-			}
+			case G_AR: return &crc_inj_AR;
 		}
 	} else {
 		crc temp = {
@@ -287,6 +302,26 @@ static inline crc* new_ref(const crc *proj, crc *c1, crc *c2, const crc *inj) {
 }
 #endif
 
+#ifdef MONOTONIC
+static inline crc* new_marray(const crc *proj, ty *u, const crc *inj) {
+    crc temp = {
+		.crckind = C_ARRAY, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
+		/*.has_tv = TODO yet, */ .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
+		.crcdat.marray_crc = u
+	};
+    return alloc_crc(&temp);
+}
+#else
+static inline crc* new_array(const crc *proj, crc *c1, crc *c2, const crc *inj) {
+    crc temp = {
+		.crckind = C_ARRAY, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
+		.has_tv = c1->has_tv | c2->has_tv, .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
+		.crcdat.array_crc = { .c1 = c1, .c2 = c2 }
+	};
+    return alloc_crc(&temp);
+}
+#endif
+
 static inline crc *new_tv(const crc *proj, ty *tv, const crc *inj) {
 	crc temp = {
 		.crckind = C_TV, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
@@ -340,6 +375,18 @@ crc *normalize_tv(crc *c) {
 			return new_ref(c, new_tv(c, tv->tydat.tyref, c), new_tv(&inv_c, tv->tydat.tyref, &inv_c), c);
 			#endif
 		}
+		case TYARRAY: {
+			#ifdef MONOTONIC
+			return new_marray(c, tv->tydat.tyarray, c);
+			#else
+			crc inv_c = {
+				.crckind = C_TV, .has_proj = c->has_inj, .has_inj = c->has_proj,
+				.p_proj = c->crcdat.tv.p_inj ^ 1, .rid_proj = c->crcdat.tv.rid_inj,
+				.crcdat.tv = { .rid_inj = c->rid_proj, .p_inj = c->p_proj ^ 1 }
+			};
+			return new_ref(c, new_tv(c, tv->tydat.tyarray, c), new_tv(&inv_c, tv->tydat.tyarray, &inv_c), c);
+			#endif
+		}
 		case TYVAR: return c;
 		case DYN: {
 			printf("tydyn is substituted to tyvar (in normalize_tv)\n");
@@ -370,6 +417,8 @@ static inline int occur_check_ty(ty *u, const ty *tv) {
             return 0;
 		case TYREF:
 			return occur_check_ty(u->tydat.tyref, tv);
+		case TYARRAY:
+			return occur_check_ty(u->tydat.tyarray, tv);
 		case TYVAR:
 			return u == tv;
 		case SUBSTITUTED:
@@ -395,6 +444,12 @@ static inline int occur_check_crc(const crc* c, const ty *tv) {
 			return occur_check_ty(c->crcdat.mref_crc, tv);
 			#else
 			return occur_check_crc(c->crcdat.ref_crc.c1, tv) || occur_check_crc(c->crcdat.ref_crc.c2, tv);
+			#endif
+		case C_ARRAY:
+			#ifdef MONOTONIC
+			return occur_check_ty(c->crcdat.marray_crc, tv);
+			#else
+			return occur_check_crc(c->crcdat.array_crc.c1, tv) || occur_check_crc(c->crcdat.array_crc.c2, tv);
 			#endif
 		case C_TV: return occur_check_ty(c->crcdat.tv.tv_ptr, tv);
 		case C_BOT: return 0;
@@ -490,6 +545,10 @@ static crc* internal_compose(crc *c1, crc *c2) {
 				case C_REF: { // (G?p;)id{U}(;G!) ;;; ((H?q;)mref(U')(;H!), (H?q;)ref(s1,s2)(;H!))
 					if (c1->has_inj == 1 && c1->crcdat.id.g != G_RF) break;
 					return rewrite_proj(c1, c2); // (G?p;)mref(U')(;H!), (G?p;)ref(s1,s2)(;H!)
+				}
+				case C_ARRAY: { // (G?p;)id{U}(;G!) ;;; ((H?q;)marray(U')(;H!), (H?q;)array(s1,s2)(;H!))
+					if (c1->has_inj == 1 && c1->crcdat.id.g != G_AR) break;
+					return rewrite_proj(c1, c2); // (G?p;)marray(U')(;H!), (G?p;)array(s1,s2)(;H!)
 				}
 				case C_TV: { // (G?p;)id{U}(;G!) ;;; (X?q, ?qX!r, X!r)
 					if (c1->has_inj) {
@@ -614,6 +673,36 @@ static crc* internal_compose(crc *c1, crc *c2) {
 			}
 			return new_bot(c1, G_RF, 0, 0, c2->p_proj, c2->rid_proj); // (G?p;)⊥q
 		}
+		case C_ARRAY: {
+			switch (c2->crckind) {
+				case C_ID: { // ((G?p;)marray(U)(;G!), (G?p;)array(s1,s2)(;G!)) ;;; (H?q;)id{U'}(;H!)
+					if (c2->has_proj == 1 && c2->crcdat.id.g != G_AR) break;
+					return rewrite_inj(c1, c2); // (G?p;)marray(U)(;H!), (G?p;)array(s1,s2)(;H!)
+				}
+				case C_ARRAY: {
+					#ifdef MONOTONIC // (G?p;)marray(U)(;G!) ;;; (H?q;)marray(U')(;H!)
+					ty *meet = unify_meet(c1->crcdat.marray_crc, c2->crcdat.marray_crc); // U'' = unify_meet(U, U')
+					return new_marray(c1, meet, c2); // (G?p;)marray(U'')(;H!)
+					#else // (G?p;)array(s1,s2)(;G!) ;;; (H?q;)array(t1,t2)(;H!)
+					crc *carray1 = compose(c1->crcdat.array_crc.c1, c2->crcdat.array_crc.c1); // c1 = s1 ;;; t1
+					crc *carray2 = compose(c2->crcdat.array_crc.c2, c1->crcdat.array_crc.c2); // c2 = s2 ;;; t2
+					if (carray1 == &crc_id && carray2 == &crc_id) { // (G?p;)id(;H!)
+						return new_id(c1, G_AR, 0, c2);
+					} else {
+						return new_array(c1, carray1, carray2, c2); // (G?p;)array(c1,c2)(;H!)
+					}
+					#endif
+				}
+				case C_TV: { // (G?p;)array(s1,s2)(;G!) ;;; (X?q, ?qX!r, X!r)
+					return compose_s_tv(c1, G_AR, 0, c2);
+				}
+				case C_BOT: { // (G?p;)array(s1,s2)(;G!) ;;; ((H?q;)⊥r, X?q;⊥r)
+					return compose_s_bot(c1, G_AR, 0, c2);
+				}
+				default: break;
+			}
+			return new_bot(c1, G_AR, 0, 0, c2->p_proj, c2->rid_proj); // (G?p;)⊥q
+		}
 		case C_TV: {
 			ty *tv = c1->crcdat.tv.tv_ptr;
 			switch(tv->tykind) {
@@ -635,6 +724,10 @@ static crc* internal_compose(crc *c1, crc *c2) {
 						case C_REF: {
 							if (occur_check_crc(c2, tv)) return new_bot(c1, G_RF, 0, 1, c2->p_proj, c2->rid_proj);
 							dti(G_RF, 0, tv); break;
+						}
+						case C_ARRAY: {
+							if (occur_check_crc(c2, tv)) return new_bot(c1, G_AR, 0, 1, c2->p_proj, c2->rid_proj);
+							dti(G_AR, 0, tv); break;
 						}
 						case C_TV: {
 							return compose_tv_tv(c1, tv, c2);
@@ -736,6 +829,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					}
 				}
 				case TYREF: return new_mref(&temp_proj, u2->tydat.tyref, &temp);
+				case TYARRAY: return new_marray(&temp_proj, u2->tydat.tyarray, &temp);
 				case TYVAR: return new_tv(&temp_proj, u2, &temp);
 				case SUBSTITUTED: {
 					u2 = ty_find(u2);
@@ -868,6 +962,17 @@ crc *make_s_coercion(ty *u1, ty *u2) {
             switch (u2->tykind) {
                 case DYN: return new_mref(&temp, &tydyn, &temp_inj);
                 case TYREF: return new_mref(&temp, u2->tydat.tyref, &temp);
+				case SUBSTITUTED: {
+					u2 = ty_find(u2);
+					return make_s_coercion(u1, u2);
+				}
+                default: break;
+            }
+        }
+        case TYARRAY: {
+            switch (u2->tykind) {
+                case DYN: return new_marray(&temp, &tydyn, &temp_inj);
+                case TYARRAY: return new_marray(&temp, u2->tydat.tyarray, &temp);
 				case SUBSTITUTED: {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
