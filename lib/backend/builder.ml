@@ -3,6 +3,22 @@ open Config
 
 exception Build_bad of string
 
+(* result_C/<base>_out.c と result/<base>.out はプロセス全体で共有された
+ * 固定ディレクトリ (Resources.result_c_dir/result_dir) の下に置かれるため、
+ * base が入力ファイル名だけだと (異なるディレクトリの同名ファイル) や
+ * (同じファイルを異なるモードでコンパイル) したときに出力パスが衝突する。
+ * 絶対パス + 有効な config フラグ一式をハッシュに含めて一意化する。 *)
+let unique_base (config : Config.t) filename =
+  let base = Filename.basename filename in
+  let abs_filename =
+    if Filename.is_relative filename then Filename.concat (Sys.getcwd ()) filename
+    else filename
+  in
+  let mode_key = Printf.sprintf "%b_%b_%b_%b_%b_%b"
+    config.intoB config.static config.eager config.alt config.monotonic config.hash
+  in
+  base ^ "_" ^ Digest.to_hex (Digest.string (abs_filename ^ mode_key))
+
 let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   ~config ~bench ~profile () =
   let libc_dir = Resources.libc_dir () in
@@ -40,7 +56,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
     let result_dir = Resources.result_dir () in
     match config.opt_file with
     | Some filename ->
-      let base = Filename.basename filename in
+      let base = unique_base config filename in
       asprintf "clang %s/%s_out.c %s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 -O3"
         result_c_dir
         base
@@ -69,7 +85,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
 let build_run c_code ~config = match config.opt_file with
   | Some filename ->
     (* ファイル入力モード *)
-    let base = Filename.basename filename in
+    let base = unique_base config filename in
     let out_path = Filename.concat (Resources.result_c_dir ()) (base ^ "_out.c") in
     let oc = open_out out_path in
     Printf.fprintf oc "%s" c_code;
