@@ -225,7 +225,7 @@ let app_env l n f lst =
   List.mapi (fun i h -> SAssign (Index (lval_env, Int (n + i)), Cast (PTR VOID, f h))) lst
 
 let alloc_closure env_size =
-  Malloc (VALUE, BinOp (Sizeof FUN, Add, BinOp (Sizeof (PTR VOID), Mul, Int env_size)))
+  Malloc (VALUE, BinOp (Sizeof FUN, Plus, BinOp (Sizeof (PTR VOID), Mult, Int env_size)))
 
 let set_func_stm ~config fun_x func_d func_m =
   if config.intoB || config.static then
@@ -295,10 +295,8 @@ let rec toC_mf ~config x_exp = function
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
-  | Cls.IfEq (x, y, f1, f2) ->
-    SIf (BinOp (Var x, Eq, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
-  | Cls.IfLte (x, y, f1, f2) ->
-    SIf (BinOp (Var x, Lte, Var y), toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
+  | Cls.If (x, f1, f2) ->
+    SIf (Var x, toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.MakeCls (x, cls, f) ->
     let set_func fun_x =
       let alt_str = if config.alt then "alt_" else "" in
@@ -318,7 +316,7 @@ let rec toC_exp ~is_main ~config = function
       [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
   | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _
-  | Cls.Add _ | Cls.Sub _ | Cls.Mul _ | Cls.Div _ | Cls.Mod _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
+  | Cls.BinOp _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
     as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
@@ -331,7 +329,7 @@ and toC_assign ~config x f =
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
     let size = List.length ys in
-    assign_x (Malloc (VALUE, BinOp (Sizeof TPL_RAW, Add, BinOp (Sizeof VALUE, Mul, Int size)))) @ [SAssign (Dot (Arrow (Cast (PTR TPL_RAW, Var x), "hdr"), "size"), Int size)]
+    assign_x (Malloc (VALUE, BinOp (Sizeof TPL_RAW, Plus, BinOp (Sizeof VALUE, Mult, Int size)))) @ [SAssign (Dot (Arrow (Cast (PTR TPL_RAW, Var x), "hdr"), "size"), Int size)]
     @ List.mapi (fun i y -> SAssign (Index (Arrow (Cast (PTR TPL_RAW, Var x), "fields"), Int i), Var y)) ys
   | Cls.Ref (y, u) ->
     assign_x (Malloc (VALUE, Sizeof REF)) @ 
@@ -342,7 +340,7 @@ and toC_assign ~config x f =
     else
       [SAssign (Arrow (Cast (PTR REF, Var x), "v"), Var y)]
   | Cls.MakeArray (y, z, u) ->
-    assign_x (Malloc (VALUE, BinOp (Sizeof ARR_RAW, Add, BinOp (Sizeof VALUE, Mul, Var y)))) @ [SAssign (Arrow (Cast (PTR ARR_RAW, Var x), "length"), Var y)] @
+    assign_x (Malloc (VALUE, BinOp (Sizeof ARR_RAW, Plus, BinOp (Sizeof VALUE, Mult, Var y)))) @ [SAssign (Arrow (Cast (PTR ARR_RAW, Var x), "length"), Var y)] @
     [SFor ((SDecl (INT, "i", Some (Int 0)), BinOp (Var "i", Lt, Var y), PostOp (Var "i", Incr)),
       [SAssign (Index (Arrow (Cast (PTR ARR_RAW, Var x), "vs"), Var "i"), Var z)])]
     @
@@ -391,11 +389,7 @@ and toC_assign ~config x f =
       assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
     else
       assign_x (App (Var "get", [Cast (PTR ARR, Var y); Cast (INT, Var z)]))
-  | Cls.Add (y, z) -> assign_x (BinOp (Var y, Add, Var z))
-  | Cls.Sub (y, z) -> assign_x (BinOp (Var y, Sub, Var z))
-  | Cls.Mul (y, z) -> assign_x (BinOp (Var y, Mul, Var z))
-  | Cls.Div (y, z) -> assign_x (BinOp (Var y, Div, Var z))
-  | Cls.Mod (y, z) -> assign_x (BinOp (Var y, Mod, Var z))
+  | Cls.BinOp (y, op, z) -> assign_x (BinOp (Var y, op, Var z))
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (PreOp (Deref, (Cast (PTR LST, Var x))), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
@@ -445,10 +439,8 @@ and toC_assign ~config x f =
   (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
-  | Cls.IfEq (y, z, f1, f2) ->
-    SIf (BinOp (Var y, Eq, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
-  | Cls.IfLte (y, z, f1, f2) ->
-    SIf (BinOp (Var y, Lte, Var z), toC_assign ~config x f1, toC_assign ~config x f2) :: []
+  | Cls.If (y, f1, f2) ->
+    SIf (Var y, toC_assign ~config x f1, toC_assign ~config x f2) :: []
   | Cls.MakeCls (y, cls, f) ->
     let set_func fun_y =
       let alt_str = if config.alt then "alt_" else "" in

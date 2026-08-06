@@ -14,6 +14,7 @@ exception Type_bug of string
 let type_of_binop = function
   | Plus | Minus | Mult | Div | Mod -> TyInt, TyInt, TyInt
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
+  | And | Or -> TyBool, TyBool, TyBool
 
 let rec type_of_mf mf ids = match mf with
   | MatchILit _ -> TyInt, ids

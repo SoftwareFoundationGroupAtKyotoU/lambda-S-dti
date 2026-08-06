@@ -81,7 +81,7 @@ let pp_constr ppf = function
 
 (* === pp for binop === *)
 
-(* TODO: delete later *)
+(* TODO: replace to level *)
 let gt_binop op1 op2 = match op1, op2 with
   | (Plus | Minus | Mult | Div | Mod), (Eq | Neq | Lt | Lte | Gt | Gte)
   | (Mult | Div | Mod), (Plus | Minus) -> true
@@ -101,6 +101,8 @@ let pp_binop ppf op =
     | Mult -> "*"
     | Div -> "/"
     | Mod -> "mod"
+    | And -> "&&"
+    | Or -> "||"
     | Eq -> "="
     | Neq -> "<>"
     | Lt -> "<"
@@ -280,6 +282,8 @@ module ITGL = struct
     | BinOp (_, (Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
+    | BinOp (_, And, _, _) -> 35
+    | BinOp (_, Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
     | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
@@ -385,6 +389,8 @@ module CC = struct
     | BinOp ((Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
+    | BinOp (And, _, _) -> 35
+    | BinOp (Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
     | CastExp _ -> 15
     | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
@@ -723,12 +729,12 @@ module KNorm = struct
   open Syntax.KNorm
 
   let gt_exp e e1 = match e, e1 with
-    | (IfEqExp _ | IfLteExp _ | MatchExp _), (LetExp _ | LetFunExp _) -> true
+    | (IfExp _ | MatchExp _), (LetExp _ | LetFunExp _) -> true
     | _ -> false
   
   let gte_exp e e1 = match e, e1 with
     | (LetExp _ | LetFunExp _) , (LetExp _ | LetFunExp _) -> true
-    | (IfEqExp _ | IfLteExp _), (IfEqExp _ | IfLteExp _) -> true
+    | IfExp _, IfExp _ -> true
     | MatchExp _, MatchExp _ -> true
     | _ -> gt_exp e e1
 
@@ -736,11 +742,7 @@ module KNorm = struct
     | Var x -> pp_print_string ppf x
     | IConst i -> pp_print_int ppf i
     | Nil -> pp_print_string ppf "[]"
-    | Add (x, y) -> fprintf ppf "%s + %s" x y
-    | Sub (x, y) -> fprintf ppf "%s - %s" x y
-    | Mul (x, y) -> fprintf ppf "%s * %s" x y
-    | Div (x, y) -> fprintf ppf "%s / %s" x y
-    | Mod (x, y) -> fprintf ppf "%s mod %s" x y
+    | BinOp (x, op, y) -> fprintf ppf "%s %a %s" x pp_binop op y
     | Cons (x, y) -> fprintf ppf "%s :: %s" x y
     | Tuple xs -> 
       let pp_sep ppf () = fprintf ppf ", " in
@@ -760,16 +762,9 @@ module KNorm = struct
     | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
     | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
     | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
-    | IfEqExp (x, y, e1, e2) ->
-      fprintf ppf "if %s=%s then %a else %a"
+    | IfExp (x, e1, e2) ->
+      fprintf ppf "if %s then %a else %a"
         x
-        y
-        pp_exp e1
-        pp_exp e2
-    | IfLteExp (x, y, e1, e2) ->
-      fprintf ppf "if %s<=%s then %a else %a"
-        x
-        y
         pp_exp e1
         pp_exp e2
     | MatchExp (x, ms) as e ->
@@ -869,11 +864,7 @@ module Cls = struct
     | Var x -> pp_print_string ppf x
     | Int i -> pp_print_int ppf i
     | Nil -> pp_print_string ppf "[]"
-    | Add (x, y) -> fprintf ppf "%s + %s" x y
-    | Sub (x, y) -> fprintf ppf "%s - %s" x y
-    | Mul (x, y) -> fprintf ppf "%s * %s" x y
-    | Div (x, y) -> fprintf ppf "%s / %s" x y
-    | Mod (x, y) -> fprintf ppf "%s mod %s" x y
+    | BinOp (x, op, y) -> fprintf ppf "%s %a %s" x pp_binop op y
     | Cons (x, y) -> fprintf ppf "%s :: %s" x y
     | Tuple xs ->
       let pp_sep ppf () = fprintf ppf ", " in
@@ -893,16 +884,9 @@ module Cls = struct
     | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
     | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
     | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
-    | IfEq (x, y, e1, e2) ->
-      fprintf ppf "if %s=%s then %a else %a"
+    | If (x, e1, e2) ->
+      fprintf ppf "if %s then %a else %a"
         x
-        y
-        pp_exp e1
-        pp_exp e2
-    | IfLte (x, y, e1, e2) ->
-      fprintf ppf "if %s<=%s then %a else %a"
-        x
-        y
         pp_exp e1
         pp_exp e2
     | Match (x, ms) ->
@@ -1077,16 +1061,19 @@ module C = struct
     | Incr -> fprintf ppf "++"
 
   let pp_binop ppf = function
-    | Add -> fprintf ppf "+"
-    | Sub -> fprintf ppf "-"
-    | Mul -> fprintf ppf "*"
+    | Plus -> fprintf ppf "+"
+    | Minus -> fprintf ppf "-"
+    | Mult -> fprintf ppf "*"
     | Div -> fprintf ppf "/"
     | Mod -> fprintf ppf "%%"
     | And -> fprintf ppf "&&"
+    | Or -> fprintf ppf "||"
     | Eq -> fprintf ppf "=="
     | Neq -> fprintf ppf "!="
     | Lte -> fprintf ppf "<="
     | Lt -> fprintf ppf "<"
+    | Gte -> fprintf ppf ">="
+    | Gt -> fprintf ppf ">"
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x

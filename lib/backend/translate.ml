@@ -480,11 +480,7 @@ module Cls = struct
     | Var x -> Var (replace x)
     | Int i -> Int i
     | Nil -> Nil
-    | Add (x, y) -> Add (replace x, replace y)
-    | Sub (x, y) -> Sub (replace x, replace y)
-    | Mul (x, y) -> Mul (replace x, replace y)
-    | Div (x, y) -> Div (replace x, replace y)
-    | Mod (x, y) -> Mod (replace x, replace y)
+    | BinOp (x, op, y) -> BinOp (replace x, op, replace y)
     | Cons (x, y) -> Cons (replace x, replace y)
     | Tuple xs -> Tuple (List.map (fun x -> replace x) xs)
     | Hd x -> Hd (replace x)
@@ -496,8 +492,7 @@ module Cls = struct
     | MakeArray (x, y, u) -> MakeArray (replace x, replace y, u)
     | Get (x, y, uo) -> Get (replace x, replace y, uo)
     | Put (x, y, z, uo) -> Put (replace x, replace y, replace z, uo)
-    | IfEq (x, y, f1, f2) -> IfEq (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
-    | IfLte (x, y, f1, f2) -> IfLte (replace x, replace y, replace_var vx vy f1, replace_var vx vy f2)
+    | If (x, f1, f2) -> If (replace x, replace_var vx vy f1, replace_var vx vy f2)
     | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)
     | AppTy (x, k, n, tas) -> AppTy (replace x, k, n, tas)
     | AppTyFun (x, k, n, tas) -> AppTyFun (replace x, k, n, tas)
@@ -530,8 +525,7 @@ module Cls = struct
       end
     | Let (x, CApp (y, k), f) when V.mem k ids -> to_alt ids (replace_var x y f)
     | Let (x, f1, f2) -> Let (x, to_alt ids f1, to_alt ids f2)
-    | IfEq (x, y, f1, f2) -> IfEq (x, y, to_alt ids f1, to_alt ids f2)
-    | IfLte (x, y, f1, f2) -> IfLte (x, y, to_alt ids f1, to_alt ids f2)
+    | If (x, f1, f2) -> If (x, to_alt ids f1, to_alt ids f2)
     | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, to_alt ids f) ms)
     | AppDCls (x, (y, k)) when V.mem k ids -> AppMCls (x, y)
     | AppDDir (l, (y, k)) when V.mem k ids -> AppMDir (l, y)

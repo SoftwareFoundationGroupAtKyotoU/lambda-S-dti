@@ -242,7 +242,7 @@ let rec static_crc tvs c =
   | CFail _ -> raise @@ Static_manage_bug "yet"
 
 let rec static_exp tvs = function
-  | Var _ | Int _ | Nil | Add _ | Sub _ | Mul _ | Div _ | Mod _
+  | Var _ | Int _ | Nil | BinOp _
   | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ 
   | Deref (_, None) | Subst (_, _, None)
   | Get (_, _, None) | Put (_, _, _, None)
@@ -295,8 +295,7 @@ let rec static_exp tvs = function
     let f2 = static_exp tvs f2 in
     Let (x, f1, f2)
   | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, static_exp tvs f) ms)
-  | IfEq (x, y, f1, f2) -> IfEq (x, y, static_exp tvs f1, static_exp tvs f2)
-  | IfLte (x, y, f1, f2) -> IfLte (x, y, static_exp tvs f1, static_exp tvs f2)
+  | If (x, f1, f2) -> If (x, static_exp tvs f1, static_exp tvs f2)
   | MakeCls (x, cls, f) -> MakeCls (x, cls, static_exp tvs f)
   | MakeTyCls (x, cls, f) -> MakeTyCls (x, cls, static_exp tvs f)
   | SetTy _ -> raise @@ Static_manage_bug "setty appear in static_exp"

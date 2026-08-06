@@ -12,10 +12,10 @@ module KNorm = struct
   let rec fv_exp = function
     | Var x | Hd x | Tl x  | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
     | IConst _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
+    | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs
-    | IfEqExp (x, y, f1, f2) | IfLteExp (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
+    | IfExp (x, f1, f2) -> V.big_union [V.singleton x; fv_exp f1; fv_exp f2]
     | MatchExp (x, ms) -> 
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
     | AppTy (x, _, _) -> V.singleton x
@@ -40,10 +40,10 @@ module Cls = struct
   let rec fv_exp = function
     | Var x | Hd x | Tl x | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
     | Int _ | Nil -> V.empty
-    | Add (x, y) | Sub (x, y) | Mul (x, y) | Div (x, y) | Mod (x, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
+    | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs
-    | IfEq (x, y, f1, f2) | IfLte (x, y, f1, f2) -> V.big_union [V.of_list [x; y]; fv_exp f1; fv_exp f2]
+    | If (x, f1, f2) -> V.big_union [V.singleton x; fv_exp f1; fv_exp f2]
     | Match (x, ms) -> 
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
     | AppTy (x, _, _, _) -> V.singleton x

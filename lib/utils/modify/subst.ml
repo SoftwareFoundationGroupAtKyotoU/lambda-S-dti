@@ -104,15 +104,14 @@ module KNorm = struct
 
   let rec subst_exp ~monotonic s = function
     | Var _ | IConst _ | Nil as f -> f
-    | Add _ | Sub _ | Mul _ | Div _ | Mod _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ as f -> f
+    | BinOp _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ as f -> f
     | Ref (x, u) -> Ref (x, subst_type s u)
     | Deref (x, uo) -> Deref (x, Option.map (subst_type s) uo)
     | Subst (x, y, uo) -> Subst (x, y, Option.map (subst_type s) uo)
     | MakeArray (x, y, u) -> MakeArray (x, y, subst_type s u)
     | Get (x, y, uo) -> Get (x, y, Option.map (subst_type s) uo)
     | Put (x, y, z, uo) -> Put (x, y, z, Option.map (subst_type s) uo)
-    | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
-    | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
+    | IfExp (x, f1, f2) -> IfExp (x, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp ~monotonic s f) ms)
     | AppDExp _ | AppMExp _ | CAppExp _ | CCompExp _ as f -> f
     | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_tyarg s) tas)

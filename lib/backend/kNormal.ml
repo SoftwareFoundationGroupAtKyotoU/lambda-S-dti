@@ -158,51 +158,15 @@ module CC = struct
     | IConst i -> KNorm.IConst i
     | BConst b -> let i = if b then 1 else 0 in KNorm.IConst i
     | UConst -> KNorm.IConst 0
-    | BinOp (op, f1, f2) as f -> begin match op with
-      | Plus -> 
-        let f1 = k_normalize_exp tvsenv f1 in
-        let f2 = k_normalize_exp tvsenv f2 in
-        insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Add (x, y)
-      | Minus ->
-        let f1 = k_normalize_exp tvsenv f1 in
-        let f2 = k_normalize_exp tvsenv f2 in
-        insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Sub (x, y)
-      | Mult -> 
-        let f1 = k_normalize_exp tvsenv f1 in
-        let f2 = k_normalize_exp tvsenv f2 in
-        insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Mul (x, y)
-      | Div -> 
-        let f1 = k_normalize_exp tvsenv f1 in
-        let f2 = k_normalize_exp tvsenv f2 in
-        insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Div (x, y)
-      | Mod -> 
-        let f1 = k_normalize_exp tvsenv f1 in
-        let f2 = k_normalize_exp tvsenv f2 in
-        insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.Mod (x, y)
-      | _ -> k_normalize_exp tvsenv (IfExp (f, BConst true, BConst false))
-      end
+    | BinOp (op, f1, f2) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> KNorm.BinOp (x, op, y)
     | IfExp (f1, f2, f3) ->
-      let f2' = k_normalize_exp tvsenv f2 in
-      let f3' = k_normalize_exp tvsenv f3 in
-      begin match f1 with
-        | BinOp (op, f1, f2) -> 
-          let f1 = k_normalize_exp tvsenv f1 in
-          let f2 = k_normalize_exp tvsenv f2 in
-          begin match op with
-            | Eq -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfEqExp (x, y, f2', f3')
-            | Neq -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfEqExp (x, y, f3', f2')
-            | Lt -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, IfEqExp (x, y, f3', f2'), f3')
-            | Lte -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, f2', f3')
-            | Gt -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, f3', f2')
-            | Gte -> insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> IfLteExp (x, y, IfEqExp (x, y, f2', f3'), f2')
-            | _ -> raise @@ KNormal_bug "if-cond type should bool"
-          end
-        | Var _ | BConst _ | IfExp _ | AppMExp _ | AppDExp _ | LetExp _ | CastExp _ | CAppExp _ | MatchExp _ as f ->
-          let f = k_normalize_exp tvsenv f in 
-          insert_let f @@ fun x -> insert_let (KNorm.IConst 1) @@ fun y -> IfEqExp (x, y, f2', f3')
-        | IConst _ | UConst | FunExp _ | FixExp _  | CCompExp _ | CoercionExp _ | NilExp _ | ConsExp _ | TupleExp _
-        | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ -> raise @@ KNormal_bug "if-cond type should bool"
-      end
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      let f3 = k_normalize_exp tvsenv f3 in
+      insert_let f1 @@ fun x -> IfExp (x, f2, f3)
     | FunExp (tvs, fund) ->
       assert (tvs = []);
       let tent_var = genvar "_var" in
@@ -337,11 +301,7 @@ module KNorm = struct
   let rec beta_exp idenv = function
     | Var x -> Var (find x idenv)
     | IConst _ | Nil as f -> f
-    | Add (x, y) -> Add (find x idenv, find y idenv)
-    | Sub (x, y) -> Sub (find x idenv, find y idenv)
-    | Mul (x, y) -> Mul (find x idenv, find y idenv)
-    | Div (x, y) -> Div (find x idenv, find y idenv)
-    | Mod (x, y) -> Mod (find x idenv, find y idenv)
+    | BinOp (x, op, y) -> BinOp (find x idenv, op, find y idenv)
     | Cons (x, y) -> Cons (find x idenv, find y idenv)
     | Tuple xs -> Tuple (List.map (fun x -> find x idenv) xs)
     | Hd x -> Hd (find x idenv)
@@ -353,10 +313,7 @@ module KNorm = struct
     | MakeArray (x, y, u) -> MakeArray (find x idenv, find y idenv, u)
     | Get (x, y, u) -> Get (find x idenv, find y idenv, u)
     | Put (x, y, z, u) -> Put (find x idenv, find y idenv, find z idenv, u)
-    | IfEqExp (x, y, f1, f2) ->
-      IfEqExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
-    | IfLteExp (x, y, f1, f2) ->
-      IfLteExp (find x idenv, find y idenv, beta_exp idenv f1, beta_exp idenv f2)
+    | IfExp (x, f1, f2) -> IfExp (find x idenv, beta_exp idenv f1, beta_exp idenv f2)
     | MatchExp (x, ms) ->
       let x = find x idenv in
       let ms = List.map (fun (mf, f) -> mf, beta_exp idenv f) ms in
@@ -395,8 +352,7 @@ module KNorm = struct
 
   (* assoc : let x = (let y = ... in ... ) in ...というようなネストされたletをlet y = ... in let x = ... in ...という形に平たくする *)
   let rec assoc_exp = function
-    | IfEqExp (x, y, f1, f2) -> IfEqExp (x, y, assoc_exp f1, assoc_exp f2)
-    | IfLteExp (x, y, f1, f2) -> IfLteExp (x, y, assoc_exp f1, assoc_exp f2)
+    | IfExp (x, f1, f2) -> IfExp (x, assoc_exp f1, assoc_exp f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, assoc_exp f) ms)
     | LetExp (x, f1, f2) ->
       let rec insert = function

@@ -66,7 +66,7 @@ type tyarg = Ty of ty | TyNu
 
 (* === Definitions for binop === *)
 
-type binop = Plus | Minus | Mult | Div | Mod | Eq | Neq | Lt | Lte | Gt | Gte
+type binop = Plus | Minus | Mult | Div | Mod | And | Or | Eq | Neq | Lt | Lte | Gt | Gte
 
 (* === Definitions for matchform === *)
 
@@ -237,11 +237,7 @@ module KNorm = struct
   type exp =
     | Var of id
     | IConst of int
-    | Add of id * id
-    | Sub of id * id
-    | Mul of id * id
-    | Div of id * id
-    | Mod of id * id
+    | BinOp of id * binop * id
     | Nil
     | Cons of id * id
     | Hd of id
@@ -254,8 +250,7 @@ module KNorm = struct
     | MakeArray of id * id * ty
     | Get of id * id * ty option
     | Put of id * id * id * ty option
-    | IfEqExp of id * id * exp * exp
-    | IfLteExp of id * id * exp * exp
+    | IfExp of id * exp * exp
     | AppMExp of id * id
     | AppDExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
@@ -292,11 +287,7 @@ module Cls = struct
     | Var of id
     | Int of int
     | Nil
-    | Add of id * id
-    | Sub of id * id
-    | Mul of id * id
-    | Div of id * id
-    | Mod of id * id
+    | BinOp of id * binop * id
     | Cons of id * id
     | Tuple of id list
     | Hd of id
@@ -308,8 +299,7 @@ module Cls = struct
     | MakeArray of id * id * ty
     | Get of id * id * ty option
     | Put of id * id * id * ty option
-    | IfEq of id * id * exp * exp
-    | IfLte of id * id * exp * exp
+    | If of id * exp * exp
     | Match of id * (matchform * exp) list
     | AppTy of id * int * tyarg list * int (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
     | AppTyFun of id * int * tyarg list * int
@@ -343,7 +333,6 @@ module C = struct
 
   type preop = Not | Deref
   type postop = Incr 
-  type binop = Add | Sub | Mul | Div | Mod | And | Eq | Neq | Lte | Lt
 
   type exp =
     | Var of id

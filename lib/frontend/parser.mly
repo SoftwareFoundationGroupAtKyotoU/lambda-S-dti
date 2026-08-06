@@ -246,17 +246,7 @@ TupleExpr :
     }
   | e=BinOpExpr { e }
   
-BinOpExpr : 
-  | e1=BinOpExpr LOR e2=BinOpExpr {
-      let r = join_range (range_of_exp e1) (range_of_exp e2) in
-      let t, f = BConst (r, true), BConst (r, false) in
-      IfExp (r, e1, t, IfExp (r, e2, t, f))
-    }
-  | e1=BinOpExpr LAND e2=BinOpExpr {
-      let r = join_range (range_of_exp e1) (range_of_exp e2) in
-      let t, f = BConst (r, true), BConst (r, false) in
-      IfExp (r, e1, IfExp (r, e2, t, f), f)
-    }
+BinOpExpr :
   | e1=BinOpExpr op=Op e2=BinOpExpr {
       BinOp (join_range (range_of_exp e1) (range_of_exp e2), op, e1, e2)
     }
@@ -271,6 +261,8 @@ BinOpExpr :
   | STAR { Mult }
   | DIV { Div }
   | MOD { Mod }
+  | LAND { And }
+  | LOR { Or }
   | EQ { Eq }
   | NEQ { Neq }
   | LT { Lt }

@@ -51,8 +51,31 @@ module CC = struct
     | UConst -> UnitV
     | BinOp (op, f1, f2) ->
       let v1 = eval ~config env f1 in
-      let v2 = eval ~config env f2 in
-      eval_binop op v1 v2
+      begin match op with
+      | And -> begin match v1 with
+        | BoolV false -> BoolV false
+        | BoolV true -> 
+          let v2 = eval ~config env f2 in
+          begin match v2 with
+          | BoolV _ -> v2
+          | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
+          end
+        | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
+        end
+      | Or -> begin match v1 with
+        | BoolV true -> BoolV true
+        | BoolV false -> 
+          let v2 = eval ~config env f2 in
+          begin match v2 with
+          | BoolV _ -> v2
+          | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
+          end
+        | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
+        end
+      | _ ->
+        let v2 = eval ~config env f2 in
+        eval_binop op v1 v2
+      end
     | FunExp (tvs, fd) ->
       begin match fd with
       | FunB ((x, _), f') ->
