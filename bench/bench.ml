@@ -14,6 +14,7 @@ let files = [
   (* "church_4"; *)
   (* "church_65532"; *)
   (* "easy"; *)
+  "array";
   "evenodd";
   "fib";
   "fold";
@@ -23,7 +24,9 @@ let files = [
   "loop_mono";
   "map";
   "map_mono";
+  "matmult";
   "mklist";
+  "quicksort";
   "tak";
   "zipwith";
   "zipwith_mono";
@@ -292,8 +295,9 @@ let bench_file_mode
       Bench_utils.Target_progress.tick prog;  (* ← 変異1件完了ごとに更新 *)
     )
     with
-    | e -> 
-      Format.fprintf Format.std_formatter "\n[Error] %s 変換中にエラーが発生しました: %s@." file (Printexc.to_string e)
+    | e ->
+      Format.fprintf Format.std_formatter "\n[Error] %s 変換中にエラーが発生しました: %s@." file (Printexc.to_string e);
+      Format.fprintf Format.std_formatter "DEBUG mutant %d:\n%a@." i Pp.ITGL.pp_program p
   ) mutants;
 
   Option.iter Out_channel.close oc_opt;

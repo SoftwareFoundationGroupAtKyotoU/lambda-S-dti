@@ -8,20 +8,42 @@ let tyvenv = ref Environment.empty
 
 (* for function definition *)
 let param_to_fun r (x, u) e = match u with
-| None -> FunExp (r, (x.value, Impl, fresh_tyvar ()), e)
-| Some u -> FunExp (r, (x.value, Expl, u), e)
+  | None -> FunExp (r, (x.value, Impl, fresh_tyvar ()), e)
+  | Some u -> FunExp (r, (x.value, Expl, u), e)
 
 (* for recursive function definition *)
 let param_to_fun_ty r (x, u1) (e, u) = match u1 with
-| None ->
+  | None ->
     let u1 = fresh_tyvar () in
     FunExp (r, (x.value, Impl, u1), e), TyFun (u1, u)
-| Some u1 ->
+  | Some u1 ->
     FunExp (r, (x.value, Expl, u1), e), TyFun (u1, u)
 
 let opt_ty_to_fresh_ty = function
   | None -> fresh_tyvar ()
   | Some u -> u
+
+let make_seq r e1 e2 = LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
+
+let dummy_var x = Var (dummy_range, x, ref [])
+
+let make_for r i e1 e2 tag e3 = 
+  let e1 = fun k -> LetExp (dummy_range, "_for_l", AscExp (range_of_exp e1, e1, TyInt), k) in
+  let e2 = fun k -> LetExp (dummy_range, "_for_r", AscExp (range_of_exp e2, e2, TyInt), k) in
+  let cond_op, loop_op = match tag with
+    | `To ->     Lte, Plus
+    | `Downto -> Gte, Minus
+  in
+  let loop_cond = BinOp (dummy_range, cond_op, dummy_var i, dummy_var "_for_r") in
+  let loop_then = make_seq r e3 (AppExp (r, dummy_var "_for_loop", BinOp (dummy_range, loop_op, dummy_var i, IConst (dummy_range, 1)))) in
+  let loop_content = IfExp (r, loop_cond, loop_then, UConst r) in
+  let loop = fun k -> LetExp (r, "_for_loop", FixExp (r, "_for_loop", (i, Expl, TyInt), TyUnit, loop_content), k) in
+  e1 @@ e2 @@ loop (AppExp (r, dummy_var "_for_loop", dummy_var "_for_l"))
+
+let make_while r e1 e2 = 
+  let loop_then = make_seq r e2 (AppExp (r, dummy_var "_while_loop", UConst dummy_range)) in
+  let loop_content = IfExp (r, e1, loop_then, UConst r) in
+  LetExp (r, "_while_loop", FixExp (r, "_while_loop", ("_", Expl, TyUnit), TyUnit, loop_content), AppExp (r, dummy_var "_while_loop", UConst dummy_range))
 
 exception Parser_bug of string
 
@@ -29,7 +51,7 @@ exception Parser_bug of string
 
 %token <Utils.Error.range> LPAREN RPAREN SEMI SEMISEMI COLON EQ QUOTE
 %token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR
-%token <Utils.Error.range> LET REC IN FUN IF THEN ELSE
+%token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION
 %token <Utils.Error.range> INT BOOL UNIT QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
@@ -37,6 +59,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
 %token <Utils.Error.range> ARRAY MAKEARRAY DOT LARROW
+%token <Utils.Error.range> FOR TO DOWNTO DO DONE WHILE
 
 %token <int Utils.Error.with_range> INTV
 %token <Syntax.id Utils.Error.with_range> ID
@@ -46,16 +69,16 @@ exception Parser_bug of string
 
 (* Ref: https://caml.inria.fr/pub/docs/manual-ocaml/expr.html *)
 %nonassoc prec_match
-%right SEMI
-%nonassoc prec_if
-%right SUBSTITUTE LARROW
-%right RARROW
-%right LOR
-%right LAND
-%left  EQ NEQ LT LTE GT GTE VBAR
-%right COLCOL
-%left  PLUS MINUS
-%left  STAR DIV MOD
+%nonassoc below_semi
+%right    SEMI
+%right    SUBSTITUTE LARROW
+%right    RARROW
+%right    LOR
+%right    LAND
+%left     EQ NEQ LT LTE GT GTE VBAR
+%right    COLCOL
+%left     PLUS MINUS
+%left     STAR DIV MOD
 
 %%
 
@@ -89,13 +112,21 @@ Program :
     }
 
 Expr :
-  | e=LetExpr { e }
-  | e=FunExpr { e }
-  | e=MatchExpr { e }
-  | SeqExpr { $1 }
+  | e1=BelowSemiExpr SEMI e2=Expr {
+      let r = join_range (range_of_exp e1) (range_of_exp e2) in
+      make_seq r e1 e2
+    }
+  | NoSemiExpr { $1 }
+
+NoSemiExpr :
+  | LetExpr       { $1 }
+  | FunExpr       { $1 }
+  | MatchExpr     { $1 }
+  | BelowSemiExpr { $1 } %prec below_semi
 
 Param :
   | x=ID { (x, None) }
+  | start=LPAREN last=RPAREN { ({ value = "_"; range = join_range start last }, Some TyUnit ) }
   | LPAREN x=ID COLON u=Type RPAREN { (x, Some u) }
 
 %inline OptTypeAnnot :
@@ -134,6 +165,11 @@ FunExpr :
       let e = match u with None -> e | Some u -> AscExp (range_of_exp e, e, u) in
       List.fold_right (param_to_fun r) params e
     }
+  | start=FUNCTION option(VBAR) ms=MatchCondExpr {
+    let last_exp = snd (List.hd (List.rev ms)) in
+    let r = join_range start (range_of_exp last_exp) in
+    FunExp (r, ("_match_arg", Impl, fresh_tyvar ()), MatchExp (r, Var (r, "_match_arg", ref []), ms))
+    }
 
 MatchExpr :
   | start=MATCH e=Expr WITH option(VBAR) ms=MatchCondExpr { 
@@ -167,23 +203,43 @@ LitMatchForm :
   | LPAREN m=MatchForm RPAREN { m }
   | UNDER { MatchWild }
 
-SeqExpr :
-  | e1=SeqExpr SEMI e2=SeqExpr {
-      let r = join_range (range_of_exp e1) (range_of_exp e2) in
-      LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
+BelowSemiExpr :
+  | IfExpr { $1 }
+  | ForExpr { $1 }
+  | WhileExpr { $1 }
+  | PutExpr { $1 }
+
+IfExpr :
+  | start=IF e1=Expr THEN e2=NoSemiExpr ELSE e3=NoSemiExpr {
+      let r = join_range start (range_of_exp e3) in
+      IfExp (r, e1, e2, e3)
     }
-  | e1=SeqExpr SUBSTITUTE e2=SeqExpr {
+
+ForExpr :
+  | start=FOR i=ID EQ e1=Expr TO e2=Expr DO e3=Expr done_r=DONE {
+      make_for (join_range start done_r) i.value e1 e2 `To e3
+    }
+  | start=FOR i=ID EQ e1=Expr DOWNTO e2=Expr DO e3=Expr done_r=DONE {
+      make_for (join_range start done_r) i.value e1 e2 `Downto e3
+    }
+
+WhileExpr :
+  | start=WHILE e1=Expr DO e2=Expr done_r=DONE {
+      make_while (join_range start done_r) e1 e2
+    }
+
+PutExpr :
+  | e1=PutExpr SUBSTITUTE e2=PutExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e2) in
       SubstExp (r, e1, e2)
     }
-  | e1=PrefixExpr DOT LPAREN e2=Expr RPAREN LARROW e3=SeqExpr {
+  | e1=PostfixExpr DOT LPAREN e2=Expr RPAREN LARROW e3=PutExpr {
       let r = join_range (range_of_exp e1) (range_of_exp e3) in
       PutExp (r, e1, e2, e3)
-  }
-  | start=IF e1=SeqExpr THEN e2=SeqExpr ELSE e3=SeqExpr %prec prec_if {
-      let r = join_range start (range_of_exp e3) in
-      IfExp (r, e1, e2, e3)
-  }
+    }
+  | TupleExpr { $1 }
+
+TupleExpr :
   | e1=BinOpExpr COMMA es=separated_nonempty_list(COMMA, BinOpExpr) {
       let r = List.fold_left (fun r e -> join_range r (range_of_exp e)) (range_of_exp e1) es in
       TupleExp (r, e1 :: es)
@@ -232,22 +288,25 @@ UnaryExpr :
   | AppExpr { $1 }
 
 AppExpr :
-  | e1=AppExpr e2=PrefixExpr {
+  | e1=AppExpr e2=PostfixExpr {
       AppExp (join_range (range_of_exp e1) (range_of_exp e2), e1, e2)
     }
-  | start_r=REF e=PrefixExpr {
+  | start_r=REF e=PostfixExpr {
       let r = join_range start_r (range_of_exp e) in
       RefExp (r, e)
     }
-  | start_r=MAKEARRAY e1=PrefixExpr e2=PrefixExpr {
+  | start_r=MAKEARRAY e1=PostfixExpr e2=PostfixExpr {
       let r = join_range start_r (range_of_exp e2) in
       MakeArrayExp (r, e1, e2)
-  }
-  | e1=PrefixExpr DOT LPAREN e2=Expr end_r=RPAREN {
+    }
+  | PostfixExpr { $1 }
+
+PostfixExpr :
+  | e1=PostfixExpr DOT LPAREN e2=Expr end_r=RPAREN {
       let r = join_range (range_of_exp e1) end_r in
       GetExp (r, e1, e2)
-  }
-  | PrefixExpr { $1 }
+    }
+  | PrefixExpr { $1 } 
 
 PrefixExpr :
   | start_r=BANG e=PrefixExpr {

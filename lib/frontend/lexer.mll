@@ -4,24 +4,31 @@ open Utils.Error
 exception Eof
 
 let reservedWords = [
-  ("let", fun r -> Parser.LET r);
-  ("rec", fun r -> Parser.REC r);
-  ("in", fun r -> Parser.IN r);
-  ("fun", fun r -> Parser.FUN r);
-  ("if", fun r -> Parser.IF r);
-  ("then", fun r -> Parser.THEN r);
-  ("else", fun r -> Parser.ELSE r);
-  ("true", fun r -> Parser.TRUE r);
-  ("false", fun r -> Parser.FALSE r);
-  ("int", fun r -> Parser.INT r);
-  ("bool", fun r -> Parser.BOOL r);
-  ("unit", fun r -> Parser.UNIT r);
-  ("mod", fun r -> Parser.MOD r);
-  ("list", fun r -> Parser.LIST r);
-  ("match", fun r -> Parser.MATCH r);
-  ("with", fun r -> Parser.WITH r);
-  ("ref", fun r -> Parser.REF r);
-  ("array", fun r -> Parser.ARRAY r);
+  ("let",      fun r -> Parser.LET r     );
+  ("rec",      fun r -> Parser.REC r     );
+  ("in",       fun r -> Parser.IN r      );
+  ("fun",      fun r -> Parser.FUN r     );
+  ("if",       fun r -> Parser.IF r      );
+  ("then",     fun r -> Parser.THEN r    );
+  ("else",     fun r -> Parser.ELSE r    );
+  ("true",     fun r -> Parser.TRUE r    );
+  ("false",    fun r -> Parser.FALSE r   );
+  ("int",      fun r -> Parser.INT r     );
+  ("bool",     fun r -> Parser.BOOL r    );
+  ("unit",     fun r -> Parser.UNIT r    );
+  ("mod",      fun r -> Parser.MOD r     );
+  ("list",     fun r -> Parser.LIST r    );
+  ("match",    fun r -> Parser.MATCH r   );
+  ("with",     fun r -> Parser.WITH r    );
+  ("ref",      fun r -> Parser.REF r     );
+  ("array",    fun r -> Parser.ARRAY r   );
+  ("function", fun r -> Parser.FUNCTION r);
+  ("for",      fun r -> Parser.FOR r     );
+  ("to",       fun r -> Parser.TO r      );
+  ("downto",   fun r -> Parser.DOWNTO r  );
+  ("do",       fun r -> Parser.DO r      );
+  ("done",     fun r -> Parser.DONE r    );
+  ("while",    fun r -> Parser.WHILE r   );
 ]
 
 let range_of lexbuf =
