@@ -84,6 +84,7 @@ module CC = struct
     | MakeArrayExp (f1, f2, u) -> MakeArrayExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_type s u)
     | GetExp (f1, f2, uo) -> GetExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, Option.map (subst_type s) uo)
     | PutExp (f1, f2, f3, uo) -> PutExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3, Option.map (subst_type s) uo)
+    | LengthExp f -> LengthExp (subst_exp ~monotonic s f)
   and subst_fund ~monotonic s = function
     | FunB ((x, u), f) -> FunB ((x, subst_type s u), subst_exp ~monotonic s f)
     | FunS ((x, u1), (k, uk), f) ->
@@ -104,7 +105,7 @@ module KNorm = struct
 
   let rec subst_exp ~monotonic s = function
     | Var _ | IConst _ | Nil as f -> f
-    | BinOp _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ as f -> f
+    | BinOp _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | Length _ as f -> f
     | Ref (x, u) -> Ref (x, subst_type s u)
     | Deref (x, uo) -> Deref (x, Option.map (subst_type s) uo)
     | Subst (x, y, uo) -> Subst (x, y, Option.map (subst_type s) uo)

@@ -69,6 +69,7 @@ module ITGL = struct
     | MakeArrayExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | GetExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | PutExp (_, e1, e2, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
+    | LengthExp (_, e) -> ftv_exp e
 end
 
 module CC = struct
@@ -103,6 +104,7 @@ module CC = struct
     | GetExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
     | PutExp (f1, f2, f3, None) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
     | PutExp (f1, f2, f3, Some u) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) (ftv_ty u)
+    | LengthExp f -> ftv_exp f
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | CCompExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)

@@ -137,6 +137,7 @@ module ITGL = struct
     | MakeArrayExp of range * exp * exp
     | GetExp of range * exp * exp
     | PutExp of range * exp * exp * exp
+    | LengthExp of range * exp
 
   let range_of_exp = function
     | Var (r, _, _)
@@ -159,7 +160,8 @@ module ITGL = struct
     | SubstExp (r, _, _)
     | MakeArrayExp (r, _, _)
     | GetExp (r, _, _)
-    | PutExp (r, _, _, _) -> r
+    | PutExp (r, _, _, _)
+    | LengthExp (r, _) -> r
 
   type program =
     | Exp of exp
@@ -193,6 +195,7 @@ module CC = struct
     | MakeArrayExp of exp * exp * ty
     | GetExp of exp * exp * ty option
     | PutExp of exp * exp * exp * ty option
+    | LengthExp of exp
     | CastExp of exp * ty * ty * (range * polarity)
     | CAppExp of exp * exp
     | CCompExp of exp * exp
@@ -250,6 +253,7 @@ module KNorm = struct
     | MakeArray of id * id * ty
     | Get of id * id * ty option
     | Put of id * id * id * ty option
+    | Length of id
     | IfExp of id * exp * exp
     | AppMExp of id * id
     | AppDExp of id * (id * id)
@@ -299,6 +303,7 @@ module Cls = struct
     | MakeArray of id * id * ty
     | Get of id * id * ty option
     | Put of id * id * id * ty option
+    | Length of id
     | If of id * exp * exp
     | Match of id * (matchform * exp) list
     | AppTy of id * int * tyarg list * int (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)

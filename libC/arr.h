@@ -52,6 +52,7 @@ typedef arr_header arr;
 #if !defined(MONOTONIC) && !defined(STATIC)
 value get(arr*, uint32_t);
 void put(arr*, uint32_t, value);
+value length(arr*);
 #endif
 
 #endif

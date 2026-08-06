@@ -243,10 +243,10 @@ let rec static_crc tvs c =
 
 let rec static_exp tvs = function
   | Var _ | Int _ | Nil | BinOp _
-  | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ 
+  | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | Length _
   | Deref (_, None) | Subst (_, _, None)
   | Get (_, _, None) | Put (_, _, _, None)
-  | AppDCls _ | AppDDir _ | AppMCls _ | AppMDir _ 
+  | AppDCls _ | AppDDir _ | AppMCls _ | AppMDir _
   | CApp _ | CComp _ as f -> f
   | Ref (x, u) ->
     let u, udeclfun = ty_tv tvs u in

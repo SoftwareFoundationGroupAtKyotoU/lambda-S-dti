@@ -275,6 +275,19 @@ module CC = struct
         end
       | _ -> raise @@ Eval_bug "eval: not IntV PutExp"
       end
+    | LengthExp f ->
+      let v = eval ~config env f in
+      if config.intoB then
+        let rec length = function
+          | CastArrayV (v, _, _, _) -> length v
+          | ArrayV { contents = vs, _ } -> Array.length vs
+          | _ -> raise @@ Eval_bug "eval: not arrayV length"
+        in IntV (length v)
+      else begin match v with
+        | ArrayV { contents = vs, _ } -> IntV (Array.length vs)
+        | CoerceV (ArrayV { contents = vs, _ }, (CArray _ | CMArray _)) -> IntV (Array.length vs)
+        | _ -> raise @@ Eval_bug "eval: not arrayV length"
+      end
     | CastExp (f, u1, u2, r_p) ->
       let v = eval ~config env f in
       cast ~config v u1 u2 r_p

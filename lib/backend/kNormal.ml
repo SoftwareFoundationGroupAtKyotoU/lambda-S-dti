@@ -92,6 +92,7 @@ module CC = struct
     | MakeArrayExp (f1, f2, u) -> MakeArrayExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
     | GetExp (f1, f2, u) -> GetExp (alpha_exp idenv f1, alpha_exp idenv f2, u)
     | PutExp (f1, f2, f3, u) -> PutExp (alpha_exp idenv f1, alpha_exp idenv f2, alpha_exp idenv f3, u)
+    | LengthExp f -> LengthExp (alpha_exp idenv f)
   and alpha_fund idenv = function
     | FunB ((x, u), f) ->
       let newx = genvar x in
@@ -234,6 +235,9 @@ module CC = struct
       let f2 = k_normalize_exp tvsenv f2 in
       let f3 = k_normalize_exp tvsenv f3 in
       insert_let f1 @@ fun x -> insert_let f2 @@ fun y -> insert_let f3 @@ fun z -> KNorm.Put (x, y, z, u)
+    | LengthExp f ->
+      let f = k_normalize_exp tvsenv f in
+      insert_let f @@ fun x -> KNorm.Length x
     | LetExp (x, f1, f2) ->
       begin match f1 with
       | FunExp (tvs, fund) ->
@@ -313,6 +317,7 @@ module KNorm = struct
     | MakeArray (x, y, u) -> MakeArray (find x idenv, find y idenv, u)
     | Get (x, y, u) -> Get (find x idenv, find y idenv, u)
     | Put (x, y, z, u) -> Put (find x idenv, find y idenv, find z idenv, u)
+    | Length x -> Length (find x idenv)
     | IfExp (x, f1, f2) -> IfExp (find x idenv, beta_exp idenv f1, beta_exp idenv f2)
     | MatchExp (x, ms) ->
       let x = find x idenv in

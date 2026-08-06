@@ -56,6 +56,7 @@ module ITGL = struct
     | MakeArrayExp (r, e1, e2) -> MakeArrayExp (r, normalize_exp e1, normalize_exp e2)
     | GetExp (r, e1, e2) -> GetExp (r, normalize_exp e1, normalize_exp e2)
     | PutExp (r, e1, e2, e3) -> PutExp (r, normalize_exp e1, normalize_exp e2,normalize_exp e3)
+    | LengthExp (r, e) -> LengthExp (r, normalize_exp e)
 
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)

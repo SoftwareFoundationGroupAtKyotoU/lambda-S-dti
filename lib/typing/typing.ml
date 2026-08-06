@@ -275,6 +275,10 @@ module ITGL = struct
       let cont = unify_cont_array u1 in
       unify @@ CConsistent (cont, u3);
       TyUnit
+    | LengthExp (_, e) ->
+      let u = type_of_exp env e in
+      ignore @@ unify_cont_array u;
+      TyInt
 
   let type_of_program env p =
     try match p with
@@ -447,6 +451,12 @@ module CC = struct
       | None -> TyUnit
       | Some u when u3 = u -> TyUnit
       | _ -> raise @@ Type_bug "subst"
+      end
+    | LengthExp f ->
+      let u1 = type_of_exp env f in
+      begin match u1 with
+      | TyArray _ -> TyInt
+      | _ -> raise @@ Type_bug "length"
       end
     | CoercionExp c -> type_of_coercion c
     | CAppExp (f1, f2) ->

@@ -23,6 +23,7 @@ let rec toCls_exp known tvs args funty = function
   | MakeArray (x, y, u) -> Cls.MakeArray (x, y, u)
   | Get (x, y, u) -> Cls.Get (x, y, u)
   | Put (x, y, z, u) -> Cls.Put (x, y, z, u)
+  | Length x -> Cls.Length x
   | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp known tvs args funty f) ms)
   | IfExp (x, f1, f2) -> Cls.If (x, toCls_exp known tvs args funty f1, toCls_exp known tvs args funty f2)
   | AppDExp (x, (y, z)) when V.mem x known -> Cls.AppDDir (Cls.to_label x, (y, z))

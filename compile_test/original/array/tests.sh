@@ -1,0 +1,5 @@
+run_test "basic.ml" "5"
+run_test "after_put.ml" "4"
+run_test "dynamic.ml" "6" "skip_static"
+run_test "loop.ml" "15"
+run_test "nested.ml" "8"

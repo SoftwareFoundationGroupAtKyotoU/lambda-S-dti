@@ -10,7 +10,7 @@ module KNorm = struct
   open Syntax.KNorm
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x  | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
+    | Var x | Hd x | Tl x  | Tget (x, _) | Ref (x, _) | Deref (x, _) | Length x -> V.singleton x
     | IConst _ | Nil -> V.empty
     | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]
@@ -38,7 +38,7 @@ module Cls = struct
   open Syntax.Cls
 
   let rec fv_exp = function
-    | Var x | Hd x | Tl x | Tget (x, _) | Ref (x, _) | Deref (x, _) -> V.singleton x
+    | Var x | Hd x | Tl x | Tget (x, _) | Ref (x, _) | Deref (x, _) | Length x -> V.singleton x
     | Int _ | Nil -> V.empty
     | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]

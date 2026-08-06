@@ -277,7 +277,7 @@ module ITGL = struct
   let level_exp = function
     | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
     | DerefExp _ | GetExp _ -> 90
-    | AppExp _ | RefExp _ | MakeArrayExp _ -> 80
+    | AppExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | BinOp (_, (Mult | Div | Mod), _, _) -> 70
     | BinOp (_, (Plus | Minus), _, _) -> 60
     | ConsExp _ -> 50
@@ -359,6 +359,8 @@ module ITGL = struct
       fprintf ppf "%a.(%a)" (with_paren (gt_exp e e1) pp_exp) e1 pp_exp e2
     | PutExp (_, e1, e2, e3) as e ->
       fprintf ppf "%a.(%a) <- %a" (with_paren (gt_exp e e1) pp_exp) e1 pp_exp e2 (with_paren (gt_exp e e3) pp_exp) e3
+    | LengthExp (_, e') as e ->
+      fprintf ppf "Array.length %a" (with_paren (gte_exp e e') pp_exp) e'
 
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
@@ -383,7 +385,7 @@ module CC = struct
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | TupleExp _ | CoercionExp _ -> 100
     | CCompExp _ -> 95
     | DerefExp _ | GetExp _ -> 90
-    | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ -> 80
+    | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | CAppExp _ -> 75
     | BinOp ((Mult | Div | Mod), _, _) -> 70
     | BinOp ((Plus | Minus), _, _) -> 60
@@ -530,6 +532,9 @@ module CC = struct
         pp_exp f2
         (with_paren (gte_exp f f3) pp_exp) f3
         pp_ty u
+    | LengthExp f' as f ->
+      fprintf ppf "Array.length %a"
+        (with_paren (gte_exp f f') pp_exp) f'
   and pp_match ppf = function
     | ((mf, e1) :: m, e) -> 
       fprintf ppf " | %a -> %a%a"
@@ -762,6 +767,7 @@ module KNorm = struct
     | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
     | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
     | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
+    | Length x -> fprintf ppf "Array.length %s" x
     | IfExp (x, e1, e2) ->
       fprintf ppf "if %s then %a else %a"
         x
@@ -884,6 +890,7 @@ module Cls = struct
     | Get (x, y, Some u) -> fprintf ppf "%s.(%s)@%a" x y pp_ty u
     | Put (x, y, z, None) -> fprintf ppf "%s.(%s) <- %s" x y z
     | Put (x, y, z, Some u) -> fprintf ppf "%s.(%s) <- %s@%a" x y z pp_ty u
+    | Length x -> fprintf ppf "Array.length %s" x
     | If (x, e1, e2) ->
       fprintf ppf "if %s then %a else %a"
         x

@@ -187,6 +187,9 @@ module CC = struct
         | Some u -> let u, env = tv_renew_ty u env in Some u, env
       in
       PutExp (e1, e2, e3, uo), env
+    | LengthExp e ->
+      let e, env = tv_renew_exp e env in
+      LengthExp e, env
     | AppMExp (e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in

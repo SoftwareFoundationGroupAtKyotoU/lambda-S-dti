@@ -58,7 +58,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
-%token <Utils.Error.range> ARRAY MAKEARRAY DOT LARROW
+%token <Utils.Error.range> ARRAY MAKEARRAY LENGTHARRAY DOT LARROW
 %token <Utils.Error.range> FOR TO DOWNTO DO DONE WHILE
 
 %token <int Utils.Error.with_range> INTV
@@ -290,6 +290,10 @@ AppExpr :
   | start_r=MAKEARRAY e1=PostfixExpr e2=PostfixExpr {
       let r = join_range start_r (range_of_exp e2) in
       MakeArrayExp (r, e1, e2)
+    }
+  | start_r=LENGTHARRAY e=PostfixExpr {
+      let r = join_range start_r (range_of_exp e) in
+      LengthExp (r, e)
     }
   | PostfixExpr { $1 }
 

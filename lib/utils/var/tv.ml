@@ -33,4 +33,5 @@ module ITGL = struct
     | MakeArrayExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | GetExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | PutExp (_, e1, e2, e3) -> TV.big_union @@ List.map tv_exp [e1; e2; e3]
+    | LengthExp (_, e) -> tv_exp e
 end

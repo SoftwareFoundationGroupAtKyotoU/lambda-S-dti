@@ -96,6 +96,8 @@ module ITGL = struct
       "1 <> 2";
       "1 < 2 + 3";
       "1 + 2 >= 3 * 4";
+      "true || false";
+      "true && false";
 
       "fun (x: ?) -> fun (y: ?) -> fun (z: ?) -> z";
       "x y z";
@@ -149,9 +151,6 @@ module ITGL = struct
         assert_equal ~ctxt:ctxt ~printer:id expected @@ asprintf "%a" pp_program @@ parse (input ^ ";;")
     in
     List.map test [
-      "true || false", "if true then true else if false then true else false";
-      "true && false", "if true then if false then true else false else false";
-
       "-1", "0 - 1";
       "-x", "0 - x";
       "+1", "1";

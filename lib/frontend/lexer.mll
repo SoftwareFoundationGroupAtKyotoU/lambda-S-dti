@@ -79,6 +79,7 @@ rule main = parse
 | "_" { Parser.UNDER (range_of lexbuf) }
 | "." { Parser.DOT (range_of lexbuf) }
 | "Array.make" { Parser.MAKEARRAY (range_of lexbuf) }
+| "Array.length" { Parser.LENGTHARRAY (range_of lexbuf) }
 | ['a'-'z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
   {
     let id = Lexing.lexeme lexbuf in

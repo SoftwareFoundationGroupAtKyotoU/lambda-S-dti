@@ -65,7 +65,7 @@ let collect_head_funs (e : exp) : (range * id * anotated * ty) list * exp =
 let rec count_fun_params (t : exp) : int = match t with
   | FunExp (_, (x, _, _), e) -> (if is_synthetic x then 0 else 1) + count_fun_params e
   | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
-  | FixExp (_, _, _, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) -> count_fun_params e
+  | FixExp (_, _, _, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fun_params e
   | BinOp (_, _, e1 , e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
   | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fun_params e1 + count_fun_params e2 + count_fun_params e3
   | MatchExp (_, e, ms) -> count_fun_params e + List.fold_left (fun n (_, e) -> n + count_fun_params e) 0 ms
@@ -74,7 +74,7 @@ let rec count_fun_params (t : exp) : int = match t with
 let rec count_fix_nodes (t : exp) : int = match t with
   | FixExp (_, x, _, _, e) -> (if is_synthetic x then 0 else 1) + count_fix_nodes e
   | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
-  | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) -> count_fix_nodes e
+  | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fix_nodes e
   | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
   | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
   | MatchExp (_, e, ms) -> count_fix_nodes e + List.fold_left (fun n (_, e) -> n + count_fix_nodes e) 0 ms
@@ -140,7 +140,7 @@ let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list = match
     in
     let c1, fixc1, ls_body = collect_links c my_fix_idx e in
     (c1, fixc1, my_links @ ls_body)
-  | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) ->
+  | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) ->
     collect_links c fixc e
   | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) ->
     let c1, f1, l1 = collect_links c fixc e1 in
@@ -330,6 +330,9 @@ let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:
     let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
     let lamc3, fixc3, tappc3, e3' = apply a sel lamc2 fixc2 tappc2 e3 in
     (lamc3, fixc3, tappc3, PutExp (r, e1', e2', e3'))
+  | LengthExp (r, e) ->
+    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
+    (lamc1, fixc1, tappc1, LengthExp (r, e'))
 
 
 (* ---------- 公開 API ---------- *)

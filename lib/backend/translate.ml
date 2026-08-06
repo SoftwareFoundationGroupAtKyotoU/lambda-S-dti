@@ -214,6 +214,10 @@ module ITGL = struct
       let u1' = cont_array u1 in
       if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, c f2 r u2 TyInt, f3, None), TyUnit
       else CC.PutExp (c f1 r u1 (TyArray u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
+    | LengthExp (r, e) ->
+      let f, u = translate_exp ~config env e in
+      let u' = cont_array u in
+      CC.LengthExp (c f r u (TyArray u')), TyInt
     (* | _ -> raise @@ Translation_bug "yet" *)
 
   let translate ~config env = function
@@ -320,6 +324,12 @@ module CC = struct
       assert (u1 = TyArray u3);
       (match u_opt with Some u -> assert (u = u3) | None -> ());
       PutExp (f1, f2, f3, u_opt), TyUnit
+    | LengthExp f ->
+      let f, u = translate_exp ~config env f in
+      begin match u with
+      | TyArray _ -> LengthExp f, TyInt
+      | _ -> raise @@ Translation_bug "LengthExp"
+      end
     | IfExp (f1, f2, f3) ->
       let f1, u1 = translate_exp ~config env f1 in
       let f2, u2 = translate_exp ~config env f2 in
@@ -408,7 +418,7 @@ module CC = struct
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
     | Var _ | IConst _ | BConst _ | UConst | NilExp _ | BinOp _ | FunExp _ | FixExp _
-    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ as f ->
+    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ | LengthExp _ as f ->
       let f, u = translate_exp ~config env f in
       assert (u = uk1);
       CAppExp (f, k), uk2
@@ -492,6 +502,7 @@ module Cls = struct
     | MakeArray (x, y, u) -> MakeArray (replace x, replace y, u)
     | Get (x, y, uo) -> Get (replace x, replace y, uo)
     | Put (x, y, z, uo) -> Put (replace x, replace y, replace z, uo)
+    | Length x -> Length (replace x)
     | If (x, f1, f2) -> If (replace x, replace_var vx vy f1, replace_var vx vy f2)
     | Match (x, ms) -> Match (replace x, List.map (fun (mf, f) -> mf, replace_var vx vy f) ms)
     | AppTy (x, k, n, tas) -> AppTy (replace x, k, n, tas)

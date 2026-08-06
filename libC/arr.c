@@ -35,4 +35,16 @@ void put(arr *a, uint32_t i, value v) {
 	}
 }
 
+value length(arr *a) {
+	if (((arr_header*)a)->wrap) {
+		#ifdef CAST
+		return length(((arr_wrap*)a)->w);
+		#else
+		return ((arr_raw*)((arr_wrap*)a)->w)->length;
+		#endif
+	} else {
+		return ((arr_raw*)a)->length;
+	}
+}
+
 #endif

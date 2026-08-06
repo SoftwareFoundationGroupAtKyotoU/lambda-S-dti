@@ -315,7 +315,7 @@ let rec toC_exp ~is_main ~config = function
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
       [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
   | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
-  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _
+  | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _ | Cls.Length _
   | Cls.BinOp _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
     as f ->
@@ -389,6 +389,11 @@ and toC_assign ~config x f =
       assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
     else
       assign_x (App (Var "get", [Cast (PTR ARR, Var y); Cast (INT, Var z)]))
+  | Cls.Length y ->
+    if config.monotonic || config.static then
+      assign_x (Arrow (Cast (PTR ARR, Var y), "length"))
+    else
+      assign_x (App (Var "length", [Cast (PTR ARR, Var y)]))
   | Cls.BinOp (y, op, z) -> assign_x (BinOp (Var y, op, Var z))
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (PreOp (Deref, (Cast (PTR LST, Var x))), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.Subst (y, z, ou) ->
@@ -465,7 +470,9 @@ let toC_tydecls tys = List.map (fun (_, name) -> Decl (Static, TY, name, None)) 
 
 let toC_tycontents tys = List.map (fun (u, name) -> Decl (Static, TY, name, Some (toC_tycontent u))) tys
 
-let toC_tys tys = toC_tydecls tys, toC_tycontents tys
+let toC_tys ~config tys =
+  if config.static then [], []
+  else toC_tydecls tys, toC_tycontents tys
 
 (* ================================ *)
 
@@ -540,7 +547,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     );
   ]
   in
-  let tydecl, tydef = toC_tys tys in
+  let tydecl, tydef = toC_tys ~config tys in
   let rangedef = toC_ranges ranges in
   let crcdecl, crcdef, crcinit = toC_crcs ~config crcs in
   let fundecl, fundef = toC_toplevel ~config toplevel in

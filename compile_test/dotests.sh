@@ -81,6 +81,7 @@ run_test() {
 for TEST_DIR in \
   minCaml \
   issues \
+  original/array \
   original/bool \
   original/dynamic \
   original/int \
