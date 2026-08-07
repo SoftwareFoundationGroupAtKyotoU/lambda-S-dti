@@ -105,11 +105,36 @@ lSdti -d
 - If-then-else expression: `if e1 then e2 else e3`
 - Sequence of expressions: `e1; e2`
 - Type ascription: `(e : U)`
+- Pattern matching:
+  - `match e with p1 -> e1 | p2 -> e2 | ...`
+  - `function p1 -> e1 | p2 -> e2 | ...` (sugar for `fun x -> match x with p1 -> e1 | ...`)
+  - Patterns `p`: variables, literals (`0`, `true`, `()`), wildcard `_`, list patterns (`[]`, `p1 :: p2`, `[p1; p2; ...]`), tuple patterns `(p1, p2, ...)`, and any nesting thereof
+- Lists:
+  - Literal: `[e1; e2; ...]`, empty list: `[]`
+  - Cons: `e1 :: e2`
+- Tuples: `(e1, e2, ...)`
+- References:
+  - Creation: `ref e`
+  - Dereference: `!e`
+  - Assignment: `e1 := e2`
+- Arrays:
+  - Creation: `Array.make e1 e2`
+  - Access: `e1.(e2)`
+  - Update: `e1.(e2) <- e3`
+  - Length: `Array.length e`
+- Loops (sugar, desugared to `fun`/`let rec` internally):
+  - `for i = e1 to e2 do e3 done` (ascending)
+  - `for i = e1 downto e2 do e3 done` (descending)
+  - `while e1 do e2 done`
 
 ### Types `U`
 - Dynamic type: `?`
 - Base types: `bool`, `int`, and `unit`
 - Function type: `U -> U`
+- List type: `U list`
+- Tuple type: `U1 * U2 * ...`
+- Reference type: `U ref`
+- Array type: `U array`
 - Type variables: `'a`, `'b`, ...
 
 ### Comments
