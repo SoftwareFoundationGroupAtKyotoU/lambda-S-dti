@@ -3,6 +3,8 @@
 
 #ifndef STATIC
 #include "types.h"
+#include "blame.h"
+#include "tpl.h"
 
 #ifdef CAST
 value cast(value, ty*, ty*, uint32_t, uint8_t);
@@ -36,6 +38,67 @@ void consume(void);
 
 value coerce(value, crc*);
 
+#endif
+
+#ifdef PROFILE
+static inline void update_longest(int new) {
+	if (new > current_longest) current_longest = new;
+	return;
+}
+#endif
+
+static inline uint8_t tag_of(value v) {
+	return (v & 0b111);
+}
+
+static inline value tag_value(value v, ground_ty t) {
+	#ifdef PROFILE
+	update_longest(1);
+	#endif
+	switch (t) {
+		case G_INT:
+		case G_BOOL:
+		case G_UNIT:
+			return (value)(v << 3 | t);
+		case G_FN:
+		case G_LI:
+		case G_TP:
+		case G_RF:
+		case G_AR:
+			return (value)(v | t);
+	}
+}
+
+static inline value untag_value(value v, ground_ty t) {
+	switch (t) {
+		case G_INT:
+		case G_BOOL:
+		case G_UNIT:
+			return (value)(v >> 3);
+		case G_FN:
+		case G_LI:
+		case G_TP:
+		case G_RF:
+		case G_AR:
+			return (value)(v & ~0b111);
+	}
+}
+
+static inline uint16_t size_of(value v) {
+	switch (tag_of(v)) {
+		case G_TP: {
+			#ifdef EAGER
+			return ((tpl*)untag_value(v, G_TP))->hdr.size;
+			#else
+			return ((tpl*)untag_value(v, G_TP))->size;
+			#endif
+		}
+		default: return 0;
+	}
+}
+
+#ifndef CAST
+
 static inline value toplevel_coerce(value v, crc* s) {
 	#ifdef MONOTONIC
 	value v_ = coerce(v, s);
@@ -44,6 +107,29 @@ static inline value toplevel_coerce(value v, crc* s) {
 	#else
 	return coerce(v, s);
 	#endif
+}
+
+static inline value toplevel_coerce_inj(value v, ground_ty g) {
+	#ifdef PROFILE
+	current_cast++;
+	#endif
+	return tag_value(v, g);
+}
+
+static inline value toplevel_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_t polarity) {
+	#ifdef PROFILE
+	current_cast++;
+	#endif
+	if (tag_of(v) != g) { blame(rid, polarity); }
+	return untag_value(v, g);
+}
+
+static inline value toplevel_coerce_proj_tp(value v, uint16_t size, uint32_t rid, uint8_t polarity) {
+	#ifdef PROFILE
+	current_cast++;
+	#endif
+	if (tag_of(v) != G_TP || size_of(v) != size) { blame(rid, polarity); }
+	return untag_value(v, G_TP);
 }
 
 #endif

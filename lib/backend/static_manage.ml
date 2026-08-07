@@ -56,6 +56,21 @@ module CrcManager = Manager (struct
   let prefix = "crc"
 end)
 
+let fast_inj : (id, tag) Hashtbl.t = Hashtbl.create 256
+let fast_proj : (id, tag * range * polarity) Hashtbl.t = Hashtbl.create 256
+let fast_proj_tp : (id, int * range * polarity) Hashtbl.t = Hashtbl.create 256
+
+let register_fast_crc x c = match c with
+  | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf | Ar as g)) -> Hashtbl.replace fast_inj x g
+  | CSeq (CId _, CInj (Tp _)) -> Hashtbl.replace fast_inj x (Tp 0)
+  | CSeq (CMRef (_, TyDyn), CInj Rf) -> Hashtbl.replace fast_inj x Rf
+  | CSeq (CMArray (_, TyDyn), CInj Ar) -> Hashtbl.replace fast_inj x Ar
+  | CSeq (CProj ((I | B | U | Fn | Li | Rf | Ar as g), (r, p)), CId _) -> Hashtbl.replace fast_proj x (g, r, p)
+  | CSeq (CProj (Tp n, (r, p)), CId _) -> Hashtbl.replace fast_proj_tp x (n, r, p)
+  | CSeq (CProj (Rf, (r, p)), CMRef (_, TyDyn)) -> Hashtbl.replace fast_proj x (Rf, r, p)
+  | CSeq (CProj (Ar, (r, p)), CMArray (_, TyDyn)) -> Hashtbl.replace fast_proj x (Ar, r, p)
+  | _ -> ()
+
 let rec exist_tv l1 l2 = match l2 with
   | h :: t -> if List.mem h l1 then true else exist_tv l1 t
   | [] -> false
@@ -292,6 +307,7 @@ let rec static_exp tvs = function
     udeclfun1 (udeclfun2 (Cast (x, u1, u2, (r, p))))
   | Let (x, f1, f2) ->
     let f1 = static_exp tvs f1 in
+    (match f1 with Coercion c -> register_fast_crc x c | _ -> ());
     let f2 = static_exp tvs f2 in
     Let (x, f1, f2)
   | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, static_exp tvs f) ms)

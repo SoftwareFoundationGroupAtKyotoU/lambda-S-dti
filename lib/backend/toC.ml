@@ -260,9 +260,6 @@ let set_ty i opu =
     | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
   in
   name, [SAssign (PreOp (Deref, (Var name)), Cast (TY, toC_tycontent u))]
-    (* 
-    | Some _ -> raise @@ ToC_bug "not tyfun or tylist is in tyvar option"
-    end *)
 
 let rec toC_mf ~config x_exp = function
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit should not appear in toC"
@@ -440,8 +437,17 @@ and toC_assign ~config x f =
     SAssign (Var x, alloc_closure env_size) :: set_func @ copy 0 i1 @ app_env fun_x i1 toC_ta tas @ copy (i1 + List.length tas) env_size
   | Cls.AppTyFun (y, i1, tas, n) ->
     toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (Var x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
-  | Cls.CApp (y, z) -> assign_x (App (Var "toplevel_coerce", [Var y; Cast (PTR CRC, Var z)]))
-  (* TODO: CrcManager から inj, proj を消したので、最適化処理はtoCに任せる *)
+  | Cls.CApp (y, z) ->
+    begin match Hashtbl.find_opt Static_manage.fast_inj z with
+    | Some g -> assign_x (App (Var "toplevel_coerce_inj", [Var y; Var ("G_" ^ string_of_tag g)]))
+    | None ->
+      match Hashtbl.find_opt Static_manage.fast_proj z with
+      | Some (g, r, p) -> assign_x (App (Var "toplevel_coerce_proj", [Var y; Var ("G_" ^ string_of_tag g); Int (rid r); Int (int_of_pos p)]))
+      | None ->
+        match Hashtbl.find_opt Static_manage.fast_proj_tp z with
+        | Some (n, r, p) -> assign_x (App (Var "toplevel_coerce_proj_tp", [Var y; Int n; Int (rid r); Int (int_of_pos p)]))
+        | None -> assign_x (App (Var "toplevel_coerce", [Var y; Cast (PTR CRC, Var z)]))
+    end
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.If (y, f1, f2) ->
@@ -571,35 +577,4 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     ...
     (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
     ...
-*)
-
-(* 
-
-(* ======================================== *)
-
-let rec toC_exp ppf f ~config ~is_main = 
-  let toC_exp = toC_exp ~config ~is_main in
-  match f with
-  | Insert (x, f) -> begin match f with
-    | CApp (y, z) -> (* TODO *)
-      if CrcManager.mem_inj z then
-        let tag = CrcManager.find_inj z in
-        fprintf ppf "#ifdef PROFILE\ncurrent_cast++;\n#endif\n%s = (%s << 3) | G_%a;\n"
-          x
-          y
-          toC_tag tag
-      else if CrcManager.mem_proj z then
-        let (tag, rid, p) = CrcManager.find_proj z in
-        fprintf ppf "#ifdef PROFILE\ncurrent_cast++;\n#endif\nif ((uint8_t)(%s & 0b111) == G_%a) {\n%s = %s >> 3;\n} else {\nblame(%d, %d);\n}"
-          y
-          toC_tag tag
-          x
-          y
-          rid
-          (match p with Pos -> 1 | Neg -> 0)
-      else
-        fprintf ppf "%s = coerce(%s, (crc*)%s);\n"
-          x
-          y
-          z
 *)

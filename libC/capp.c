@@ -16,65 +16,6 @@
 
 #include "capp.h"
 
-#ifdef PROFILE
-static inline void update_longest(int new) {
-	if (new > current_longest) {
-		current_longest = new;
-	}
-	return;
-}
-#endif
-
-static inline uint8_t tag_of(value v) {
-	return (v & 0b111);
-}
-
-static inline value tag_value(value v, ground_ty t) {
-	#ifdef PROFILE
-	update_longest(1);
-	#endif
-	switch (t) {
-		case G_INT:
-		case G_BOOL:
-		case G_UNIT:
-			return (value)(v << 3 | t);
-		case G_FN:
-		case G_LI:
-		case G_TP:
-		case G_RF:
-		case G_AR:
-			return (value)(v | t);
-	}
-}
-
-static inline value untag_value(value v, ground_ty t) {
-	switch (t) {
-		case G_INT:
-		case G_BOOL:
-		case G_UNIT:
-			return (value)(v >> 3);
-		case G_FN:
-		case G_LI:
-		case G_TP:
-		case G_RF:
-		case G_AR:
-			return (value)(v & ~0b111);
-	}
-}
-
-static inline uint16_t size_of(value v) {
-	switch (tag_of(v)) {
-		case G_TP: {
-			#ifdef EAGER
-			return ((tpl*)untag_value(v, G_TP))->hdr.size;
-			#else
-			return ((tpl*)untag_value(v, G_TP))->size;
-			#endif
-		}
-		default: return 0;
-	}
-}
-
 #ifdef CAST
 value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input = x:t1=>t2
 	#ifdef PROFILE
