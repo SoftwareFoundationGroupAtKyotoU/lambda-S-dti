@@ -95,6 +95,7 @@ let () =
   let monotonic_ref = ref true in
   let hash_ref = ref false in
   let static_ref = ref false in
+  let opt_level_ref = ref "-O3" in
   let options = Arg.align [
       ("-d", Arg.Unit (fun () -> debug_ref := true), " Enable debug mode");
       ("-a", Arg.Unit (fun () -> alt_ref := true), " Use alternative translation");
@@ -104,6 +105,13 @@ let () =
       ("--non_monotonic", Arg.Unit (fun () -> monotonic_ref := false), " monotonic reference off");
       ("-h", Arg.Unit (fun () -> hash_ref := true), " hash-consing / compose-memo on");
       ("--static", Arg.Unit (fun () -> static_ref := true), " Evaluate or compile only fully statically program");
+      ("-O0", Arg.Unit (fun () -> opt_level_ref := "-O0"), " clang optimization level -O0");
+      ("-O1", Arg.Unit (fun () -> opt_level_ref := "-O1"), " clang optimization level -O1");
+      ("-O2", Arg.Unit (fun () -> opt_level_ref := "-O2"), " clang optimization level -O2");
+      ("-O3", Arg.Unit (fun () -> opt_level_ref := "-O3"), " clang optimization level -O3 (default)");
+      ("-Os", Arg.Unit (fun () -> opt_level_ref := "-Os"), " clang optimization level -Os");
+      ("-Oz", Arg.Unit (fun () -> opt_level_ref := "-Oz"), " clang optimization level -Oz");
+      ("-Ofast", Arg.Unit (fun () -> opt_level_ref := "-Ofast"), " clang optimization level -Ofast");
     ]
   in
   let parse_argv arg = match !file_ref with
@@ -120,7 +128,8 @@ let () =
     ~monotonic:!monotonic_ref
     ~hash:!hash_ref
     ~static:!static_ref
-    ~opt_file:!file_ref
+    ~opt_level:!opt_level_ref
+    ~file:!file_ref
     ()
   in
   if !compile_ref then Resources.find_root_dir ();

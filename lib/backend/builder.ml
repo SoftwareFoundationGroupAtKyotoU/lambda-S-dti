@@ -34,10 +34,11 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let hash_var = (if hash && not static then "-D HASH " else "") in
   let static_var = (if static then "-D STATIC " else "") in
   let profile_var = (if profile then "-D PROFILE " else "") in
-  if bench then 
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson -O3" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
-      log_dir 
-      file 
+  if bench then
+    let bench_opt_level = if profile then "-O0" else "-O3" in
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+      log_dir
+      file
       mode_str
       (if profile then "_profile" else "")
       mode_var
@@ -47,17 +48,19 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       static_var
       profile_var
       src_files
-      log_dir 
-      file 
+      log_dir
+      file
       mode_str
       (if profile then "_profile" else "")
+      bench_opt_level
   else
     let result_c_dir = Resources.result_c_dir () in
     let result_dir = Resources.result_dir () in
-    match config.opt_file with
+    let opt_level = config.opt_level in
+    match config.file with
     | Some filename ->
       let base = unique_base config filename in
-      asprintf "clang %s/%s_out.c %s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 -O3"
+      asprintf "clang %s/%s_out.c %s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 %s"
         result_c_dir
         base
         mode_var
@@ -69,9 +72,10 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
         libc_dir
         result_dir
         base
+        opt_level
     | None ->
       (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-      asprintf "clang %s/stdin.c %s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg" (* TODO: -O3 *)
+      asprintf "clang %s/stdin.c %s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg %s"
         result_c_dir
         mode_var
         eager_var
@@ -81,8 +85,9 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
         libc_dir
         libc_dir
         result_dir
+        opt_level
 
-let build_run c_code ~config = match config.opt_file with
+let build_run c_code ~config = match config.file with
   | Some filename ->
     (* ファイル入力モード *)
     let base = unique_base config filename in

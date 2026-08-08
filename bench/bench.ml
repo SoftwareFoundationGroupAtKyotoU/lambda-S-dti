@@ -145,14 +145,14 @@ let bench_file_mode
   try begin
   (* modeに応じたconfigの生成 *)
   let config = match mode with
-  | SI -> Config.create ~eager ~hash ~opt_file:(Some file) ()
-  | SC -> Config.create ~eager ~hash ~opt_file:(Some file) ~compile:true ()
-  | AI -> Config.create ~eager ~hash ~opt_file:(Some file) ~alt:true ()
-  | AC -> Config.create ~eager ~hash ~opt_file:(Some file) ~alt:true ~compile:true ()
-  | BI -> Config.create ~eager ~hash ~opt_file:(Some file) ~intoB:true ()
-  | BC -> Config.create ~eager ~hash ~opt_file:(Some file) ~intoB:true ~compile:true ()
-  | STATICI -> Config.create ~eager ~hash ~opt_file:(Some file) ~static:true()
-  | STATICC -> Config.create ~eager ~hash ~opt_file:(Some file) ~static:true ~compile:true ()
+  | SI -> Config.create ~eager ~hash ~file:(Some file) ()
+  | SC -> Config.create ~eager ~hash ~file:(Some file) ~compile:true ()
+  | AI -> Config.create ~eager ~hash ~file:(Some file) ~alt:true ()
+  | AC -> Config.create ~eager ~hash ~file:(Some file) ~alt:true ~compile:true ()
+  | BI -> Config.create ~eager ~hash ~file:(Some file) ~intoB:true ()
+  | BC -> Config.create ~eager ~hash ~file:(Some file) ~intoB:true ~compile:true ()
+  | STATICI -> Config.create ~eager ~hash ~file:(Some file) ~static:true()
+  | STATICC -> Config.create ~eager ~hash ~file:(Some file) ~static:true ~compile:true ()
   in
 
   Format.fprintf Format.std_formatter "debug: bench_file_mode\n";
