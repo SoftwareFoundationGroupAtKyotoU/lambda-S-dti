@@ -31,6 +31,7 @@ type ty =
   | TyDyn
   | TyVar of tyvar
   | TyInt
+  | TyFloat
   | TyBool
   | TyUnit
   | TyFun of ty * ty
@@ -66,7 +67,9 @@ type tyarg = Ty of ty | TyNu
 
 (* === Definitions for binop === *)
 
-type binop = Plus | Minus | Mult | Div | Mod | And | Or | Eq | Neq | Lt | Lte | Gt | Gte
+type binop =
+  | Plus | Minus | Mult | Div | Mod | FPlus | FMinus | FMult | FDiv
+  | And | Or | Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte
 
 (* === Definitions for matchform === *)
 
@@ -88,7 +91,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | Fn | Li | Tp of int | Rf | Ar
+type tag = I | B | U | F | Fn | Li | Tp of int | Rf | Ar
 
 type coercion =
   | CInj of tag
@@ -120,6 +123,7 @@ module ITGL = struct
     | IConst of range * int
     | BConst of range * bool
     | UConst of range
+    | FConst of range * float
     | BinOp of range * binop * exp * exp
     | AscExp of range * exp * ty
     | IfExp of range * exp * exp * exp
@@ -144,6 +148,7 @@ module ITGL = struct
     | IConst (r, _)
     | BConst (r, _)
     | UConst r
+    | FConst (r, _)
     | AscExp (r, _, _)
     | BinOp (r, _, _, _)
     | IfExp (r, _, _, _)
@@ -177,6 +182,7 @@ module CC = struct
     | IConst of int
     | BConst of bool
     | UConst
+    | FConst of float
     | FunExp of tyvar list * fundef
     | FixExp of tyvar list * fixdef
     | CoercionExp of coercion
@@ -217,6 +223,7 @@ module CC = struct
     | IntV of int
     | BoolV of bool
     | UnitV
+    | FloatV of float
     | FunBV of (ty list -> value -> value)
     | FunSV of (ty list -> (value * value) -> value)
     | FunDualV of (ty list -> ((value -> value) * ((value * value) -> value)))
@@ -240,6 +247,7 @@ module KNorm = struct
   type exp =
     | Var of id
     | IConst of int
+    | FConst of float
     | BinOp of id * binop * id
     | Nil
     | Cons of id * id
@@ -290,6 +298,7 @@ module Cls = struct
   type exp =
     | Var of id
     | Int of int
+    | Float of float
     | Nil
     | BinOp of id * binop * id
     | Cons of id * id

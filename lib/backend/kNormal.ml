@@ -60,7 +60,7 @@ module CC = struct
   (* alpha : 変数の名前が被らないように付け替える *)
   let rec alpha_exp idenv = function
     | Var (x, tas) -> Var (Environment.find x idenv, tas)
-    | IConst _ | BConst _ | UConst as f -> f
+    | IConst _ | BConst _ | UConst | FConst _ as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, alpha_exp idenv f1, alpha_exp idenv f2)
     | IfExp (f1, f2, f3) ->
       IfExp (alpha_exp idenv f1, alpha_exp idenv f2, alpha_exp idenv f3)
@@ -159,6 +159,7 @@ module CC = struct
     | IConst i -> KNorm.IConst i
     | BConst b -> let i = if b then 1 else 0 in KNorm.IConst i
     | UConst -> KNorm.IConst 0
+    | FConst f -> KNorm.FConst f
     | BinOp (op, f1, f2) ->
       let f1 = k_normalize_exp tvsenv f1 in
       let f2 = k_normalize_exp tvsenv f2 in
@@ -304,7 +305,7 @@ module KNorm = struct
   (* beta : let x = y in ... となっているようなxをyに置き換える *)
   let rec beta_exp idenv = function
     | Var x -> Var (find x idenv)
-    | IConst _ | Nil as f -> f
+    | IConst _ | FConst _ | Nil as f -> f
     | BinOp (x, op, y) -> BinOp (find x idenv, op, find y idenv)
     | Cons (x, y) -> Cons (find x idenv, find y idenv)
     | Tuple xs -> Tuple (List.map (fun x -> find x idenv) xs)

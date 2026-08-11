@@ -53,6 +53,7 @@ let rec meet u1 u2 = match u1, u2 with
     raise @@ Translation_bug "meet: instantiated tyvar is given"
   | TyBool, TyBool -> TyBool
   | TyInt, TyInt -> TyInt
+  | TyFloat, TyFloat -> TyFloat
   | TyUnit, TyUnit -> TyUnit
   | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
   | TyDyn, u | u, TyDyn -> u
@@ -104,6 +105,7 @@ module ITGL = struct
         raise @@ Translation_bug "variable not found during cast-inserting translation"
       end
     | IConst (_, i) -> CC.IConst i, TyInt
+    | FConst (_, f) -> CC.FConst f, TyFloat
     | BConst (_, b) -> CC.BConst b, TyBool
     | UConst _ -> CC.UConst, TyUnit
     | BinOp (_, op, e1, e2) ->
@@ -263,6 +265,7 @@ module CC = struct
       let u = Subst.subst_type s u in
       Var (x, ys), u
     | IConst i -> IConst i, TyInt
+    | FConst f -> FConst f, TyFloat
     | BConst b -> BConst b, TyBool
     | UConst -> UConst, TyUnit
     | NilExp u -> NilExp u, TyList u
@@ -417,7 +420,7 @@ module CC = struct
     | AppDExp _ | CCompExp _ | CoercionExp _ | FunExp _ | FixExp _ | CAppExp _ as f ->
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
-    | Var _ | IConst _ | BConst _ | UConst | NilExp _ | BinOp _ | FunExp _ | FixExp _
+    | Var _ | IConst _ | BConst _ | UConst | FConst _ | NilExp _ | BinOp _ | FunExp _ | FixExp _
     | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ | LengthExp _ as f ->
       let f, u = translate_exp ~config env f in
       assert (u = uk1);
@@ -489,6 +492,7 @@ module Cls = struct
     match f with
     | Var x -> Var (replace x)
     | Int i -> Int i
+    | Float f -> Float f
     | Nil -> Nil
     | BinOp (x, op, y) -> BinOp (replace x, op, replace y)
     | Cons (x, y) -> Cons (replace x, replace y)

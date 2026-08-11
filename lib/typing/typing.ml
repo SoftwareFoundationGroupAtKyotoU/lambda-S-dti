@@ -13,7 +13,9 @@ exception Type_bug of string
 
 let type_of_binop = function
   | Plus | Minus | Mult | Div | Mod -> TyInt, TyInt, TyInt
+  | FPlus | FMinus | FMult | FDiv -> TyFloat, TyFloat, TyFloat
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
+  | FEq | FNeq | FLt | FLte | FGt | FGte -> TyFloat, TyFloat, TyBool
   | And | Or -> TyBool, TyBool, TyBool
 
 let rec type_of_mf mf ids = match mf with
@@ -84,6 +86,7 @@ module ITGL = struct
           raise @@ Type_bug (asprintf "variable '%s' not found in the environment" x)
         end
       | IConst _, TyInt -> true
+      | FConst _, TyFloat -> true
       | BConst _, TyBool -> true
       | UConst _, TyUnit -> true
       | AscExp (r, e, TyVar (_, { contents = Some u' })), u ->
@@ -161,6 +164,7 @@ module ITGL = struct
     in match e with
     | Var _
     | IConst _
+    | FConst _
     | BConst _
     | UConst _
     | FunExp _
@@ -168,7 +172,7 @@ module ITGL = struct
     | NilExp _ -> true
     | ConsExp (_, e1, e2) -> is_pure_value env e1 && is_list_value env e2
     | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_pure_value env e) true es
-    | AscExp (_, e, (TyInt | TyBool | TyUnit as u)) -> is_base_value env u e
+    | AscExp (_, e, (TyInt | TyFloat | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
     | AscExp (_, e, TyList _) -> is_list_value env e
     | AscExp (_, e, TyTuple _) -> is_tuple_value env e
@@ -189,6 +193,7 @@ module ITGL = struct
         raise @@ Type_error (asprintf "variable '%s' not found in the environment" x)
       end
     | IConst _ -> TyInt
+    | FConst _ -> TyFloat
     | BConst _ -> TyBool
     | UConst _ -> TyUnit
     | BinOp (_, op, e1, e2) ->
@@ -346,6 +351,7 @@ module CC = struct
           raise @@ Type_bug "variable not found"
       end
     | IConst _ -> TyInt
+    | FConst _ -> TyFloat
     | BConst _ -> TyBool
     | UConst -> TyUnit
     | BinOp (op, f1, f2) ->

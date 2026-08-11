@@ -13,6 +13,7 @@ let string_of_tag = function
   | I -> "INT"
   | B -> "BOOL"
   | U -> "UNIT"
+  | F -> "FLOAT"
   | Fn -> "FN"
   | Li -> "LI"
   | Tp _ -> "TP"
@@ -25,6 +26,7 @@ let toC_ty = function
   | TyInt -> Addr "tyint"
   | TyBool -> Addr "tybool"
   | TyUnit -> Addr "tyunit"
+  | TyFloat -> Addr "tyfloat"
   | TyDyn -> Addr "tydyn"
   | TyFun (TyDyn, TyDyn) -> Addr "tyfn"
   | TyFun (_, _) as u -> Addr (TyManager.find u)
@@ -115,7 +117,7 @@ let rec toC_crc x c =
   match c with
     | CId u ->
       let g, size = match u with
-        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFun _ -> "G_FN", 0
+        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFloat -> "G_FLOAT", 0 | TyFun _ -> "G_FN", 0
         | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0 | TyArray _ -> "G_AR", 0
         | TyDyn | TyVar _ | TyCoercion _ -> raise @@ ToC_bug "Seq CId shouldn't have tydyn, tyvar, tycoercion"
       in
@@ -311,7 +313,7 @@ let rec toC_exp ~is_main ~config = function
   | Cls.Match (x, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
       [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
-  | Cls.Var _ | Cls.Int _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
+  | Cls.Var _ | Cls.Int _ | Cls.Float _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
   | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _ | Cls.Length _
   | Cls.BinOp _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
@@ -323,6 +325,7 @@ and toC_assign ~config x f =
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
+  | Cls.Float _ -> raise @@ ToC_bug "toC_assign: float C backend codegen is not yet implemented"
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
     let size = List.length ys in

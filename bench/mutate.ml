@@ -64,7 +64,7 @@ let collect_head_funs (e : exp) : (range * id * anotated * ty) list * exp =
 (* Fun（後行順）・Fix（出現順）の個数カウント *)
 let rec count_fun_params (t : exp) : int = match t with
   | FunExp (_, (x, _, _), e) -> (if is_synthetic x then 0 else 1) + count_fun_params e
-  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> 0
   | FixExp (_, _, _, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fun_params e
   | BinOp (_, _, e1 , e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
   | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fun_params e1 + count_fun_params e2 + count_fun_params e3
@@ -73,7 +73,7 @@ let rec count_fun_params (t : exp) : int = match t with
 
 let rec count_fix_nodes (t : exp) : int = match t with
   | FixExp (_, x, _, _, e) -> (if is_synthetic x then 0 else 1) + count_fix_nodes e
-  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> 0
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> 0
   | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fix_nodes e
   | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
   | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
@@ -114,7 +114,7 @@ type analysis = {
 
 (* collect_links c fixc t = (c', fixc', links) *)
 let rec collect_links (c:int) (fixc:int) (t:exp) : int * int * link list = match t with
-  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> (c, fixc, [])
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (c, fixc, [])
   | FunExp (_, (x, _, _), e) ->
     let c1, fixc1, ls1 = collect_links c fixc e in
     let idx_here = if is_synthetic x then c1 else c1 + 1 in
@@ -220,7 +220,7 @@ let selection_of_global_indices (a:analysis) (idxs:int list) : selection =
 
 (* 適用本体。lamc/fixc は現在までに消費した Fun/Fix のカウンタ（後行順/出現順）。 *)
 let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:exp) : int * int * int * exp = match t with
-  | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ -> (lamc, fixc, tappc, t)
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (lamc, fixc, tappc, t)
   | FunExp (r, (x, annot, u), e) when is_synthetic x ->
     let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
     (lamc1, fixc1, tappc1, FunExp (r, (x, annot, u), e'))

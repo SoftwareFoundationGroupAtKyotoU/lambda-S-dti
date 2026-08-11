@@ -13,7 +13,7 @@ let rec tv_renew_ty u env = match u with
     let env = Environment.add (string_of_int i) tv env in
     TyVar tv, env
     end
-  | TyDyn | TyInt | TyBool | TyUnit -> u, env
+  | TyDyn | TyInt | TyBool | TyUnit | TyFloat -> u, env
   | TyFun (u1, u2) -> 
     let u1, env = tv_renew_ty u1 env in
     let u2, env = tv_renew_ty u2 env in
@@ -128,7 +128,7 @@ module CC = struct
       let env = List.fold_left (fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) env us in
       let us = List.map (fun u -> match u with Ty u -> Syntax.Ty (fst @@ (tv_renew_ty u env)) | TyNu -> TyNu) us in
       Var (x, us), env
-    | IConst _ | BConst _ | UConst -> e, env
+    | IConst _ | BConst _ | UConst | FConst _ -> e, env
     | BinOp (op, e1, e2) -> 
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in

@@ -51,8 +51,9 @@ exception Parser_bug of string
 
 %token <Utils.Error.range> LPAREN RPAREN SEMI SEMISEMI COLON EQ QUOTE
 %token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR
+%token <Utils.Error.range> PLUSDOT MINUSDOT STARDOT DIVDOT EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION
-%token <Utils.Error.range> INT BOOL UNIT QUESTION RARROW
+%token <Utils.Error.range> INT BOOL UNIT FLOAT QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
@@ -62,6 +63,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> FOR TO DOWNTO DO DONE WHILE
 
 %token <int Utils.Error.with_range> INTV
+%token <float Utils.Error.with_range> FLOATV
 %token <Syntax.id Utils.Error.with_range> ID
 
 %start toplevel
@@ -75,10 +77,10 @@ exception Parser_bug of string
 %right    RARROW
 %right    LOR
 %right    LAND
-%left     EQ NEQ LT LTE GT GTE VBAR
+%left     EQ NEQ LT LTE GT GTE EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT VBAR
 %right    COLCOL
-%left     PLUS MINUS
-%left     STAR DIV MOD
+%left     PLUS MINUS PLUSDOT MINUSDOT
+%left     STAR DIV MOD STARDOT DIVDOT
 
 %%
 
@@ -269,13 +271,29 @@ BinOpExpr :
   | LTE { Lte }
   | GT { Gt }
   | GTE { Gte }
+  | PLUSDOT { FPlus }
+  | MINUSDOT { FMinus }
+  | STARDOT { FMult }
+  | DIVDOT { FDiv }
+  | EQDOT { FEq }
+  | NEQDOT { FNeq }
+  | LTDOT { FLt }
+  | LTEDOT { FLte }
+  | GTDOT { FGt }
+  | GTEDOT { FGte }
 
 UnaryExpr :
   | PLUS e=UnaryExpr { e }
+  | PLUSDOT e=UnaryExpr { e }
   | start_r=MINUS e=UnaryExpr {
       let r = join_range start_r (range_of_exp e) in
       let zero = IConst (dummy_range, 0) in
       BinOp (r, Minus, zero, e)
+    }
+  | start_r=MINUSDOT e=UnaryExpr {
+      let r = join_range start_r (range_of_exp e) in
+      let zero = FConst (dummy_range, 0.0) in
+      BinOp (r, FMinus, zero, e)
     }
   | AppExpr { $1 }
 
@@ -313,6 +331,7 @@ PrefixExpr :
 
 SimpleExpr :
   | i=INTV { IConst (i.range, i.value) }
+  | f=FLOATV { FConst (f.range, f.value) }
   | r=TRUE { BConst (r, true) }
   | r=FALSE { BConst (r, false) }
   | start=LPAREN last=RPAREN {
@@ -352,6 +371,7 @@ PostType :
 
 SimpleType :
   | INT { TyInt }
+  | FLOAT { TyFloat }
   | BOOL { TyBool }
   | UNIT { TyUnit }
   | QUESTION { TyDyn }

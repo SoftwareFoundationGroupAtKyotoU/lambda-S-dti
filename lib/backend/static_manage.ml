@@ -76,7 +76,7 @@ let rec exist_tv l1 l2 = match l2 with
   | [] -> false
   
 let rec ty_tv tvs u = match u with
-  | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u -> (u, fun x -> x)
+  | TyInt | TyBool | TyUnit | TyFloat | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u -> (u, fun x -> x)
   | TyTuple us when List.fold_left (fun b u -> b && if u = TyDyn then true else false) true us -> TyManager.register u; (u, fun x -> x)
   | TyVar tv -> if not (List.mem tv tvs) then (TyManager.register u; (u, fun x -> x)) else (u, fun x -> x)
   | TyFun (u1, u2) ->
@@ -257,7 +257,7 @@ let rec static_crc tvs c =
   | CFail _ -> raise @@ Static_manage_bug "yet"
 
 let rec static_exp tvs = function
-  | Var _ | Int _ | Nil | BinOp _
+  | Var _ | Int _ | Float _ | Nil | BinOp _
   | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | Length _
   | Deref (_, None) | Subst (_, _, None)
   | Get (_, _, None) | Put (_, _, _, None)

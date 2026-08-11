@@ -12,7 +12,7 @@ let with_paren flag ppf_e ppf e =
 
 let rec level_ty = function
   | TyVar (_, { contents = Some u }) -> level_ty u
-  | TyDyn | TyVar _ | TyInt | TyBool | TyUnit -> 100
+  | TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyFloat -> 100
   | TyList _ | TyRef _ | TyArray _ -> 90
   | TyTuple _ -> 80
   | TyFun _ | TyCoercion _ -> 70
@@ -30,6 +30,7 @@ let pp_ty_main ppf ~pp_tyvar u =
     | TyInt -> pp_print_string ppf "int"
     | TyBool -> pp_print_string ppf "bool"
     | TyUnit -> pp_print_string ppf "unit"
+    | TyFloat -> pp_print_string ppf "float"
     | TyFun (u1, u2) as u ->
       fprintf ppf "%a -> %a"
         (with_paren (gte_ty u u1) pp_ty) u1
@@ -83,14 +84,14 @@ let pp_constr ppf = function
 
 (* TODO: replace to level *)
 let gt_binop op1 op2 = match op1, op2 with
-  | (Plus | Minus | Mult | Div | Mod), (Eq | Neq | Lt | Lte | Gt | Gte)
-  | (Mult | Div | Mod), (Plus | Minus) -> true
+  | (Plus | Minus | Mult | Div | Mod | FPlus | FMinus | FMult | FDiv), (Eq | Neq | Lt | Lte | Gt | Gte)
+  | (Mult | Div | Mod | FMult | FDiv), (Plus | Minus | FPlus | FMinus) -> true
   | _ -> false
 
 let gte_binop op1 op2 = match op1, op2 with
   | (Eq | Neq | Lt | Lte | Gt | Gte), (Eq | Neq | Lt | Lte | Gt | Gte)
-  | (Mult | Div | Mod), (Mult | Div | Mod)
-  | (Plus | Minus), (Plus | Minus) -> true
+  | (Mult | Div | Mod | FMult | FDiv), (Mult | Div | Mod | FMult | FDiv)
+  | (Plus | Minus | FPlus | FMinus), (Plus | Minus | FPlus | FMinus) -> true
   | _ -> gt_binop op1 op2
 
 let pp_binop ppf op =
@@ -109,6 +110,16 @@ let pp_binop ppf op =
     | Lte -> "<="
     | Gt -> ">"
     | Gte -> ">="
+    | FPlus -> "+."
+    | FMinus -> "-."
+    | FMult -> "*."
+    | FDiv -> "/."
+    | FEq -> "=."
+    | FNeq -> "<>."
+    | FLt -> "<."
+    | FLte -> "<=."
+    | FGt -> ">."
+    | FGte -> ">=."
   end
 
 (* === pp for variables === *)
@@ -174,6 +185,7 @@ let rec pp_matchform ppf = function
 
 let pp_tag ppf = function
   | I -> pp_print_string ppf "int"
+  | F -> pp_print_string ppf "float"
   | B -> pp_print_string ppf "bool"
   | U -> pp_print_string ppf "unit"
   | Fn -> pp_print_string ppf "(? -> ?)"
@@ -275,13 +287,13 @@ module ITGL = struct
   open Syntax.ITGL
 
   let level_exp = function
-    | Var _ | IConst _ | BConst _ | UConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
+    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
     | DerefExp _ | GetExp _ -> 90
     | AppExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
-    | BinOp (_, (Mult | Div | Mod), _, _) -> 70
-    | BinOp (_, (Plus | Minus), _, _) -> 60
+    | BinOp (_, (Mult | Div | Mod | FMult | FDiv), _, _) -> 70
+    | BinOp (_, (Plus | Minus | FPlus | FMinus), _, _) -> 60
     | ConsExp _ -> 50
-    | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
+    | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte), _, _) -> 40
     | BinOp (_, And, _, _) -> 35
     | BinOp (_, Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
@@ -295,9 +307,10 @@ module ITGL = struct
 
   let rec pp_exp ppf = function
     | Var (_, x, ys) -> pp_print_var ppf (x, !ys)
-    | BConst (_, b) -> pp_print_bool ppf b
     | IConst (_, i) -> pp_print_int ppf i
+    | BConst (_, b) -> pp_print_bool ppf b
     | UConst _ -> pp_print_string ppf "()"
+    | FConst (_, f) -> pp_print_float ppf f
     | BinOp (_, op, e1, e2) as e ->
       fprintf ppf "%a %a %a"
         (with_paren (gt_exp e e1) pp_exp) e1
@@ -382,15 +395,15 @@ module CC = struct
   open Syntax.CC
 
   let level_exp = function
-    | Var _ | IConst _ | BConst _ | UConst | NilExp _ | TupleExp _ | CoercionExp _ -> 100
+    | Var _ | IConst _ | BConst _ | UConst | FConst _ | NilExp _ | TupleExp _ | CoercionExp _ -> 100
     | CCompExp _ -> 95
     | DerefExp _ | GetExp _ -> 90
     | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | CAppExp _ -> 75
-    | BinOp ((Mult | Div | Mod), _, _) -> 70
-    | BinOp ((Plus | Minus), _, _) -> 60
+    | BinOp ((Mult | Div | Mod | FMult | FDiv), _, _) -> 70
+    | BinOp ((Plus | Minus | FPlus | FMinus), _, _) -> 60
     | ConsExp _ -> 50
-    | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte), _, _) -> 40
+    | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte), _, _) -> 40
     | BinOp (And, _, _) -> 35
     | BinOp (Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
@@ -415,9 +428,10 @@ module CC = struct
 
   let rec pp_exp ppf = function
     | Var (x, ys) -> pp_print_var ppf (x, ys)
-    | BConst b -> pp_print_bool ppf b
     | IConst i -> pp_print_int ppf i
+    | BConst b -> pp_print_bool ppf b
     | UConst -> pp_print_string ppf "()"
+    | FConst f -> pp_print_float ppf f
     | BinOp (op, f1, f2) as f ->
       fprintf ppf "%a %a %a"
         (with_paren (gt_exp f f1) pp_exp) f1
@@ -599,8 +613,8 @@ module CC = struct
         pp_exp f
 
   let gt_value v1 v2 = match v1, v2 with
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _ | Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _), ConsV _ -> true
-    | (BoolV _ | IntV _ | UnitV | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _), (Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _) -> true
+    | (IntV _ | BoolV _ | UnitV | FloatV _ | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _ | Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _), ConsV _ -> true
+    | (IntV _ | BoolV _ | UnitV | FloatV _ | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ | NilV | TupleV _ | RefV _ | ArrayV _ | CoercionV _), (Tagged _ | CoerceV _ | CastFunV _ | CastListV _ | CastTupleV _ | CastRefV _ | CastArrayV _) -> true
     | _ -> false
 
   let gte_value v1 v2 = match v1, v2 with
@@ -619,9 +633,10 @@ module CC = struct
 
   let pp_value_main ppf ~pp_ty ~pp_coercion v =
     let rec pp_value refl ppf = function 
-      | BoolV b -> pp_print_bool ppf b
       | IntV i -> pp_print_int ppf i
+      | BoolV b -> pp_print_bool ppf b
       | UnitV -> pp_print_string ppf "()"
+      | FloatV f -> pp_print_float ppf f
       | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
       | CoercionV c ->
         fprintf ppf "%a"
@@ -746,6 +761,7 @@ module KNorm = struct
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | IConst i -> pp_print_int ppf i
+    | FConst f -> pp_print_float ppf f
     | Nil -> pp_print_string ppf "[]"
     | BinOp (x, op, y) -> fprintf ppf "%s %a %s" x pp_binop op y
     | Cons (x, y) -> fprintf ppf "%s :: %s" x y
@@ -869,6 +885,7 @@ module Cls = struct
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
     | Int i -> pp_print_int ppf i
+    | Float f -> pp_print_float ppf f
     | Nil -> pp_print_string ppf "[]"
     | BinOp (x, op, y) -> fprintf ppf "%s %a %s" x pp_binop op y
     | Cons (x, y) -> fprintf ppf "%s :: %s" x y
@@ -1081,6 +1098,16 @@ module C = struct
     | Lt -> fprintf ppf "<"
     | Gte -> fprintf ppf ">="
     | Gt -> fprintf ppf ">"
+    | FPlus -> fprintf ppf "+"
+    | FMinus -> fprintf ppf "-"
+    | FMult -> fprintf ppf "*"
+    | FDiv -> fprintf ppf "/"
+    | FEq -> fprintf ppf "=="
+    | FNeq -> fprintf ppf "!="
+    | FLte -> fprintf ppf "<="
+    | FLt -> fprintf ppf "<"
+    | FGte -> fprintf ppf ">="
+    | FGt -> fprintf ppf ">"
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x

@@ -11,7 +11,7 @@ module KNorm = struct
 
   let rec fv_exp = function
     | Var x | Hd x | Tl x  | Tget (x, _) | Ref (x, _) | Deref (x, _) | Length x -> V.singleton x
-    | IConst _ | Nil -> V.empty
+    | IConst _ | FConst _ | Nil -> V.empty
     | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs
@@ -39,7 +39,7 @@ module Cls = struct
 
   let rec fv_exp = function
     | Var x | Hd x | Tl x | Tget (x, _) | Ref (x, _) | Deref (x, _) | Length x -> V.singleton x
-    | Int _ | Nil -> V.empty
+    | Int _ | Float _ | Nil -> V.empty
     | BinOp (x, _, y) | Cons (x, y) | Subst (x, y, _) | MakeArray (x, y, _) | Get (x, y, _) -> V.of_list [x; y]
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs

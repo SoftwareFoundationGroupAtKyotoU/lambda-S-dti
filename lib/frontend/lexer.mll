@@ -14,6 +14,7 @@ let reservedWords = [
   ("true",     fun r -> Parser.TRUE r    );
   ("false",    fun r -> Parser.FALSE r   );
   ("int",      fun r -> Parser.INT r     );
+  ("float",    fun r -> Parser.FLOAT r   );
   ("bool",     fun r -> Parser.BOOL r    );
   ("unit",     fun r -> Parser.UNIT r    );
   ("mod",      fun r -> Parser.MOD r     );
@@ -42,6 +43,12 @@ rule main = parse
   [' ' '\t']+ { main lexbuf }
 | [' ' '\t' '\r']* '\n' { Lexing.new_line lexbuf; main lexbuf }
 | "(*" { comment lexbuf; main lexbuf }
+| ['0'-'9']+ '.' ['0'-'9']*
+  {
+    let value = float_of_string (Lexing.lexeme lexbuf) in
+    let range = range_of lexbuf in
+    Parser.FLOATV { value=value; range=range }
+  }
 | ['0'-'9']+
   {
     let value = int_of_string (Lexing.lexeme lexbuf) in
@@ -67,6 +74,16 @@ rule main = parse
 | "-" { Parser.MINUS (range_of lexbuf) }
 | "*" { Parser.STAR (range_of lexbuf) }
 | "/" { Parser.DIV (range_of lexbuf) }
+| "+." { Parser.PLUSDOT (range_of lexbuf) }
+| "-." { Parser.MINUSDOT (range_of lexbuf) }
+| "*." { Parser.STARDOT (range_of lexbuf) }
+| "/." { Parser.DIVDOT (range_of lexbuf) }
+| "=." { Parser.EQDOT (range_of lexbuf) }
+| "<>." { Parser.NEQDOT (range_of lexbuf) }
+| "<." { Parser.LTDOT (range_of lexbuf) }
+| "<=." { Parser.LTEDOT (range_of lexbuf) }
+| ">." { Parser.GTDOT (range_of lexbuf) }
+| ">=." { Parser.GTEDOT (range_of lexbuf) }
 | "!" { Parser.BANG (range_of lexbuf) }
 | "?" { Parser.QUESTION (range_of lexbuf) }
 | "<" { Parser.LT (range_of lexbuf) }

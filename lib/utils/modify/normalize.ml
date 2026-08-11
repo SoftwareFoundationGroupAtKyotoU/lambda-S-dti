@@ -30,7 +30,8 @@ module ITGL = struct
     | Var (r, x, ys) -> Var (r, x, ref @@ List.map normalize_type !ys)
     | IConst _
     | BConst _
-    | UConst _ as e -> e
+    | UConst _
+    | FConst _ as e -> e
     | BinOp (r, op, e1, e2) ->
       BinOp (r, op, normalize_exp e1, normalize_exp e2)
     | AscExp (r, e, u) ->
@@ -71,7 +72,7 @@ end
 (* in CC *)
 
 let rec make_static_proj_coercion ~monotonic u (r, p) = match normalize_type u with
-  | TyInt | TyBool | TyUnit as g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
+  | TyInt | TyBool | TyUnit | TyFloat as g -> CSeq (CProj (tag_of_ty g, (r, p)), CId g)
   | TyFun (u1, u2) -> CSeq (CProj (Fn, (r, p)), CFun (make_static_inj_coercion ~monotonic u1 (r, neg p), make_static_proj_coercion ~monotonic u2 (r, p)))
   | TyList u -> CSeq (CProj (Li, (r, p)), CList (make_static_proj_coercion ~monotonic u (r, p)))
   | TyTuple us ->
@@ -87,7 +88,7 @@ let rec make_static_proj_coercion ~monotonic u (r, p) = match normalize_type u w
   | TyCoercion _ -> raise @@ Normalize_bug "static_proj: TyCoercion is inserted"
   | TyDyn -> raise @@ Normalize_bug "static_proj: not static"
 and make_static_inj_coercion ~monotonic u (r, p) = match normalize_type u with
-  | TyInt | TyBool | TyUnit as g -> CSeq (CId g, CInj (tag_of_ty g))
+  | TyInt | TyBool | TyUnit | TyFloat as g -> CSeq (CId g, CInj (tag_of_ty g))
   | TyFun (u1, u2) -> CSeq (CFun (make_static_proj_coercion ~monotonic u1 (r, neg p), make_static_inj_coercion ~monotonic u2 (r, p)), CInj Fn)
   | TyList u -> CSeq (CList (make_static_inj_coercion ~monotonic u (r, p)), CInj Li)
   | TyTuple us ->
@@ -104,7 +105,7 @@ and make_static_inj_coercion ~monotonic u (r, p) = match normalize_type u with
   | TyDyn -> raise @@ Normalize_bug "static_inj: not static"
 
 let rec make_static_projinj_coercion ~monotonic (r1, p1) u (r2, p2) = match u with
-  | TyInt | TyBool | TyUnit as g -> CSeq (CProj (tag_of_ty g, (r1, p1)), CSeq (CId g, CInj (tag_of_ty g)))
+  | TyInt | TyBool | TyUnit | TyFloat as g -> CSeq (CProj (tag_of_ty g, (r1, p1)), CSeq (CId g, CInj (tag_of_ty g)))
   | TyFun (u1, u2) ->
     let c1 = make_static_projinj_coercion ~monotonic (r2, neg p2) u1 (r1, neg p1) in
     let c2 = make_static_projinj_coercion ~monotonic (r1, p1) u2 (r2, p2) in

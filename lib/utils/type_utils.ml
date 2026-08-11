@@ -6,7 +6,7 @@ exception Type_utils_bug of string
 
 (** Returns true if the given argument is a ground type. Othewise returns false. *)
 let rec is_ground = function
-  | TyInt | TyBool | TyUnit -> true (* base type *)
+  | TyInt | TyBool | TyUnit | TyFloat -> true (* base type *)
   | TyFun (TyDyn, TyDyn) -> true    (* ★ → ★ *)
   | TyList TyDyn -> true
   | TyTuple us when List.for_all (fun u -> u = TyDyn) us -> true
@@ -17,7 +17,7 @@ let rec is_ground = function
 
 (* check whether the given argument belongs to ι *)
 let rec is_base_type = function
-  | TyBool | TyInt | TyUnit -> true
+  | TyInt | TyBool | TyUnit | TyFloat -> true
   | TyVar (_, { contents = Some u }) -> is_base_type u
   | _ -> false
 
@@ -26,7 +26,7 @@ let rec is_consistent u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->
     is_consistent u1 u2
-  | TyBool, TyBool | TyInt, TyInt | TyUnit, TyUnit -> true
+  | TyInt, TyInt | TyBool, TyBool | TyUnit, TyUnit | TyFloat, TyFloat -> true
   | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
   | TyDyn, _ | _, TyDyn -> true
   | TyFun (u11, u12), TyFun (u21, u22) ->
@@ -44,9 +44,10 @@ let rec is_equal u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) -> is_equal u1 u2
   | TyDyn, TyDyn
-  | TyBool, TyBool
   | TyInt, TyInt
-  | TyUnit, TyUnit -> true
+  | TyBool, TyBool
+  | TyUnit, TyUnit
+  | TyFloat, TyFloat -> true
   | TyVar (a1, _), TyVar (a2, _) when a1 = a2 -> true
   | TyFun (u11, u12), TyFun (u21, u22) ->
     (is_equal u11 u21) && (is_equal u12 u22)
@@ -90,6 +91,7 @@ let type_of_tag = function
   | I -> TyInt
   | B -> TyBool
   | U -> TyUnit
+  | F -> TyFloat
   | Fn -> TyFun (TyDyn, TyDyn)
   | Li -> TyList TyDyn
   | Tp n -> TyTuple (List.init n (fun _ -> TyDyn))
@@ -100,6 +102,7 @@ let rec tag_of_ty = function
   | TyInt -> I
   | TyBool -> B
   | TyUnit -> U
+  | TyFloat -> F
   | TyFun (TyDyn, TyDyn) -> Fn
   | TyList TyDyn -> Li
   | TyTuple us ->

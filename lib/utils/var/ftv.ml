@@ -48,6 +48,7 @@ module ITGL = struct
   let rec ftv_exp: exp -> TV.t = function
     | Var _
     | IConst _
+    | FConst _
     | BConst _
     | UConst _ -> TV.empty
     | BinOp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
@@ -78,6 +79,7 @@ module CC = struct
   let rec ftv_exp: exp -> TV.t = function
     | Var (_, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
     | IConst _
+    | FConst _
     | BConst _
     | UConst -> TV.empty
     | FunExp (tvs, fund) -> TV.diff (ftv_fund fund) (TV.of_list tvs)

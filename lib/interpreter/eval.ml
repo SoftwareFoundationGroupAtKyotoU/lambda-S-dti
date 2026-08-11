@@ -22,12 +22,22 @@ module CC = struct
       | Mult, IntV i1, IntV i2 -> IntV (i1 * i2)
       | Div, IntV i1, IntV i2 -> IntV (i1 / i2)
       | Mod, IntV i1, IntV i2 -> IntV (i1 mod i2)
+      | FPlus, FloatV f1, FloatV f2 -> FloatV (f1 +. f2)
+      | FMinus, FloatV f1, FloatV f2 -> FloatV (f1 -. f2)
+      | FMult, FloatV f1, FloatV f2 -> FloatV (f1 *. f2)
+      | FDiv, FloatV f1, FloatV f2 -> FloatV (f1 /. f2)
       | Eq, IntV i1, IntV i2 -> BoolV (i1 = i2)
       | Neq, IntV i1, IntV i2 -> BoolV (i1 <> i2)
       | Lt, IntV i1, IntV i2 -> BoolV (i1 < i2)
       | Lte, IntV i1, IntV i2 -> BoolV (i1 <= i2)
       | Gt, IntV i1, IntV i2 -> BoolV (i1 > i2)
       | Gte, IntV i1, IntV i2 -> BoolV (i1 >= i2)
+      | FEq, FloatV f1, FloatV f2 -> BoolV (f1 = f2)
+      | FNeq, FloatV f1, FloatV f2 -> BoolV (f1 <> f2)
+      | FLt, FloatV f1, FloatV f2 -> BoolV (f1 < f2)
+      | FLte, FloatV f1, FloatV f2 -> BoolV (f1 <= f2)
+      | FGt, FloatV f1, FloatV f2 -> BoolV (f1 > f2)
+      | FGte, FloatV f1, FloatV f2 -> BoolV (f1 >= f2)
       | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
     end
 
@@ -47,6 +57,7 @@ module CC = struct
         | _ -> v
       end
     | IConst i -> IntV i
+    | FConst f -> FloatV f
     | BConst b -> BoolV b
     | UConst -> UnitV
     | BinOp (op, f1, f2) ->
@@ -392,17 +403,19 @@ module CC = struct
     | u1, TyVar (_, { contents = Some u2 }) ->
       cast ~config v u1 u2 (r, p)
     (* IdBase *)
-    | TyBool, TyBool
     | TyInt, TyInt
-    | TyUnit, TyUnit -> v
+    | TyBool, TyBool
+    | TyUnit, TyUnit
+    | TyFloat, TyFloat -> v
     (* IdStar *)
     | TyDyn, TyDyn -> v
     (* Succeed / Fail *)
-    | TyDyn, (TyBool | TyInt | TyUnit | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u2) ->
+    | TyDyn, (TyInt | TyBool | TyUnit | TyFloat | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u2) ->
       begin match v, u2 with
-      | Tagged (B, v), TyBool -> v
       | Tagged (I, v), TyInt -> v
+      | Tagged (B, v), TyBool -> v
       | Tagged (U, v), TyUnit -> v
+      | Tagged (F, v), TyFloat -> v
       | Tagged (Fn, v), TyFun (TyDyn, TyDyn) -> v
       | Tagged (Li, v), TyList TyDyn -> v
       | Tagged (Rf, v), TyRef TyDyn -> v
@@ -448,9 +461,10 @@ module CC = struct
       if TyArray u1 = TyArray u2 then v 
       else CastArrayV (v, u1, u2, (r, p))
     (* Tagged *)
-    | TyBool, TyDyn -> Tagged (B, v)
     | TyInt, TyDyn -> Tagged (I, v)
+    | TyBool, TyDyn -> Tagged (B, v)
     | TyUnit, TyDyn -> Tagged (U, v)
+    | TyFloat, TyDyn -> Tagged (F, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Fn, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
     | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)
@@ -501,7 +515,7 @@ module CC = struct
     (* InstBase / InstArrow *)
     | TyDyn, (TyVar (_, ({ contents = None } as x)) as x') -> begin
         match v with
-        | Tagged (B | I | U as t, v) ->
+        | Tagged (I | B | U | F as t, v) ->
           let u = type_of_tag t in
           print_debug "DTI: %a is instantiated to %a@."
             Pp.pp_ty x'

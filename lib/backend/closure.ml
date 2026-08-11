@@ -10,6 +10,7 @@ let toplevel = ref []
 let rec toCls_exp known tvs args funty = function
   | Var x -> Cls.Var x
   | IConst i -> Cls.Int i
+  | FConst f -> Cls.Float f
   | BinOp (x, op, y) -> Cls.BinOp (x, op, y)
   | Nil -> Cls.Nil
   | Cons (x, y) -> Cls.Cons (x, y)

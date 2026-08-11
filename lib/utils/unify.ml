@@ -82,7 +82,7 @@ let rec unify = function
   | CEqual (u1, u2) as c when not (is_static_type u1 && is_static_type u2) ->
     raise @@ Unify_error (asprintf "invalid constraint: %a" pp_constr c)
   (* ioType_bugta = iota *)
-  | CEqual (TyInt, TyInt) | CEqual (TyBool, TyBool) | CEqual (TyUnit, TyUnit) (*when t1 = t2 && is_base_type t1 *) -> ()
+  | CEqual (TyInt, TyInt) | CEqual (TyBool, TyBool) | CEqual (TyUnit, TyUnit) | CEqual (TyFloat, TyFloat) (*when t1 = t2 && is_base_type t1 *) -> ()
   (* X = X *)
   | CEqual (TyVar (a1, _), TyVar (a2, _)) when a1 = a2 -> ()
   (* T11->T12 = T21->T22 *)
@@ -177,9 +177,10 @@ let rec unify_meet u1 u2 = match u1, u2 with
   | TyVar (_, { contents = Some u1 }), u2
   | u1, TyVar (_, { contents = Some u2 }) ->
     unify_meet u1 u2
-  | TyBool, TyBool -> TyBool
   | TyInt, TyInt -> TyInt
+  | TyBool, TyBool -> TyBool
   | TyUnit, TyUnit -> TyUnit
+  | TyFloat, TyFloat -> TyFloat
   | TyDyn, u | u, TyDyn ->
     unify @@ CConsistent (u, TyDyn);
     u

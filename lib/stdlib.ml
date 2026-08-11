@@ -160,7 +160,76 @@ module CC = struct
       | _ -> raise @@ Stdlib_bug "print_int: unexpected value"
       )
 
-  let lib_print_newline ~config = 
+  let lib_print_float ~config =
+    if config.intoB then
+      FunBV (fun _ -> function
+      | FloatV f -> print_float f; UnitV
+      | _ -> raise @@ Stdlib_bug "print_float: unexpected value"
+      )
+    else if config.alt then
+      FunDualV (fun _ ->
+        (function
+        | FloatV f ->
+          print_float f;
+          UnitV
+        | _ -> raise @@ Stdlib_bug "print_float: unexpected value"),
+        (function
+        | FloatV f, CoercionV c ->
+          print_float f;
+          coerce_consume ~config UnitV c
+        | _ -> raise @@ Stdlib_bug "print_float: unexpected value")
+      )
+    else
+      FunSV (fun _ -> function
+      | FloatV f, CoercionV c ->
+        print_float f;
+        coerce_consume ~config UnitV c
+      | _ -> raise @@ Stdlib_bug "print_float: unexpected value"
+      )
+
+  (* let lib_float_of_int ~config =
+    if config.intoB then
+      FunBV (fun _ -> function
+      | IntV i -> FloatV (float_of_int i)
+      | _ -> raise @@ Stdlib_bug "float_of_int: unexpected value"
+      )
+    else if config.alt then
+      FunDualV (fun _ ->
+        (function
+        | IntV i -> FloatV (float_of_int i)
+        | _ -> raise @@ Stdlib_bug "float_of_int: unexpected value"),
+        (function
+        | IntV i, CoercionV c -> coerce_consume ~config (FloatV (float_of_int i)) c
+        | _ -> raise @@ Stdlib_bug "float_of_int: unexpected value")
+      )
+    else
+      FunSV (fun _ -> function
+      | IntV i, CoercionV c -> coerce_consume ~config (FloatV (float_of_int i)) c
+      | _ -> raise @@ Stdlib_bug "float_of_int: unexpected value"
+      )
+
+  let lib_int_of_float ~config =
+    if config.intoB then
+      FunBV (fun _ -> function
+      | FloatV f -> IntV (int_of_float f)
+      | _ -> raise @@ Stdlib_bug "int_of_float: unexpected value"
+      )
+    else if config.alt then
+      FunDualV (fun _ ->
+        (function
+        | FloatV f -> IntV (int_of_float f)
+        | _ -> raise @@ Stdlib_bug "int_of_float: unexpected value"),
+        (function
+        | FloatV f, CoercionV c -> coerce_consume ~config (IntV (int_of_float f)) c
+        | _ -> raise @@ Stdlib_bug "int_of_float: unexpected value")
+      )
+    else
+      FunSV (fun _ -> function
+      | FloatV f, CoercionV c -> coerce_consume ~config (IntV (int_of_float f)) c
+      | _ -> raise @@ Stdlib_bug "int_of_float: unexpected value"
+      ) *)
+
+  let lib_print_newline ~config =
     if config.intoB then
       FunBV (fun _ -> function
       | UnitV -> print_newline (); UnitV
@@ -208,26 +277,58 @@ module CC = struct
       )
     else 
       FunSV (fun _ -> function
-      | UnitV, CoercionV c -> 
+      | UnitV, CoercionV c ->
         let i = read_int () in
         coerce_consume ~config (IntV i) c
       | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
+      )
+
+  let lib_read_float ~config =
+    if config.intoB then
+      FunBV (fun _ -> function
+      | UnitV -> let f = read_float () in FloatV f
+      | _ -> raise @@ Stdlib_bug "read_float: unexpected value"
+      )
+    else if config.alt then
+      FunDualV (fun _ ->
+        (function
+        | UnitV ->
+          let f = read_float () in
+          FloatV f
+        | _ -> raise @@ Stdlib_bug "read_float: unexpected value"),
+        (function
+        | UnitV, CoercionV c ->
+          let f = read_float () in
+          coerce_consume ~config (FloatV f) c
+        | _ -> raise @@ Stdlib_bug "read_float: unexpected value")
+      )
+    else
+      FunSV (fun _ -> function
+      | UnitV, CoercionV c ->
+        let f = read_float () in
+        coerce_consume ~config (FloatV f) c
+      | _ -> raise @@ Stdlib_bug "read_float: unexpected value"
       )
 end
 
 let implementations_direct ~config = [
     "exit", CC.lib_exit ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit);
-    "is_bool", CC.is_some B ~config, is_some_type;
     "is_int", CC.is_some I ~config, is_some_type;
+    "is_bool", CC.is_some B ~config, is_some_type;
     "is_unit", CC.is_some U ~config, is_some_type;
+    "is_float", CC.is_some F ~config, is_some_type;
     "is_fun", CC.is_some Fn ~config, is_some_type;
     "is_list", CC.is_some Li ~config, is_some_type;
     "max_int", IntV max_int, tysc_of_ty TyInt;
     "min_int", IntV min_int, tysc_of_ty TyInt;
     "print_bool", CC.lib_print_bool ~config, tysc_of_ty @@ TyFun (TyBool, TyUnit);
     "print_int", CC.lib_print_int ~config, tysc_of_ty @@ TyFun (TyInt, TyUnit);
+    "print_float", CC.lib_print_float ~config, tysc_of_ty @@ TyFun (TyFloat, TyUnit);
     "print_newline", CC.lib_print_newline ~config, tysc_of_ty @@ TyFun (TyUnit, TyUnit);
     "read_int", CC.lib_read_int ~config, tysc_of_ty @@ TyFun (TyUnit, TyInt);
+    "read_float", CC.lib_read_float ~config, tysc_of_ty @@ TyFun (TyUnit, TyFloat);
+    (* "float_of_int", CC.lib_float_of_int ~config, tysc_of_ty @@ TyFun (TyInt, TyFloat);
+    "int_of_float", CC.lib_int_of_float ~config, tysc_of_ty @@ TyFun (TyFloat, TyInt); *)
   ]
 
 let implementations_eval = [
@@ -277,4 +378,4 @@ let pervasives ~config =
   in
   env, tyenv, kfunenvs
 
-let venv = List.fold_left (fun vs -> fun x -> V.add x vs) V.empty ["print_int"; "print_bool"; "print_newline"; "read_int"; "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]
+let venv = List.fold_left (fun vs -> fun x -> V.add x vs) V.empty ["print_int"; "print_float"; "print_bool"; "print_newline"; "read_int"; "read_float"; (*"float_of_int"; "int_of_float";*) "not"; "succ"; "prec"; "min"; "max"; "abs"; "ignore"]
