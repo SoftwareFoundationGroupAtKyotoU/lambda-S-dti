@@ -1116,6 +1116,7 @@ module C = struct
     | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
     | Index (e1, e2) -> fprintf ppf "%a[%a]" pp_exp e1 pp_exp e2
     | Int i -> pp_print_int ppf i
+    | Float f -> pp_print_float ppf f
     | Str s -> fprintf ppf "\"%s\"" s
     | PreOp (op, e) -> fprintf ppf "%a(%a)" pp_preop op pp_exp e
     | PostOp (e, op) -> fprintf ppf "%a%a" pp_exp e pp_postop op 

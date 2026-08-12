@@ -20,14 +20,16 @@ typedef struct range {
 } range;
 
 typedef enum ground_ty : uint8_t {
-	G_INT,
-	G_BOOL,
-	G_UNIT,
 	G_FN,
 	G_LI,
 	G_TP,
 	G_RF,
 	G_AR,
+	G_INT,
+	G_BOOL,
+	G_FLOAT,
+	// up to here is used for tag in dynamic value
+	G_UNIT,
 } ground_ty;
 
 typedef struct ty ty;

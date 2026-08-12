@@ -50,6 +50,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			}
 			break;
 		}
+		case BASE_FLOAT: {
+			switch (tk2) {
+				case DYN: return tag_value(x, G_FLOAT); // define x:G=>? as dynamic type value
+				default: break;
+			}
+			break;
+		}
 		case TYFUN: {
 			switch (tk2) {
 				case TYFUN: { 				// when t1 and t2 are function type
@@ -338,6 +345,15 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						blame(rid, polarity);
 					}
 				}
+				case BASE_FLOAT: {
+					if (tag_of(x) == G_FLOAT) {													// when t1's injection ground type equals t2
+						// printf("cast success\n");										// R_SUCCEED (x':G=>?=>G -> x')
+						return untag_value(x, G_FLOAT);
+					} else {											// when t1's injection ground type dosen't equal t2
+						// printf("cast fail. t:%d, t_:%d\n", x.d->g, G_UNIT);											// E_FAIL (x':G1=>?=>G2 if G1<>G2 -> blame)
+						blame(rid, polarity);
+					}
+				}
 				case TYFUN: {
 					if (t2->tydat.tyfun.left->tykind == DYN && t2->tydat.tyfun.right->tykind == DYN) {
 						if (tag_of(x) == G_FN) {													// when t1's injection ground type equals t2
@@ -450,6 +466,14 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							#endif
 							*t2 = tyunit;
 							return untag_value(x, G_UNIT);
+						}
+						case(G_FLOAT): {											// when t1's injection ground type is unit
+							// printf("DTI : float was inferred\n");							// R_INSTBASE (x':unit=>?=>X -[X:=unit]> x')
+							#ifdef PROFILE
+							current_inference++;
+							#endif
+							*t2 = tyfloat;
+							return untag_value(x, G_FLOAT);
 						}
 						case(G_FN):	{												// when t1's injection ground type is ?->?
 							// printf("DTI : arrow was inferenced\n");							// R_INSTARROW (x':?->?=>?=>X -[X:=X_1->X_2]> x':?->?=>X_1->X_2)
@@ -621,6 +645,7 @@ value coerce(value v, crc *s) {
 	if (s == &crc_inj_INT) return tag_value(v, G_INT);
 	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
+	if (s == &crc_inj_FLOAT) return tag_value(v, G_FLOAT);
 	if (s == &crc_inj_FN) return tag_value(v, G_FN);
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);
 	// tuple is intentionally omitted

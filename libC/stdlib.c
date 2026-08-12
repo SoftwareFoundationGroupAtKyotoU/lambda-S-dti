@@ -72,6 +72,20 @@ value fun_alt_print_newline(value cls, value v) {
 	return retv;
 }
 
+value fun_print_float(value cls, value v, value w) {
+	value retv;
+	printf("%lf", to_double(v));
+	retv = 0;
+	return coerce(retv, (crc*)w);
+}
+
+value fun_alt_print_float(value cls, value v) {
+	value retv;
+	printf("%lf", to_double(v));
+	retv = 0;
+	return retv;
+}
+
 value fun_read_int(value cls, value v, value w) {
 	value retv;
 	int64_t i = v;
@@ -100,6 +114,36 @@ value fun_alt_read_int(value cls, value v) {
 		exit(1);
 	}
 	return retv;
+}
+
+value fun_read_float(value cls, value v, value w) {
+	double retv;
+	int64_t i = v;
+	if (i == 0) {
+		if (scanf("%lf", &retv) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_float");
+		exit(1);
+	}
+	return coerce(of_double(retv), (crc*)w);
+}
+
+value fun_alt_read_float(value cls, value v) {
+	double retv;
+	int64_t i = v;
+	if (i == 0) {
+		if (scanf("%lf", &retv) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_float");
+		exit(1);
+	}
+	return of_double(retv);
 }
 
 value fun_not_ml(value cls, value b, value k) {
@@ -291,6 +335,13 @@ value fun_print_newline(value cls, value v) {
 	return retv;
 }
 
+value fun_print_float(value cls, value v) {
+	value retv;
+	printf("%lf", to_double(v));
+	retv = 0;
+	return retv;
+}
+
 value fun_read_int(value cls, value v) {
 	value retv;
 	int64_t i = v;
@@ -304,6 +355,21 @@ value fun_read_int(value cls, value v) {
 		exit(1);
 	}
 	return retv;
+}
+
+value fun_read_float(value cls, value v) {
+	double retv;
+	int64_t i = v;
+	if (i == 0) {
+		if (scanf("%lf", &retv) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_float");
+		exit(1);
+	}
+	return of_double(retv);
 }
 
 value fun_not_ml(value cls, value b) {
@@ -410,6 +476,13 @@ value fun_print_newline(value cls, value v, value w) {
 	return coerce(retv, (crc*)w);
 }
 
+value fun_print_float(value cls, value v, value w) {
+	value retv;
+	printf("%lf", to_double(v));
+	retv = 0;
+	return coerce(retv, (crc*)w);
+}
+
 value fun_read_int(value cls, value v, value w) {
 	value retv;
 	int64_t i = v;
@@ -423,6 +496,21 @@ value fun_read_int(value cls, value v, value w) {
 		exit(1);
 	}
 	return coerce(retv, (crc*)w);
+}
+
+value fun_read_float(value cls, value v, value w) {
+	double retv;
+	int64_t i = v;
+	if (i == 0) {
+		if (scanf("%lf", &retv) != 1) {
+		    printf("Error: Input format error or EOF.");
+		    exit(1);
+		}
+	} else {
+		printf("error:not unit value is applied to read_float");
+		exit(1);
+	}
+	return coerce(of_double(retv), (crc*)w);
 }
 
 value fun_not_ml(value cls, value b, value k) {
@@ -522,7 +610,9 @@ value fun_ignore(value cls, value x, value k) {
 static fun f_print_int     = INIT(fun_print_int,     fun_alt_print_int);
 static fun f_print_bool    = INIT(fun_print_bool,    fun_alt_print_bool);
 static fun f_print_newline = INIT(fun_print_newline, fun_alt_print_newline);
+static fun f_print_float   = INIT(fun_print_float,   fun_alt_print_float);
 static fun f_read_int      = INIT(fun_read_int,      fun_alt_read_int);
+static fun f_read_float    = INIT(fun_read_float,    fun_alt_read_float);
 static fun f_not_ml        = INIT(fun_not_ml,        fun_alt_not_ml);
 static fun f_succ          = INIT(fun_succ,          fun_alt_succ);
 static fun f_prec          = INIT(fun_prec,          fun_alt_prec);
@@ -534,7 +624,9 @@ static fun f_ignore        = INIT(fun_ignore,        fun_alt_ignore);
 static fun f_print_int     = INIT(fun_print_int);
 static fun f_print_bool    = INIT(fun_print_bool);
 static fun f_print_newline = INIT(fun_print_newline);
+static fun f_print_float   = INIT(fun_print_float);
 static fun f_read_int      = INIT(fun_read_int);
+static fun f_read_float    = INIT(fun_read_float);
 static fun f_not_ml        = INIT(fun_not_ml);
 static fun f_succ          = INIT(fun_succ);
 static fun f_prec          = INIT(fun_prec);
@@ -549,7 +641,9 @@ value min_int = INT64_MIN >> 3;
 value print_int = (value)&f_print_int;
 value print_bool = (value)&f_print_bool;
 value print_newline = (value)&f_print_newline;
+value print_float = (value)&f_print_float;
 value read_int = (value)&f_read_int;
+value read_float = (value)&f_read_float;
 value not_ml = (value)&f_not_ml;
 value succ = (value)&f_succ;
 value prec = (value)&f_prec;

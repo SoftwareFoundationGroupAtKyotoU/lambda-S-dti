@@ -10,6 +10,7 @@ ty tydyn = { .tykind = DYN };
 ty tyint = { .tykind = BASE_INT };
 ty tybool = { .tykind = BASE_BOOL };
 ty tyunit = { .tykind = BASE_UNIT };
+ty tyfloat = { .tykind = BASE_FLOAT };
 ty tyfn = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
 ty tyli = { .tykind = TYLIST, .tydat = { .tylist = &tydyn } };
 ty tyrf = { .tykind = TYREF, .tydat = { .tyref = &tydyn } };
@@ -42,6 +43,12 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 			// printf("DTI : unit was inferred\n");
 			// printf("%p <- unit\n", tv);
 			*tv = tyunit;
+			return;
+		}
+		case G_FLOAT: {
+			// printf("DTI : float was inferred\n");
+			// printf("%p <- float\n", tv);
+			*tv = tyfloat;
 			return;
 		}
 		case G_FN: {
@@ -117,6 +124,7 @@ int ty_equal (ty *t1, ty *t2) {
 			case BASE_INT:
 			case BASE_BOOL:
 			case BASE_UNIT:
+			case BASE_FLOAT:
 				return 1;
 			case TYFUN:
 				return ty_equal(t1->tydat.tyfun.left, t2->tydat.tyfun.left) && ty_equal(t1->tydat.tyfun.right, t2->tydat.tyfun.right);
@@ -189,6 +197,18 @@ ty *unify_meet(ty* u1, ty* u2) {
                     return u1;
                 case TYVAR:
                     dti(G_UNIT, 0, u2);
+                    return u1;
+                case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case BASE_FLOAT: {
+            switch (u2->tykind) {
+                case DYN:
+                case BASE_FLOAT:
+                    return u1;
+                case TYVAR:
+                    dti(G_FLOAT, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
                 default: break;
@@ -287,6 +307,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                 case BASE_INT: dti(G_INT, 0, u1); return u2;
                 case BASE_BOOL: dti(G_BOOL, 0, u1); return u2;
                 case BASE_UNIT: dti(G_UNIT, 0, u1); return u2;
+                case BASE_FLOAT: dti(G_FLOAT, 0, u1); return u2;
                 case TYFUN: dti(G_FN, 0, u1); return unify_meet(u1, u2);
                 case TYLIST: dti(G_LI, 0, u1); return unify_meet(u1, u2);
                 case TYTUPLE: dti(G_TP, u2->tydat.tytuple.size, u1); return unify_meet(u1, u2);

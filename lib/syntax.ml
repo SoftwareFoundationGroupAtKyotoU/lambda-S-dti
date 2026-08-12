@@ -355,6 +355,7 @@ module C = struct
     | Cast of ty * exp
     | Index of exp * exp
     | Int of int
+    | Float of float
     | Str of string
     | PreOp of preop * exp
     | PostOp of exp * postop

@@ -5,6 +5,7 @@
 #include "types.h"
 #include "blame.h"
 #include "tpl.h"
+#include <gc.h>
 
 #ifdef CAST
 value cast(value, ty*, ty*, uint32_t, uint8_t);
@@ -48,7 +49,14 @@ static inline void update_longest(int new) {
 #endif
 
 static inline uint8_t tag_of(value v) {
-	return (v & 0b111);
+	uint8_t tag = v & 0b111;
+	switch (tag) {
+		case G_BOOL: {
+			if (v == (0b10000 | G_BOOL)) return G_UNIT;
+			return G_BOOL;
+		}
+		default: return tag;
+	}
 }
 
 static inline value tag_value(value v, ground_ty t) {
@@ -56,16 +64,22 @@ static inline value tag_value(value v, ground_ty t) {
 	update_longest(1);
 	#endif
 	switch (t) {
-		case G_INT:
-		case G_BOOL:
-		case G_UNIT:
-			return (value)(v << 3 | t);
 		case G_FN:
 		case G_LI:
 		case G_TP:
 		case G_RF:
 		case G_AR:
 			return (value)(v | t);
+		case G_INT:
+		case G_BOOL:
+			return (value)(v << 3 | t);
+		case G_FLOAT: {
+			value *v_ = GC_MALLOC(sizeof(value*));
+			*v_ = v;
+			return (value)((value)v_ | t);
+		}
+		case G_UNIT:
+			return (value)(0b10000 | G_BOOL);
 	}
 }
 
@@ -73,8 +87,11 @@ static inline value untag_value(value v, ground_ty t) {
 	switch (t) {
 		case G_INT:
 		case G_BOOL:
-		case G_UNIT:
 			return (value)(v >> 3);
+		case G_UNIT:
+			return 0b0;
+		case G_FLOAT:
+			return *(value*)(v & ~0b111);
 		case G_FN:
 		case G_LI:
 		case G_TP:

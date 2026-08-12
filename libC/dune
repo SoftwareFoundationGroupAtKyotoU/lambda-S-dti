@@ -9,6 +9,7 @@
   (capp.h as libC/capp.h)
   (crc.c as libC/crc.c)
   (crc.h as libC/crc.h)
+  (dbl.h as libC/dbl.h)
   (fun.h as libC/fun.h)
   (lst.c as libC/lst.c)
   (lst.h as libC/lst.h)

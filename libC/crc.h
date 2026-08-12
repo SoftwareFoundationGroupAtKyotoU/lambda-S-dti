@@ -77,6 +77,7 @@ extern crc crc_id;
 extern crc crc_inj_INT;
 extern crc crc_inj_BOOL;
 extern crc crc_inj_UNIT;
+extern crc crc_inj_FLOAT;
 extern crc crc_inj_FN;
 extern crc crc_inj_LI;
 extern crc crc_inj_RF;

@@ -61,11 +61,11 @@ let fast_proj : (id, tag * range * polarity) Hashtbl.t = Hashtbl.create 256
 let fast_proj_tp : (id, int * range * polarity) Hashtbl.t = Hashtbl.create 256
 
 let register_fast_crc x c = match c with
-  | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf | Ar as g)) -> Hashtbl.replace fast_inj x g
+  | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf | Ar as g)) -> Hashtbl.replace fast_inj x g
   | CSeq (CId _, CInj (Tp _)) -> Hashtbl.replace fast_inj x (Tp 0)
   | CSeq (CMRef (_, TyDyn), CInj Rf) -> Hashtbl.replace fast_inj x Rf
   | CSeq (CMArray (_, TyDyn), CInj Ar) -> Hashtbl.replace fast_inj x Ar
-  | CSeq (CProj ((I | B | U | Fn | Li | Rf | Ar as g), (r, p)), CId _) -> Hashtbl.replace fast_proj x (g, r, p)
+  | CSeq (CProj ((I | B | U | F | Fn | Li | Rf | Ar as g), (r, p)), CId _) -> Hashtbl.replace fast_proj x (g, r, p)
   | CSeq (CProj (Tp n, (r, p)), CId _) -> Hashtbl.replace fast_proj_tp x (n, r, p)
   | CSeq (CProj (Rf, (r, p)), CMRef (_, TyDyn)) -> Hashtbl.replace fast_proj x (Rf, r, p)
   | CSeq (CProj (Ar, (r, p)), CMArray (_, TyDyn)) -> Hashtbl.replace fast_proj x (Ar, r, p)
@@ -151,10 +151,8 @@ let rec static_crc tvs c =
     let cached = CrcManager.mem c in
     let constant = match c with
     | CId _
-    | CSeq (CId _, CInj I) 
-    | CSeq (CId _, CInj B) 
-    | CSeq (CId _, CInj U) 
-    | CSeq (CId _, CInj Fn) 
+    | CSeq (CId _, CInj (I | B | U | F))
+    | CSeq (CId _, CInj Fn)
     | CSeq (CId _, CInj Li) -> true
     | CSeq (CId _, CInj (Tp _)) -> false
     | CSeq (CId _, CInj Rf)

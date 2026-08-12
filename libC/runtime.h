@@ -14,6 +14,7 @@
 #include "tpl.h"
 #include "ref.h"
 #include "arr.h"
+#include "dbl.h"
 
 #include "app.h"
 #include "capp.h"

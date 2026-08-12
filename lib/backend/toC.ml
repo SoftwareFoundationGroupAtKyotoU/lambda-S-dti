@@ -325,7 +325,7 @@ and toC_assign ~config x f =
   match f with
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
-  | Cls.Float _ -> raise @@ ToC_bug "toC_assign: float C backend codegen is not yet implemented"
+  | Cls.Float f -> assign_x (App (Var "of_double", [Float f]))
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
     let size = List.length ys in
@@ -350,7 +350,7 @@ and toC_assign ~config x f =
       []
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
-    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
     | _ ->
       if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
@@ -394,7 +394,11 @@ and toC_assign ~config x f =
       assign_x (Arrow (Cast (PTR ARR, Var y), "length"))
     else
       assign_x (App (Var "length", [Cast (PTR ARR, Var y)]))
-  | Cls.BinOp (y, op, z) -> assign_x (BinOp (Var y, op, Var z))
+  | Cls.BinOp (y, op, z) -> begin match op with
+    | Plus | Minus | Mult | Div | Mod | And | Or | Eq | Neq | Lt | Lte | Gt | Gte -> assign_x (BinOp (Var y, op, Var z))
+    | FPlus | FMinus | FMult | FDiv ->  assign_x (App (Var "of_double", [BinOp (App (Var "to_double", [Var y]), op, App (Var "to_double", [Var z]))]))
+    | FEq | FNeq | FLt | FLte | FGt | FGte -> assign_x (BinOp (App (Var "to_double", [Var y]), op, App (Var "to_double", [Var z])))
+    end
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (PreOp (Deref, (Cast (PTR LST, Var x))), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
