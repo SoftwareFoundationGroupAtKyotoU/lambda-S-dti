@@ -91,6 +91,7 @@ for TEST_DIR in \
   original/array \
   original/bool \
   original/dynamic \
+  original/float \
   original/int \
   original/list \
   original/match \

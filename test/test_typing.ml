@@ -40,10 +40,23 @@ module ITGL = struct
     in
     List.map test [
       "1", "int";
-      "true", "bool";
       "1 + 2 + 3", "int";
+      "true", "bool";
       "(true : ?)", "?";
       "((true : ?) : int)", "int";
+      (* float *)
+      "1.5", "float";
+      "1.5 +. 2.5 +. 3.5", "float";
+      "1.5 -. 2.5", "float";
+      "1.5 *. 2.5", "float";
+      "1.5 /. 2.5", "float";
+      "1.5 =. 1.5", "bool";
+      "1.5 <>. 2.5", "bool";
+      "1.5 <. 2.5", "bool";
+      "1.5 <=. 2.5", "bool";
+      "1.5 >. 2.5", "bool";
+      "1.5 >=. 2.5", "bool";
+      (* fun *)
       "fun x -> x + 1", "int -> int";
       "fun x -> x", "'a -> 'a";
       "fun (x:?) -> x + 2", "? -> int";
@@ -125,6 +138,15 @@ module ITGL = struct
       "x";
       "let f (x:'a) = x in f (); f true";
       "let rec f (x:'a) = x in f (); f true";
+      (* float: int と float の演算子は互換しない *)
+      "1 +. 2";
+      "1.5 + 2.5";
+      "1 +. 2.5";
+      "1.5 +. 2";
+      "1 =. 2";
+      "1.5 = 2.5";
+      "if 1.5 then true else false";
+      "1.5 :: [1]";
       (* list *)
       "1 :: true";
       "1 :: [true]";

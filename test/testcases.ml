@@ -28,6 +28,22 @@ module Static = struct
     ["(1 < 2) && (3 > 4)", "bool", "false"];
   ]
 
+  let floats = [
+    ["1.5", "float", "1.5"];
+    ["1.0", "float", "1."];
+    ["1.5 +. 2.5", "float", "4."];
+    ["5.0 -. 1.5", "float", "3.5"];
+    ["2.0 *. 3.5", "float", "7."];
+    ["7.0 /. 2.0", "float", "3.5"];
+    ["1.5 =. 1.5", "bool", "true"];
+    ["1.5 <>. 2.5", "bool", "true"];
+    ["2.5 <. 3.5", "bool", "true"];
+    ["3.5 <=. 3.5", "bool", "true"];
+    ["4.5 >. 3.5", "bool", "true"];
+    ["3.5 >=. 3.5", "bool", "true"];
+    ["-.1.5", "float", "-1.5"];
+  ]
+
   let if_then_else = [
     ["if 2 < 3 then 4 else 5", "int", "4"];
     ["if 3 < 3 then 4 else 5", "int", "5"];
@@ -204,6 +220,9 @@ module Gradual = struct
   let type_ascription ~config = ext ~config [
     ["(2 : ?)", "?", "2: int => ?", "2<<id{int};int!>>"];
     ["((2: ?): int)", "int", "2", "2"];
+    ["(2.5 : ?)", "?", "2.5: float => ?", "2.5<<id{float};float!>>"];
+    ["((2.5 : ?) : float)", "float", "2.5", "2.5"];
+    ["1.5 +. (((2.5:?):float):?)", "float", "4.", "4."];
   ]
 
   let abstraction ~config = ext ~config [
@@ -385,6 +404,7 @@ let suites ~config =
     "Unary Operations", Static.unary_ops;
     "Binary Operations", Static.binary_ops;
     "Binary Operations (Gradual)", Gradual.binary_ops ~config;
+    "Floats", Static.floats;
     "Type Ascription", Gradual.type_ascription ~config;
     "If Expression", Static.if_then_else;
     "Let Definition", Static.let_definition;
