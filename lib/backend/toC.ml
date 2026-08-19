@@ -569,7 +569,8 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     FunDef (
       No,
       { ret_ty = INT; fname = if bench = 0 then "main" else "mutant" ^ string_of_int bench; params = []},
-      (if config.hash then [SExp (App (Var "init_crcs", []))] else [])
+      (if bench = 0 then [SExp (App (Var "GC_INIT", []))] else [])
+        @ (if config.hash then [SExp (App (Var "init_crcs", []))] else [])
         @ (if config.monotonic then [SExp (App (Var "sc_init", [Int 16]))] else [])
         @ (if List.length ranges <> 0 then [SAssign (Var "range_list", Var "local_range_list")] else [])
         @ toC_exp ~is_main:true ~config f
@@ -577,11 +578,3 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   ]
   in
   inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ fundecl @ fundef @ decl @ main
-
-(* 
-  fprintf ppf "%s\n%s\n%a%a%a%a%s%s%s%a%s"
-    (if bench = 0 then "#define GC_INITIAL_HEAP_SIZE 1048576\n" else "")
-    ...
-    (if bench = 0 then asprintf "int main() {\nGC_INIT();\n%s" init_crcs else asprintf "int mutant%d() {\n%s" bench init_crcs)
-    ...
-*)

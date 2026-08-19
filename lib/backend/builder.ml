@@ -3,6 +3,8 @@ open Config
 
 exception Build_bad of string
 
+let gc_ini_heap_var = "-D GC_INITIAL_HEAP_SIZE=1048576 "
+
 (* result_C/<base>_out.c と result/<base>.out はプロセス全体で共有された
  * 固定ディレクトリ (Resources.result_c_dir/result_dir) の下に置かれるため、
  * base が入力ファイル名だけだと (異なるディレクトリの同名ファイル) や
@@ -36,11 +38,12 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then
     let bench_opt_level = if profile then "-O0" else "-O3" in
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir
       file
       mode_str
       (if profile then "_profile" else "")
+      gc_ini_heap_var
       mode_var
       eager_var
       monotonic_var
@@ -60,9 +63,10 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
     match config.file with
     | Some filename ->
       let base = unique_base config filename in
-      asprintf "clang %s/%s_out.c %s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 %s"
+      asprintf "clang %s/%s_out.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -g3 %s"
         result_c_dir
         base
+        gc_ini_heap_var
         mode_var
         eager_var
         monotonic_var
@@ -75,8 +79,9 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
         opt_level
     | None ->
       (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -g3 -std=c2x -pg -O3 *)
-      asprintf "clang %s/stdin.c %s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg %s"
+      asprintf "clang %s/stdin.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -g3 -std=c2x -pg %s"
         result_c_dir
+        gc_ini_heap_var
         mode_var
         eager_var
         monotonic_var
@@ -135,16 +140,15 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   close_out oc;
   (* .c 生成 *)
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
-  Printf.fprintf oc "%s\n%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include <sys/time.h>\n#include <sys/resource.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
-    "#define GC_INITIAL_HEAP_SIZE 1048576\n"
+  Printf.fprintf oc "%s\n%s\n%s\n%s"
+    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include <sys/time.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
     (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
-    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nint i;\nstruct rusage start_usage, end_usage;\n"
+    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nint i;\nstruct timeval start_tv, end_tv;\n"
     "int main(){\nGC_INIT();\n";
   let rec print_itr n =
     if n = mutants_length + 1 then ()
-    else begin 
-      Printf.fprintf oc "for (i = 0; i<ITR; i++){\n\n#ifdef HASH\nclear_crc_caches();\n#endif\ngetrusage(RUSAGE_SELF, &start_usage);\nmutant%d();\ngetrusage(RUSAGE_SELF, &end_usage);\ntimes[%d][i] = (double)(end_usage.ru_utime.tv_sec - start_usage.ru_utime.tv_sec) + (double)(end_usage.ru_utime.tv_usec - start_usage.ru_utime.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
+    else begin
+      Printf.fprintf oc "for (i = 0; i<ITR; i++){\n\n#ifdef HASH\nclear_crc_caches();\n#endif\ngettimeofday(&start_tv, NULL);\nmutant%d();\ngettimeofday(&end_tv, NULL);\ntimes[%d][i] = (double)(end_tv.tv_sec - start_tv.tv_sec) + (double)(end_tv.tv_usec - start_tv.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
        n (n - 1) n;
       print_itr (n + 1)
     end
