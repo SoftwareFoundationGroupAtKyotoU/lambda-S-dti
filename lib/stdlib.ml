@@ -146,9 +146,9 @@ let pervasives ~config =
   let env, tyenv = List.fold_left add_to_envs initial_envs builtins in
   let pick_tvs name = match Environment.find name tyenv with TyScheme (tvs, _) -> tvs in
   let initial_compile_env = (Environment.empty, Environment.empty, Environment.empty), V.empty, Environment.empty in
-  let add_to_compile_env ((tvsenv, alphaenv, betaenv), known, args) builtin = match builtin.c_backing with
-    | CImpl cname -> (Environment.add builtin.name (pick_tvs builtin.name) tvsenv, Environment.add builtin.name cname alphaenv, Environment.add cname cname betaenv), V.add cname known, Environment.add cname ([], 0) args
-    | CUnimplemented -> (tvsenv, alphaenv, betaenv), known, args
+  let add_to_compile_env ((alphaenv, tvsenv,  betaenv), known, args) builtin = match builtin.c_backing with
+    | CImpl cname -> (Environment.add builtin.name cname alphaenv, Environment.add cname (pick_tvs builtin.name) tvsenv, Environment.add cname cname betaenv), V.add cname known, Environment.add cname ([], 0) args
+    | CUnimplemented -> (alphaenv, tvsenv, betaenv), known, args
   in
   let compile_env = List.fold_left add_to_compile_env initial_compile_env builtins in
   env, tyenv, compile_env

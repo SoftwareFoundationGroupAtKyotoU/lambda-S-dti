@@ -27,7 +27,7 @@ type 't state = {
   ty : ty;
   tyenv : tysc Environment.t;
   env : CC.value Environment.t;
-  compile_env : (tyvar list Environment.t * id Environment.t * id Environment.t) * V.t * (id list * int) Environment.t;
+  compile_env : (id Environment.t * tyvar list Environment.t * id Environment.t) * V.t * (id list * int) Environment.t;
 }
 
 let init_state program ~config =
@@ -102,7 +102,7 @@ let eval ppf state ~config =
   { state with env }, x, v
 
 let kNorm_funs ppf state ~config =
-  let (tvsenv, alphaenv, betaenv), _, _ = state.compile_env in
+  let (alphaenv, tvsenv, betaenv), _, _ = state.compile_env in
   print_title ppf "k-Normalization";
   let f, alphaenv = KNormal.CC.alpha_program alphaenv state.program in
   fprintf ppf "alpha: %a@." Pp.CC.pp_program f;
