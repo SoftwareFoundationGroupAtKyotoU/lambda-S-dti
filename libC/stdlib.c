@@ -2,22 +2,57 @@
 #include "stdlib.h"
 
 #ifdef ALT
-value fun_print_int(value cls, value v, value w) {
-	value retv;
-	printf("%ld", v);
-	retv = 0;
-	return coerce(retv, (crc*)w);
-}
+#define DEF_UNARY(fname, core) \
+  value fun_##fname(value cls, value v, value w) { return toplevel_coerce(core(cls, v), (crc*)w); } \
+  value fun_alt_##fname(value cls, value v) { return core(cls, v); }
+#define DEF_BINARY(fname) \
+  value fun_alt_##fname(value cls, value x) { \
+    value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1); \
+    ((fun*)retv)->funcM = fun_alt_##fname##_x; \
+    ((fun*)retv)->funcD = fun_##fname##_x; \
+    ((fun*)retv)->env[0] = (void*)x; \
+    return retv; \
+  } \
+  value fun_##fname(value cls, value x, value w) { \
+    value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1); \
+    ((fun*)retv)->funcM = fun_alt_##fname##_x; \
+    ((fun*)retv)->funcD = fun_##fname##_x; \
+    ((fun*)retv)->env[0] = (void*)x; \
+    return toplevel_coerce(retv, (crc*)w); \
+  }
+#elif defined(CAST) || defined(STATIC)
+#define DEF_UNARY(fname, core) \
+  value fun_##fname(value cls, value v) { return core(cls, v); }
+#define DEF_BINARY(fname) \
+  value fun_##fname(value cls, value x) { \
+    value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1); \
+    ((fun*)retv)->funcM = fun_##fname##_x; \
+    ((fun*)retv)->env[0] = (void*)x; \
+    return retv; \
+  }
+#else
+#define DEF_UNARY(fname, core) \
+  value fun_##fname(value cls, value v, value w) { return toplevel_coerce(core(cls, v), (crc*)w); }
+#define DEF_BINARY(fname) \
+  value fun_##fname(value cls, value x, value w) { \
+    value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1); \
+    ((fun*)retv)->funcD = fun_##fname##_x; \
+    ((fun*)retv)->env[0] = (void*)x; \
+    return toplevel_coerce(retv, (crc*)w); \
+  }
+#endif
 
-value fun_alt_print_int(value cls, value v) {
-	value retv;
-	printf("%ld", v);
-	retv = 0;
-	return retv;
-}
+/* ---- core implementations ---- */
 
-value fun_print_bool(value cls, value v, value w) {
-	value retv;
+static inline value _core_print_int(value cls, value v) {
+	(void)cls;
+	printf("%ld", v);
+	return 0;
+}
+DEF_UNARY(print_int, _core_print_int)
+
+static inline value _core_print_bool(value cls, value v) {
+	(void)cls;
 	int64_t i = v;
 	if (i == 1) {
 		printf("true");
@@ -27,27 +62,12 @@ value fun_print_bool(value cls, value v, value w) {
 		printf("error:not boolean value is applied to print_bool");
 		exit(1);
 	}
-	retv = 0;
-	return coerce(retv, (crc*)w);
+	return 0;
 }
+DEF_UNARY(print_bool, _core_print_bool)
 
-value fun_alt_print_bool(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 1) {
-		printf("true");
-	} else if (i == 0) {
-		printf("false");
-	} else {
-		printf("error:not boolean value is applied to print_bool");
-		exit(1);
-	}
-	retv = 0;
-	return retv;
-}
-
-value fun_print_newline(value cls, value v, value w) {
-	value retv;
+static inline value _core_print_newline(value cls, value v) {
+	(void)cls;
 	int64_t i = v;
 	if (i == 0) {
 		printf("\n");
@@ -55,59 +75,25 @@ value fun_print_newline(value cls, value v, value w) {
 		printf("error:not unit value is applied to print_newline");
 		exit(1);
 	}
-	retv = 0;
-	return coerce(retv, (crc*)w);
+	return 0;
 }
+DEF_UNARY(print_newline, _core_print_newline)
 
-value fun_alt_print_newline(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		printf("\n");
-	} else {
-		printf("error:not unit value is applied to print_newline");
-		exit(1);
-	}
-	retv = 0;
-	return retv;
-}
-
-value fun_print_float(value cls, value v, value w) {
-	value retv;
+static inline value _core_print_float(value cls, value v) {
+	(void)cls;
 	printf("%lf", to_double(v));
-	retv = 0;
-	return coerce(retv, (crc*)w);
+	return 0;
 }
+DEF_UNARY(print_float, _core_print_float)
 
-value fun_alt_print_float(value cls, value v) {
-	value retv;
-	printf("%lf", to_double(v));
-	retv = 0;
-	return retv;
-}
-
-value fun_read_int(value cls, value v, value w) {
+static inline value _core_read_int(value cls, value v) {
+	(void)cls;
 	value retv;
 	int64_t i = v;
 	if (i == 0) {
 		if (scanf("%ld", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}
-	} else {
-		printf("error:not unit value is applied to read_int");
-		exit(1);
-	}
-	return coerce(retv, (crc*)w);
-}
-
-value fun_alt_read_int(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%ld", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
+			printf("Error: Input format error or EOF.");
+			exit(1);
 		}
 	} else {
 		printf("error:not unit value is applied to read_int");
@@ -115,29 +101,16 @@ value fun_alt_read_int(value cls, value v) {
 	}
 	return retv;
 }
+DEF_UNARY(read_int, _core_read_int)
 
-value fun_read_float(value cls, value v, value w) {
+static inline value _core_read_float(value cls, value v) {
+	(void)cls;
 	double retv;
 	int64_t i = v;
 	if (i == 0) {
 		if (scanf("%lf", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}
-	} else {
-		printf("error:not unit value is applied to read_float");
-		exit(1);
-	}
-	return coerce(of_double(retv), (crc*)w);
-}
-
-value fun_alt_read_float(value cls, value v) {
-	double retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%lf", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
+			printf("Error: Input format error or EOF.");
+			exit(1);
 		}
 	} else {
 		printf("error:not unit value is applied to read_float");
@@ -145,509 +118,100 @@ value fun_alt_read_float(value cls, value v) {
 	}
 	return of_double(retv);
 }
+DEF_UNARY(read_float, _core_read_float)
 
-value fun_not_ml(value cls, value b, value k) {
-	if(b == 1) {
-		value _retv = 0;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
+static inline value _core_float_of_int(value cls, value x) {
+	(void)cls;
+	return of_double((double)x);
+}
+DEF_UNARY(float_of_int, _core_float_of_int)
+
+static inline value _core_int_of_float(value cls, value x) {
+	(void)cls;
+	return (value)to_double(x);
+}
+DEF_UNARY(int_of_float, _core_int_of_float)
+
+static inline value _core_not_ml(value cls, value b) {
+	(void)cls;
+	if (b == 1) {
+		return 0;
 	} else {
-		value _retv = 1;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
+		return 1;
 	}
 }
+DEF_UNARY(not_ml, _core_not_ml)
 
-value fun_alt_not_ml(value cls, value b) {
-	if(b == 1) {
-		value retv =  0;
-		return retv;
+static inline value _core_succ(value cls, value x) {
+	(void)cls;
+	return x + 1;
+}
+DEF_UNARY(succ, _core_succ)
+
+static inline value _core_prec(value cls, value x) {
+	(void)cls;
+	return x - 1;
+}
+DEF_UNARY(prec, _core_prec)
+
+static inline value _core_abs_ml(value cls, value x) {
+	(void)cls;
+	if (x >= 0) {
+		return x;
 	} else {
-		value retv = 1;
-		return retv;
+		return 0 - x;
 	}
 }
+DEF_UNARY(abs_ml, _core_abs_ml)
 
-value fun_succ(value cls, value x, value k) {
-	value _retv = x + 1;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
+static inline value _core_ignore(value cls, value x) {
+	(void)cls;
+	(void)x;
+	return 0;
 }
+DEF_UNARY(ignore, _core_ignore)
 
-value fun_alt_succ(value cls, value x) {
-	value retv = x + 1;
-	return retv;
-}
-
-value fun_prec(value cls, value x, value k) {
-	value _retv = x - 1;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_alt_prec(value cls, value x) {
-	value retv = x - 1;
-	return retv;
-}
-
-value fun_min_x(value cls, value y, value k) {
+static inline value _core_min_x(value cls, value y) {
 	value x = (value)((fun*)cls)->env[0];
-	if(x < y) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value retv = coerce(y, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_alt_min_x(value cls, value y) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x < y) {
+	if (x < y) {
 		return x;
 	} else {
 		return y;
 	}
 }
+DEF_UNARY(min_x, _core_min_x)
+DEF_BINARY(min)
 
-value fun_min(value cls, value x, value k) {
-	value _retv;
-	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)_retv)->funcM = fun_alt_min_x;
-	((fun*)_retv)->funcD = fun_min_x;
-	((fun*)_retv)->env[0] = (void*)x;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_alt_min(value cls, value x) {
-	value retv;
-	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)retv)->funcM = fun_alt_min_x;
-	((fun*)retv)->funcD = fun_min_x;
-	((fun*)retv)->env[0] = (void*)x;
-	return retv;
-}
-
-value fun_max_x(value cls, value y, value k) {
+static value _core_max_x(value cls, value y) {
 	value x = (value)((fun*)cls)->env[0];
-	if(x > y) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value retv = coerce(y, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_alt_max_x(value cls, value y) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x > y) {
+	if (x > y) {
 		return x;
 	} else {
 		return y;
 	}
 }
+DEF_UNARY(max_x, _core_max_x)
+DEF_BINARY(max)
 
-value fun_max(value cls, value x, value k) {
-	value _retv;
-	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)_retv)->funcM = fun_alt_max_x;
-	((fun*)_retv)->funcD = fun_max_x;
-	((fun*)_retv)->env[0] = (void*)x;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_alt_max(value cls, value x) {
-	value retv;
-	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)retv)->funcM = fun_alt_max_x;
-	((fun*)retv)->funcD = fun_max_x;
-	((fun*)retv)->env[0] = (void*)x;
-	return retv;
-}
-
-value fun_abs_ml(value cls, value x, value k) {
-	if(x >= 0) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value _retv = 0 - x;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_alt_abs_ml(value cls, value x) {
-	if(x >= 0) {
-		return x;
-	} else {
-		value retv = 0 - x;
-		return retv;
-	}
-}
-
-value fun_ignore(value cls, value x, value k) {
-	value _retv = 0;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_alt_ignore(value cls, value x) {
-	value retv = 0;
-	return retv;
-}
-
-#elif defined(CAST) || defined(STATIC)
-value fun_print_int(value cls, value v) {
-	value retv;
-	printf("%ld", v);
-	retv = 0;
-	return retv;
-}
-
-value fun_print_bool(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 1) {
-		printf("true");
-	} else if (i == 0) {
-		printf("false");
-	} else {
-		printf("error:not boolean value is applied to print_bool");
-		exit(1);
-	}
-	retv = 0;
-	return retv;
-}
-
-value fun_print_newline(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		printf("\n");
-	} else {
-		printf("error:not unit value is applied to print_newline");
-		exit(1);
-	}
-	retv = 0;
-	return retv;
-}
-
-value fun_print_float(value cls, value v) {
-	value retv;
-	printf("%lf", to_double(v));
-	retv = 0;
-	return retv;
-}
-
-value fun_read_int(value cls, value v) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%ld", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}	
-	} else {
-		printf("error:not unit value is applied to read_int");
-		exit(1);
-	}
-	return retv;
-}
-
-value fun_read_float(value cls, value v) {
-	double retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%lf", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}
-	} else {
-		printf("error:not unit value is applied to read_float");
-		exit(1);
-	}
-	return of_double(retv);
-}
-
-value fun_not_ml(value cls, value b) {
-	if(b == 1) {
-		value retv = 0;
-		return retv;
-	} else {
-		value retv = 1;
-		return retv;
-	}
-}
-
-value fun_succ(value cls, value x) {
-	value retv = x + 1;
-	return retv;
-}
-
-value fun_prec(value cls, value x) {
-	value retv = x - 1;
-	return retv;
-}
-
-value fun_min_x(value cls, value y) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x < y) {
-		return x;
-	} else {
-		return y;
-	}
-}
-
-value fun_min(value cls, value x) {
-	value retv;
-	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)retv)->funcM = fun_min_x;
-	((fun*)retv)->env[0] = (void*)x;
-	return retv;
-}
-
-value fun_max_x(value cls, value y) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x > y) {
-		return x;
-	} else {
-		return y;
-	}
-}
-
-value fun_max(value cls, value x) {
-	value retv;
-	retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)retv)->funcM = fun_max_x;
-	((fun*)retv)->env[0] = (void*)x;
-	return retv;
-}
-
-value fun_abs_ml(value cls, value x) {
-	if(x >= 0) {
-		return x;
-	} else {
-		value retv = 0 - x;
-		return retv;
-	}
-}
-
-value fun_ignore(value cls, value x) {
-	value retv = 0;
-	return retv;
-}
-
-#else
-value fun_print_int(value cls, value v, value w) {
-	value retv;
-	printf("%ld", v);
-	retv = 0;
-	return coerce(retv, (crc*)w);
-}
-
-value fun_print_bool(value cls, value v, value w) {
-	value retv;
-	int64_t i = v;
-	if (i == 1) {
-		printf("true");
-	} else if (i == 0) {
-		printf("false");
-	} else {
-		printf("error:not boolean value is applied to print_bool");
-		exit(1);
-	}
-	retv = 0;
-	return coerce(retv, (crc*)w);
-}
-
-value fun_print_newline(value cls, value v, value w) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		printf("\n");
-	} else {
-		printf("error:not unit value is applied to print_newline");
-		exit(1);
-	}
-	retv = 0;
-	return coerce(retv, (crc*)w);
-}
-
-value fun_print_float(value cls, value v, value w) {
-	value retv;
-	printf("%lf", to_double(v));
-	retv = 0;
-	return coerce(retv, (crc*)w);
-}
-
-value fun_read_int(value cls, value v, value w) {
-	value retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%ld", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}
-	} else {
-		printf("error:not unit value is applied to read_int");
-		exit(1);
-	}
-	return coerce(retv, (crc*)w);
-}
-
-value fun_read_float(value cls, value v, value w) {
-	double retv;
-	int64_t i = v;
-	if (i == 0) {
-		if (scanf("%lf", &retv) != 1) {
-		    printf("Error: Input format error or EOF.");
-		    exit(1);
-		}
-	} else {
-		printf("error:not unit value is applied to read_float");
-		exit(1);
-	}
-	return coerce(of_double(retv), (crc*)w);
-}
-
-value fun_not_ml(value cls, value b, value k) {
-	if(b == 1) {
-		value _retv = 0;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
-	} else {
-		value _retv = 1 ;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_succ(value cls, value x, value k) {
-	value _retv = x + 1;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_prec(value cls, value x, value k) {
-	value _retv = x - 1;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_min_x(value cls, value y, value k) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x < y) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value retv = coerce(y, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_min(value cls, value x, value k) {
-	value _retv;
-	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)_retv)->funcD = fun_min_x;
-	((fun*)_retv)->env[0] = (void*)x;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_max_x(value cls, value y, value k) {
-	value x = (value)((fun*)cls)->env[0];
-	if(x > y) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value retv = coerce(y, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_max(value cls, value x, value k) {
-	value _retv;
-	_retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1);
-	((fun*)_retv)->funcD = fun_max_x;
-	((fun*)_retv)->env[0] = (void*)x;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-
-value fun_abs_ml(value cls, value x, value k) {
-	if(x >= 0) {
-		value retv = coerce(x, (crc*)k);
-		return retv;
-	} else {
-		value _retv = 0 - x;
-		value retv = coerce(_retv, (crc*)k);
-		return retv;
-	}
-}
-
-value fun_ignore(value cls, value x, value k) {
-	value _retv = 0;
-	value retv = coerce(_retv, (crc*)k);
-	return retv;
-}
-#endif
+#undef DEF_UNARY
+#undef DEF_BINARY
 
 #ifdef ALT
-#define INIT(func, func_alt) \
-    { .funcD = (func), .funcM = (func_alt) }
+#define STDLIB_TABLE(n) static fun f_##n = { .funcD = fun_##n, .funcM = fun_alt_##n };
 #elif defined(CAST) || defined(STATIC)
-#define INIT(func) \
-    { .funcM = (func) }
+#define STDLIB_TABLE(n) static fun f_##n = { .funcM = fun_##n };
 #else
-#define INIT(func) \
-    { .funcD = (func) }
+#define STDLIB_TABLE(n) static fun f_##n = { .funcD = fun_##n };
 #endif
 
-#ifdef ALT
-static fun f_print_int     = INIT(fun_print_int,     fun_alt_print_int);
-static fun f_print_bool    = INIT(fun_print_bool,    fun_alt_print_bool);
-static fun f_print_newline = INIT(fun_print_newline, fun_alt_print_newline);
-static fun f_print_float   = INIT(fun_print_float,   fun_alt_print_float);
-static fun f_read_int      = INIT(fun_read_int,      fun_alt_read_int);
-static fun f_read_float    = INIT(fun_read_float,    fun_alt_read_float);
-static fun f_not_ml        = INIT(fun_not_ml,        fun_alt_not_ml);
-static fun f_succ          = INIT(fun_succ,          fun_alt_succ);
-static fun f_prec          = INIT(fun_prec,          fun_alt_prec);
-static fun f_min           = INIT(fun_min,           fun_alt_min);
-static fun f_max           = INIT(fun_max,           fun_alt_max);
-static fun f_abs_ml        = INIT(fun_abs_ml,        fun_alt_abs_ml);
-static fun f_ignore        = INIT(fun_ignore,        fun_alt_ignore);
-#else
-static fun f_print_int     = INIT(fun_print_int);
-static fun f_print_bool    = INIT(fun_print_bool);
-static fun f_print_newline = INIT(fun_print_newline);
-static fun f_print_float   = INIT(fun_print_float);
-static fun f_read_int      = INIT(fun_read_int);
-static fun f_read_float    = INIT(fun_read_float);
-static fun f_not_ml        = INIT(fun_not_ml);
-static fun f_succ          = INIT(fun_succ);
-static fun f_prec          = INIT(fun_prec);
-static fun f_min           = INIT(fun_min);
-static fun f_max           = INIT(fun_max);
-static fun f_abs_ml        = INIT(fun_abs_ml);
-static fun f_ignore        = INIT(fun_ignore);
-#endif
+STDLIB_UNARY_LIST(STDLIB_TABLE)
+STDLIB_BINARY_LIST(STDLIB_TABLE)
+#undef STDLIB_TABLE
+
+#define STDLIB_EXPORT(n) value n = (value)&f_##n;
+STDLIB_UNARY_LIST(STDLIB_EXPORT)
+STDLIB_BINARY_LIST(STDLIB_EXPORT)
+#undef STDLIB_EXPORT
 
 value max_int = INT64_MAX >> 3;
 value min_int = INT64_MIN >> 3;
-value print_int = (value)&f_print_int;
-value print_bool = (value)&f_print_bool;
-value print_newline = (value)&f_print_newline;
-value print_float = (value)&f_print_float;
-value read_int = (value)&f_read_int;
-value read_float = (value)&f_read_float;
-value not_ml = (value)&f_not_ml;
-value succ = (value)&f_succ;
-value prec = (value)&f_prec;
-value min = (value)&f_min;
-value max = (value)&f_max;
-value abs_ml = (value)&f_abs_ml;
-value ignore = (value)&f_ignore;

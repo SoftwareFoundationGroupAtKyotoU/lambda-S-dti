@@ -1,4 +1,10 @@
 print_int (succ 5);
 print_int (max 3 7);
 print_int (min 3 7);
-print_int (abs (-3));;
+print_int (abs (-3));
+print_int (prec 5);
+print_bool (not true);
+print_bool (not false);
+print_float (float_of_int 4);
+print_int (int_of_float 3.9);
+print_newline ();;

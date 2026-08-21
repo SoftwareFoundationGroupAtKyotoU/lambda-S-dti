@@ -27,12 +27,12 @@ type 't state = {
   ty : ty;
   tyenv : tysc Environment.t;
   env : CC.value Environment.t;
-  kfunenvs : tyvar list Environment.t * id Environment.t * id Environment.t;
+  compile_env : (tyvar list Environment.t * id Environment.t * id Environment.t) * V.t * (id list * int) Environment.t;
 }
 
 let init_state program ~config =
-  let env, tyenv, kfunenvs = Stdlib.pervasives ~config in
-  { program; ty = TyVar (-1, { contents = None }); tyenv; env; kfunenvs }
+  let env, tyenv, compile_env = Stdlib.pervasives ~config in
+  { program; ty = TyVar (-1, { contents = None }); tyenv; env; compile_env }
 
 let change_state_program program state =
   {
@@ -40,7 +40,7 @@ let change_state_program program state =
     ty = state.ty;
     tyenv = state.tyenv;
     env = state.env;
-    kfunenvs = state.kfunenvs;
+    compile_env = state.compile_env;
   }
 
 (* --- public API --- *)
@@ -102,7 +102,7 @@ let eval ppf state ~config =
   { state with env }, x, v
 
 let kNorm_funs ppf state ~config =
-  let (tvsenv, alphaenv, betaenv) = state.kfunenvs in
+  let (tvsenv, alphaenv, betaenv), _, _ = state.compile_env in
   print_title ppf "k-Normalization";
   let f, alphaenv = KNormal.CC.alpha_program alphaenv state.program in
   fprintf ppf "alpha: %a@." Pp.CC.pp_program f;
@@ -117,15 +117,15 @@ let kNorm_funs ppf state ~config =
        fprintf ppf "assoc: %a@." Pp.KNorm.pp_program fassoc;
        iter betaenv fassoc)
   in
-  let kf, kfunenvs = iter betaenv f in
+  let kf, _ = iter betaenv f in
   fprintf ppf "kf: %a@." Pp.KNorm.pp_program kf;
-  let state = change_state_program kf state in
-  { state with kfunenvs = kfunenvs }
+  change_state_program kf state
 
-let closure ppf state ~config = 
+let closure ppf state ~config =
   print_title ppf "Closure";
-  let p = state.program 
-          |> Closure.toCls Stdlib.venv
+  let _, known, args = state.compile_env in
+  let p = state.program
+          |> Closure.toCls known args
           |> Static_manage.static_program
           |> Translate.Cls.altCls ~config
   in

@@ -89,8 +89,8 @@ let rec toCls_exp known tvs args funty = function
       | _ -> Cls.MakeCls (x, { entry = Cls.to_label x; fvs = zs;  offset = List.length tvs'; ftvs = tvs }, f2')
     else f2'
 
-let toCls known kf = 
+let toCls known args kf = 
   let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
   toplevel := [];
-  let p = toCls_exp known [] Environment.empty V.empty f in
+  let p = toCls_exp known [] args V.empty f in
   Cls.Prog (List.rev !toplevel, p)
