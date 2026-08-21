@@ -1,7 +1,7 @@
-let rec mklist (n : int) (i : int) (acc : [int]) : [int] =
+let rec mklist (n : int) (i : int) (acc : int list) : int list =
   if i = n then acc else mklist n (i + 1) (i :: acc) in
 
-let rec zipWith (op : int -> int -> int) (xs : [int]) (ys : [int]) (acc : [int]) : [int] =
+let rec zipWith (op : int -> int -> int) (xs : int list) (ys : int list) (acc : int list) : int list =
   match xs with
     [] -> acc
   | x :: xt ->
