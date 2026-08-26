@@ -266,9 +266,12 @@ def main():
     args = parser.parse_args()
 
     grift_path = os.path.abspath(args.grift_path)
+    if not os.path.exists(grift_path):
+        print("Error: Grift File not found.")
+        return
     input_path = os.path.abspath(args.input_path)
-    if not os.path.exists(grift_path) or not os.path.exists(input_path):
-        print("Error: File not found.")
+    if not os.path.exists(input_path):
+        print("Error: Grift Input not found.")
         return
 
     filename = os.path.basename(grift_path)

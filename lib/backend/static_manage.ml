@@ -36,6 +36,7 @@ module Manager (K : MANAGER_ARG) = struct
   let find a = Static.find a !current_state.cache
   let mem a = Static.mem a !current_state.cache
   let get_definitions () = Static.bindings !current_state.cache
+  let init () = current_state := { counter = 0; cache = Static.empty }
 end
 
 module TyManager = Manager (struct

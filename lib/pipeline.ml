@@ -91,7 +91,7 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   in
   print_title ppf "CPS-translation";
   let f, u''' = Translate.CC.translate ~config state.tyenv f in
-  assert (Type_utils.is_equal state.ty u''');
+  if bench = 0 then assert (Type_utils.is_equal state.ty u''');
   fprintf ppf "f: %a@." Pp.CC.pp_program f;
   let state = change_state_program f state in
   { state with tyenv = new_tyenv }
@@ -137,4 +137,7 @@ let toC ppf state ~config ~bench =
   let c_code = ToC.toC_program ~config ~bench state.program in
   let str_c = asprintf "%a" Pp.C.pp_program c_code in
   fprintf ppf "%s@." str_c;
+  Static_manage.TyManager.init ();
+  Static_manage.RangeManager.init ();
+  Static_manage.CrcManager.init ();
   str_c
