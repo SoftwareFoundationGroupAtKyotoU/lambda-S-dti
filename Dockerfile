@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     opam nano \
     lsb-release wget software-properties-common gnupg \
     libgc-dev libcjson-dev \
+    patch \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -34,6 +35,14 @@ RUN ln -s $(racket -e '(require setup/dirs) (displayln (find-user-console-bin-di
 RUN cd /root/.racket/7.2/pkgs/grift/src/backend/runtime && \
     sed -i 's/-std=c99/-std=gnu99 -D_GNU_SOURCE/g' Makefile && \
     make
+
+# Grift 本体の既知バグを修正（emit-boiler-plate の出力順序、GC_INITIAL_HEAP_SIZE が
+# #include 群より後に定義されてしまう問題）。upstream には未反映のため patch で当てる。
+COPY patches/grift/0001-fix-emit-boiler-plate-order.patch /tmp/
+RUN cd /root/.racket/7.2/pkgs/grift && \
+    patch -p1 < /tmp/0001-fix-emit-boiler-plate-order.patch && \
+    raco setup --pkgs grift && \
+    rm /tmp/0001-fix-emit-boiler-plate-order.patch
 
 # -----------------------------------------------------------------------------
 # 3. OCaml (lambda-S-dti) のセットアップ

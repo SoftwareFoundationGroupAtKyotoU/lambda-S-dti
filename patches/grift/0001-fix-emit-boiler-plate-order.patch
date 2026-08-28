@@ -1,0 +1,29 @@
+--- a/src/backend/c/generate-c.rkt
++++ b/src/backend/c/generate-c.rkt
+@@ -145,19 +145,19 @@
+     (display "write_cast_profiler_results_file(argv[0]);")))
+
+ (: emit-boiler-plate (-> Void))
+ (define (emit-boiler-plate)
+   (display "\n//This is the boiler plate\n")
+-  (for ([i : String C-INCLUDES])
+-    (printf "#include ~a\n" i))
+   (match (garbage-collector)
+     ['Boehm
+-     (display
+-      (string-append
+-       (format "#define GC_INITIAL_HEAP_SIZE ~a\n" (* (init-heap-kilobytes) 1024))
+-       (format "#include \"~a\"\n" boehm-gc.h-path)))]
+-    ['None (printf "#include \"~a\"" none-gc.h-path)])
++     (printf "#define GC_INITIAL_HEAP_SIZE ~a\n" (* (init-heap-kilobytes) 1024))]
++    ['None (void)])
++  (for ([i : String C-INCLUDES])
++    (printf "#include ~a\n" i))
++  (match (garbage-collector)
++    ['Boehm (printf "#include \"~a\"\n" boehm-gc.h-path)]
++    ['None (printf "#include \"~a\"" none-gc.h-path)])
+   (newline)
+   (display timer-boiler-plate)
+   (newline))
+
+ (: emit-var-declarations (-> (Listof Uid) Void))
