@@ -1,4 +1,4 @@
-let create (l1 : int) (l2 : int) : int array =
+let create l1 l2 =
   let x = Array.make (l1 * l2) 0 in
   for i = 0 to l1-1 do
     for j = 0 to l2-1 do

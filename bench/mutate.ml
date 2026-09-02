@@ -16,15 +16,12 @@
         N_fun+2*N_fix+1 .. N_fun+2*N_fix+N_tapp: TAppExp の型引数 ty（後行順= e の中を先に番号付け → 自分）
 *)
 
-(* open Format *)
 open Lambda_S_dti
 open Utils.Error
 open Syntax
 open Syntax.ITGL
 
-
 module IntSet = Set.Make (Int)
-module IntMap = Map.Make (Int)
 
 (* ---------- ユーティリティ ---------- *)
 
@@ -35,10 +32,6 @@ module IntMap = Map.Make (Int)
  * ベンチマークとして意味がないため。 *)
 let is_synthetic (x : id) : bool =
   String.length x > 0 && x.[0] = '_'
-
-let rec drop n xs =
-  if n <= 0 then xs
-  else match xs with [] -> [] | _ ::tl -> drop (n - 1) tl
 
 (* ty = a1 -> a2 -> ... -> an -> r を (doms, ret) に分解 *)
 let split_arrows (t : ty) : ty list * ty =
@@ -80,24 +73,6 @@ let rec count_fix_nodes (t : exp) : int = match t with
   | MatchExp (_, e, ms) -> count_fix_nodes e + List.fold_left (fun n (_, e) -> n + count_fix_nodes e) 0 ms
   | TupleExp (_, es) -> List.fold_left (fun n e -> n + count_fix_nodes e) 0 es
 
-let (*rec*) count_tapp_nodes ((*t*)_ : exp) : int = 0
-  (*match t with
-  | Var _ | IConst _ | BConst _ | NilExp _ -> 0
-  | TAppExp (_, e0, _) -> 1 + count_tapp_nodes e0
-  | FunExp (_,_,_,e0)
-  | FixExp (_,_,_,_,_,e0)
-  | TFunExp(_,_,e0)
-  | AscExp (_,e0,_)
-  | CAppExp(_,_,e0) -> count_tapp_nodes e0
-  | BinOp  (_,_,e1,e2)
-  | AppExp (_,  e1,e2)
-  | ConsExp(_,  e1,e2)
-  | LetExp (_,_,e1,e2) -> count_tapp_nodes e1 + count_tapp_nodes e2
-  | IfExp   (_,e1,e2,e3)
-  | MatchExp(_,e1,e2,_,_,e3) ->
-      count_tapp_nodes e1 + count_tapp_nodes e2 + count_tapp_nodes e3 *)
-
-
 (* ---------- Phase 1: メタ解析（リンク収集 + 個数） ---------- *)
 
 (* リンク: Fix 出現順 fix_idx に対し、(pos, lam_idx) のリスト
@@ -108,7 +83,6 @@ type link = { fix_idx : int; pos : int; lam_idx : int }
 type analysis = {
   n_fun  : int;               (* Fun 総数（後行順） *)
   n_fix  : int;               (* Fix 総数（出現順） *)
-  n_tapp : int;               (* TApp 総数 *)
   links  : (int * (int * int) list) list;  (* fix_idx -> [(pos, lam_idx)]  *)
 }
 
@@ -176,16 +150,14 @@ let build_link_map (ls:link list) : (int * (int * int) list) list =
 let analyze (t:exp) : analysis =
   let n_fun = count_fun_params t in
   let n_fix = count_fix_nodes t in
-  let n_tapp = count_tapp_nodes t in
   let (_c_end, _f_end, links) = collect_links 0 0 t in
-  { n_fun; n_fix; n_tapp; links = build_link_map links }
+  { n_fun; n_fix; links = build_link_map links }
 
 (* ---------- Phase 2: 適用（Fun 変異 + Fix.ty2 同期 + Fix.ty1 変異） ---------- *)
 type selection = {
   sel_fun      : IntSet.t;   (* 1..n_fun *)
   sel_fix      : IntSet.t;   (* Fix.ty1 *)
   sel_fix_ret  : IntSet.t;   (* Fix.ty2 return *)
-  sel_tapp     : IntSet.t;   (* TApp ty *)
 }
 
 let selection_of_global_indices (a:analysis) (idxs:int list) : selection =
@@ -208,30 +180,22 @@ let selection_of_global_indices (a:analysis) (idxs:int list) : selection =
          then IntSet.add (i - (a.n_fun + a.n_fix)) s else s)
       IntSet.empty idxs
   in
-  let base = a.n_fun + 2 * a.n_fix in
-  let sel_tapp =
-    List.fold_left
-      (fun s i ->
-         if i > base && i <= base + a.n_tapp
-         then IntSet.add (i - base) s else s)
-      IntSet.empty idxs
-  in
-  { sel_fun; sel_fix; sel_fix_ret; sel_tapp }
+  { sel_fun; sel_fix; sel_fix_ret }
 
 (* 適用本体。lamc/fixc は現在までに消費した Fun/Fix のカウンタ（後行順/出現順）。 *)
-let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:exp) : int * int * int * exp = match t with
-  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (lamc, fixc, tappc, t)
+let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (t:exp) : int * int * exp = match t with
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (lamc, fixc, t)
   | FunExp (r, (x, annot, u), e) when is_synthetic x ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    (lamc1, fixc1, tappc1, FunExp (r, (x, annot, u), e'))
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    (lamc1, fixc1, FunExp (r, (x, annot, u), e'))
   | FunExp (r, (x, annot, u), e) ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
     let idx_here = lamc1 + 1 in
     let u' = if IntSet.mem idx_here sel.sel_fun then TyDyn else u in
-    (idx_here, fixc1, tappc1, FunExp (r, (x, annot, u'), e'))
+    (idx_here, fixc1, FunExp (r, (x, annot, u'), e'))
   | FixExp (r, x, (y, annot, u1), u2, e) when is_synthetic x ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    (lamc1, fixc1, tappc1, FixExp (r, x, (y, annot, u1), u2, e'))
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    (lamc1, fixc1, FixExp (r, x, (y, annot, u1), u2, e'))
   | FixExp (r, x, (y, annot, u1), u2, e) ->
     let my_fix_idx = fixc + 1 in
     let u1' = if IntSet.mem my_fix_idx sel.sel_fix then TyDyn else u1 in
@@ -253,7 +217,7 @@ let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:
     let u2' = build_arrows doms' ret' in
 
     (* 先に内部へ適用してから AscExp との返り型同期 *)
-    let lamc1, fixc1, tappc1, e_applied = apply a sel lamc my_fix_idx tappc e in
+    let lamc1, fixc1, e_applied = apply a sel lamc my_fix_idx e in
     let e_synced =
       let heads, base = collect_head_funs e_applied in
       match base with
@@ -265,82 +229,81 @@ let rec apply (a:analysis) (sel:selection) (lamc:int) (fixc:int) (tappc:int) (t:
             heads base'
       | _ -> e_applied
     in
-    (lamc1, fixc1, tappc1, FixExp (r, x, (y, annot, u1'), u2', e_synced))
+    (lamc1, fixc1, FixExp (r, x, (y, annot, u1'), u2', e_synced))
   | BinOp (r, op, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, BinOp (r, op, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, BinOp (r, op, e1', e2'))
   | AppExp (r, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, AppExp (r, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, AppExp (r, e1', e2'))
   | ConsExp (r, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, ConsExp (r, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, ConsExp (r, e1', e2'))
   | LetExp (r, id, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, LetExp (r, id, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, LetExp (r, id, e1', e2'))
   | IfExp (r, e1, e2, e3) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    let lamc3, fixc3, tappc3, e3' = apply a sel lamc2 fixc2 tappc2 e3 in
-    (lamc3, fixc3, tappc3, IfExp (r, e1', e2', e3'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    let lamc3, fixc3, e3' = apply a sel lamc2 fixc2 e3 in
+    (lamc3, fixc3, IfExp (r, e1', e2', e3'))
   | MatchExp (r, e, ms) ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    let rec apply_ms lamc fixc tappc ms res = match ms with
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    let rec apply_ms lamc fixc ms res = match ms with
       | (mf, e) :: ms ->
-        let lamc, fixc, tappc, e = apply a sel lamc fixc tappc e in
-        apply_ms lamc fixc tappc ms ((mf, e) :: res)
-      | [] -> (lamc, fixc, tappc, MatchExp (r, e', List.rev res))
+        let lamc, fixc, e = apply a sel lamc fixc e in
+        apply_ms lamc fixc ms ((mf, e) :: res)
+      | [] -> (lamc, fixc, MatchExp (r, e', List.rev res))
     in
-    apply_ms lamc1 fixc1 tappc1 ms []
+    apply_ms lamc1 fixc1 ms []
   | AscExp (r, e1, ty) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    (lamc1, fixc1, tappc1, AscExp (r, e1', ty))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    (lamc1, fixc1, AscExp (r, e1', ty))
   | TupleExp (r, es) ->
-    let rec apply_es lamc fixc tappc es res = match es with
+    let rec apply_es lamc fixc es res = match es with
       | e :: es ->
-        let lamc, fixc, tappc, e = apply a sel lamc fixc tappc e in
-        apply_es lamc fixc tappc es (e :: res)
-      | [] -> (lamc, fixc, tappc, TupleExp (r, List.rev res))
+        let lamc, fixc, e = apply a sel lamc fixc e in
+        apply_es lamc fixc es (e :: res)
+      | [] -> (lamc, fixc, TupleExp (r, List.rev res))
     in
-    apply_es lamc fixc tappc es []
+    apply_es lamc fixc es []
   | RefExp (r, e) ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    (lamc1, fixc1, tappc1, RefExp (r, e'))
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    (lamc1, fixc1, RefExp (r, e'))
   | DerefExp (r, e) ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    (lamc1, fixc1, tappc1, DerefExp (r, e'))
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    (lamc1, fixc1, DerefExp (r, e'))
   | SubstExp (r, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, SubstExp (r, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, SubstExp (r, e1', e2'))
   | MakeArrayExp (r, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, MakeArrayExp (r, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, MakeArrayExp (r, e1', e2'))
   | GetExp (r, e1, e2) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    (lamc2, fixc2, tappc2, GetExp (r, e1', e2'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    (lamc2, fixc2, GetExp (r, e1', e2'))
   | PutExp (r, e1, e2, e3) ->
-    let lamc1, fixc1, tappc1, e1' = apply a sel lamc fixc tappc e1 in
-    let lamc2, fixc2, tappc2, e2' = apply a sel lamc1 fixc1 tappc1 e2 in
-    let lamc3, fixc3, tappc3, e3' = apply a sel lamc2 fixc2 tappc2 e3 in
-    (lamc3, fixc3, tappc3, PutExp (r, e1', e2', e3'))
+    let lamc1, fixc1, e1' = apply a sel lamc fixc e1 in
+    let lamc2, fixc2, e2' = apply a sel lamc1 fixc1 e2 in
+    let lamc3, fixc3, e3' = apply a sel lamc2 fixc2 e3 in
+    (lamc3, fixc3, PutExp (r, e1', e2', e3'))
   | LengthExp (r, e) ->
-    let lamc1, fixc1, tappc1, e' = apply a sel lamc fixc tappc e in
-    (lamc1, fixc1, tappc1, LengthExp (r, e'))
-
+    let lamc1, fixc1, e' = apply a sel lamc fixc e in
+    (lamc1, fixc1, LengthExp (r, e'))
 
 (* ---------- 公開 API ---------- *)
 
 let mutate_term_with_indices (idxs:int list) (t:exp) : exp =
   let a   = analyze t in
   let sel = selection_of_global_indices a idxs in
-  let (_lam_end, _fix_end, _tapp_end, t') = apply a sel 0 0 0 t in
+  let (_lam_end, _fix_end, t') = apply a sel 0 0 t in
   t'
 
 let mutate_prog_with_indices (idxs:int list) (p : program) : program =
@@ -378,8 +341,7 @@ let mutate_all (p:program) : program list =
   let _, tyenv, _ = Stdlib.pervasives ~config:(Config.create ~compile:true ()) in
   let p, u = Typing.ITGL.type_of_program tyenv p in
   let _, p, _ = Normalize.ITGL.normalize tyenv p u in
-  Format.fprintf Format.std_formatter "program's type is %a\n" Pp.pp_ty u;
   let a = analyze t in
-  let n_total = a.n_fun + 2 * a.n_fix + a.n_tapp in
+  let n_total = a.n_fun + 2 * a.n_fix in
   let subsets = all_subsets_by_length n_total in
   List.map (fun idxs -> mutate_prog_with_indices idxs p) subsets

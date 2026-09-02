@@ -91,8 +91,6 @@ def report_absolute_longest(target: str, static: bool, top_k: int = 30, extra_me
                     "runs": len(arr),
                     "extra_metrics": extracted_extras,
                     "after_mutate": obj.get("after_mutate"),
-                    "after_insertion": obj.get("after_insertion"),
-                    "after_translation": obj.get("after_translation"),
                 })
         
         # 平均実行時間の降順でソート
@@ -152,17 +150,6 @@ def report_absolute_longest(target: str, static: bool, top_k: int = 30, extra_me
                     md.write("**after_mutate**:\n\n```ocaml\n")
                     md.write(am)
                     md.write("\n```\n\n")
-                    
-                    ai = c.get("after_insertion") or ""
-                    md.write("**after_insertion**:\n\n```ocaml\n")
-                    md.write(ai)
-                    md.write("\n```\n\n")
-                    
-                    at = c.get("after_translation")
-                    if at:
-                        md.write(f"**after_translation ({target})**:\n\n```ocaml\n")
-                        md.write(at)
-                        md.write("\n```\n\n")
 
     print(f"Saved absolute longest execution time reports under: {out_dir}")
 

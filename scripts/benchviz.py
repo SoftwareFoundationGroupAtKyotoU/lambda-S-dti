@@ -21,24 +21,24 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    # ("SLNC", ["SLHC", "ALNC", "ALHC"]),
-    # ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFT", "GRIFTC"]),
-    # ("STATICENC", ["ALHC", "SLHC", "ALNC", "SLNC"]),
-    # ("GRIFT", ["ALHC", "SLHC", "ALNC", "SLNC", "GRIFTC"]),
-    # ("GRIFTC", ["SLHC"]),
-    # ("STATICENC", ["GRIFTC", "SLHC"]),
-    # ("SLNC", ["SLHC"]),
-    ("SLHC", ["ALNC"]),
+    # ("SLN", ["SLH", "ALN", "ALH"]),
+    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFT"]),
+    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
+    # ("GRIFT", ["ALH", "SLH", "ALN", "SLN", "GRIFT"]),
+    # ("GRIFTC", ["SLH"]),
+    # ("STATICEN", ["GRIFTC", "SLH"]),
+    # ("SLN", ["SLH"]),
+    ("SLH", ["ALN"]),
 ]
 
 STYLE_MAP = {
-    "SLNC": {"color": "tab:blue", "marker": "s"},
-    "ALNC": {"color": "tab:orange", "marker": "^"},
-    "SLHC": {"color": "tab:green", "marker": "d"},
-    "ALHC": {"color": "tab:purple", "marker": "<"},
+    "SLN": {"color": "tab:blue", "marker": "s"},
+    "ALN": {"color": "tab:orange", "marker": "^"},
+    "SLH": {"color": "tab:green", "marker": "d"},
+    "ALH": {"color": "tab:purple", "marker": "<"},
     "GRIFT": {"color": "tab:red", "marker": "v"},
     "GRIFTC": {"color": "tab:brown", "marker": ">"},
-    "STATICENC": {"color": "tab:pink", "marker": "p"},
+    "STATICEN": {"color": "tab:pink", "marker": "p"},
 }
 
 # =========================
@@ -46,20 +46,20 @@ STYLE_MAP = {
 # =========================
 def format_comp_label(name: str) -> str:
     """
-    SLHCなどの文字列を論文用語に変換する。
+    SLHなどの文字列を論文用語に変換する。
     1文字目: S(Id-Opt ON), A(Id-Opt OFF)
     3文字目: H(HashCons ON), N(HashCons OFF)
-    ※2・4文字目(L, C等)は無視する。
+    ※2文字目(L等)は無視する。
     """
     # if len(name) == 4:
     #     # id_opt = "ON" if name[0].upper() == 'S' else "OFF"
     #     hc_opt = "ON" if name[2].upper() == 'H' else "OFF"
     #     return f"Gradti (HashCons: {hc_opt})"
-    # if name == "STATICENC"
-    if name == "SLHC":
+    # if name == "STATICEN"
+    if name == "SLH":
         return "Polymorphic"
         # return "Gradti"
-    if name == "ALNC":
+    if name == "ALN":
         return "Molymorphic"
     if name == "GRIFTC":
         return "Grift (C backend)"
@@ -73,7 +73,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         fs = ""
 
     # "|" で結合して正規表現を作る
-    # ["ALC", "SLC"] -> "ALC|SLC"
+    # ["AL", "SL"] -> "AL|SL"
     comp_pattern = "|".join(comp)
     comp_label = "|".join(comp) 
 
@@ -81,10 +81,11 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "log_root": "logs",
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
-            "church_65532",
-            "evenodd", "fib", "fold", "loop", "map", "incsum",
-            "mklist", "tak", "zipwith", 
-            "map_mono", "fold_mono", "zipwith_mono", "loop_mono"
+            "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak"
+            "church-65532", "church-65532-mono"
+            "evenodd", "fib", "loop",
+            "fold", "incsum", "map", "mklist", "zipwith", 
+            "map-mono", "fold-mono", "zipwith-mono", "loop-mono",
         ],
         # 相対グラフ
         "relative": {
@@ -245,7 +246,7 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
     最新ログディレクトリから、
       bench -> mutant_index -> {
         'C_times': [], 'S_times': [],
-        'after_mutate': str|None, 'after_insertion': str|None, 'after_translation': str|None,
+        'after_mutate': str|None,
         'C_pm': float|None
       }
     の辞書を返す。
@@ -269,7 +270,6 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
                     f"{base}_pm": None,
                     f"{base}_promoted_bytes": None,
                     "after_mutate": None, 
-                    "after_insertion": None,
                 }
                 if extra_metrics:
                     for m in extra_metrics:
@@ -279,7 +279,6 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
                 for c in comp:
                     slot[f"{c}_times"] = []
                     slot[f"{c}_promoted_bytes"] = None
-                    slot[f"after_translation_{c}"] = None
                     if extra_metrics:
                         for m in extra_metrics:
                             slot[f"{c}_{m}"] = None
@@ -290,8 +289,6 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
         n = int(obj.get("mutant_index"))
         times = obj.get("times_sec", [])
         am = obj.get("after_mutate")
-        ai = obj.get("after_insertion")
-        at = obj.get("after_translation")
         mem = obj.get("mem")
 
         ensure_slot(bench, n)
@@ -303,10 +300,6 @@ def ingest_latest_as_map(base: str, comp: List[str], cfg: Dict[str, Any], extra_
                 slot[target_key].extend(times)
         if am and slot["after_mutate"] is None:
             slot["after_mutate"] = am
-        if ai and slot["after_insertion"] is None:
-            slot["after_insertion"] = ai
-        if mode in comp and at:
-            slot[f"after_translation_{mode}"] = at
         if mode == base and slot[f"{base}_pm"] is None:
             cpm = _extract_c_pm_from_mem(mem)
             if cpm is not None:
@@ -503,20 +496,9 @@ def write_mutants_markdown(base: str,
         for (n, r, ci, bm, cm, nb, nc, code) in cases:
             md.write(f"## Mutant {n} — {comp}/{base}: {r:.6g} (±{ci:.3g})\n\n")
             am = code.get("after_mutate") or ""
-            ai = code.get("after_insertion") or ""
-            at = code.get("after_translation")
             md.write("**after_mutate**:\n\n```ocaml\n")
             md.write(am)
             md.write("\n```\n\n")
-
-            md.write(f"**after_insertion ({base})**:\n\n```ocaml\n")
-            md.write(ai)
-            md.write("\n```\n\n")
-
-            if at:
-                md.write(f"**after_translation ({comp})**:\n\n```ocaml\n")
-                md.write(at)
-                md.write("\n```\n\n")
 
 # =========================
 # 異常値検出

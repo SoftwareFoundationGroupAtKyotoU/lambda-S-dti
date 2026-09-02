@@ -57,8 +57,6 @@ def main():
                 n, r, ci, cm, sm, nc, nsamp,
                 {
                     "after_mutate": slot.get("after_mutate"),
-                    "after_insertion": slot.get("after_insertion"),
-                    "after_translation": slot.get("after_translation"),
                 }
             ))
 

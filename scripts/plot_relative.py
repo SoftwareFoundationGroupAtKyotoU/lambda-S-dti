@@ -111,8 +111,8 @@ def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
     print(f"Saved relative plots under: {out_dir}")
 
 STATIC_BENCHMARK_ORDER = [
-    "evenodd", "fib", "incsum", "loop_mono", "map_mono", 
-    "tak", "loop", "map", "church_65532"
+    "evenodd", "fib", "incsum", "loop-mono", "map-mono", 
+    "tak", "loop", "map", "church-65532"
 ]
 
 def plot_static_summary(base: str, comp: Union[str, List[str]]):
