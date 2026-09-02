@@ -54,24 +54,31 @@ let collect_head_funs (e : exp) : (range * id * anotated * ty) list * exp =
   in
   go [] e
 
-(* Fun（後行順）・Fix（出現順）の個数カウント *)
-let rec count_fun_params (t : exp) : int = match t with
-  | FunExp (_, (x, _, _), e) -> (if is_synthetic x then 0 else 1) + count_fun_params e
-  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> 0
-  | FixExp (_, _, _, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fun_params e
-  | BinOp (_, _, e1 , e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fun_params e1 + count_fun_params e2
-  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fun_params e1 + count_fun_params e2 + count_fun_params e3
-  | MatchExp (_, e, ms) -> count_fun_params e + List.fold_left (fun n (_, e) -> n + count_fun_params e) 0 ms
-  | TupleExp (_, es) -> List.fold_left (fun n e -> n + count_fun_params e) 0 es
+(* Fun（後行順）・Fix（出現順）の個数を1回の走査で数える。
+   合成名（`_for_loop` 等）は is_synthetic で除外。 *)
+let rec count_nodes (t : exp) : int * int (* n_fun, n_fix *) = match t with
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (0, 0)
+  | FunExp (_, (x, _, _), e) ->
+    let nf, nx = count_nodes e in ((if is_synthetic x then nf else nf + 1), nx)
+  | FixExp (_, x, _, _, e) ->
+    let nf, nx = count_nodes e in (nf, (if is_synthetic x then nx else nx + 1))
+  | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_nodes e
+  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2)
+  | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) ->
+    let a1, b1 = count_nodes e1 and a2, b2 = count_nodes e2 in (a1 + a2, b1 + b2)
+  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) ->
+    let a1, b1 = count_nodes e1 and a2, b2 = count_nodes e2 and a3, b3 = count_nodes e3 in
+    (a1 + a2 + a3, b1 + b2 + b3)
+  | MatchExp (_, e, ms) ->
+    List.fold_left
+      (fun (a, b) (_, e) -> let a1, b1 = count_nodes e in (a + a1, b + b1))
+      (count_nodes e) ms
+  | TupleExp (_, es) ->
+    List.fold_left
+      (fun (a, b) e -> let a1, b1 = count_nodes e in (a + a1, b + b1)) (0, 0) es
 
-let rec count_fix_nodes (t : exp) : int = match t with
-  | FixExp (_, x, _, _, e) -> (if is_synthetic x then 0 else 1) + count_fix_nodes e
-  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> 0
-  | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) -> count_fix_nodes e
-  | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2) | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) -> count_fix_nodes e1 + count_fix_nodes e2
-  | IfExp (_, e1, e2, e3) | PutExp (_, e1, e2, e3) -> count_fix_nodes e1 + count_fix_nodes e2 + count_fix_nodes e3
-  | MatchExp (_, e, ms) -> count_fix_nodes e + List.fold_left (fun n (_, e) -> n + count_fix_nodes e) 0 ms
-  | TupleExp (_, es) -> List.fold_left (fun n e -> n + count_fix_nodes e) 0 es
+(* collect_links が Fix 直下ごとに呼ぶ。n_fix 側は捨てる。 *)
+let count_fun_params (t : exp) : int = fst (count_nodes t)
 
 (* ---------- Phase 1: メタ解析（リンク収集 + 個数） ---------- *)
 
@@ -148,8 +155,7 @@ let build_link_map (ls:link list) : (int * (int * int) list) list =
   List.sort (fun (a,_) (b,_) -> compare a b) !acc
 
 let analyze (t:exp) : analysis =
-  let n_fun = count_fun_params t in
-  let n_fix = count_fix_nodes t in
+  let n_fun, n_fix = count_nodes t in
   let (_c_end, _f_end, links) = collect_links 0 0 t in
   { n_fun; n_fix; links = build_link_map links }
 

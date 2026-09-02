@@ -12,7 +12,6 @@ let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
   let mode_str = full_mode_name t.mode t.eager t.hash in
   try
     let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash t.mode in
-    Format.fprintf Format.std_formatter "debug: bench_file_mode\n";
     let writer = Bench_output.open_writer ~log_dir ~mode_str ~file:t.file in
     let ppf = Utils.Format.empty_formatter in
     let null_fmt = Format.make_formatter (fun _ _ _ -> ()) (fun () -> ()) in
@@ -54,7 +53,8 @@ let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
     Bench_output.close_writer writer;
     Builder.build_run_bench ~log_dir ~file:t.file ~mode_str ~itr ~mutants_length:(List.length t.mutants) ~config;
     Bench_progress.print ~final:false prog
-  with Failure msg -> Format.eprintf "[Skip] %s@." msg
+  with
+  | e -> Format.eprintf "[Skip] %s: %s@." mode_str (Printexc.to_string e)
 
 let run_dynamize ~log_dir ~itr ~total_targets targets =
   List.iteri (fun i t -> 
@@ -77,7 +77,8 @@ let run_grift ~itr ~static ~files =
       let input_path = Bench_config.input_path ~fs file in
       let static_flag = if fs then " --static" else "" in
       let cmd = Format.asprintf "python3 benchC/run_grift.py %s %s%s -i %d" grift_path input_path static_flag itr in
-      if Sys.command cmd <> 0 then failwith (Printf.sprintf "python grift%s" static_flag)
+      let rc = Sys.command cmd in
+      if rc <> 0 then Format.eprintf "[grift failed] %s%s (exit %d)@." file static_flag rc
   in
   List.iter (go ~fs:static) files
 
