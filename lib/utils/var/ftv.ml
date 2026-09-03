@@ -77,7 +77,7 @@ module CC = struct
   open Syntax.CC
 
   let rec ftv_exp: exp -> TV.t = function
-    | Var (_, us) -> List.fold_right TV.union (List.map ftv_tyarg us) TV.empty
+    | Var (_, us) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg us)
     | IConst _
     | FConst _
     | BConst _
@@ -87,7 +87,7 @@ module CC = struct
     | CoercionExp c -> ftv_coercion c
     | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | IfExp (f1, f2, f3) ->
-      List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
+      List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2; f3])
     | AppMExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | AppDExp (f1, (f2, f3)) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
     | LetExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
@@ -104,8 +104,8 @@ module CC = struct
     | MakeArrayExp (f1, f2, u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
     | GetExp (f1, f2, None) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | GetExp (f1, f2, Some u) -> TV.union (ftv_exp f1) @@ TV.union (ftv_exp f2) (ftv_ty u)
-    | PutExp (f1, f2, f3, None) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) TV.empty
-    | PutExp (f1, f2, f3, Some u) -> List.fold_right TV.union (List.map ftv_exp [f1; f2; f3]) (ftv_ty u)
+    | PutExp (f1, f2, f3, None) -> List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2; f3])
+    | PutExp (f1, f2, f3, Some u) -> List.fold_left TV.union (ftv_ty u) (List.map ftv_exp [f1; f2; f3])
     | LengthExp f -> ftv_exp f
     | CastExp (f, u1, u2, _) -> TV.union (ftv_exp f) @@ TV.union (ftv_ty u1) (ftv_ty u2)
     | CAppExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
@@ -119,4 +119,29 @@ module CC = struct
     | FixB (_, (_, u1), _, f) -> TV.union (ftv_ty u1) (ftv_exp f)
     | FixS (_, (_, u1), _, (_, uk), f) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) (ftv_exp f)
     | FixDual (_, (_, u1), _, (_, uk), (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) @@ TV.union (ftv_exp f1) (ftv_exp f2)
+end
+
+module KNorm = struct
+  open Syntax.KNorm
+
+  let rec ftv_exp: exp -> TV.t = function
+    | Var _ | IConst _ | FConst _ | BinOp _ | Nil | Cons _ | Hd _ | Tl _ | Tuple _ | Tget _ | Length _ | AppMExp _ | AppDExp _
+    | CAppExp _ | CCompExp _ -> TV.empty
+    | IfExp (_, f1, f2) ->
+      List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2])
+    | LetExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | LetFunExp (_, tvs, fund, f2) -> TV.union (TV.diff (ftv_fund fund) (TV.of_list tvs)) (ftv_exp f2)
+    | MatchExp (_, ms) ->
+      TV.big_union @@ List.map (fun (mf, e) -> TV.union (ftv_matchform mf) (ftv_exp e)) ms
+    | Ref (_, u) | MakeArray (_, _, u) -> ftv_ty u
+    | Deref (_, None) | Subst (_, _, None) | Get (_, _, None) | Put (_, _, _, None) -> TV.empty
+    | Deref (_, Some u) | Subst (_, _, Some u) | Get (_, _, Some u) | Put (_, _, _, Some u) -> ftv_ty u
+    | CastExp (_, u1, u2, _) -> TV.union (ftv_ty u1) (ftv_ty u2)
+    | CoercionExp c -> ftv_coercion c
+    | AppTy (_, _, tas) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg tas)
+  and ftv_fund = function
+    | FunB (_, f) -> ftv_exp f
+    | FunS (_, f) -> ftv_exp f
+    | FunDual (_, (f1, f2)) -> TV.union (ftv_exp f1) (ftv_exp f2)
+    | FunTy f -> ftv_exp f
 end

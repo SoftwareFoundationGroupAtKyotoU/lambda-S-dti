@@ -8,6 +8,7 @@ type t = {
   (* evaluation formula *)
   eager : bool;
   monotonic : bool;
+  tvs_opt : bool;
   (* modes for compiler *)
   static : bool;
   hash : bool;
@@ -19,7 +20,7 @@ type t = {
 
 let valid_opt_levels = ["-O0"; "-O1"; "-O2"; "-O3"; "-Os"; "-Oz"; "-Ofast"]
 
-let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(monotonic=true) ?(opt_level="-O3") ?(file=None) () =
+let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=false) ?(static=false) ?(hash=false) ?(monotonic=true) ?(tvs_opt=false) ?(opt_level="-O3") ?(file=None) () =
   (* invalid combination *)
   if alt && intoB then
     failwith "Config error: -a and -b could not be at the same time";
@@ -32,6 +33,8 @@ let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=f
     failwith "NotImplemented: hash consing for interpreter is yet";
   if not compile && static then
     failwith "NotImplemented: --static interpreter is yet";
+  if not compile && tvs_opt then 
+    failwith "NotImplemented: tvs optimising for interpreter is yet";
   if compile && intoB && hash then
     failwith "NotImplemented: hash consing is only for coercion";
   (* NOTE: if --static, let alt and hash be false, and intoB and eager be true *)
@@ -41,4 +44,4 @@ let create ?(debug=false) ?(alt=false) ?(intoB=false) ?(eager=false) ?(compile=f
     else 
       (alt, intoB, eager, monotonic, hash)
   in
-  { debug; alt; intoB; eager; compile; static; hash; monotonic; opt_level; file }
+  { debug; alt; intoB; eager; compile; static; hash; monotonic; tvs_opt; opt_level; file }

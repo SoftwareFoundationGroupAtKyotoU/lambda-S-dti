@@ -302,6 +302,42 @@ module KNorm = struct
 
   let find x idenv = try Environment.find x idenv with Not_found -> x
 
+  (* omit_unused_tv : 不要なtvsを関数定義・型適用から削除 *)
+  let rec omit_unused_tv_exp env = function
+    | AppTy (x, tvs, tas) ->
+      let used_pairs = List.filter (fun (tv, _) -> TV.mem tv @@ Environment.find x env) (List.combine tvs tas) in
+      if used_pairs = [] then Var x
+      else AppTy (x, List.map fst used_pairs, List.map snd used_pairs)
+    | LetFunExp (x, tvs, fund, f2) ->
+      let fund = omit_unused_tv_fund env fund in
+      let needed = Ftv.KNorm.ftv_fund fund in
+      let used = List.filter (fun tv -> TV.mem tv needed) tvs in
+      let env = Environment.add x (TV.of_list used) env in
+      begin match fund with
+      | FunTy f when used = [] -> LetExp (x, f, omit_unused_tv_exp env f2)
+      | _ -> LetFunExp (x, used, fund, omit_unused_tv_exp env f2)
+      end
+    | IfExp (x, f1, f2) -> IfExp (x, omit_unused_tv_exp env f1, omit_unused_tv_exp env f2)
+    | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, omit_unused_tv_exp env f) ms)
+    | LetExp (x, f1, f2) -> LetExp (x, omit_unused_tv_exp env f1, omit_unused_tv_exp env f2)
+    | e -> e
+  and omit_unused_tv_fund env = function
+    | FunB (arg, f) -> FunB (arg, omit_unused_tv_exp env f)
+    | FunS (arg, f) -> FunS (arg, omit_unused_tv_exp env f)
+    | FunDual (arg, (f1, f2)) -> FunDual (arg, (omit_unused_tv_exp env f1, omit_unused_tv_exp env f2))
+    | FunTy f -> FunTy (omit_unused_tv_exp env f)
+
+  let omit_unused_tv_program env = function
+    | Exp f -> Exp (omit_unused_tv_exp env f)
+    | LetDecl (x, f) -> LetDecl (x, omit_unused_tv_exp env f)
+    | LetFunDecl (x, tvs, fund) ->
+      let fund = omit_unused_tv_fund env fund in
+      let used = List.filter (fun tv -> TV.mem tv (Ftv.KNorm.ftv_fund fund)) tvs in
+      begin match fund with
+      | FunTy f when used = [] -> LetDecl (x, f)
+      | _ -> LetFunDecl (x, used, fund)
+      end
+
   (* beta : let x = y in ... となっているようなxをyに置き換える *)
   let rec beta_exp idenv = function
     | Var x -> Var (find x idenv)
@@ -381,9 +417,13 @@ module KNorm = struct
     | LetFunDecl (x, tvs, fd) -> LetFunDecl (x, tvs, assoc_fd fd)
 end
 
-let kNorm_funs (tvsenv, alphaenv, betaenv) f = 
+let kNorm_funs ~tvs_opt (tvsenv, alphaenv, betaenv) f = 
   let f, alphaenv = CC.alpha_program alphaenv f in
   let f, tvsenv = CC.k_normalize_program tvsenv f ~static:false in
+  let f = 
+    if tvs_opt then KNorm.omit_unused_tv_program Environment.empty f
+    else f
+  in
   let rec iter betaenv f =
     let fbeta, betaenv = KNorm.beta_program betaenv f in
     let fassoc = KNorm.assoc_program fbeta in

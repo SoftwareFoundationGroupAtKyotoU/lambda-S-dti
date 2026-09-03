@@ -93,6 +93,7 @@ let () =
   let intoB_ref = ref false in
   let eager_ref = ref false in
   let monotonic_ref = ref true in
+  let tvs_opt_ref = ref true in
   let hash_ref = ref false in
   let static_ref = ref false in
   let opt_level_ref = ref "-O3" in
@@ -103,6 +104,7 @@ let () =
       ("-b", Arg.Unit (fun () -> intoB_ref := true), " Translate into LB");
       ("-e", Arg.Unit (fun () -> eager_ref := true), " Eager list coercion-/cast-composition");
       ("--non_monotonic", Arg.Unit (fun () -> monotonic_ref := false), " monotonic reference off");
+      ("--tvs_opt_off", Arg.Unit (fun () -> tvs_opt_ref := false), " turn off the optimize for unused tvs");
       ("-h", Arg.Unit (fun () -> hash_ref := true), " hash-consing / compose-memo on");
       ("--static", Arg.Unit (fun () -> static_ref := true), " Evaluate or compile only fully statically program");
       ("-O0", Arg.Unit (fun () -> opt_level_ref := "-O0"), " clang optimization level -O0");
@@ -126,6 +128,7 @@ let () =
     ~intoB:!intoB_ref
     ~eager:!eager_ref
     ~monotonic:!monotonic_ref
+    ~tvs_opt:(!tvs_opt_ref && !compile_ref)
     ~hash:!hash_ref
     ~static:!static_ref
     ~opt_level:!opt_level_ref
