@@ -2,4 +2,5 @@
 
 (library
   (name lambda_S_dti)
-  (public_name lambda-S-dti))
+  (public_name lambda-S-dti)
+  (libraries yojson core_unix))

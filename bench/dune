@@ -1,9 +1,0 @@
-(library
- (name bench_lib)
- (modules bench_config mutate bench_progress bench_json bench_output bench_target bench_runner)
- (libraries lambda_S_dti yojson core_unix))
-
-(executable
- (name bench)
- (modules bench)
- (libraries bench_lib core_unix.command_unix))

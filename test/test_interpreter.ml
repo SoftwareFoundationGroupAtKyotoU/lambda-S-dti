@@ -11,7 +11,7 @@ let id x = x
 let run state program ~config =
   let ppf = Utils.Format.empty_formatter in
   let lexbuf = Lexing.from_string (program ^ ";;") in
-  let cc_state =
+  let cc_state, u =
     state 
     |> Pipeline.parse ppf lexbuf
     |> Pipeline.typing_ITGL ppf
@@ -20,12 +20,12 @@ let run state program ~config =
   try
     let state, _, v = 
       cc_state
-      |> Pipeline.eval ppf ~config
+      |> Pipeline.eval ppf ppf ~config
     in
-    state |> Pipeline.change_state_program (), asprintf "%a" Pp.pp_ty2 state.ty, asprintf "%a" Pp.CC.pp_value2 v
+    Pipeline.fresh_program state, asprintf "%a" Pp.pp_ty2 u, asprintf "%a" Pp.CC.pp_value2 v
   with
-  | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame+"
-  | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 cc_state.ty, "blame-"
+  | Blame (_, Pos) -> state, asprintf "%a" Pp.pp_ty2 u, "blame+"
+  | Blame (_, Neg) -> state, asprintf "%a" Pp.pp_ty2 u, "blame-"
 
 let config_B_eager              = create ~intoB:true ~eager:true ~monotonic:false ()
 let config_B_lazy               = create ~intoB:true ~eager:false ~monotonic:false ()

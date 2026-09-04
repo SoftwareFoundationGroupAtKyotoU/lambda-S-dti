@@ -1,24 +1,23 @@
 open Format
 open Lambda_S_dti
 
-let rec repl ppf lexbuf programs ~config ~state =
+let rec repl ppf lexbuf states ~config ~state =
   flush stderr; flush stdout;
   if lexbuf.Lexing.lex_curr_p.pos_fname = "" then fprintf std_formatter "# @?";
-  let state, programs = 
+  let state, states = 
     begin try 
-      let cc_state =
+      let cc_state, _ =
         state 
         |> Pipeline.parse ppf lexbuf
         |> Pipeline.typing_ITGL ppf
         |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:Utils.Format.empty_formatter ~bench:0
       in
       if config.compile then
-        let programs = cc_state.program :: programs in
+        let states = cc_state :: states in
         (* Compilation *)
-        match cc_state.program with
-        | Syntax.CC.Exp _ -> 
+        try 
           let _ = 
-            { cc_state with program = Pipeline.bundle_programs programs }
+            Pipeline.bundle_states states
             |> Pipeline.kNorm_funs ppf ~config
             |> Pipeline.closure ppf ~config
             |> Pipeline.toC ppf ~config ~bench:0
@@ -27,37 +26,36 @@ let rec repl ppf lexbuf programs ~config ~state =
           fprintf ppf "@.";
           Pipeline.init_state () ~config, []
           (* TODO: ファイルモードのとき，プログラムがきちんと書れていなくてもコンパイルが通ることがある (ex: bad.ml) *)
-        | _ -> cc_state |> Pipeline.change_state_program (), programs
+        with Pipeline.Not_Exp -> Pipeline.fresh_program cc_state, states
       else
         (* Evaluation *)
-        let state, x, v = 
+        let state, _, _ = 
           cc_state
-          |> Pipeline.eval ppf ~config
+          |> Pipeline.eval ppf std_formatter ~config
         in
-        fprintf std_formatter "%a : %a = %a@." pp_print_string x Pp.pp_ty2 state.ty Pp.CC.pp_value2 v;
-        state |> Pipeline.change_state_program (), []
+        Pipeline.fresh_program state, []
     with
     | Parser.Error -> (* Menhir *)
       let token = Lexing.lexeme lexbuf in
       fprintf err_formatter "Parser.Error: unexpected token %s@." token;
       Utils.Lexing.flush_input lexbuf;
-      state, programs
+      state, states
     | Typing.Type_error message ->
       fprintf err_formatter "Type_error: %s@." message;
-      state, programs
+      state, states
     | Syntax.Blame (r, p) -> 
       begin match p with
       | Pos -> fprintf err_formatter "Blame on the expression side:\n%a@." Utils.Error.pp_range r
       | Neg -> fprintf err_formatter "Blame on the environment side:\n%a@." Utils.Error.pp_range r
       end;
-      state, programs
+      state, states
     | Failure message ->
       fprintf err_formatter "Failure: %s@." message;
       Utils.Lexing.flush_input lexbuf;
-      state, programs
+      state, states
     end
   in
-  repl ppf lexbuf programs ~config ~state
+  repl ppf lexbuf states ~config ~state
 
 let start file ~(config:Config.t) =
   let ppf = if config.debug then err_formatter else Utils.Format.empty_formatter in

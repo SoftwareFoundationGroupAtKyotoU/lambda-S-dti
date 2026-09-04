@@ -3,6 +3,7 @@ open Syntax
 open Config
 
 exception Compile_bad of string
+exception Not_Exp
 
 (* --- helpers --- *)
 let print_title ppf title = 
@@ -11,17 +12,6 @@ let print_title ppf title =
 let log_section ppf title =
   fprintf ppf "@.@[<v>--- %s ---@]@." title
 
-let bundle_programs progs =
-  let rec to_exp ps = match ps with
-    | Syntax.CC.Exp e :: [] -> e
-    | Syntax.CC.LetDecl (x, e) :: [] -> 
-        Syntax.CC.LetExp (x, e, Syntax.CC.UConst)
-    | Syntax.CC.LetDecl (x, e) :: t -> 
-        Syntax.CC.LetExp (x, e, to_exp t)
-    | _ -> raise @@ Compile_bad "exp must appear only at the last position"
-  in 
-  Syntax.CC.Exp (to_exp (List.rev progs))
-
 type 't state = {
   program : 't;
   ty : ty;
@@ -29,10 +19,6 @@ type 't state = {
   env : CC.value Environment.t;
   compile_env : (id Environment.t * tyvar list Environment.t * id Environment.t) * V.t * (id list * int) Environment.t;
 }
-
-let init_state program ~config =
-  let env, tyenv, compile_env = Stdlib.pervasives ~config in
-  { program; ty = TyVar (-1, { contents = None }); tyenv; env; compile_env }
 
 let change_state_program program state =
   {
@@ -44,6 +30,21 @@ let change_state_program program state =
   }
 
 (* --- public API --- *)
+let init_state program ~config =
+  let env, tyenv, compile_env = Stdlib.pervasives ~config in
+  { program; ty = TyVar (-1, { contents = None }); tyenv; env; compile_env }
+
+let bundle_states states =
+  let rec to_exp = function
+    | { program = Syntax.CC.Exp e; _ } :: [] -> e
+    | { program = Syntax.CC.LetDecl _; _ } :: [] -> raise Not_Exp
+    | { program = Syntax.CC.LetDecl (x, e); _ } :: t -> Syntax.CC.LetExp (x, e, to_exp t)
+    | _ -> raise @@ Compile_bad "exp must appear only at the last position"
+  in 
+  change_state_program (Syntax.CC.Exp (to_exp (List.rev states))) @@ List.hd states
+
+let fresh_program state = change_state_program () state
+
 let lex ppf file =
   print_title ppf "Lexer";
   match file with
@@ -94,11 +95,12 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   if bench = 0 then assert (Type_utils.is_equal state.ty u''');
   fprintf ppf "f: %a@." Pp.CC.pp_program f;
   let state = change_state_program f state in
-  { state with tyenv = new_tyenv }
+  { state with tyenv = new_tyenv }, state.ty
 
-let eval ppf state ~config =
+let eval ppf ppf_show state ~config =
   print_title ppf "Eval";
   let env, x, v = Eval.CC.eval_program ~config state.env state.program in 
+  fprintf ppf_show "%a : %a = %a@." pp_print_string x Pp.pp_ty2 state.ty Pp.CC.pp_value2 v;
   { state with env }, x, v
 
 let kNorm_funs ppf state ~config =
@@ -149,3 +151,9 @@ let toC ppf state ~config ~bench =
   Static_manage.RangeManager.init ();
   Static_manage.CrcManager.init ();
   str_c
+
+let mutate_all state =
+  let t = match state.program with ITGL.Exp t | ITGL.LetDecl (_, t) -> t in
+  let n_total = Mutate.analyze t in
+  let subsets = Mutate.all_subsets_by_length n_total in
+  List.map (fun idxs -> ITGL.Exp (Mutate.mutate_term_with_indices idxs t)) subsets

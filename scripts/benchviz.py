@@ -21,13 +21,13 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    # ("SLN", ["SLH", "ALN", "ALH"]),
-    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFT"]),
-    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
-    # ("GRIFT", ["ALH", "SLH", "ALN", "SLN", "GRIFT"]),
-    # ("GRIFTC", ["SLH"]),
-    # ("STATICEN", ["GRIFTC", "SLH"]),
-    # ("SLN", ["SLH"]),
+    ("SLN", ["SLH", "ALN", "ALH"]),
+    ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFTC"]),
+    ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
+    ("GRIFTC", ["ALH", "SLH", "ALN", "SLN", "GRIFT"]),
+    ("GRIFTC", ["SLH"]),
+    ("STATICEN", ["GRIFTC", "SLH"]),
+    ("SLN", ["SLH"]),
     ("SLH", ["ALN"]),
 ]
 
@@ -81,8 +81,8 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "log_root": "logs",
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
-            "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak"
-            "church-65532", "church-65532-mono"
+            "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak",
+            "church-65532", "church-65532-mono",
             "evenodd", "fib", "loop",
             "fold", "incsum", "map", "mklist", "zipwith", 
             "map-mono", "fold-mono", "zipwith-mono", "loop-mono",
@@ -368,7 +368,10 @@ def parse_comp_args(comp: Union[str, List[str]], static: bool) -> Tuple[List[str
     """
     fs = "_fs" if static else ""
     if isinstance(comp, list):
-        return comp, "|".join(comp), fs, True
+        # 重複を順序保持で除去（TARGET_PAIRS に同じモードが2回入っていても
+        # plot_data の dict 化と append ループで長さがズレて errorbar が落ちるのを防ぐ）
+        comps = list(dict.fromkeys(comp))
+        return comps, "|".join(comps), fs, True
     return [comp], comp, fs, False
 
 def _binomial_boundaries_between(n_total: int) -> List[float]:

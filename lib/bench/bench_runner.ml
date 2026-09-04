@@ -1,4 +1,3 @@
-open Lambda_S_dti
 open Bench_target
 
 let config_of_target ~file ~eager ~hash = function
@@ -26,12 +25,12 @@ let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
       try
         let idx = i + 1 in
         let after_mutate_str = Format.asprintf "%a" Pp.ITGL.pp_program p in
-        let initial_state = { (Pipeline.init_state () ~config) with Pipeline.program = p } in
+        let initial_state = Pipeline.init_state p ~config in
         (* --- Compilation --- *)
         let c_code = 
           initial_state
           |> Pipeline.typing_ITGL ppf
-          |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:null_fmt ~bench:idx
+          |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:null_fmt ~bench:idx |> fst
           |> Pipeline.kNorm_funs ppf ~config
           |> Pipeline.closure ppf ~config
           |> Pipeline.toC ppf ~config ~bench:idx
@@ -68,20 +67,18 @@ let run_static ~log_dir ~itr ~total_targets targets =
     run_target ~log_dir ~itr ~ordinal:(i+1) ~total_targets t
   ) targets
 
-let run_grift ~itr ~static ~files =
-  let go ~fs file =
-    let grift_path = Bench_config.sample_path ~lang:`Grift file in
-    if not (Sys.file_exists grift_path) then
-      Format.eprintf "[Skip grift] %s: %s not found@." file grift_path
+let run_grift ~log_dir ~itr ~static ~files =
+  let go ~static file =
+    let grift_src = Bench_config.sample_path ~lang:`Grift file in
+    if not (Sys.file_exists grift_src) then
+      Format.eprintf "[Skip grift] %s: %s not found@." file grift_src
     else
-      let input_path = Bench_config.input_path ~fs file in
-      let static_flag = if fs then " --static" else "" in
-      let cmd = Format.asprintf "python3 benchC/run_grift.py %s %s%s -i %d" grift_path input_path static_flag itr in
-      let rc = Sys.command cmd in
-      if rc <> 0 then Format.eprintf "[grift failed] %s%s (exit %d)@." file static_flag rc
+      try
+        Bench_grift.run ~log_dir ~grift_src ~itr ~static ~file
+      with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e)
   in
-  List.iter (go ~fs:static) files
+  List.iter (go ~static) files
 
-let run_dynamize_grift ~itr ~files = run_grift ~itr ~static:false ~files
+let run_dynamize_grift ~log_dir ~itr ~files = run_grift ~log_dir ~itr ~static:false ~files
 
-let run_static_grift ~itr ~files = run_grift ~itr ~static:true ~files
+let run_static_grift ~log_dir ~itr ~files = run_grift ~log_dir ~itr ~static:true ~files

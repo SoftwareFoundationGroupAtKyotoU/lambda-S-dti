@@ -1,5 +1,4 @@
 open Lambda_S_dti
-open Bench_lib
 open Bench_config
 open Bench_target
 
@@ -58,8 +57,8 @@ let () =
   if !dynamize then Bench_runner.run_dynamize ~log_dir ~itr ~total_targets targets;
   if !static then Bench_runner.run_static ~log_dir ~itr ~total_targets targets;
   if !grift then begin
-    Bench_runner.run_dynamize_grift ~itr ~files;
-    if !static then Bench_runner.run_static_grift ~itr ~files
+    Bench_runner.run_dynamize_grift ~log_dir ~itr ~files;
+    if !static then Bench_runner.run_static_grift ~log_dir ~itr ~files
   end;
 
   if not (!dynamize || !static || !grift) then

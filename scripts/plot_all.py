@@ -4,6 +4,21 @@ from benchviz import (
     latest_date_dir, check_pair_exists, TARGET_PAIRS
 )
 
+def prune_empty_dirs(root: str) -> None:
+    """root 以下で、生成物が1つも入らなかった空ディレクトリを消す。
+    プロッタが ensure_dir だけして 1 枚も描かなかったときの「空フォルダ」対策。"""
+    if not os.path.isdir(root):
+        return
+    for cur, dirs, files in os.walk(root, topdown=False):
+        if cur == root:
+            continue
+        if not os.listdir(cur):          # 空になったら（子を消した後も含む）
+            try:
+                os.rmdir(cur)
+                print(f"[plot_all] removed empty dir: {cur}")
+            except OSError:
+                pass
+
 from plot_herman import plot_herman
 from plot_relative import plot_relative, plot_static_summary
 from plot_scattered import plot_scattered
@@ -100,6 +115,9 @@ def main():
         # plot_compare 側で該当ログがなければ自動でスキップされるので安全です
         plot_compare(mode, static=False)
         plot_compare(mode, static=True)
+
+    # 生成物ゼロで作られてしまった空フォルダを掃除
+    prune_empty_dirs(date_dir)
 
     print("\n[DEBUG] スクリプトの実行が最後まで完了しました。")
 

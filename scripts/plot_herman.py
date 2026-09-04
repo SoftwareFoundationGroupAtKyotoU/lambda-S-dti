@@ -66,9 +66,12 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
     title_prefix = hcfg.get("title_prefix", "Herman (robust)")
 
     root = os.path.join(date_dir, outdir)
-    ensure_dir(root)
+    # NOTE: ここで root を作らない。実際に図を保存するときだけ ensure_dir する
+    #       （promoted_bytes を含むリッチな mem データが無いと 1 枚も描かないため、
+    #        先に作ると空の herman/ フォルダだけが残る）。
 
     markers = ['d', 'o', '^', 's', 'v', 'X', 'P', '*']
+    wrote = 0
 
     for bench, n_map in data.items():
         # このベンチマークにおける、有効な comp データを集める
@@ -118,7 +121,7 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
             continue
 
         bench_dir = os.path.join(root, bench)
-        ensure_dir(bench_dir)
+        ensure_dir(bench_dir)  # root もここで初めて作られる
 
         # --- 区切り線の位置 ---
         n_total = max(d['n_total'] for d in valid_data.values())  # このベンチの総ミュータント数（2^n が保証されている想定）
@@ -156,6 +159,7 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
         method = stats.get('method', 'mad')
         ax.grid(True, axis='y', linestyle='--', alpha=0.35); ax.legend()
         save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_herman_zigzag{fs}.png'))
+        wrote += 1
 
         # (2) 昇順ソート
         if not is_multi:
@@ -174,6 +178,11 @@ def plot_herman(base: str, comp: Union[str, List[str]], static: bool):
             ax.set_title(f'{title_prefix} (sorted): {bench}')
             ax.legend(); ax.grid(True, axis='y', alpha=0.3)
             save_fig(fig, os.path.join(bench_dir, f'plot_{bench}_{base}-{comp_label}_herman_sorted{fs}.png'))
+            wrote += 1
 
-    print(f"Saved robust Herman plots under: {root}")
-    print(f"Done: {comp_label} vs {base}")
+    if wrote:
+        print(f"Saved {wrote} robust Herman plot(s) under: {root}")
+        print(f"Done: {comp_label} vs {base}")
+    else:
+        print(f"[plot_herman] skipped {comp_label} vs {base}: "
+              f"no promoted-bytes data in logs (rich 'mem' object required)")

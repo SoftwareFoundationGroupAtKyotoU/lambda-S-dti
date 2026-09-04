@@ -39,6 +39,7 @@ let sample_path ~(lang:[`Gradti | `Grift]) (target : string) : string =
   | `Gradti -> Printf.sprintf "samples/src_gradti/untyped/%s/%s.ml" sub target
   | `Grift  -> Printf.sprintf "samples/src_grift/%s/%s.grift" sub target
 
-let input_path ?(fs=false) (target : string) : string =
-  Printf.sprintf "samples/input/%s%s.txt" target (if fs then "_fs" else "")
+let input_path ?(static=false) (target : string) : string =
+  Printf.sprintf "samples/input/%s%s.txt" target (if static then "_fs" else "")
 
+let grift_cmd = try Sys.getenv "GRIFT" with Not_found -> "grift"

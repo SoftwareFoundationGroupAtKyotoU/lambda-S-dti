@@ -85,7 +85,7 @@ shift\n\
 \n\
 case "$COMMAND" in\n\
   bench)\n\
-    exec dune exec ./_build/default/bench/bench.exe -- "$@"\n\
+    exec dune exec ./_build/default/bin/bench.exe -- "$@"\n\
     ;; \n\
   main)\n\
     exec dune exec ./_build/default/bin/main.exe -- "$@"\n\

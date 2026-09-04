@@ -1,5 +1,3 @@
-open Lambda_S_dti
-
 type mode = S | A | B | STATIC
 
 (* if you want to measure B, add B in modes *)
@@ -22,9 +20,11 @@ type target = {
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
 let parse_and_mutate (file : string) : Syntax.ITGL.program list =
   let path = Bench_config.sample_path ~lang:`Gradti file in
-  let _, lexeme = Pipeline.lex Format.std_formatter (Some path) in
-  let decl = Parser.toplevel Lexer.main lexeme in
-  Mutate.mutate_all decl
+  let ppf = Utils.Format.empty_formatter in
+  let _, lexeme = Pipeline.lex ppf (Some path) in
+  Pipeline.init_state () ~config:(Config.create ~compile:true ())
+  |> Pipeline.parse ppf lexeme
+  |> Pipeline.mutate_all
 
 let expand_targets ~eagernesses ~hash_modes (prepared : (string * Syntax.ITGL.program list) list) : target list =
   List.concat_map (fun (file, mutants) ->
