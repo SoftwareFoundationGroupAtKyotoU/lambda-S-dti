@@ -24,7 +24,7 @@ let parse_and_mutate (file : string) : Syntax.ITGL.program list =
   let _, lexeme = Pipeline.lex ppf (Some path) in
   Pipeline.init_state () ~config:(Config.create ~compile:true ())
   |> Pipeline.parse ppf lexeme
-  |> Pipeline.mutate_all
+  |> Pipeline.mutate_all ppf
 
 let expand_targets ~eagernesses ~hash_modes (prepared : (string * Syntax.ITGL.program list) list) : target list =
   List.concat_map (fun (file, mutants) ->

@@ -284,7 +284,7 @@ let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
       ("inference", `Null);
       ("longest", (match longest with Some l -> Bench_json.int l | None -> `Null)) ]
 
-let run ~log_dir ~grift_src ~itr ~static ~file =
+let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
   let input_path = Bench_config.input_path ~static file in
   let src = read_file grift_src in
   let defs, groups = analyze_src src in
@@ -302,7 +302,11 @@ let run ~log_dir ~grift_src ~itr ~static ~file =
   if not (Sys.file_exists work) then Sys.mkdir work 0o755;
   let oc_g = open_out (Printf.sprintf "%s/GRIFT_%s%s.jsonl" log_dir file suffix) in
   let oc_gc = open_out (Printf.sprintf "%s/GRIFTC_%s%s.jsonl" log_dir file suffix) in
-  Printf.printf "\n==> GRIFT %s%s (%d variants)\n%!" file suffix (List.length subsets);
+  let prog =
+    Bench_progress.create
+      ~label:(Printf.sprintf "GRIFT_%s%s" file suffix)
+      ~total:(List.length subsets) ~ordinal ~total_targets
+  in
   List.iteri
     (fun si subset ->
       let idx = si + 1 in
@@ -352,8 +356,10 @@ let run ~log_dir ~grift_src ~itr ~static ~file =
         (jrow ~mode:"GRIFT" ~idx ~after_mutate:base_code ~times ~cast ~longest);
       Bench_json.to_channel_ln oc_gc
         (jrow ~mode:"GRIFTC" ~idx ~after_mutate:base_code ~times:times_c ~cast:None
-           ~longest:None))
+           ~longest:None);
+      Bench_progress.tick prog)
     subsets;
+  Bench_progress.print ~final:true prog;
   close_out oc_g;
   close_out oc_gc;
   ignore (Sys.command (Printf.sprintf "rm -rf %s" (Filename.quote work)))

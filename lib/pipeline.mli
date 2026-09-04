@@ -18,4 +18,4 @@ val kNorm_funs : formatter -> CC.program state -> config:Config.t -> KNorm.progr
 val closure : formatter -> KNorm.program state -> config:Config.t -> Cls.program state
 val toC : formatter -> Cls.program state -> config:Config.t -> bench:int -> string
 
-val mutate_all : ITGL.program state -> ITGL.program list
+val mutate_all : formatter -> ITGL.program state -> ITGL.program list

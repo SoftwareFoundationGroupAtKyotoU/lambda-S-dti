@@ -86,10 +86,6 @@ let translate_to_CC ppf state ~config ~bench_ppf ~bench =
   log_section bench_ppf "after Insertion";
   fprintf bench_ppf "%a@." Pp.CC.pp_program f;
   fprintf ppf "f: %a@." Pp.CC.pp_program f;
-  let f = 
-    if bench = 0 then f
-    else Fresh_tv.CC.tv_renew f
-  in
   print_title ppf "CPS-translation";
   let f, u''' = Translate.CC.translate ~config state.tyenv f in
   if bench = 0 then assert (Type_utils.is_equal state.ty u''');
@@ -152,8 +148,16 @@ let toC ppf state ~config ~bench =
   Static_manage.CrcManager.init ();
   str_c
 
-let mutate_all state =
+let mutate_all ppf state =
   let t = match state.program with ITGL.Exp t | ITGL.LetDecl (_, t) -> t in
   let n_total = Mutate.analyze t in
   let subsets = Mutate.all_subsets_by_length n_total in
-  List.map (fun idxs -> ITGL.Exp (Mutate.mutate_term_with_indices idxs t)) subsets
+  List.map (fun idxs ->
+    let program = 
+      ITGL.Exp (Mutate.mutate_term_with_indices idxs t)
+      |> Fresh_tv.ITGL.tv_renew
+    in
+    let state = typing_ITGL ppf { state with program } in
+    state.program
+  )
+  subsets

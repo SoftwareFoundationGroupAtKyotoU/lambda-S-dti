@@ -13,9 +13,9 @@ let grift_benchmarks = [
   "tak";
 ]
 let originals = [
-  (* "church-2"; *)
-  (* "church-4"; *)
-  (* "church-65532"; *)
+  "church-2";
+  "church-4";
+  "church-65532";
   (* "easy"; *)
   "evenodd";
   "fib";

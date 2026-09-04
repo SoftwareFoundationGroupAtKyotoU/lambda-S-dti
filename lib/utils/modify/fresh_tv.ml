@@ -120,133 +120,91 @@ let rec tv_renew_mf mf env = match mf with
     in
     iter env mfs []
 
-module CC = struct
-  open Syntax.CC
+module ITGL = struct
+  open Syntax.ITGL
 
   let rec tv_renew_exp e env = match e with
-    | Var (x, us) ->
-      let env = List.fold_left (fun env -> fun u -> match u with Ty u -> snd (tv_renew_ty u env) | TyNu -> env) env us in
-      let us = List.map (fun u -> match u with Ty u -> Syntax.Ty (fst @@ (tv_renew_ty u env)) | TyNu -> TyNu) us in
-      Var (x, us), env
-    | IConst _ | BConst _ | UConst | FConst _ -> e, env
-    | BinOp (op, e1, e2) -> 
+    | Var (r, x, us) ->
+      let env = List.fold_left (fun env -> fun u -> snd (tv_renew_ty u env)) env !us in
+      let us = ref @@ List.map (fun u -> fst @@ (tv_renew_ty u env)) !us in
+      Var (r, x, us), env
+    | IConst _ | BConst _ | UConst _ | FConst _ -> e, env
+    | BinOp (r, op, e1, e2) -> 
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
-      BinOp (op, e1, e2), env
-    | IfExp (e1, e2, e3) ->
+      BinOp (r, op, e1, e2), env
+    | AscExp (r, e, u) ->
+      let e, env = tv_renew_exp e env in
+      let u, env = tv_renew_ty u env in
+      AscExp (r, e, u), env
+    | IfExp (r, e1, e2, e3) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
       let e3, env = tv_renew_exp e3 env in
-      IfExp (e1, e2, e3), env
-    | FunExp (tvs, fund) ->
-      let env = List.fold_left (fun env (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
-      let fund, env = tv_renew_fund fund env in
-      FunExp (tvs, fund), env
-    | FixExp (tvs, fixd) ->
-      let env = List.fold_left (fun env (i, _ as tv) -> Syntax.Environment.add (string_of_int i) tv env) env tvs in
-      let fixd, env = tv_renew_fixd fixd env in
-      FixExp (tvs, fixd), env
-    | RefExp (e, u) ->
-      let e, env = tv_renew_exp e env in
+      IfExp (r, e1, e2, e3), env
+    | FunExp (r, (x, anot, u), e) ->
       let u, env = tv_renew_ty u env in
-      RefExp (e, u), env
-    | DerefExp (e, uo) ->
       let e, env = tv_renew_exp e env in
-      let uo, env = match uo with
-        | None -> None, env
-        | Some u -> let u, env = tv_renew_ty u env in Some u, env
-      in
-      DerefExp (e, uo), env
-    | SubstExp (e1, e2, uo) ->
-      let e1, env = tv_renew_exp e1 env in
-      let e2, env = tv_renew_exp e2 env in
-      let uo, env = match uo with
-        | None -> None, env
-        | Some u -> let u, env = tv_renew_ty u env in Some u, env
-      in
-      SubstExp (e1, e2, uo), env
-    | MakeArrayExp (e1, e2, u) ->
-      let e1, env = tv_renew_exp e1 env in
-      let e2, env = tv_renew_exp e2 env in
+      FunExp (r, (x, anot, u), e), env
+    | FixExp (r, x, (y, anot, u), uret, e) ->
       let u, env = tv_renew_ty u env in
-      MakeArrayExp (e1, e2, u), env
-    | GetExp (e1, e2, uo) ->
-      let e1, env = tv_renew_exp e1 env in
-      let e2, env = tv_renew_exp e2 env in
-      let uo, env = match uo with
-        | None -> None, env
-        | Some u -> let u, env = tv_renew_ty u env in Some u, env
-      in
-      GetExp (e1, e2, uo), env
-    | PutExp (e1, e2, e3, uo) ->
-      let e1, env = tv_renew_exp e1 env in
-      let e2, env = tv_renew_exp e2 env in
-      let e3, env = tv_renew_exp e3 env in
-      let uo, env = match uo with
-        | None -> None, env
-        | Some u -> let u, env = tv_renew_ty u env in Some u, env
-      in
-      PutExp (e1, e2, e3, uo), env
-    | LengthExp e ->
+      let uret, env = tv_renew_ty uret env in
       let e, env = tv_renew_exp e env in
-      LengthExp e, env
-    | AppMExp (e1, e2) ->
+      FixExp (r, x, (y, anot, u), uret, e), env
+    | AppExp (r, e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
-      AppMExp (e1, e2), env
-    | CAppExp (e1, e2) ->
-      let e1, env = tv_renew_exp e1 env in
-      let e2, env = tv_renew_exp e2 env in
-      CAppExp (e1, e2), env
-    | CoercionExp c -> 
-      let c, env = tv_renew_coercion c env in
-      CoercionExp c, env
-    | CastExp (e, u1, u2, r_p) -> 
-      let e, env = tv_renew_exp e env in
-      let u1, env = tv_renew_ty u1 env in
-      let u2, env = tv_renew_ty u2 env in
-      CastExp (e, u1, u2, r_p), env
-    | MatchExp (e, ms) ->
+      AppExp (r, e1, e2), env
+    | MatchExp (r, e, ms) ->
       let e, env = tv_renew_exp e env in
       let ms, env = tv_renew_ms ms env in
-      MatchExp (e, ms), env
-    | LetExp (x, e1, e2) ->
+      MatchExp (r, e, ms), env
+    | LetExp (r, x, e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
-      LetExp (x, e1, e2), env
-    | NilExp u -> 
+      LetExp (r, x, e1, e2), env
+    | NilExp (r, u) -> 
       let u, env = tv_renew_ty u env in
-      NilExp u, env
-    | ConsExp (e1, e2) ->
+      NilExp (r, u), env
+    | ConsExp (r, e1, e2) ->
       let e1, env = tv_renew_exp e1 env in
       let e2, env = tv_renew_exp e2 env in
-      ConsExp (e1, e2), env
-    | TupleExp es ->
-      let rec iter env l r = match l with
+      ConsExp (r, e1, e2), env
+    | TupleExp (r, es) ->
+      let rec iter env l res = match l with
       | h :: t ->
         let e, env = tv_renew_exp h env in
-        iter env t (e :: r)
+        iter env t (e :: res)
       | [] -> 
-        TupleExp (List.rev r), env
+        TupleExp (r, List.rev res), env
       in
       iter env es []
-    | AppDExp _ | CCompExp _ -> raise @@ Occur_LS1 "fresh_tv"
-  and tv_renew_fund fd env = match fd with
-    | FunB ((x, u), e) ->
-      let u, env = tv_renew_ty u env in
+    | RefExp (r, e) ->
       let e, env = tv_renew_exp e env in
-      FunB ((x, u), e), env
-    | FunTy e ->
+      RefExp (r, e), env
+    | DerefExp (r, e) ->
       let e, env = tv_renew_exp e env in
-      FunTy e, env
-    | FunS _ | FunDual _ -> raise @@ Occur_LS1 "fresh_tv fund"
-  and tv_renew_fixd fixd env = match fixd with
-    | FixB (x, (y, u1), u2, e) ->
-      let u1, env = tv_renew_ty u1 env in
-      let u2, env = tv_renew_ty u2 env in
+      DerefExp (r, e), env
+    | SubstExp (r, e1, e2) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      SubstExp (r, e1, e2), env
+    | MakeArrayExp (r, e1, e2) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      MakeArrayExp (r, e1, e2), env
+    | GetExp (r, e1, e2) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      GetExp (r, e1, e2), env
+    | PutExp (r, e1, e2, e3) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let e3, env = tv_renew_exp e3 env in
+      PutExp (r, e1, e2, e3), env
+    | LengthExp (r, e) ->
       let e, env = tv_renew_exp e env in
-      FixB (x, (y, u1), u2, e), env
-    | FixS _ | FixDual _ -> raise @@ Occur_LS1 "fresh_tv fixd"
+      LengthExp (r, e), env
   and tv_renew_ms ms env = match ms with
     | (mf, e) :: ms ->
       let mf, env = tv_renew_mf mf env in

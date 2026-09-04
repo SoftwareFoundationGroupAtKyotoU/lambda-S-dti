@@ -29,7 +29,7 @@ let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
         (* --- Compilation --- *)
         let c_code = 
           initial_state
-          |> Pipeline.typing_ITGL ppf
+          |> Pipeline.typing_ITGL ppf (* save ty in state *)
           |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:null_fmt ~bench:idx |> fst
           |> Pipeline.kNorm_funs ppf ~config
           |> Pipeline.closure ppf ~config
@@ -55,29 +55,49 @@ let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
   with
   | e -> Format.eprintf "[Skip] %s: %s@." mode_str (Printexc.to_string e)
 
-let run_dynamize ~log_dir ~itr ~total_targets targets =
-  List.iteri (fun i t -> 
-    if t.mode <> STATIC then run_target ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t
+let run_dynamize ~log_dir ~itr targets =
+  (* STATIC は dynamize では走らせない。分母にも含めない *)
+  let targets = List.filter (fun t -> t.mode <> STATIC) targets in
+  let total_targets = List.length targets in
+  List.iteri (fun i t ->
+    run_target ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t
   ) targets
 
-let run_static ~log_dir ~itr ~total_targets targets =
-  let targets = List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] }) targets in
+(* STATIC モードは config が eager=true / hash=false に固定されるため、
+   eager×hash の 4 通りは同一の実行になる。ファイルごとに 1 つへ畳む。 *)
+let dedup_static (targets : target list) : target list =
+  let seen = Hashtbl.create 16 in
+  List.filter (fun t ->
+    match t.mode with
+    | STATIC ->
+      if Hashtbl.mem seen t.file then false
+      else (Hashtbl.add seen t.file (); true)
+    | _ -> true
+  ) targets
+
+let run_static ~log_dir ~itr targets =
+  let targets =
+    dedup_static targets
+    |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
+  in
+  let total_targets = List.length targets in
   List.iteri (fun i t ->
     let t = if t.mode = STATIC then { t with eager = true; hash = false } else t in
     run_target ~log_dir ~itr ~ordinal:(i+1) ~total_targets t
   ) targets
 
 let run_grift ~log_dir ~itr ~static ~files =
-  let go ~static file =
+  let total_targets = List.length files in
+  List.iteri (fun i file ->
     let grift_src = Bench_config.sample_path ~lang:`Grift file in
     if not (Sys.file_exists grift_src) then
       Format.eprintf "[Skip grift] %s: %s not found@." file grift_src
     else
       try
         Bench_grift.run ~log_dir ~grift_src ~itr ~static ~file
+          ~ordinal:(i + 1) ~total_targets
       with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e)
-  in
-  List.iter (go ~static) files
+  ) files
 
 let run_dynamize_grift ~log_dir ~itr ~files = run_grift ~log_dir ~itr ~static:false ~files
 
