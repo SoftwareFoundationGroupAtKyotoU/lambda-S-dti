@@ -1,26 +1,29 @@
-(* let create_x (n : int) : (int array) =
+let create_x n =
   let result = Array.make n 0 in
-  (for i = 0 to n - 1 do
-    result.(i) <- i;
+  (**)
+  for i = 0 to n - 1 do
+    result.(i) <- i
   done;
-  result)
-in
-let create_y (x : int array) : (int array) =
+  result;;
+
+let create_y x =
   let n = Array.length x in
   let result = Array.make n 0 in
-  (for i = n - 1 downto 0 do
-    result.(i) <- x.(i)
+  (**)
+  for i = 0 to n - 1 do
+    result.(n - i - 1) <- x.(n - i - 1)
   done;
-  result)
-in
-let my_try (n : int) : int =
-  let x = create_y (create_x n) in 
-  n
-in
-let rec go (m : int) (n : int) (r : int) : int =
+  result;;
+
+let my_try n =
+  Array.length (create_y (create_x n));;
+
+let rec go m n r =
   if m > 0 then
     go (m - 1) n (my_try n)
-  else r
-in
-print_int (go (read_int ()) (read_int ()) 0);; *)
-1;;
+  else r;;
+
+(* main *)
+let input1 = read_int () in
+let input2 = read_int () in
+print_int (go input1 input2 0);;
