@@ -216,7 +216,7 @@ module ITGL = struct
     | FunExp (_, (x, _, u1), e) ->
       let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) e in
       TyFun (u1, u2)
-    | FixExp (_, x, (y, _, u1), u2, e) ->
+    | FixExp (_, x, (y, _, u1), (_, u2), e) ->
       let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
       let env = Environment.add y (tysc_of_ty u1) env in
       let u2' = type_of_exp env e in

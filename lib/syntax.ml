@@ -128,7 +128,7 @@ module ITGL = struct
     | AscExp of range * exp * ty
     | IfExp of range * exp * exp * exp
     | FunExp of range * (id * anotated * ty) * exp
-    | FixExp of range * id * (id * anotated * ty) * ty * exp
+    | FixExp of range * id * (id * anotated * ty) * (anotated * ty) * exp
     | AppExp of range * exp * exp
     | MatchExp of range * exp * (matchform * exp) list
     | LetExp of range * id * exp * exp

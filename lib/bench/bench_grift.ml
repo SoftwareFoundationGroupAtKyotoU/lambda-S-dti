@@ -37,6 +37,7 @@ let tokenize (src : string) : string list =
     (fun ch -> match ch with
        | '(' | '[' -> Buffer.add_string b " ( "
        | ')' | ']' -> Buffer.add_string b " ) "
+       | '\r' | '\t' -> Buffer.add_char b ' '
        | c -> Buffer.add_char b c)
     no_comments;
   Buffer.contents b

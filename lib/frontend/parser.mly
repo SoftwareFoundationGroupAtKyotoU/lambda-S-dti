@@ -19,9 +19,9 @@ let param_to_fun_ty r (x, u1) (e, u) = match u1 with
   | Some u1 ->
     FunExp (r, (x.value, Expl, u1), e), TyFun (u1, u)
 
-let opt_ty_to_fresh_ty = function
-  | None -> fresh_tyvar ()
-  | Some u -> u
+let opt_ty_to_annot_ty = function
+  | None -> (Impl, fresh_tyvar ())
+  | Some u -> (Expl, u)
 
 let make_seq r e1 e2 = LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
 
@@ -37,13 +37,13 @@ let make_for r i e1 e2 tag e3 =
   let loop_cond = BinOp (dummy_range, cond_op, dummy_var i, dummy_var "_for_r") in
   let loop_then = make_seq r e3 (AppExp (r, dummy_var "_for_loop", BinOp (dummy_range, loop_op, dummy_var i, IConst (dummy_range, 1)))) in
   let loop_content = IfExp (r, loop_cond, loop_then, UConst r) in
-  let loop = fun k -> LetExp (r, "_for_loop", FixExp (r, "_for_loop", (i, Expl, TyInt), TyUnit, loop_content), k) in
+  let loop = fun k -> LetExp (r, "_for_loop", FixExp (r, "_for_loop", (i, Expl, TyInt), (Expl, TyUnit), loop_content), k) in
   e1 @@ e2 @@ loop (AppExp (r, dummy_var "_for_loop", dummy_var "_for_l"))
 
 let make_while r e1 e2 = 
   let loop_then = make_seq r e2 (AppExp (r, dummy_var "_while_loop", UConst dummy_range)) in
   let loop_content = IfExp (r, e1, loop_then, UConst r) in
-  LetExp (r, "_while_loop", FixExp (r, "_while_loop", ("_", Expl, TyUnit), TyUnit, loop_content), AppExp (r, dummy_var "_while_loop", UConst dummy_range))
+  LetExp (r, "_while_loop", FixExp (r, "_while_loop", ("_", Expl, TyUnit), (Expl, TyUnit), loop_content), AppExp (r, dummy_var "_while_loop", UConst dummy_range))
 
 exception Parser_bug of string
 
@@ -100,17 +100,17 @@ Program :
     }
   | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e=Expr SEMISEMI {
       let r = join_range start (range_of_exp e) in
-      let u2 = opt_ty_to_fresh_ty u2 in
+      let annot2, u2 = opt_ty_to_annot_ty u2 in
       match params with
       | [] ->
         raise @@ Parser_bug "params must not be empty"
       | (y, None) :: params ->
         let u1 = fresh_tyvar () in
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
-        LetDecl (x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e))
+        LetDecl (x.value, FixExp (r, x.value, (y.value, Impl, u1), (annot2, u2), e))
       | (y, Some u1) :: params ->
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
-        LetDecl (x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e))
+        LetDecl (x.value, FixExp (r, x.value, (y.value, Expl, u1), (annot2, u2), e))
     }
 
 Expr :
@@ -148,17 +148,17 @@ LetExpr :
     }
   | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e1=Expr IN e2=Expr {
       let r = join_range start (range_of_exp e2) in
-      let u2 = opt_ty_to_fresh_ty u2 in
+      let annot2, u2 = opt_ty_to_annot_ty u2 in
       match params with
       | [] ->
         raise @@ Parser_bug "params must not be empty"
       | (y, None) :: params ->
         let u1 = fresh_tyvar () in
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Impl, u1), (annot2, u2), e1), e2)
       | (y, Some u1) :: params ->
         let e1, u2 = List.fold_right (param_to_fun_ty r) params (e1, u2) in
-        LetExp (r, x.value, FixExp (r, x.value, (y.value, Expl, u1), u2, e1), e2)
+        LetExp (r, x.value, FixExp (r, x.value, (y.value, Expl, u1), (annot2, u2), e1), e2)
     }
 
 FunExpr :

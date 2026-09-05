@@ -71,13 +71,14 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   | FunExp (r, (x, annot, u), e) ->
     let slot = k + 1 in
     let u' = dyn_if slot u in
+    let annot = if u' = TyDyn then Expl else annot in
     let k1, e' = recur slot e in
     (k1, FunExp (r, (x, annot, u'), e'))
 
   | FixExp (r, x, (y, annot, u1), u2, e) when is_synthetic x ->
     let k1, e' = recur k e in
     (k1, FixExp (r, x, (y, annot, u1), u2, e'))
-  | FixExp (r, x, (y, annot, u1), u2, e) ->
+  | FixExp (r, x, (y, annot, u1), (annot2, u2), e) ->
     let heads, rest = collect_head_funs e in
     let doms, ret = split_arrows u2 in
     let n_heads = List.length heads in
@@ -85,13 +86,21 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
        return スロット: k+1+n_heads+1 *)
     let ret_slot = k + n_heads + 2 in
     let u1' = dyn_if (k + 1) u1 in
+    let annot = if u1' = TyDyn then Expl else annot in
     let doms' = List.mapi (fun j d -> dyn_if (k + 2 + j) d) doms in
     let heads' =
-      List.mapi (fun j (rf, xf, af, uf) -> (rf, xf, af, dyn_if (k + 2 + j) uf)) heads
+      List.mapi (fun j (rf, xf, af, uf) ->
+        let uf = dyn_if (k + 2 + j) uf in
+        let af = if uf = TyDyn then Expl else af in
+        (rf, xf, af, uf)
+      ) heads
     in
     let ret_selected = selected ret_slot in
     let ret' = if ret_selected then TyDyn else ret in
-    let u2' = build_arrows doms' ret' in
+    (* 返り値スロットを Dyn 化したときだけ annot2 を Expl に昇格し、
+       pp.ml がこの返り値型を表示するようにする（u1'/heads' と同じパターン）。 *)
+    let annot2 = if ret_selected then Expl else annot2 in
+    let u2' = (annot2, build_arrows doms' ret') in
     let k1, rest' = recur ret_slot rest in
     let rest'' = match rest' with
       | AscExp (rA, eInner, uA) ->

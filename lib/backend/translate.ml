@@ -131,7 +131,7 @@ module ITGL = struct
     | FunExp (_, (x, _, u1), e) ->
       let f, u2 = translate_exp ~config (Environment.add x (tysc_of_ty u1) env) e in
       CC.FunExp ([], CC.FunB ((x, u1), f)), TyFun (u1, u2)
-    | FixExp (_, x, (y, _, u1), u2, e) ->
+    | FixExp (_, x, (y, _, u1), (_, u2), e) ->
       (* NOTE: Disallow to use x polymorphically in e *)
       let env = Environment.add x (tysc_of_ty (TyFun (u1, u2))) env in
       let env = Environment.add y (tysc_of_ty u1) env in

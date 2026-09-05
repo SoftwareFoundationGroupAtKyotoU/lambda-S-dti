@@ -305,8 +305,27 @@ module ITGL = struct
   let gte_exp e1 e2 =
     level_exp e1 >= level_exp e2
 
+  let rec collect_fix_heads acc = function
+    | FunExp (_, (x, annot, u), body) -> collect_fix_heads ((x, annot, u) :: acc) body
+    | other -> (List.rev acc, other)
+
+  let rec drop_ty_domains n u = match n, u with
+    | 0, _ -> u
+    | n, TyFun (_, u2) -> drop_ty_domains (n - 1) u2
+    | _, u -> u
+
+  let pp_param ppf (name, annot, u) = match annot with
+    | Expl -> fprintf ppf " (%s: %a)" name pp_ty u
+    | Impl -> fprintf ppf " %s" name
+
+  let pp_heads ppf heads = Format.pp_print_list ~pp_sep:(fun _ () -> ()) pp_param ppf heads
+
+  let pp_ret_annot ppf (annot2, ret) = match annot2 with
+    | Expl -> fprintf ppf " : %a" pp_ty ret
+    | Impl -> ()
+
   let rec pp_exp ppf = function
-    | Var (_, x, ys) -> pp_print_var ppf (x, !ys)
+    | Var (_, x, _) -> pp_print_string ppf x
     | IConst (_, i) -> pp_print_int ppf i
     | BConst (_, b) -> pp_print_bool ppf b
     | UConst _ -> pp_print_string ppf "()"
@@ -325,18 +344,18 @@ module ITGL = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
         (with_paren (gt_exp e e3) pp_exp) e3
-    | FunExp (_, (x1, _, u1), e) ->
-      fprintf ppf "fun (%s: %a) -> %a"
-        x1
-        pp_ty u1
-        pp_exp e
-    | FixExp (_, x, (y, _, u1), u2, e) ->
-      fprintf ppf "fix %s (%s: %a): %a = %a"
-        x
-        y
-        pp_ty u1
-        pp_ty u2
-        pp_exp e
+    | FunExp (_, (x1, anot, u1), e) -> begin match anot with
+      | Expl -> 
+        fprintf ppf "fun (%s: %a) -> %a"
+          x1
+          pp_ty u1
+          pp_exp e
+      | Impl -> 
+        fprintf ppf "fun %s -> %a"
+          x1
+          pp_exp e
+      end
+    | FixExp _ -> raise Syntax_error
     | AppExp (_, e1, e2) as e ->
       fprintf ppf "%a %a"
         (with_paren (gt_exp e e1) pp_exp) e1
@@ -345,6 +364,15 @@ module ITGL = struct
       fprintf ppf "match %a with%a"
         (with_paren (gte_exp e e1) pp_exp) e1
         pp_match (ms, e)
+    | LetExp (_, x, FixExp (_, _, head, (annot2, u2), e1), e2) ->
+      let heads, e1' = collect_fix_heads [] e1 in
+      let ret = drop_ty_domains (List.length heads) u2 in
+      fprintf ppf "let rec %s%a%a = %a in %a"
+        x
+        pp_heads (head :: heads)
+        pp_ret_annot (annot2, ret)
+        pp_exp e1'
+        pp_exp e2
     | LetExp (_, x, e1, e2) as e ->
       fprintf ppf "let %s = %a in %a"
         x
@@ -385,6 +413,14 @@ module ITGL = struct
 
   let pp_program ppf = function
     | Exp e -> pp_exp ppf e
+    | LetDecl (x, FixExp (_, _, head, (annot2, u2), e)) ->
+      let heads, e' = collect_fix_heads [] e in
+      let ret = drop_ty_domains (List.length heads) u2 in
+      fprintf ppf "let rec %s%a%a = %a"
+        x
+        pp_heads (head :: heads)
+        pp_ret_annot (annot2, ret)
+        pp_exp e'
     | LetDecl (x, e) ->
       fprintf ppf "let %s = %a"
         x

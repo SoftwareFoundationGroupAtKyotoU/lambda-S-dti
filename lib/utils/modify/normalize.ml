@@ -40,8 +40,8 @@ module ITGL = struct
       IfExp (r, normalize_exp e1, normalize_exp e2, normalize_exp e3)
     | FunExp (r, (x1, anot, u1), e) ->
       FunExp (r, (x1, anot, normalize_type u1), normalize_exp e)
-    | FixExp (r, x, (y, anot, u1), u2, e) ->
-      FixExp (r, x, (y, anot, normalize_type u1), normalize_type u2, normalize_exp e)
+    | FixExp (r, x, (y, anot, u1), (anot2, u2), e) ->
+      FixExp (r, x, (y, anot, normalize_type u1), (anot2, normalize_type u2), normalize_exp e)
     | AppExp (r, e1, e2) ->
       AppExp (r, normalize_exp e1, normalize_exp e2)
     | MatchExp (r, e, ms) ->
