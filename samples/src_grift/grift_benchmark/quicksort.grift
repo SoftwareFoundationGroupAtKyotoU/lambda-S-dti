@@ -1,4 +1,4 @@
-(define (swap [a : (Vect Int)]) : (Int -> Int -> Unit) (lambda ([i : Int]) (lambda ([j : Int])
+(define (swap [a : (Vect Int)]) : (Int -> (Int -> Unit)) (lambda ([i : Int]) (lambda ([j : Int])
   (if (= i j)
     ()
     (let ([t : Int (vector-ref a i)])
@@ -6,7 +6,7 @@
         (vector-set! a i (vector-ref a j))
         (vector-set! a j t)))))))
 
-(define (partition [a : (Vect Int)]) : (Int -> Int -> Int) (lambda ([p : Int]) (lambda ([r : Int])
+(define (partition [a : (Vect Int)]) : (Int -> (Int -> Int)) (lambda ([p : Int]) (lambda ([r : Int])
   (let ([i : (Ref Int) (box (- p 1))]
         [x : Int (vector-ref a r)])
     (begin
@@ -20,7 +20,7 @@
       (((swap a) (+ (unbox i) 1)) r)
       (+ (unbox i) 1))))))
 
-(define (sort [a : (Vect Int)]) : ((Vect Int) -> Int -> Int -> Unit) (lambda ([p : Int]) (lambda ([r : Int])
+(define (sort [a : (Vect Int)]) : (Int -> (Int -> Unit)) (lambda ([p : Int]) (lambda ([r : Int])
   (if (< p r)
     (let ([q : Int (((partition a) p) r)])
       (begin
@@ -29,14 +29,14 @@
     ()))))
 
 (define (benchmark) : Unit
-  (let ([size : Int (read-int)]
-        [a : (Vect Int) (vector size 1)])
-    (begin
-      (repeat (i 0 size) (_ : Unit ())
-        (vector-set! a i (read-int))
-	  )
-      (((sort a) 0) (- size 1))
-      (print-int (vector-ref a (- size 1))))))
+  (let ([size : Int (read-int)])
+    (let ([a : (Vect Int) (vector size 1)])
+        (begin
+          (repeat (i 0 size) (_ : Unit ())
+            (vector-set! a i (read-int))
+          )
+          (((sort a) 0) (- size 1))
+          (print-int (vector-ref a (- size 1)))))))
 
 ;;; original quicksort for grift benchmark
 

@@ -7,26 +7,26 @@
       result)))
 
 (define (create-y [x : (Vect Int)]) : (Vect Int)
-  (let ([n : Int (vector-length x)]
-        [result : (Vect Int) (vector n 0)])
-    (begin
-      (repeat (i 0 n) (_ : Unit ())
-        (vector-set! result (- (- n i) 1) (vector-ref x (- (- n i) 1)))
-      )
-      result)))
+  (let ([n : Int (vector-length x)])
+    (let ([result : (Vect Int) (vector n 0)])
+      (begin
+        (repeat (i 0 n) (_ : Unit ())
+          (vector-set! result (- (- n i) 1) (vector-ref x (- (- n i) 1)))
+        )
+        result))))
 
 (define (my-try [n : Int]) : Int
   (vector-length (create-y (create-x n))))
 
-(define (go [m : Int]) : (Int -> Int -> Int) (lambda ([n : Int]) (lambda ([r : Int])
+(define (go [m : Int]) : (Int -> (Int -> Int)) (lambda ([n : Int]) (lambda ([r : Int])
   (if (> m 0)
     (((go (- m 1)) n) (my-try n))
     r))))
 
 (define (benchmark) : Unit
-  (let ([input1 : Int (read-int)]
-        [input2 : Int (read-int)])
-    (print-int (((go input1) input2) 0))))
+  (let ([input1 : Int (read-int)])
+    (let ([input2 : Int (read-int)])
+      (print-int (((go input1) input2) 0)))))
 
 ;;; original array for grift benchmark
 
