@@ -17,7 +17,7 @@ let rec repl ppf lexbuf states ~config ~state =
         (* Compilation *)
         try 
           let _ = 
-            Pipeline.bundle_states states
+            Pipeline.bundle_states_CC states
             |> Pipeline.kNorm_funs ppf ~config
             |> Pipeline.closure ppf ~config
             |> Pipeline.toC ppf ~config ~bench:0

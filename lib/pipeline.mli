@@ -6,7 +6,8 @@ exception Not_Exp
 type 't state
 
 val init_state : 'a -> config:Config.t -> 'a state
-val bundle_states : CC.program state list -> CC.program state
+val bundle_states_ITGL : ITGL.program state list -> ITGL.program state
+val bundle_states_CC : CC.program state list -> CC.program state
 val fresh_program : 'a state -> unit state
 
 val lex : formatter -> string option -> in_channel * Lexing.lexbuf

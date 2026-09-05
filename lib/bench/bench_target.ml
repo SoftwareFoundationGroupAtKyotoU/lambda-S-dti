@@ -21,10 +21,17 @@ type target = {
 let parse_and_mutate (file : string) : Syntax.ITGL.program list =
   let path = Bench_config.sample_path ~lang:`Gradti file in
   let ppf = Utils.Format.empty_formatter in
-  let _, lexeme = Pipeline.lex ppf (Some path) in
-  Pipeline.init_state () ~config:(Config.create ~compile:true ())
-  |> Pipeline.parse ppf lexeme
-  |> Pipeline.mutate_all ppf
+  let config = Config.create ~compile:true () in
+  let channel, lexbuf = Pipeline.lex ppf (Some path) in
+  let rec loop acc =
+    match Pipeline.parse ppf lexbuf (Pipeline.init_state () ~config) with
+    | state -> loop (state :: acc)
+    | exception Lexer.Eof -> acc
+  in
+  let states = loop [] in
+  close_in channel;
+  let state = Pipeline.bundle_states_ITGL states in
+  Pipeline.mutate_all ppf state
 
 let expand_targets ~eagernesses ~hash_modes (prepared : (string * Syntax.ITGL.program list) list) : target list =
   List.concat_map (fun (file, mutants) ->

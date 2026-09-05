@@ -2,7 +2,7 @@ let default_itr = 500
 let log_root = "logs"
 
 let grift_benchmarks = [
-  (* "array"; *)
+  "array";
   (* "blacksholes"; *)
   (* "fft"; *)
   "matmult";

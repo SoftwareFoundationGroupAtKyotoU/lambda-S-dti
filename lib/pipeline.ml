@@ -34,7 +34,17 @@ let init_state program ~config =
   let env, tyenv, compile_env = Stdlib.pervasives ~config in
   { program; ty = TyVar (-1, { contents = None }); tyenv; env; compile_env }
 
-let bundle_states states =
+let bundle_states_ITGL states =
+  let rec to_exp = function
+    | { program = Syntax.ITGL.Exp e; _ } :: [] -> e
+    | { program = Syntax.ITGL.LetDecl _; _ } :: [] -> raise Not_Exp
+    | { program = Syntax.ITGL.LetDecl (x, e); _ } :: t ->
+      Syntax.ITGL.LetExp (Utils.Error.dummy_range, x, e, to_exp t)
+    | _ -> raise @@ Compile_bad "exp must appear only at the last position"
+  in
+  change_state_program (Syntax.ITGL.Exp (to_exp (List.rev states))) @@ List.hd states
+
+let bundle_states_CC states =
   let rec to_exp = function
     | { program = Syntax.CC.Exp e; _ } :: [] -> e
     | { program = Syntax.CC.LetDecl _; _ } :: [] -> raise Not_Exp
