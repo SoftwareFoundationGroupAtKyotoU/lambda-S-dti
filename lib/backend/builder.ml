@@ -1,15 +1,11 @@
 open Format
 open Config
+open Syntax.C
 
 exception Build_bad of string
 
 let gc_ini_heap_var = "-D GC_INITIAL_HEAP_SIZE=1048576 "
 
-(* result_C/<base>_out.c と result/<base>.out はプロセス全体で共有された
- * 固定ディレクトリ (Resources.result_c_dir/result_dir) の下に置かれるため、
- * base が入力ファイル名だけだと (異なるディレクトリの同名ファイル) や
- * (同じファイルを異なるモードでコンパイル) したときに出力パスが衝突する。
- * 絶対パス + 有効な config フラグ一式をハッシュに含めて一意化する。 *)
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
   let abs_filename =
@@ -129,48 +125,100 @@ let build_run c_code ~config = match config.file with
 
 let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   let src_files = asprintf "%s/%s/%s*.c" log_dir mode_str file in
+  let mutant_num_list = List.init mutants_length (fun i -> i + 1) in
   (* _mutants.h 生成 *)
+  let mutants_h =
+    List.concat_map (fun k ->
+      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k;  params = [(VOID, "")] });
+        FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ]
+    ) mutant_num_list
+  in
   let oc = open_out (asprintf "%s/bench/%s%s_mutants.h" log_dir file mode_str) in
-  Printf.fprintf oc "#ifndef MUTANTS_H\n#define MUTANTS_H\n\n";
-  let rec print_itr n =
-    if n = mutants_length + 1 then ()
-    else (Printf.fprintf oc "int mutant%d(void);\nint set_tys%d(void);\n" n n; print_itr (n + 1))
-  in print_itr 1;
-  Printf.fprintf oc "#endif";
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program mutants_h);
   close_out oc;
   (* .c 生成 *)
+  let includes = [
+    Include "<stdio.h>"; Include "<gc.h>"; Include "<sys/time.h>";
+    Include "\"../../../libC/types.h\""; Include "\"../../../benchC/bench_json.h\"";
+    Include (Format.asprintf "\"%s%s_mutants.h\"" file mode_str);
+  ] @
+    if config.hash then [Include "\"../../../libC/crc.h\""] else []
+  in
+  let decls = 
+    (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
+    [Decl (Static, DOUBLE, Format.asprintf "times[%d][%d]" mutants_length itr, None); Decl (No, INT, "i", None); Decl (No, STRUCT "timeval", "start_tv", None); Decl (No, STRUCT "timeval", "end_tv", None)]
+  in
+  let main =
+    let init = [SExp (App (Var "GC_INIT", []))] in
+    let stms n = 
+      let for_cont = 
+        (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else []) @
+        [
+          SExp (App (Var "gettimeofday", [Addr "start_tv"; Null]));
+          SExp (App (Var ("mutant" ^ string_of_int n), []));
+          SExp (App (Var "gettimeofday", [Addr "end_tv"; Null]));
+          SAssign (Index (Index (Var "times", Int (n - 1)), Var "i"), BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_sec"), Minus, Dot (Var "start_tv", "tv_sec"))), Plus, BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_usec"), Minus, Dot (Var "start_tv", "tv_usec"))), Mult, Float 0.000001)));
+          SExp (App (Var "rewind", [Var "stdin"]));
+        ]
+      in
+      [
+        SFor ((SAssign (Var "i", Int 0), BinOp (Var "i", Lt, Int itr), PostOp (Var "i", Incr)), for_cont);
+        SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
+        SExp (App (Var "fflush", [Var "stdout"]));
+      ]
+    in
+    let ret = SReturn (App (Var "update_jsonl_file", [Str (Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file); PreOp (Deref, Var "times"); Int mutants_length; Int itr])) in
+    FunDef (No, { ret_ty = INT; fname = "main"; params = [] }, init @ (List.concat_map (fun k -> stms k) mutant_num_list) @ [ret])
+  in
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
-  Printf.fprintf oc "%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include <sys/time.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
-    (asprintf "#define MUTANTS_LENGTH %d\n#define ITR %d\n" mutants_length itr)
-    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic double times[MUTANTS_LENGTH][ITR];\nint i;\nstruct timeval start_tv, end_tv;\n"
-    "int main(){\nGC_INIT();\n";
-  let rec print_itr n =
-    if n = mutants_length + 1 then ()
-    else begin
-      Printf.fprintf oc "for (i = 0; i<ITR; i++){\n\n#ifdef HASH\nclear_crc_caches();\n#endif\ngettimeofday(&start_tv, NULL);\nmutant%d();\ngettimeofday(&end_tv, NULL);\ntimes[%d][i] = (double)(end_tv.tv_sec - start_tv.tv_sec) + (double)(end_tv.tv_usec - start_tv.tv_usec) * 1e-6;\nrewind(stdin);\n}\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
-       n (n - 1) n;
-      print_itr (n + 1)
-    end
-  in print_itr 1;
-  Printf.fprintf oc "return update_jsonl_file(\"%s/%s_%s.jsonl\", *times, MUTANTS_LENGTH, ITR);\n}" log_dir mode_str file;
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [main]));
   close_out oc;
   (* _profile.c 生成 *)
+  let includes = [
+    Include "<stdio.h>"; Include "<gc.h>";
+    Include "\"../../../libC/types.h\""; Include "\"../../../benchC/bench_json.h\"";
+    Include (Format.asprintf "\"%s%s_mutants.h\"" file mode_str);
+  ] @
+    if config.hash then [Include "\"../../../libC/crc.h\""] else []
+  in
+  let decls = 
+    (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
+    [Decl (Static, INT, Format.asprintf "gc_counts[%d]" mutants_length, None); Decl (Static, INT, Format.asprintf "cast_counts[%d]" mutants_length, None); 
+     Decl (Static, INT, Format.asprintf "inference_counts[%d]" mutants_length, None); Decl (Static, INT, Format.asprintf "longest[%d]" mutants_length, None); 
+     Decl (No, INT, "i", None); Decl (No, INT, "gc_num", None); Decl (No, INT, "gc_tmp", None); Decl (No, INT, "current_inference", None);
+     Decl (No, INT, "current_cast", None); Decl (No, INT, "current_longest", None); Decl (No, INT, "current_compose", None); Decl (No, INT, "compose_cached", None);
+     Decl (No, INT, "current_alloc", None); Decl (No, INT, "new_crc_num", None); Decl (No, INT, "alloc_hash", None); Decl (No, INT, "find_ty_num", None);]
+  in
+  let main = 
+    let init = [SExp (App (Var "GC_INIT", []))] in
+    let stms n = 
+      let cont = 
+        (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else []) @
+        [
+          SExp (App (Var ("mutant" ^ string_of_int n), []));
+          SAssign (Var "gc_tmp", App (Var "GC_get_total_bytes", []));
+          SAssign (Index (Var "gc_counts", Int (n - 1)), BinOp (Var "gc_tmp", Minus, Var "gc_num"));
+          SAssign (Var "gc_num", Var "gc_tmp");
+          SAssign (Index (Var "cast_counts", Int (n - 1)), Var "current_cast");
+          SAssign (Index (Var "inference_counts", Int (n - 1)), Var "current_inference");
+          SAssign (Index (Var "longest", Int (n - 1)), Var "current_longest");
+          SAssign (Var "current_cast", Int 0);
+          SAssign (Var "current_inference", Int 0);
+          SAssign (Var "current_longest", Int 0);
+          SExp (App (Var "rewind", [Var "stdin"]));
+        ]
+      in
+      cont @
+      [ 
+        SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
+        SExp (App (Var "fflush", [Var "stdout"]));
+      ]
+    in
+    let ret = SReturn (App (Var "update_jsonl_file_profile", [Str (Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file); Var "gc_counts"; Var "cast_counts"; Var "inference_counts"; Var "longest"; Int mutants_length])) in
+    FunDef (No, { ret_ty = INT; fname = "main"; params = [] }, init @ List.concat_map (fun k -> stms k) mutant_num_list @ [ret])
+  in
   let oc = open_out (asprintf "%s/bench/%s%s_profile.c" log_dir file mode_str) in
-  Printf.fprintf oc "%s\n%s\n%s\n%s"
-    (asprintf "#include <stdio.h>\n#include <gc.h>\n#include \"../../../libC/types.h\"\n#include \"../../../benchC/bench_json.h\"\n#include \"%s%s_mutants.h\"\n#ifdef HASH\n#include \"../../../libC/crc.h\"\n#endif\n" file mode_str)
-    (asprintf "#define MUTANTS_LENGTH %d\n" mutants_length)
-    "#ifndef STATIC\nrange *range_list;\n#endif\nstatic int gc_counts[MUTANTS_LENGTH], cast_counts[MUTANTS_LENGTH], inference_counts[MUTANTS_LENGTH], longest[MUTANTS_LENGTH];\nint i;\nint gc_num, gc_tmp, current_inference, current_cast, current_longest, current_compose, compose_cached, current_alloc, new_crc_num, alloc_hash, find_ty_num;\n"
-    "int main(){\nGC_INIT();\n";
-  let rec print_itr n =
-    if n = mutants_length + 1 then ()
-    else begin 
-      Printf.fprintf oc "\n#ifdef HASH\nclear_crc_caches();\n#endif\nmutant%d();\ngc_tmp = GC_get_total_bytes();\ngc_counts[%d] = gc_tmp - gc_num;\ngc_num = gc_tmp;\ncast_counts[%d] = current_cast;\ninference_counts[%d] = current_inference;\nlongest[%d] = current_longest;\ncurrent_cast = 0;\ncurrent_inference = 0;\ncurrent_longest = 0;\nrewind(stdin);\nfprintf(stderr, \"mutant%d done. \");\nfflush(stdout);\n"
-       n (n - 1) (n - 1) (n - 1) (n - 1) n;
-      print_itr (n + 1)
-    end
-  in print_itr 1;
-  Printf.fprintf oc "return update_jsonl_file_profile(\"%s/%s_%s.jsonl\", gc_counts, cast_counts, inference_counts, longest, MUTANTS_LENGTH);\n}" log_dir mode_str file;
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [main]));
   close_out oc;
   (* build *)
   let cmd = build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false () in

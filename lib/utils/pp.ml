@@ -1098,9 +1098,11 @@ module C = struct
 
   let rec pp_ty ppf = function
     | INT -> pp_print_string ppf "int"
+    | DOUBLE -> pp_print_string ppf "double"
     | VOID -> pp_print_string ppf "void"
     | PTR t -> fprintf ppf "%a*" pp_ty t
     | ARRAY t -> fprintf ppf "%a[]" pp_ty t
+    | STRUCT str -> fprintf ppf "struct %s" str
     | VALUE -> pp_print_string ppf "value"
     | FUN -> pp_print_string ppf "fun"
     | LST -> pp_print_string ppf "lst"
