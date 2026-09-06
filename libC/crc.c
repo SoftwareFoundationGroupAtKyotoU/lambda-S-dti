@@ -210,7 +210,6 @@ crc* alloc_crc(crc *candidate) {
 	#ifdef PROFILE
 	current_alloc++;
 	#endif
-    #ifdef HASH
 	if (candidate->crckind == C_TV) {
 		ty *tv = candidate->crcdat.tv.tv_ptr;
 		switch (tv->tykind) {
@@ -219,6 +218,10 @@ crc* alloc_crc(crc *candidate) {
 			default: candidate = normalize_tv(candidate);
 		}
 	}
+	if (candidate->crckind == C_ID && candidate->has_proj == 0 && candidate->has_inj == 0) {
+		return &crc_id;
+	}
+    #ifdef HASH
     if (candidate->has_tv) return create_new_crc(candidate);
     return intern_crc(candidate);
     #else // HASH
