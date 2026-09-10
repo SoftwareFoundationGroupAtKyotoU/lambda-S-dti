@@ -1,4 +1,4 @@
-let rec tak x = fun y -> fun z ->
+let rec tak x y z =
   if y >= x then z 
   else tak (tak (x - 1) y z)
            (tak (y - 1) z x)
