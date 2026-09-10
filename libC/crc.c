@@ -218,9 +218,6 @@ crc* alloc_crc(crc *candidate) {
 			default: candidate = normalize_tv(candidate);
 		}
 	}
-	if (candidate->crckind == C_ID && candidate->has_proj == 0 && candidate->has_inj == 0) {
-		return &crc_id;
-	}
     #ifdef HASH
     if (candidate->has_tv) return create_new_crc(candidate);
     return intern_crc(candidate);
@@ -535,6 +532,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 			switch (c2->crckind) {
 				case C_ID: { // (G?p;)id{U}(;G!) ;;; (H?q;)id{U'}(;H!)
 					if (c1->has_inj == 1 && (c1->crcdat.id.g != c2->crcdat.id.g || c1->crcdat.id.size != c2->crcdat.id.size)) break;
+					if (c1->has_proj == 0 && c2->has_inj == 0) return &crc_id;
 					return rewrite_proj(c1, c2); // (G?p;)id{U'}(;H!)
 				}
 				case C_FUN: { // (G?p;)id{U}(;G!) ;;; (H?q;)s->t(;H!)
