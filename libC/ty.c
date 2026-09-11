@@ -25,7 +25,7 @@ inline ty *newty() {
 inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 	#ifdef PROFILE
 	current_inference++;
-	if ((unsigned)g < 9) dti_by_ground[g]++;
+	if ((unsigned)g < N_GROUND_TY) dti_by_ground[g]++;
 	#endif
 	switch (g) {
 		case G_INT: {

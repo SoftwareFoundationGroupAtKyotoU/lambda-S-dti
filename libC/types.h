@@ -32,6 +32,9 @@ typedef enum ground_ty : uint8_t {
 	G_UNIT,
 } ground_ty;
 
+// NOTE: rewrite if you change the definition of tykind
+#define N_GROUND_TY (G_UNIT + 1)
+
 typedef struct ty ty;
 
 #endif //not STATIC

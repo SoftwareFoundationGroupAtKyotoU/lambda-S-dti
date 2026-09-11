@@ -145,11 +145,10 @@ cleanup_temp_name:
 }
 
 int update_jsonl_file_profile(
-    const char *input_filename, 
-    const int *gc_counts,
-    const int *cast_counts,
-    const int *inference_counts,
-    const int *longest,
+    const char *input_filename,
+    char **metric_names,
+    const long long *metrics_flat,
+    int num_metrics,
     int num_entries
 ) {
     FILE *fp_in = NULL;
@@ -219,21 +218,11 @@ int update_jsonl_file_profile(
             int array_index = cJSON_IsNumber(index_item) ? index_item->valueint - 1 : -1;
             
             if (array_index >= 0 && array_index < num_entries) {
-                cJSON *new_mem_item = cJSON_CreateNumber(gc_counts[array_index]);
-                if (new_mem_item) {
-                    cJSON_ReplaceItemInObject(root, "mem", new_mem_item);
-                }
-                cJSON *new_cast_item = cJSON_CreateNumber(cast_counts[array_index]);
-                if (new_cast_item) {
-                    cJSON_ReplaceItemInObject(root, "cast", new_cast_item);
-                }
-                cJSON *new_inference_item = cJSON_CreateNumber(inference_counts[array_index]);
-                if (new_inference_item) {
-                    cJSON_ReplaceItemInObject(root, "inference", new_inference_item);
-                }
-                cJSON *new_longest_item = cJSON_CreateNumber(longest[array_index]);
-                if (new_longest_item) {
-                    cJSON_ReplaceItemInObject(root, "longest", new_longest_item);
+                const long long *row = metrics_flat + (long long)array_index * num_metrics;
+                for (int j = 0; j < num_metrics; j++) {
+                    const char *key = metric_names[j];
+                    cJSON_DeleteItemFromObjectCaseSensitive(root, key);
+                    cJSON_AddItemToObject(root, key, cJSON_CreateNumber((double)row[j]));
                 }
             }
             

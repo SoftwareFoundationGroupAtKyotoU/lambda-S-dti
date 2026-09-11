@@ -68,6 +68,9 @@ typedef struct crc {
 	} crcdat;
 } crc;
 
+// NOTE: rewrite if you change the definition of crckind
+#define N_CRCKIND (C_BOT + 1)
+
 crc *compose(crc*, crc*);
 
 crc *normalize_tv(crc*);

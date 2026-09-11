@@ -640,7 +640,7 @@ value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
 	#ifdef PROFILE
 	current_cast++;
-	if ((unsigned)s->crckind < 8) coerce_kind[s->crckind]++;
+	if ((unsigned)s->crckind < N_CRCKIND) coerce_kind[s->crckind]++;
 	#endif
 	if (s == &crc_id) return v; // v<id> -> v
 	if (s == &crc_inj_INT) return tag_value(v, G_INT);

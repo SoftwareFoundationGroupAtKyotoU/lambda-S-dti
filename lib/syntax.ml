@@ -340,8 +340,8 @@ module Cls = struct
 end
 
 module C = struct
-  type ty = 
-    | INT | DOUBLE | VOID | PTR of ty | ARRAY of ty | STRUCT of id
+  type ty =
+    | INT | DOUBLE | CHAR | LLONG | VOID | PTR of ty | ARRAY of ty | STRUCT of id
     | VALUE | FUN | LST | TPL | TPL_RAW | REF | ARR_RAW | ARR | CRC
     | RANGE | TY
 

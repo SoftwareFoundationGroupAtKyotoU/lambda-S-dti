@@ -6,6 +6,8 @@ exception Build_bad of string
 
 let gc_ini_heap_var = "-D GC_INITIAL_HEAP_SIZE=1048576 "
 
+let warmup = 5
+
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
   let abs_filename =
@@ -34,7 +36,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then
     let bench_opt_level = "-O3" in
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%slibC/*.c benchC/bench_json.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%slibC/*.c benchC/*.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir
       file
       mode_str
@@ -129,14 +131,20 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   (* _mutants.h 生成 *)
   let mutants_h =
     List.concat_map (fun k ->
-      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k;  params = [(VOID, "")] });
-        FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ]
+      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] }) ] @
+      (if config.static then []
+       else [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ])
     ) mutant_num_list
   in
   let oc = open_out (asprintf "%s/bench/%s%s_mutants.h" log_dir file mode_str) in
   output_string oc (Format.asprintf "%a" Pp.C.pp_program mutants_h);
   close_out oc;
-  (* .c 生成 *)
+  let jsonl_path = Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file in
+  let per_run_prelude n =
+    (if config.static then [] else [SExp (App (Var (Printf.sprintf "set_tys%d" n), []))]) @
+    (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else [])
+  in
+  (* --- timing .c 生成 --- *)
   let includes = [
     Include "<stdio.h>"; Include "<gc.h>"; Include "<sys/time.h>";
     Include "\"../../../libC/types.h\""; Include "\"../../../benchC/bench_json.h\"";
@@ -144,31 +152,41 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   ] @
     if config.hash then [Include "\"../../../libC/crc.h\""] else []
   in
-  let decls = 
+  let decls =
     (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
-    [Decl (Static, DOUBLE, Format.asprintf "times[%d][%d]" mutants_length itr, None); Decl (No, INT, "i", None); Decl (No, STRUCT "timeval", "start_tv", None); Decl (No, STRUCT "timeval", "end_tv", None)]
+    [ Decl (Static, DOUBLE, Format.asprintf "times[%d][%d]" mutants_length itr, None);
+      Decl (No, INT, "i", None);
+      Decl (No, STRUCT "timeval", "start_tv", None);
+      Decl (No, STRUCT "timeval", "end_tv", None) ]
+  in
+  let per_iter n ~timed =
+    per_run_prelude n @
+    (if timed then [SExp (App (Var "gettimeofday", [Addr "start_tv"; Null]))] else []) @
+    [ SExp (App (Var ("mutant" ^ string_of_int n), [])) ] @
+    (if timed then
+      [ SExp (App (Var "gettimeofday", [Addr "end_tv"; Null]));
+        SAssign (Index (Index (Var "times", Int (n - 1)), Var "i"),
+          BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_sec"), Minus, Dot (Var "start_tv", "tv_sec"))),
+                 Plus,
+                 BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_usec"), Minus, Dot (Var "start_tv", "tv_usec"))),
+                        Mult, Float 0.000001))) ]
+     else []) @
+    [ SExp (App (Var "rewind", [Var "stdin"])) ]
+  in
+  let mutant_time_block n =
+    [ SFor ((SDecl (INT, "w", Some (Int 0)), BinOp (Var "w", Lt, Int warmup), PostOp (Var "w", Incr)),
+            per_iter n ~timed:false);
+      SFor ((SAssign (Var "i", Int 0), BinOp (Var "i", Lt, Int itr), PostOp (Var "i", Incr)),
+            per_iter n ~timed:true);
+      SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
+      SExp (App (Var "fflush", [Var "stdout"])) ]
   in
   let main =
-    let init = [SExp (App (Var "GC_INIT", []))] in
-    let stms n = 
-      let for_cont = 
-        (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else []) @
-        [
-          SExp (App (Var "gettimeofday", [Addr "start_tv"; Null]));
-          SExp (App (Var ("mutant" ^ string_of_int n), []));
-          SExp (App (Var "gettimeofday", [Addr "end_tv"; Null]));
-          SAssign (Index (Index (Var "times", Int (n - 1)), Var "i"), BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_sec"), Minus, Dot (Var "start_tv", "tv_sec"))), Plus, BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_usec"), Minus, Dot (Var "start_tv", "tv_usec"))), Mult, Float 0.000001)));
-          SExp (App (Var "rewind", [Var "stdin"]));
-        ]
-      in
-      [
-        SFor ((SAssign (Var "i", Int 0), BinOp (Var "i", Lt, Int itr), PostOp (Var "i", Incr)), for_cont);
-        SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
-        SExp (App (Var "fflush", [Var "stdout"]));
-      ]
-    in
-    let ret = SReturn (App (Var "update_jsonl_file", [Str (Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file); PreOp (Deref, Var "times"); Int mutants_length; Int itr])) in
-    FunDef (No, { ret_ty = INT; fname = "main"; params = [] }, init @ (List.concat_map (fun k -> stms k) mutant_num_list) @ [ret])
+    FunDef (No, { ret_ty = INT; fname = "main"; params = [] },
+      [ SExp (App (Var "GC_INIT", [])) ] @
+      List.concat_map mutant_time_block mutant_num_list @
+      [ SReturn (App (Var "update_jsonl_file",
+          [ Str jsonl_path; PreOp (Deref, Var "times"); Int mutants_length; Int itr ])) ])
   in
   let oc = open_out (asprintf "%s/bench/%s%s.c" log_dir file mode_str) in
   output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [main]));
@@ -181,44 +199,89 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   ] @
     if config.hash then [Include "\"../../../libC/crc.h\""] else []
   in
-  let decls = 
-    (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
-    [Decl (Static, INT, Format.asprintf "gc_counts[%d]" mutants_length, None); Decl (Static, INT, Format.asprintf "cast_counts[%d]" mutants_length, None); 
-     Decl (Static, INT, Format.asprintf "inference_counts[%d]" mutants_length, None); Decl (Static, INT, Format.asprintf "longest[%d]" mutants_length, None); 
-     Decl (No, INT, "i", None); Decl (No, INT, "gc_num", None); Decl (No, INT, "gc_tmp", None); Decl (No, INT, "current_inference", None);
-     Decl (No, INT, "current_cast", None); Decl (No, INT, "current_longest", None); Decl (No, INT, "current_compose", None); Decl (No, INT, "compose_cached", None);
-     Decl (No, INT, "current_alloc", None); Decl (No, INT, "new_crc_num", None); Decl (No, INT, "alloc_hash", None); Decl (No, INT, "find_ty_num", None);]
+  (* --- メトリクス表 --- *)
+  let profile_metrics : (string * [ `Mem | `Scalar of string | `Arr of string * string ]) list = [
+    "mem",               `Mem;
+    "cast",              `Scalar "current_cast";
+    "inference",         `Scalar "current_inference";
+    "longest",           `Scalar "current_longest";
+    "compose",           `Scalar "current_compose";
+    "compose_cached",    `Scalar "compose_cached";
+    "alloc",             `Scalar "current_alloc";
+    "new_crc",           `Scalar "new_crc_num";
+    "alloc_hash",        `Scalar "alloc_hash";
+    "find_ty",           `Scalar "find_ty_num";
+    "ty_find_calls",     `Scalar "ty_find_calls";
+    "ty_find_max_chain", `Scalar "ty_find_max_chain";
+    "normalize_tv",      `Scalar "normalize_tv_num";
+    "compose_max_depth", `Scalar "compose_max_depth";
+    "blame_check",       `Scalar "blame_check_num";
+    "blame_raised",      `Scalar "blame_raised_num";
+    "coerce_id",         `Arr ("coerce_kind", "C_ID");
+    "coerce_fun",        `Arr ("coerce_kind", "C_FUN");
+    "coerce_list",       `Arr ("coerce_kind", "C_LIST");
+    "coerce_tuple",      `Arr ("coerce_kind", "C_TUPLE");
+    "coerce_ref",        `Arr ("coerce_kind", "C_REF");
+    "coerce_array",      `Arr ("coerce_kind", "C_ARRAY");
+    "coerce_tv",         `Arr ("coerce_kind", "C_TV");
+    "coerce_bot",        `Arr ("coerce_kind", "C_BOT");
+    "dti_fn",            `Arr ("dti_by_ground", "G_FN");
+    "dti_li",            `Arr ("dti_by_ground", "G_LI");
+    "dti_tp",            `Arr ("dti_by_ground", "G_TP");
+    "dti_rf",            `Arr ("dti_by_ground", "G_RF");
+    "dti_ar",            `Arr ("dti_by_ground", "G_AR");
+    "dti_int",           `Arr ("dti_by_ground", "G_INT");
+    "dti_bool",          `Arr ("dti_by_ground", "G_BOOL");
+    "dti_float",         `Arr ("dti_by_ground", "G_FLOAT");
+    "dti_unit",          `Arr ("dti_by_ground", "G_UNIT");
+  ]
   in
-  let main = 
-    let init = [SExp (App (Var "GC_INIT", []))] in
-    let stms n = 
-      let cont = 
-        (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else []) @
-        [
-          SExp (App (Var ("mutant" ^ string_of_int n), []));
-          SAssign (Var "gc_tmp", App (Var "GC_get_total_bytes", []));
-          SAssign (Index (Var "gc_counts", Int (n - 1)), BinOp (Var "gc_tmp", Minus, Var "gc_num"));
-          SAssign (Var "gc_num", Var "gc_tmp");
-          SAssign (Index (Var "cast_counts", Int (n - 1)), Var "current_cast");
-          SAssign (Index (Var "inference_counts", Int (n - 1)), Var "current_inference");
-          SAssign (Index (Var "longest", Int (n - 1)), Var "current_longest");
-          SAssign (Var "current_cast", Int 0);
-          SAssign (Var "current_inference", Int 0);
-          SAssign (Var "current_longest", Int 0);
-          SExp (App (Var "rewind", [Var "stdin"]));
-        ]
-      in
-      cont @
-      [ 
-        SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
-        SExp (App (Var "fflush", [Var "stdout"]));
-      ]
-    in
-    let ret = SReturn (App (Var "update_jsonl_file_profile", [Str (Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file); Var "gc_counts"; Var "cast_counts"; Var "inference_counts"; Var "longest"; Int mutants_length])) in
-    FunDef (No, { ret_ty = INT; fname = "main"; params = [] }, init @ List.concat_map (fun k -> stms k) mutant_num_list @ [ret])
+  let nm = List.length profile_metrics in
+  (* profile .c 側で定義すべき大域カウンタ*)
+  let counter_int  = ["current_inference"; "current_cast"; "current_longest"; "current_compose";
+                      "compose_cached"; "current_alloc"; "new_crc_num"; "alloc_hash"; "find_ty_num";
+                      "ty_find_calls"; "ty_find_max_chain"; "normalize_tv_num"; "compose_max_depth";
+                      "blame_check_num"; "blame_raised_num"] in
+  let counter_arr  = [("coerce_kind", "N_CRCKIND"); ("dti_by_ground", "N_GROUND_TY")] in
+  let decls =
+    (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
+    [ Decl (Static, LLONG, Format.asprintf "metric_data[%d][%d]" mutants_length nm, None);
+      Decl (No, PTR CHAR, "metric_names[]", Some (Array (List.map (fun (k, _) -> Str k) profile_metrics)));
+      Decl (No, LLONG, "mem_before", None) ] @
+    List.map (fun c -> Decl (No, INT, c, None)) counter_int @
+    List.map (fun (c, size_const) -> Decl (No, INT, Format.asprintf "%s[%s]" c size_const, None)) counter_arr
+  in
+  let read_metric = function
+    | `Mem -> BinOp (App (Var "GC_get_total_bytes", []), Minus, Var "mem_before")
+    | `Scalar g -> Var g
+    | `Arr (g, member) -> Index (Var g, Var member)
+  in
+  let reset_counters =
+    List.map (fun c -> SAssign (Var c, Int 0)) counter_int @
+    List.map (fun (c, size_const) ->
+      SFor ((SDecl (INT, "_rk", Some (Int 0)), BinOp (Var "_rk", Lt, Var size_const), PostOp (Var "_rk", Incr)),
+            [ SAssign (Index (Var c, Var "_rk"), Int 0) ])) counter_arr
+  in
+  let mutant_profile_block n =
+    reset_counters @
+    [ SAssign (Var "mem_before", App (Var "GC_get_total_bytes", [])) ] @
+    per_run_prelude n @
+    [ SExp (App (Var ("mutant" ^ string_of_int n), [])) ] @
+    List.mapi (fun j (_, src) ->
+      SAssign (Index (Index (Var "metric_data", Int (n - 1)), Int j), read_metric src)) profile_metrics @
+    [ SExp (App (Var "rewind", [Var "stdin"]));
+      SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
+      SExp (App (Var "fflush", [Var "stdout"])) ]
+  in
+  let pmain =
+    FunDef (No, { ret_ty = INT; fname = "main"; params = [] },
+      [ SExp (App (Var "GC_INIT", [])) ] @
+      List.concat_map mutant_profile_block mutant_num_list @
+      [ SReturn (App (Var "update_jsonl_file_profile",
+          [ Str jsonl_path; Var "metric_names"; PreOp (Deref, Var "metric_data"); Int nm; Int mutants_length ])) ])
   in
   let oc = open_out (asprintf "%s/bench/%s%s_profile.c" log_dir file mode_str) in
-  output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [main]));
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [pmain]));
   close_out oc;
   (* build *)
   let cmd = build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false () in
