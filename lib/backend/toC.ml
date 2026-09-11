@@ -566,13 +566,23 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let settys =
     if bench = 0 || config.static then []
     else
-      let resets = 
+      let resets =
         List.filter_map (fun (u, name) -> match u with
           | TyVar _ -> Some (SAssign (Var name, Cast (TY, toC_tycontent u)))
-          | _ -> None) 
+          | _ -> None)
           tys
       in
-      [ FunDef (No, { ret_ty = INT; fname = "set_tys" ^ string_of_int bench; params = [(VOID, "")] }, resets @ [SReturn (Int 0)]) ]
+      let crc_resets =
+        List.filter_map (fun (c, name) ->
+          let _, exp = toC_crc name c in
+          match exp with
+          | Struct fields when List.assoc_opt "crckind" fields = Some (Var "C_TV") ->
+            Some (SAssign (Var name, Cast (CRC, exp)))
+          | _ -> None)
+          crcs
+      in
+      [ FunDef (No, { ret_ty = INT; fname = "set_tys" ^ string_of_int bench; params = [(VOID, "")] },
+          resets @ crc_resets @ [SReturn (Int 0)]) ]
   in
   let decl = if bench = 0 && not config.static then [Decl (No, PTR RANGE, "range_list", None)] else [] in
   let main = [
