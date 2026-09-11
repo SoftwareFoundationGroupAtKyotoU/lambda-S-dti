@@ -25,6 +25,7 @@ inline ty *newty() {
 inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 	#ifdef PROFILE
 	current_inference++;
+	if ((unsigned)g < 9) dti_by_ground[g]++;
 	#endif
 	switch (g) {
 		case G_INT: {
@@ -95,12 +96,20 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 #ifndef CAST
 inline ty *ty_find(ty *t) {
     ty *root = t;
+    #ifdef PROFILE
+    int chain = 0;
+    ty_find_calls++;
+    #endif
     while (root->tykind == SUBSTITUTED) {
         #ifdef PROFILE
         find_ty_num++;
+        chain++;
         #endif
         root = root->tydat.tv;
     }
+    #ifdef PROFILE
+    if (chain > ty_find_max_chain) ty_find_max_chain = chain;
+    #endif
 
     ty *curr = t;
     while (curr->tykind == SUBSTITUTED) {

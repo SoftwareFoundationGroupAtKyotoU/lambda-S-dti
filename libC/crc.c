@@ -6,7 +6,7 @@
 #endif //HASH
 
 #include <stdio.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 #include <gc.h>
 
 #include "crc.h"
@@ -40,7 +40,15 @@ static inline crc* create_new_crc(crc* candidate) {
 #ifdef HASH
 #include <string.h>
 
-static crc* intern_table[CRC_HASH_SIZE] = {NULL};
+static crc **static_crcs = NULL;
+static int static_crc_n = 0;
+
+void set_static_crcs(crc **arr, int n) {
+    static_crcs = arr;
+    static_crc_n = n;
+}
+
+static crc **intern_table = NULL;
 
 static uint32_t hash_crc(const crc *c) {
     uint32_t h = c->crckind;
@@ -151,11 +159,39 @@ static int eq_crc(const crc *a, const crc *b) {
     }
 }
 
+static void ensure_intern_table(void) {
+    if (intern_table) return;
+    intern_table = (crc**)calloc(CRC_HASH_SIZE, sizeof(crc*));
+    if (!intern_table) { printf("Fatal: intern_table allocation failed\n"); exit(1); }
+    GC_add_roots((char*)intern_table, (char*)(intern_table + CRC_HASH_SIZE));
+    for (int i = 0; i < static_crc_n; i++) {
+        crc *c = static_crcs[i];
+        uint32_t idx = hash_crc(c) % CRC_HASH_SIZE;
+        while (intern_table[idx] != NULL) {
+            if (intern_table[idx] == c) break;
+            idx = (idx + 1) % CRC_HASH_SIZE;
+        }
+        intern_table[idx] = c;
+    }
+}
+
 static crc* intern_crc(crc *candidate) {
+    if (!intern_table) {
+        for (int i = 0; i < static_crc_n; i++) {
+            if (eq_crc(static_crcs[i], candidate)) {
+                #ifdef PROFILE
+                alloc_hash++;
+                #endif
+                return static_crcs[i];
+            }
+        }
+        ensure_intern_table();
+    }
+
     uint32_t hash = hash_crc(candidate);
     uint32_t idx = hash % CRC_HASH_SIZE;
     uint32_t start_idx = idx;
-    
+
     while (intern_table[idx] != NULL) {
         if (eq_crc(intern_table[idx], candidate)) {
 			#ifdef PROFILE
@@ -176,33 +212,23 @@ static crc* intern_crc(crc *candidate) {
     return new_c;
 }
 
-void register_static_crc(crc *c) {
-    uint32_t hash = hash_crc(c);
-    uint32_t idx = hash % CRC_HASH_SIZE;
-    uint32_t start_idx = idx;
-    
-    while (intern_table[idx] != NULL) {
-        if (intern_table[idx] == c) return;
-        idx = (idx + 1) % CRC_HASH_SIZE;
-        if (idx == start_idx) {
-            printf("Fatal: intern_table is full! Increase CRC_HASH_SIZE.\n");
-            exit(1);
-        }
-    }
-    intern_table[idx] = c;
-}
-
 typedef struct {
     crc *c1;
     crc *c2;
     crc *result;
 } compose_cache_entry;
 
-static compose_cache_entry compose_cache[CACHE_SIZE] = {0};
+static compose_cache_entry *compose_cache = NULL;
+
+static inline void ensure_compose_cache(void) {
+    if (compose_cache) return;
+    compose_cache = (compose_cache_entry*)calloc(CACHE_SIZE, sizeof(compose_cache_entry));
+    if (!compose_cache) { printf("Fatal: compose_cache allocation failed\n"); exit(1); }
+}
 
 void clear_crc_caches() {
-    memset(intern_table, 0, sizeof(intern_table));
-    memset(compose_cache, 0, sizeof(compose_cache));
+    if (intern_table) memset(intern_table, 0, CRC_HASH_SIZE * sizeof(crc*));
+    if (compose_cache) memset(compose_cache, 0, CACHE_SIZE * sizeof(compose_cache_entry));
 }
 #endif //HASH
 
@@ -343,6 +369,9 @@ static inline crc *new_bot(const crc *proj, const ground_ty g, const uint16_t si
 }
 
 crc *normalize_tv(crc *c) {
+	#ifdef PROFILE
+	normalize_tv_num++;
+	#endif
 	ty *tv = c->crcdat.tv.tv_ptr;
 	switch(tv->tykind) {
 		case BASE_INT: return new_id(c, G_INT, 0, c);
@@ -756,18 +785,12 @@ static crc* internal_compose(crc *c1, crc *c2) {
 }
 
 
-crc* compose(crc *c1, crc *c2) {
-	#ifdef PROFILE
-	current_compose++;
-	#endif //PROFILE
-
-    if (c2 == &crc_id) return c1;
-    if (c1 == &crc_id) return c2;
-
+static crc* compose_body(crc *c1, crc *c2) {
 	#ifdef HASH
 	if (c1->has_tv || c2->has_tv) {
         return internal_compose(c1, c2);
     }
+    ensure_compose_cache();
     uint32_t hash = (((uintptr_t)c1 >> 3) ^ ((uintptr_t)c2 >> 3)) % CACHE_SIZE;
     if (compose_cache[hash].c1 == c1 && compose_cache[hash].c2 == c2) {
 		#ifdef PROFILE
@@ -782,10 +805,29 @@ crc* compose(crc *c1, crc *c2) {
     return result;
 
 	#else //HASH
-    
+
 	return internal_compose(c1, c2);
-	
+
 	#endif //HASH
+}
+
+crc* compose(crc *c1, crc *c2) {
+	#ifdef PROFILE
+	current_compose++;
+	#endif //PROFILE
+
+    if (c2 == &crc_id) return c1;
+    if (c1 == &crc_id) return c2;
+
+	#ifdef PROFILE
+	static int compose_depth = 0;
+	if (++compose_depth > compose_max_depth) compose_max_depth = compose_depth;
+	crc *r = compose_body(c1, c2);
+	--compose_depth;
+	return r;
+	#else
+	return compose_body(c1, c2);
+	#endif //PROFILE
 }
 
 #ifdef MONOTONIC

@@ -508,18 +508,17 @@ let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None
 
 let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc name c))) crcs
 
-let toC_crcs ~config crcs = 
-  let register = 
-    List.map (fun str -> SExp (App (Var "register_static_crc", [Addr str])))
-      (["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
-      @ (List.map snd crcs))
+let toC_crcs ~config crcs =
+  let static_crc_names =
+    ["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
+    @ (List.map snd crcs)
   in
   let crcinit =
     if config.hash then
-      [FunDef (Static, { ret_ty = VOID; fname = "init_crcs"; params = [] }, register)]
+      [ Decl (Static, PTR CRC, "static_crcs_arr[]", Some (Array (List.map (fun s -> Addr s) static_crc_names))) ]
     else []
   in
-  toC_crcdecls crcs, toC_crccontents crcs, crcinit
+  toC_crcdecls crcs, toC_crccontents crcs, crcinit, List.length static_crc_names
 
 (* ================================ *)
 
@@ -562,19 +561,30 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   in
   let tydecl, tydef = toC_tys ~config tys in
   let rangedef = toC_ranges ranges in
-  let crcdecl, crcdef, crcinit = toC_crcs ~config crcs in
+  let crcdecl, crcdef, crcinit, n_static_crc = toC_crcs ~config crcs in
   let fundecl, fundef = toC_toplevel ~config toplevel in
+  let settys =
+    if bench = 0 || config.static then []
+    else
+      let resets = 
+        List.filter_map (fun (u, name) -> match u with
+          | TyVar _ -> Some (SAssign (Var name, Cast (TY, toC_tycontent u)))
+          | _ -> None) 
+          tys
+      in
+      [ FunDef (No, { ret_ty = INT; fname = "set_tys" ^ string_of_int bench; params = [(VOID, "")] }, resets @ [SReturn (Int 0)]) ]
+  in
   let decl = if bench = 0 && not config.static then [Decl (No, PTR RANGE, "range_list", None)] else [] in
   let main = [
     FunDef (
       No,
       { ret_ty = INT; fname = if bench = 0 then "main" else "mutant" ^ string_of_int bench; params = []},
       (if bench = 0 then [SExp (App (Var "GC_INIT", []))] else [])
-        @ (if config.hash then [SExp (App (Var "init_crcs", []))] else [])
+        @ (if config.hash then [SExp (App (Var "set_static_crcs", [Var "static_crcs_arr"; Int n_static_crc]))] else [])
         @ (if config.monotonic then [SExp (App (Var "sc_init", [Int 16]))] else [])
         @ (if List.length ranges <> 0 then [SAssign (Var "range_list", Var "local_range_list")] else [])
         @ toC_exp ~is_main:true ~config f
     )
   ]
   in
-  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ fundecl @ fundef @ decl @ main
+  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ fundecl @ fundef @ settys @ decl @ main

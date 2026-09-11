@@ -136,6 +136,7 @@ static inline value toplevel_coerce_inj(value v, ground_ty g) {
 static inline value toplevel_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
+	blame_check_num++;
 	#endif
 	if (tag_of(v) != g) { blame(rid, polarity); }
 	return untag_value(v, g);
@@ -144,6 +145,7 @@ static inline value toplevel_coerce_proj(value v, ground_ty g, uint32_t rid, uin
 static inline value toplevel_coerce_proj_tp(value v, uint16_t size, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
+	blame_check_num++;
 	#endif
 	if (tag_of(v) != G_TP || size_of(v) != size) { blame(rid, polarity); }
 	return untag_value(v, G_TP);

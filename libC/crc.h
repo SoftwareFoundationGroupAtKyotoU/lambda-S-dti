@@ -86,7 +86,7 @@ extern crc crc_inj_AR;
 crc* alloc_crc(crc*);
 
 #ifdef HASH
-void register_static_crc(crc*);
+void set_static_crcs(crc**, int);
 void clear_crc_caches();
 #endif //HASH
 

@@ -265,13 +265,21 @@ let parse_prof (out : string) : int option * int option =
 let run_bin (bin : string) (stdin_data : string) : string option =
   if not (Sys.file_exists bin) then None
   else begin
-    let out, inp, err = Unix.open_process_full bin (Unix.environment ()) in
-    output_string inp stdin_data;
-    close_out inp;
-    let so = In_channel.input_all out in
-    let _se = In_channel.input_all err in
-    ignore (Unix.close_process_full (out, inp, err));
-    Some so
+    let tmp = Filename.temp_file "grift_in_" ".txt" in
+    Fun.protect
+      ~finally:(fun () -> try Sys.remove tmp with _ -> ())
+      (fun () ->
+        let oc = open_out_bin tmp in
+        output_string oc stdin_data;
+        close_out oc;
+        let cmd =
+          Printf.sprintf "%s < %s 2>/dev/null"
+            (Filename.quote bin) (Filename.quote tmp)
+        in
+        let ic = Unix.open_process_in cmd in
+        let so = In_channel.input_all ic in
+        ignore (Unix.close_process_in ic);
+        Some so)
   end
 
 let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
