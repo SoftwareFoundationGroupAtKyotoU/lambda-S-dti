@@ -831,7 +831,8 @@ value coerce(value v, crc *s) {
 				}
 				default: break;
 			}
-			return coerce(v, normalize_tv(s));
+			crc *norm = normalize_tv(s);
+			return coerce(v, norm);
 		}
 		case C_BOT: { // v<(G?p;)⊥q>
 			remove_inj(v, s->crcdat.bot.g, s->crcdat.bot.size, s);

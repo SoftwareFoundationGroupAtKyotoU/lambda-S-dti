@@ -539,6 +539,7 @@ static inline crc *compose_tv_tv(crc *c1, ty *tv, crc *c2) {
 				tv->tykind = SUBSTITUTED;
 				tv->tydat.tv = tv_;
 			}
+			if (c1->has_proj == 0 && c2->has_inj == 0) return &crc_id;
 			return new_tv(c1, tv_, c2);
 		}
 		case SUBSTITUTED: {
