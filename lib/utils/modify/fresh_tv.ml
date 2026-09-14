@@ -142,6 +142,15 @@ module ITGL = struct
       let e2, env = tv_renew_exp e2 env in
       let e3, env = tv_renew_exp e3 env in
       IfExp (r, e1, e2, e3), env
+    | ForExp (r, i, e1, e2, tag, e3) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      let e3, env = tv_renew_exp e3 env in
+      ForExp (r, i, e1, e2, tag, e3), env
+    | WhileExp (r, e1, e2) ->
+      let e1, env = tv_renew_exp e1 env in
+      let e2, env = tv_renew_exp e2 env in
+      WhileExp (r, e1, e2), env
     | FunExp (r, (x, anot, u), e) ->
       let u, env = tv_renew_ty u env in
       let e, env = tv_renew_exp e env in

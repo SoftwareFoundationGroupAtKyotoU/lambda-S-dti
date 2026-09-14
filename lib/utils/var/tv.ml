@@ -20,6 +20,8 @@ module ITGL = struct
     | BinOp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | AscExp (_, e, u) -> TV.union (tv_exp e) (ftv_ty u)
     | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map tv_exp [e1; e2; e3]
+    | ForExp (_, _, e1, e2, _, e3) -> TV.big_union @@ List.map tv_exp [e1; e2; e3]
+    | WhileExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)
     | FunExp (_, (_, _, u), e) -> TV.union (ftv_ty u) (tv_exp e)
     | FixExp (_, _, (_, _, u1), _, e) -> TV.union (ftv_ty u1) (tv_exp e)
     | AppExp (_, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)

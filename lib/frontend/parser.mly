@@ -25,26 +25,6 @@ let opt_ty_to_annot_ty = function
 
 let make_seq r e1 e2 = LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
 
-let dummy_var x = Var (dummy_range, x, ref [])
-
-let make_for r i e1 e2 tag e3 = 
-  let e1 = fun k -> LetExp (dummy_range, "_for_l", AscExp (range_of_exp e1, e1, TyInt), k) in
-  let e2 = fun k -> LetExp (dummy_range, "_for_r", AscExp (range_of_exp e2, e2, TyInt), k) in
-  let cond_op, loop_op = match tag with
-    | `To ->     Lte, Plus
-    | `Downto -> Gte, Minus
-  in
-  let loop_cond = BinOp (dummy_range, cond_op, dummy_var i, dummy_var "_for_r") in
-  let loop_then = make_seq r e3 (AppExp (r, dummy_var "_for_loop", BinOp (dummy_range, loop_op, dummy_var i, IConst (dummy_range, 1)))) in
-  let loop_content = IfExp (r, loop_cond, loop_then, UConst r) in
-  let loop = fun k -> LetExp (r, "_for_loop", FixExp (r, "_for_loop", (i, Expl, TyInt), (Expl, TyUnit), loop_content), k) in
-  e1 @@ e2 @@ loop (AppExp (r, dummy_var "_for_loop", dummy_var "_for_l"))
-
-let make_while r e1 e2 = 
-  let loop_then = make_seq r e2 (AppExp (r, dummy_var "_while_loop", UConst dummy_range)) in
-  let loop_content = IfExp (r, e1, loop_then, UConst r) in
-  LetExp (r, "_while_loop", FixExp (r, "_while_loop", ("_", Expl, TyUnit), (Expl, TyUnit), loop_content), AppExp (r, dummy_var "_while_loop", UConst dummy_range))
-
 exception Parser_bug of string
 
 %}
@@ -219,15 +199,15 @@ IfExpr :
 
 ForExpr :
   | start=FOR i=ID EQ e1=Expr TO e2=Expr DO e3=Expr done_r=DONE {
-      make_for (join_range start done_r) i.value e1 e2 `To e3
+      ForExp (join_range start done_r, i.value, e1, e2, To, e3)
     }
   | start=FOR i=ID EQ e1=Expr DOWNTO e2=Expr DO e3=Expr done_r=DONE {
-      make_for (join_range start done_r) i.value e1 e2 `Downto e3
+      ForExp (join_range start done_r, i.value, e1, e2, Downto, e3)
     }
 
 WhileExpr :
   | start=WHILE e1=Expr DO e2=Expr done_r=DONE {
-      make_while (join_range start done_r) e1 e2
+      WhileExp (join_range start done_r, e1, e2)
     }
 
 PutExpr :

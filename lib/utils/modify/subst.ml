@@ -59,6 +59,9 @@ module CC = struct
     | FConst _ as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | IfExp (f1, f2, f3) -> IfExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3)
+    | ForExp (i, f1, f2, tag, f3) ->
+      ForExp (i, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, tag, subst_exp ~monotonic s f3)
+    | WhileExp (f1, f2) -> WhileExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | FunExp (tvs, fd) ->
       (* Remove substitutions captured by tvs *)
       let s = List.filter (fun (x, _) -> not @@ List.memq x tvs) s in

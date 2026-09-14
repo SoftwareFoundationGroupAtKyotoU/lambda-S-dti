@@ -136,6 +136,12 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   | IfExp (r, e1, e2, e3) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in let k3, e3' = recur k2 e3 in
     (k3, IfExp (r, e1', e2', e3'))
+  | ForExp (r, i, e1, e2, tag, e3) ->
+    let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in let k3, e3' = recur k2 e3 in
+    (k3, ForExp (r, i, e1', e2', tag, e3'))
+  | WhileExp (r, e1, e2) ->
+    let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in
+    (k2, WhileExp (r, e1', e2'))
   | PutExp (r, e1, e2, e3) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in let k3, e3' = recur k2 e3 in
     (k3, PutExp (r, e1', e2', e3'))

@@ -166,6 +166,27 @@ module CC = struct
         | BoolV false -> eval ~config env f3
         | _ -> raise @@ Eval_bug "if: non boolean value"
       end
+    | ForExp (i, f1, f2, tag, f3) ->
+      let v1 = eval ~config env f1 in
+      let v2 = eval ~config env f2 in
+      begin match v1, v2 with
+        | IntV lo, IntV hi ->
+          let cont, step = match tag with To -> (<=), 1 | Downto -> (>=), -1 in
+          let rec loop c =
+            if cont c hi then begin
+              ignore (eval ~config (Environment.add i (IntV c) env) f3);
+              loop (c + step)
+            end else UnitV
+          in loop lo
+        | _ -> raise @@ Eval_bug "for: non-integer bound"
+      end
+    | WhileExp (f1, f2) ->
+      let rec loop () =
+        match eval ~config env f1 with
+        | BoolV true -> ignore (eval ~config env f2); loop ()
+        | BoolV false -> UnitV
+        | _ -> raise @@ Eval_bug "while: non-boolean condition"
+      in loop ()
     | LetExp (x, f1, f2) ->
       let v1 = eval ~config env f1 in
       eval ~config (Environment.add x v1 env) f2

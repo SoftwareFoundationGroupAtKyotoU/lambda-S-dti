@@ -38,6 +38,9 @@ module ITGL = struct
       AscExp (r, normalize_exp e, normalize_type u)
     | IfExp (r, e1, e2, e3) ->
       IfExp (r, normalize_exp e1, normalize_exp e2, normalize_exp e3)
+    | ForExp (r, i, e1, e2, tag, e3) ->
+      ForExp (r, i, normalize_exp e1, normalize_exp e2, tag, normalize_exp e3)
+    | WhileExp (r, e1, e2) -> WhileExp (r, normalize_exp e1, normalize_exp e2)
     | FunExp (r, (x1, anot, u1), e) ->
       FunExp (r, (x1, anot, normalize_type u1), normalize_exp e)
     | FixExp (r, x, (y, anot, u1), (anot2, u2), e) ->

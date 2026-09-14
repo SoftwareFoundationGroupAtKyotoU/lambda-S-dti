@@ -128,6 +128,19 @@ module ITGL = struct
       let r1, r2, r3 = range_of_exp e1, range_of_exp e2, range_of_exp e3 in
       let u = meet u2 u3 in
       CC.IfExp (c f1 r1 u1 TyBool, c f2 r2 u2 u, c f3 r3 u3 u), u
+    | ForExp (_, i, e1, e2, tag, e3) ->
+      let f1, u1 = translate_exp ~config env e1 in
+      let f2, u2 = translate_exp ~config env e2 in
+      let r1, r2 = range_of_exp e1, range_of_exp e2 in
+      let env = Environment.add i (tysc_of_ty TyInt) env in
+      let f3, u3 = translate_exp ~config env e3 in
+      let r3 = range_of_exp e3 in
+      CC.ForExp (i, c f1 r1 u1 TyInt, c f2 r2 u2 TyInt, tag, c f3 r3 u3 TyUnit), TyUnit
+    | WhileExp (_, e1, e2) ->
+      let f1, u1 = translate_exp ~config env e1 in
+      let f2, u2 = translate_exp ~config env e2 in
+      let r1, r2 = range_of_exp e1, range_of_exp e2 in
+      CC.WhileExp (c f1 r1 u1 TyBool, c f2 r2 u2 TyUnit), TyUnit
     | FunExp (_, (x, _, u1), e) ->
       let f, u2 = translate_exp ~config (Environment.add x (tysc_of_ty u1) env) e in
       CC.FunExp ([], CC.FunB ((x, u1), f)), TyFun (u1, u2)
@@ -340,6 +353,20 @@ module CC = struct
       assert (u1 = TyBool);
       assert (u2 = u3);
       IfExp (f1, f2, f3), u2
+    | ForExp (i, f1, f2, tag, f3) ->
+      let f1, u1 = translate_exp ~config env f1 in
+      let f2, u2 = translate_exp ~config env f2 in
+      assert (u1 = TyInt && u2 = TyInt);
+      let env = Environment.add i (tysc_of_ty TyInt) env in
+      let f3, u3 = translate_exp ~config env f3 in
+      assert (u3 = TyUnit);
+      ForExp (i, f1, f2, tag, f3), TyUnit
+    | WhileExp (f1, f2) ->
+      let f1, u1 = translate_exp ~config env f1 in
+      assert (u1 = TyBool);
+      let f2, u2 = translate_exp ~config env f2 in
+      assert (u2 = TyUnit);
+      WhileExp (f1, f2), TyUnit
     | LetExp (x, f1, f2) ->
       let f1, u1 = translate_exp ~config env f1 in
       let tvs = match f1 with FunExp (tvs, _) | FixExp (tvs, _) -> tvs | _ -> [] in
@@ -421,7 +448,8 @@ module CC = struct
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
     | Var _ | IConst _ | BConst _ | UConst | FConst _ | NilExp _ | BinOp _ | FunExp _ | FixExp _
-    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ | LengthExp _ as f ->
+    | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ | LengthExp _
+    | ForExp _ | WhileExp _ as f ->
       let f, u = translate_exp ~config env f in
       assert (u = uk1);
       CAppExp (f, k), uk2

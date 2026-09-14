@@ -297,8 +297,8 @@ module ITGL = struct
     | BinOp (_, And, _, _) -> 35
     | BinOp (_, Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
-    | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
-  
+    | IfExp _ | ForExp _ | WhileExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
+
   let gt_exp e1 e2 =
     level_exp e1 > level_exp e2
 
@@ -344,6 +344,17 @@ module ITGL = struct
         (with_paren (gt_exp e e1) pp_exp) e1
         (with_paren (gt_exp e e2) pp_exp) e2
         (with_paren (gt_exp e e3) pp_exp) e3
+    | ForExp (_, i, e1, e2, tag, e3) ->
+      fprintf ppf "for %s = %a %s %a do %a done"
+        i
+        pp_exp e1
+        (match tag with To -> "to" | Downto -> "downto")
+        pp_exp e2
+        pp_exp e3
+    | WhileExp (_, e1, e2) ->
+      fprintf ppf "while %a do %a done"
+        pp_exp e1
+        pp_exp e2
     | FunExp (_, (x1, anot, u1), e) -> begin match anot with
       | Expl -> 
         fprintf ppf "fun (%s: %a) -> %a"
@@ -444,7 +455,7 @@ module CC = struct
     | BinOp (Or, _, _) -> 30
     | SubstExp _ | PutExp _ -> 20
     | CastExp _ -> 15
-    | IfExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
+    | IfExp _ | ForExp _ | WhileExp _ | FunExp _ | FixExp _ | LetExp _ | MatchExp _ -> 10
   
   let gt_exp e1 e2 =
     level_exp e1 > level_exp e2
@@ -478,6 +489,17 @@ module CC = struct
         (with_paren (gt_exp f f1) pp_exp) f1
         (with_paren (gt_exp f f2) pp_exp) f2
         (with_paren (gt_exp f f3) pp_exp) f3
+    | ForExp (i, f1, f2, tag, f3) ->
+      fprintf ppf "for %s = %a %s %a do %a done"
+        i
+        pp_exp f1
+        (match tag with To -> "to" | Downto -> "downto")
+        pp_exp f2
+        pp_exp f3
+    | WhileExp (f1, f2) ->
+      fprintf ppf "while %a do %a done"
+        pp_exp f1
+        pp_exp f2
     | FunExp (xs, fund) ->
       fprintf ppf "%a%a"
         pp_tyabses xs

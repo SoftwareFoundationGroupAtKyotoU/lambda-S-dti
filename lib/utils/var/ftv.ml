@@ -54,6 +54,8 @@ module ITGL = struct
     | BinOp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | AscExp (_, e, u) -> TV.union (ftv_exp e) (ftv_ty u)
     | IfExp (_, e1, e2, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
+    | ForExp (_, _, e1, e2, _, e3) -> TV.big_union @@ List.map ftv_exp [e1; e2; e3]
+    | WhileExp (_, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
     | FunExp (_, (_, Expl, u), e) -> TV.union (ftv_ty u) (ftv_exp e)
     | FunExp (_, (_, Impl, _), e) -> ftv_exp e
     | FixExp (_, _, (_, Expl, u1), _, e) -> TV.union (ftv_ty u1) (ftv_exp e)
@@ -88,6 +90,9 @@ module CC = struct
     | BinOp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | IfExp (f1, f2, f3) ->
       List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2; f3])
+    | ForExp (_, f1, f2, _, f3) ->
+      List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2; f3])
+    | WhileExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | AppMExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | AppDExp (f1, (f2, f3)) -> TV.union (ftv_exp f1) (TV.union (ftv_exp f2) (ftv_exp f3))
     | LetExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)

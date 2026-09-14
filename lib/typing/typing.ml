@@ -213,6 +213,21 @@ module ITGL = struct
       let u3 = type_of_exp env e3 in
       unify @@ CConsistent (u1, TyBool);
       unify_meet u2 u3
+    | ForExp (_, i, e1, e2, _tag, e3) ->
+      let u1 = type_of_exp env e1 in
+      let u2 = type_of_exp env e2 in
+      unify @@ CConsistent (u1, TyInt);
+      unify @@ CConsistent (u2, TyInt);
+      let env = Environment.add i (tysc_of_ty TyInt) env in
+      let u3 = type_of_exp env e3 in
+      unify @@ CConsistent (u3, TyUnit);
+      TyUnit
+    | WhileExp (_, e1, e2) ->
+      let u1 = type_of_exp env e1 in
+      unify @@ CConsistent (u1, TyBool);
+      let u2 = type_of_exp env e2 in
+      unify @@ CConsistent (u2, TyUnit);
+      TyUnit
     | FunExp (_, (x, _, u1), e) ->
       let u2 = type_of_exp (Environment.add x (tysc_of_ty u1) env) e in
       TyFun (u1, u2)
@@ -370,6 +385,19 @@ module CC = struct
         u2
       else
         raise @@ Type_bug "if"
+    | ForExp (i, f1, f2, _tag, f3) ->
+      let u1 = type_of_exp env f1 in
+      let u2 = type_of_exp env f2 in
+      if u1 = TyInt && u2 = TyInt then
+        let env = Environment.add i (tysc_of_ty TyInt) env in
+        let u3 = type_of_exp env f3 in
+        if u3 = TyUnit then TyUnit else raise @@ Type_bug "for: body not unit"
+      else raise @@ Type_bug "for: bound not int"
+    | WhileExp (f1, f2) ->
+      let u1 = type_of_exp env f1 in
+      if u1 <> TyBool then raise @@ Type_bug "while: cond not bool";
+      let u2 = type_of_exp env f2 in
+      if u2 <> TyUnit then raise @@ Type_bug "while: body not unit" else TyUnit
     | FunExp (tvs, fund) ->
       let TyScheme (_, u) = type_of_fund env tvs fund in u
     | FixExp (tvs, fixd) ->

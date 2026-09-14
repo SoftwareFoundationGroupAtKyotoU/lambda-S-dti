@@ -71,6 +71,10 @@ type binop =
   | Plus | Minus | Mult | Div | Mod | FPlus | FMinus | FMult | FDiv
   | And | Or | Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte
 
+(* === Definitions for for-loop direction === *)
+
+type updown = To | Downto
+
 (* === Definitions for matchform === *)
 
 type matchform = (*match式でmatchさせることのできる形の種類を定義*)
@@ -127,6 +131,8 @@ module ITGL = struct
     | BinOp of range * binop * exp * exp
     | AscExp of range * exp * ty
     | IfExp of range * exp * exp * exp
+    | ForExp of range * id * exp * exp * updown * exp
+    | WhileExp of range * exp * exp
     | FunExp of range * (id * anotated * ty) * exp
     | FixExp of range * id * (id * anotated * ty) * (anotated * ty) * exp
     | AppExp of range * exp * exp
@@ -152,6 +158,8 @@ module ITGL = struct
     | AscExp (r, _, _)
     | BinOp (r, _, _, _)
     | IfExp (r, _, _, _)
+    | ForExp (r, _, _, _, _, _)
+    | WhileExp (r, _, _)
     | FunExp (r, _, _)
     | FixExp (r, _, _, _, _)
     | AppExp (r, _, _)
@@ -188,6 +196,8 @@ module CC = struct
     | CoercionExp of coercion
     | BinOp of binop * exp * exp
     | IfExp of exp * exp * exp
+    | ForExp of id * exp * exp * updown * exp
+    | WhileExp of exp * exp
     | AppMExp of exp * exp
     | AppDExp of exp * (exp * exp)
     | LetExp of id * exp * exp

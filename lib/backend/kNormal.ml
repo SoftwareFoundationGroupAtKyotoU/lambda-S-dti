@@ -64,6 +64,12 @@ module CC = struct
     | BinOp (op, f1, f2) -> BinOp (op, alpha_exp idenv f1, alpha_exp idenv f2)
     | IfExp (f1, f2, f3) ->
       IfExp (alpha_exp idenv f1, alpha_exp idenv f2, alpha_exp idenv f3)
+    | ForExp (i, f1, f2, tag, f3) ->
+      let f1 = alpha_exp idenv f1 in
+      let f2 = alpha_exp idenv f2 in
+      let newi = genvar i in
+      ForExp (newi, f1, f2, tag, alpha_exp (Environment.add i newi idenv) f3)
+    | WhileExp (f1, f2) -> WhileExp (alpha_exp idenv f1, alpha_exp idenv f2)
     | FunExp (tvs, fund) -> FunExp (tvs, alpha_fund idenv fund)
     | FixExp (tvs, fixd) -> FixExp (tvs, alpha_fixd idenv fixd)
     | AppMExp (f1, f2) -> AppMExp (alpha_exp idenv f1, alpha_exp idenv f2)
