@@ -134,6 +134,8 @@ module KNorm = struct
     | CAppExp _ | CCompExp _ -> TV.empty
     | IfExp (_, f1, f2) ->
       List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2])
+    | ForExp (_, _, _, _, f) -> ftv_exp f
+    | WhileExp (f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | LetExp (_, f1, f2) -> TV.union (ftv_exp f1) (ftv_exp f2)
     | LetFunExp (_, tvs, fund, f2) -> TV.union (TV.diff (ftv_fund fund) (TV.of_list tvs)) (ftv_exp f2)
     | MatchExp (_, ms) ->

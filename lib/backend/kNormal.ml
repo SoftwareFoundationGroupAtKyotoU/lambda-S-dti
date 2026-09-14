@@ -175,6 +175,13 @@ module CC = struct
       let f2 = k_normalize_exp tvsenv f2 in
       let f3 = k_normalize_exp tvsenv f3 in
       insert_let f1 @@ fun x -> IfExp (x, f2, f3)
+    | ForExp (i, f1, f2, tag, f3) ->
+      let f1 = k_normalize_exp tvsenv f1 in
+      let f2 = k_normalize_exp tvsenv f2 in
+      let f3 = k_normalize_exp (Environment.add i [] tvsenv) f3 in
+      insert_let f1 @@ fun lo -> insert_let f2 @@ fun hi -> KNorm.ForExp (i, lo, hi, tag, f3)
+    | WhileExp (f1, f2) ->
+      KNorm.WhileExp (k_normalize_exp tvsenv f1, k_normalize_exp tvsenv f2)
     | FunExp (tvs, fund) ->
       assert (tvs = []);
       let tent_var = genvar "_var" in
@@ -324,6 +331,8 @@ module KNorm = struct
       | _ -> LetFunExp (x, used, fund, omit_unused_tv_exp env f2)
       end
     | IfExp (x, f1, f2) -> IfExp (x, omit_unused_tv_exp env f1, omit_unused_tv_exp env f2)
+    | ForExp (i, lo, hi, tag, f) -> ForExp (i, lo, hi, tag, omit_unused_tv_exp env f)
+    | WhileExp (f1, f2) -> WhileExp (omit_unused_tv_exp env f1, omit_unused_tv_exp env f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, omit_unused_tv_exp env f) ms)
     | LetExp (x, f1, f2) -> LetExp (x, omit_unused_tv_exp env f1, omit_unused_tv_exp env f2)
     | e -> e
@@ -362,6 +371,8 @@ module KNorm = struct
     | Put (x, y, z, u) -> Put (find x idenv, find y idenv, find z idenv, u)
     | Length x -> Length (find x idenv)
     | IfExp (x, f1, f2) -> IfExp (find x idenv, beta_exp idenv f1, beta_exp idenv f2)
+    | ForExp (i, lo, hi, tag, f) -> ForExp (i, find lo idenv, find hi idenv, tag, beta_exp idenv f)
+    | WhileExp (f1, f2) -> WhileExp (beta_exp idenv f1, beta_exp idenv f2)
     | MatchExp (x, ms) ->
       let x = find x idenv in
       let ms = List.map (fun (mf, f) -> mf, beta_exp idenv f) ms in
@@ -401,6 +412,8 @@ module KNorm = struct
   (* assoc : let x = (let y = ... in ... ) in ...というようなネストされたletをlet y = ... in let x = ... in ...という形に平たくする *)
   let rec assoc_exp = function
     | IfExp (x, f1, f2) -> IfExp (x, assoc_exp f1, assoc_exp f2)
+    | ForExp (i, lo, hi, tag, f) -> ForExp (i, lo, hi, tag, assoc_exp f)
+    | WhileExp (f1, f2) -> WhileExp (assoc_exp f1, assoc_exp f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> mf, assoc_exp f) ms)
     | LetExp (x, f1, f2) ->
       let rec insert = function

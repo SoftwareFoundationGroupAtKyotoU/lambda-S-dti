@@ -16,7 +16,9 @@ module KNorm = struct
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs
     | IfExp (x, f1, f2) -> V.big_union [V.singleton x; fv_exp f1; fv_exp f2]
-    | MatchExp (x, ms) -> 
+    | ForExp (i, lo, hi, _, f) -> V.big_union [V.singleton lo; V.singleton hi; V.remove i (fv_exp f)]
+    | WhileExp (f1, f2) -> V.union (fv_exp f1) (fv_exp f2)
+    | MatchExp (x, ms) ->
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
     | AppTy (x, _, _) -> V.singleton x
     | AppMExp (x, y) -> V.of_list [x; y]
@@ -44,7 +46,9 @@ module Cls = struct
     | Put (x, y, z, _) -> V.of_list [x; y; z]
     | Tuple xs -> V.of_list xs
     | If (x, f1, f2) -> V.big_union [V.singleton x; fv_exp f1; fv_exp f2]
-    | Match (x, ms) -> 
+    | For (i, lo, hi, _, f) -> V.big_union [V.singleton lo; V.singleton hi; V.remove i (fv_exp f)]
+    | While (f1, f2) -> V.union (fv_exp f1) (fv_exp f2)
+    | Match (x, ms) ->
       V.big_union (V.singleton x :: List.map (fun (mf, f) -> V.union (fv_matchform mf) (fv_exp f)) ms)
     | AppTy (x, _, _, _) -> V.singleton x
     | AppTyFun (x, _, _, _) -> V.singleton x

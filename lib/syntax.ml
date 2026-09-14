@@ -273,6 +273,8 @@ module KNorm = struct
     | Put of id * id * id * ty option
     | Length of id
     | IfExp of id * exp * exp
+    | ForExp of id * id * id * updown * exp
+    | WhileExp of exp * exp
     | AppMExp of id * id
     | AppDExp of id * (id * id)
     | AppTy of id * tyvar list * tyarg list
@@ -324,6 +326,8 @@ module Cls = struct
     | Put of id * id * id * ty option
     | Length of id
     | If of id * exp * exp
+    | For of id * id * id * updown * exp
+    | While of exp * exp
     | Match of id * (matchform * exp) list
     | AppTy of id * int * tyarg list * int (* 1つめのintはidの中身の自由変数の個数、2つめのintはtyarg listには含まれない外側からの型変数の個数 *)
     | AppTyFun of id * int * tyarg list * int
@@ -356,7 +360,7 @@ module C = struct
     | RANGE | TY
 
   type preop = Not | Deref
-  type postop = Incr 
+  type postop = Incr | Decr
 
   type exp =
     | Var of id
@@ -386,6 +390,7 @@ module C = struct
     | SReturn of exp
     | SIf of exp * stm list * stm list
     | SFor of (stm * exp * exp) * stm list
+    | SWhile of stm list * exp * stm list
     | SExp of exp
 
   type func_sig = {

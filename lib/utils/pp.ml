@@ -847,6 +847,17 @@ module KNorm = struct
         x
         pp_exp e1
         pp_exp e2
+    | ForExp (i, lo, hi, tag, e) ->
+      fprintf ppf "for %s = %s %s %s do %a done"
+        i
+        lo
+        (match tag with To -> "to" | Downto -> "downto")
+        hi
+        pp_exp e
+    | WhileExp (e1, e2) ->
+      fprintf ppf "while %a do %a done"
+        pp_exp e1
+        pp_exp e2
     | MatchExp (x, ms) as e ->
       fprintf ppf "match %s with%a"
         x        
@@ -969,6 +980,17 @@ module Cls = struct
     | If (x, e1, e2) ->
       fprintf ppf "if %s then %a else %a"
         x
+        pp_exp e1
+        pp_exp e2
+    | For (i, lo, hi, tag, e) ->
+      fprintf ppf "for %s = %s %s %s do %a done"
+        i
+        lo
+        (match tag with To -> "to" | Downto -> "downto")
+        hi
+        pp_exp e
+    | While (e1, e2) ->
+      fprintf ppf "while %a do %a done"
         pp_exp e1
         pp_exp e2
     | Match (x, ms) ->
@@ -1145,6 +1167,7 @@ module C = struct
 
   let pp_postop ppf = function
     | Incr -> fprintf ppf "++"
+    | Decr -> fprintf ppf "--"
 
   let pp_binop ppf = function
     | Plus -> fprintf ppf "+"
@@ -1214,6 +1237,11 @@ module C = struct
         pp_stm s
         pp_exp e1
         pp_exp e2
+        (pp_print_list ~pp_sep:sep_newline pp_stm) ss
+    | SWhile (cond_ss, e, ss) ->
+      fprintf ppf "while (1){\n%a\nif (!(%a)) break;\n%a\n}"
+        (pp_print_list ~pp_sep:sep_newline pp_stm) cond_ss
+        pp_exp e
         (pp_print_list ~pp_sep:sep_newline pp_stm) ss
     | SExp e -> fprintf ppf "%a;" pp_exp e
 

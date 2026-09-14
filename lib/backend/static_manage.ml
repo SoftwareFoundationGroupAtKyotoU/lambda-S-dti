@@ -311,6 +311,8 @@ let rec static_exp tvs = function
     Let (x, f1, f2)
   | Match (x, ms) -> Match (x, List.map (fun (mf, f) -> mf, static_exp tvs f) ms)
   | If (x, f1, f2) -> If (x, static_exp tvs f1, static_exp tvs f2)
+  | For (i, lo, hi, tag, f) -> For (i, lo, hi, tag, static_exp tvs f)
+  | While (f1, f2) -> While (static_exp tvs f1, static_exp tvs f2)
   | MakeCls (x, cls, f) -> MakeCls (x, cls, static_exp tvs f)
   | MakeTyCls (x, cls, f) -> MakeTyCls (x, cls, static_exp tvs f)
   | SetTy _ -> raise @@ Static_manage_bug "setty appear in static_exp"

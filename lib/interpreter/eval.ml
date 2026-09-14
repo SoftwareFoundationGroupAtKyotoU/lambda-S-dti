@@ -174,8 +174,9 @@ module CC = struct
           let cont, step = match tag with To -> (<=), 1 | Downto -> (>=), -1 in
           let rec loop c =
             if cont c hi then begin
-              ignore (eval ~config (Environment.add i (IntV c) env) f3);
-              loop (c + step)
+              let v = eval ~config (Environment.add i (IntV c) env) f3 in
+              if v = UnitV then loop (c + step)
+              else raise @@ Eval_bug "for: non-unit in for"
             end else UnitV
           in loop lo
         | _ -> raise @@ Eval_bug "for: non-integer bound"
@@ -183,7 +184,10 @@ module CC = struct
     | WhileExp (f1, f2) ->
       let rec loop () =
         match eval ~config env f1 with
-        | BoolV true -> ignore (eval ~config env f2); loop ()
+        | BoolV true -> 
+          let v = eval ~config env f2 in
+          if v = UnitV then loop ()
+          else raise @@ Eval_bug "for: non-unit in while"
         | BoolV false -> UnitV
         | _ -> raise @@ Eval_bug "while: non-boolean condition"
       in loop ()

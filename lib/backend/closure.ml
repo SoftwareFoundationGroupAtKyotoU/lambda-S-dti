@@ -27,6 +27,8 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
   | Length x -> Cls.Length x
   | MatchExp (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> mf, toCls_exp ~tvs_opt known tvs args funty f) ms)
   | IfExp (x, f1, f2) -> Cls.If (x, toCls_exp ~tvs_opt known tvs args funty f1, toCls_exp ~tvs_opt known tvs args funty f2)
+  | ForExp (i, lo, hi, tag, f) -> Cls.For (i, lo, hi, tag, toCls_exp ~tvs_opt known tvs args funty f)
+  | WhileExp (f1, f2) -> Cls.While (toCls_exp ~tvs_opt known tvs args funty f1, toCls_exp ~tvs_opt known tvs args funty f2)
   | AppDExp (x, (y, z)) when V.mem x known -> Cls.AppDDir (Cls.to_label x, (y, z))
   | AppDExp (x, (y, z)) -> Cls.AppDCls (x, (y, z))
   | AppMExp (x, y) when V.mem x known -> Cls.AppMDir (Cls.to_label x, y)

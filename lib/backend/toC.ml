@@ -317,6 +317,7 @@ let rec toC_exp ~is_main ~config = function
   | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _ | Cls.Length _
   | Cls.BinOp _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
+  | Cls.For _ | Cls.While _
     as f ->
     let return = SReturn (if is_main then Int 0 else Var "retv") in
     SDecl (VALUE, "retv", None) :: toC_assign ~config "retv" f @ [return]
@@ -459,6 +460,16 @@ and toC_assign ~config x f =
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.If (y, f1, f2) ->
     SIf (Var y, toC_assign ~config x f1, toC_assign ~config x f2) :: []
+  | Cls.For (i, lo, hi, tag, body) ->
+    let cmp, step = match tag with To -> Lte, Incr | Downto -> Gte, Decr in
+    SFor (
+      (SDecl (VALUE, i, Some (Var lo)), BinOp (Var i, cmp, Var hi), PostOp (Var i, step)),
+      toC_body_stmts ~config body
+    ) :: assign_x dummy_value
+  | Cls.While (cond, body) ->
+    let cx = KNormal.genvar "_cond" in
+    let cond_stmts = SDecl (VALUE, cx, None) :: toC_assign ~config cx cond in
+    SWhile (cond_stmts, Var cx, toC_body_stmts ~config body) :: assign_x dummy_value
   | Cls.MakeCls (y, cls, f) ->
     let set_func fun_y =
       let alt_str = if config.alt then "alt_" else "" in
@@ -476,6 +487,9 @@ and toC_assign ~config x f =
   | Cls.Match (y, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var y) mf, toC_assign ~config x f, stm)])
       [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
+and toC_body_stmts ~config body =
+  let v = KNormal.genvar "_var" in
+  SDecl (VALUE, v, None) :: toC_assign ~config v body
 
 (* ======================================= *)
 

@@ -117,6 +117,8 @@ module KNorm = struct
     | Get (x, y, uo) -> Get (x, y, Option.map (subst_type s) uo)
     | Put (x, y, z, uo) -> Put (x, y, z, Option.map (subst_type s) uo)
     | IfExp (x, f1, f2) -> IfExp (x, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
+    | ForExp (i, lo, hi, tag, f) -> ForExp (i, lo, hi, tag, subst_exp ~monotonic s f)
+    | WhileExp (f1, f2) -> WhileExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | MatchExp (x, ms) -> MatchExp (x, List.map (fun (mf, f) -> subst_mf s mf, subst_exp ~monotonic s f) ms)
     | AppDExp _ | AppMExp _ | CAppExp _ | CCompExp _ as f -> f
     | AppTy (x, tvs, tas) -> AppTy (x, tvs, List.map (subst_tyarg s) tas)
