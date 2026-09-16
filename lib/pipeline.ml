@@ -156,6 +156,7 @@ let toC ppf state ~config ~bench =
   Static_manage.TyManager.init ();
   Static_manage.RangeManager.init ();
   Static_manage.CrcManager.init ();
+  Static_manage.CrcTmpManager.init ();
   str_c
 
 let mutate_all ppf state =

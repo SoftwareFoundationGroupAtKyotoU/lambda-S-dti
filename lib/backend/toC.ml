@@ -102,7 +102,8 @@ let rec toC_crc x c =
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
         let stm, exp = toC_crc x c in
-        SDecl (VALUE, x, None) :: stm @ [SDecl (CRC, x ^ "_tmp" , Some exp); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))], Cast (PTR CRC, Var x)
+        let tmp = CrcTmpManager.find c in
+        SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
   let c, info_proj_inj = match c with
@@ -351,13 +352,15 @@ and toC_assign ~config x f =
       []
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
-    | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf | Ar as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
+    | CSeq (CMArray (_, TyDyn), CInj Ar) -> assign_x (Cast (VALUE, Addr ("crc_inj_AR")))
     | _ ->
       if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
       else
         let stm, exp = toC_crc x c in
-        stm @ [SDecl (CRC, x ^ "_tmp" , Some exp)] @ assign_x (Cast (VALUE, App (Var "alloc_crc", [Addr (x ^ "_tmp")])))
+        let tmp = CrcTmpManager.find c in
+        stm @ [SAssign (Var tmp, Cast (CRC, exp))] @ assign_x (Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))
     end
   | Cls.Hd y ->
     if config.eager then
@@ -565,6 +568,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in
+  let tmpcrcs = CrcTmpManager.get_definitions () in
   let inc = [
     Include "<gc.h>";
     Include (
@@ -576,6 +580,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let tydecl, tydef = toC_tys ~config tys in
   let rangedef = toC_ranges ranges in
   let crcdecl, crcdef, crcinit, n_static_crc = toC_crcs ~config crcs in
+  let crctmpdecl = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) tmpcrcs in
   let fundecl, fundef = toC_toplevel ~config toplevel in
   let settys =
     if bench = 0 || config.static then []
@@ -611,4 +616,4 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     )
   ]
   in
-  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ fundecl @ fundef @ settys @ decl @ main
+  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ fundecl @ fundef @ settys @ decl @ main
