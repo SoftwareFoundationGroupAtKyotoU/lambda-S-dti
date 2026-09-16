@@ -76,6 +76,8 @@ crc *compose(crc*, crc*);
 crc *normalize_tv(crc*);
 crc *normalize_bot_tv(crc*);
 
+// void trace_crc(const char*, crc*);
+
 extern crc crc_id;
 extern crc crc_inj_INT;
 extern crc crc_inj_BOOL;

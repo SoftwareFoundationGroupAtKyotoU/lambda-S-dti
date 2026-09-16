@@ -638,6 +638,9 @@ static inline value apply_inj(const value v, const ground_ty g, const crc *s) {
 
 value coerce(value v, crc *s) {
 	// printf("coerce c:%d\n", s->crckind);
+	// fprintf(stderr, "TRACE coerce v=%lx ", v);
+	// trace_crc("s", s);
+	// fprintf(stderr, "\n");
 	#ifdef PROFILE
 	current_cast++;
 	if ((unsigned)s->crckind < N_CRCKIND) coerce_kind[s->crckind]++;
@@ -684,6 +687,11 @@ value coerce(value v, crc *s) {
 			((fun*)retv)->env[0] = (void*)f;
 			((fun*)retv)->env[1] = (void*)c1;
 			((fun*)retv)->env[2] = (void*)c2;
+			// fprintf(stderr, "TRACE wrap f=%p ", f);
+			// trace_crc("wrap c1", c1);
+			// trace_crc("wrap c2", c2);
+			// fprintf(stderr, "\n");
+			// fprintf(stderr, "TRACE wrap f=%p c1=%p c2=%p -> retv=%p\n", (void*)f, (void*)c1, (void*)c2, (void*)retv);
 			return apply_inj(retv, G_FN, s);
 		}
 		case C_LIST: { // v<(G?p;)[s'](;G!)>

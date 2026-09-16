@@ -27,6 +27,7 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 	current_inference++;
 	if ((unsigned)g < N_GROUND_TY) dti_by_ground[g]++;
 	#endif
+    // fprintf(stderr, "TRACE dti %p is infered to %d\n", tv, g);
 	switch (g) {
 		case G_INT: {
 			// printf("DTI : int was inferred\n");

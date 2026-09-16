@@ -236,6 +236,9 @@ crc* alloc_crc(crc *candidate) {
 	#ifdef PROFILE
 	current_alloc++;
 	#endif
+	// fprintf(stderr, "TRACE alloc ");
+	// trace_crc("candidate", candidate);
+	// fprintf(stderr, "\n");
 	if (candidate->crckind == C_TV) {
 		ty *tv = candidate->crcdat.tv.tv_ptr;
 		switch (tv->tykind) {
@@ -246,9 +249,14 @@ crc* alloc_crc(crc *candidate) {
 	}
     #ifdef HASH
     if (candidate->has_tv) return create_new_crc(candidate);
+	// crc *retc = intern_crc(candidate);
+	// fprintf(stderr, "TRACE   -> ");
+	// trace_crc("res", retc);
+	// fprintf(stderr, "\n");
     return intern_crc(candidate);
     #else // HASH
-   	return create_new_crc(candidate);
+	crc *norm = create_new_crc(candidate);
+   	return norm;
     #endif // HASH
 }
 
@@ -369,6 +377,10 @@ static inline crc *new_bot(const crc *proj, const ground_ty g, const uint16_t si
 }
 
 crc *normalize_tv(crc *c) {
+	// fprintf(stderr, "TRACE norm ");
+	// trace_crc("c", c);
+	// fprintf(stderr, "tykind: %d ", c->crcdat.tv.tv_ptr->tykind);
+	// fprintf(stderr, "\n");
 	#ifdef PROFILE
 	normalize_tv_num++;
 	#endif
@@ -556,14 +568,35 @@ static inline crc *compose_tv_bot(crc *c1, ty *tv, crc *c2) { // X?p should not 
 	return rewrite_proj(c1, c2); // (G?p;)⊥r
 }
 
+// void trace_crc(const char *label, crc *c) {
+// 	if (c == &crc_id) { fprintf(stderr, "%s=crc_id ", label); return; }
+// 	fprintf(stderr, "%s{kind=%d p=%d i=%d tv=%d p=%d rid=%d", label, c->crckind, c->has_proj, c->has_inj, c->has_tv, c->p_proj, c->rid_proj);
+// 	if (c->crckind == C_ID) fprintf(stderr, " g=%d size=%d", c->crcdat.id.g, c->crcdat.id.size);
+// 	if (c->crckind == C_TV) fprintf(stderr, " tv=%p rid_inj=%d", (void*)c->crcdat.tv.tv_ptr, c->crcdat.tv.rid_inj);
+// 	if (c->crckind == C_FUN) fprintf(stderr, " c1=%p c2=%p", (void*)c->crcdat.fun_crc.c1, (void*)c->crcdat.fun_crc.c2);
+// 	fprintf(stderr, "}@%p ", (void*)c);
+// }
+
 static crc* internal_compose(crc *c1, crc *c2) {
+	// fprintf(stderr, "TRACE compose ");
+	// trace_crc("c1", c1);
+	// trace_crc("c2", c2);
+	// fprintf(stderr, "\n");
+	// if (c1->has_inj == 1 && c2->has_proj == 0) {
+	// 	fprintf(stderr, "inj ;;; no_proj");
+	// 	exit(1);
+	// }
+	// if (c1->has_inj == 0 && c2->has_proj == 1) {
+	// 	fprintf(stderr, "no_inj ;;; proj");
+	// 	exit(1);
+	// }
 	switch(c1->crckind) {
 		case C_ID: {
 			switch (c2->crckind) {
 				case C_ID: { // (G?p;)id{U}(;G!) ;;; (H?q;)id{U'}(;H!)
 					if (c1->has_inj == 1 && (c1->crcdat.id.g != c2->crcdat.id.g || c1->crcdat.id.size != c2->crcdat.id.size)) break;
-					if (c1->has_proj == 0 && c2->has_inj == 0) return &crc_id;
-					return rewrite_proj(c1, c2); // (G?p;)id{U'}(;H!)
+					// if (c1->has_proj == 0 && c2->has_inj == 0) return &crc_id;
+					return new_id(c1, c1->crcdat.id.g, c1->crcdat.id.size, c2); // (G?p;)id{U'}(;H!)
 				}
 				case C_FUN: { // (G?p;)id{U}(;G!) ;;; (H?q;)s->t(;H!)
 					if (c1->has_inj == 1 && c1->crcdat.id.g != G_FN) break;
@@ -586,11 +619,11 @@ static crc* internal_compose(crc *c1, crc *c2) {
 					return rewrite_proj(c1, c2); // (G?p;)marray(U')(;H!), (G?p;)array(s1,s2)(;H!)
 				}
 				case C_TV: { // (G?p;)id{U}(;G!) ;;; (X?q, ?qX!r, X!r)
-					if (c1->has_inj) {
+					// if (c1->has_inj) {
 						return compose_s_tv(c1, c1->crcdat.id.g, c1->crcdat.id.size, c2);
-					} else { // id{X} ;;; X!r (because c2 does not have proj and U is not X when c1 has proj)
-						return c2;
-					}
+					// } else { // id{X} ;;; X!r (because c2 does not have proj and U is not X when c1 has proj)
+					// 	return c2;
+					// }
 				}
 				case C_BOT: { // (G?p;)id{U}(;G!) ;;; ((H?q;)⊥r, (X?q;)⊥r)
 					return compose_s_bot(c1, c1->crcdat.id.g, c1->crcdat.id.size, c2);
@@ -779,7 +812,11 @@ static crc* internal_compose(crc *c1, crc *c2) {
 				}
 				default: break;
 			}
-			return compose(normalize_tv(c1), c2);
+			crc *tmp = normalize_tv(c1);
+			// fprintf(stderr, "TRACE normalize_result ");
+			// trace_crc("tmp", tmp);
+			// fprintf(stderr, "\n");
+			return compose(tmp, c2);
 		}
 		case C_BOT: return c1; // (G?p;)⊥q ;;; s = (G?p;)⊥q
 	}
@@ -789,7 +826,8 @@ static crc* internal_compose(crc *c1, crc *c2) {
 static crc* compose_body(crc *c1, crc *c2) {
 	#ifdef HASH
 	if (c1->has_tv || c2->has_tv) {
-        return internal_compose(c1, c2);
+		crc *_res = internal_compose(c1, c2);
+		return _res;
     }
     ensure_compose_cache();
     uint32_t hash = (((uintptr_t)c1 >> 3) ^ ((uintptr_t)c2 >> 3)) % CACHE_SIZE;
@@ -797,17 +835,27 @@ static crc* compose_body(crc *c1, crc *c2) {
 		#ifdef PROFILE
 		compose_cached++;
 		#endif //PROFILE
+		// fprintf(stderr, "TRACE   -> ");
+		// trace_crc("res (cached)", compose_cache[hash].result);
+		// fprintf(stderr, "\n");
         return compose_cache[hash].result;
     }
     crc *result = internal_compose(c1, c2);
     compose_cache[hash].c1 = c1;
     compose_cache[hash].c2 = c2;
     compose_cache[hash].result = result;
+	// fprintf(stderr, "TRACE   -> ");
+	// trace_crc("res", result);
+	// fprintf(stderr, "\n");
     return result;
 
 	#else //HASH
 
-	return internal_compose(c1, c2);
+	crc *_res = internal_compose(c1, c2);
+	// fprintf(stderr, "TRACE   -> ");
+	// trace_crc("res", _res);
+	// fprintf(stderr, "\n");
+	return _res;
 
 	#endif //HASH
 }
