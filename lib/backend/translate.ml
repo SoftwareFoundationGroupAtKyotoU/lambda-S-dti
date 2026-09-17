@@ -210,7 +210,7 @@ module ITGL = struct
       let f1, u1 = translate_exp ~config env e1 in
       let f2, u2 = translate_exp ~config env e2 in
       let u1' = cont u1 in
-      if Type_utils.is_static_type u1 && u1' = u2 then CC.SubstExp (f1, f2, None), TyUnit
+      if Type_utils.is_static_type u1 then CC.SubstExp (f1, c f2 r u2 u1', None), TyUnit
       else CC.SubstExp (c f1 r u1 (TyRef u1'), c f2 r u2 u1', Some u1'), TyUnit
     | MakeArrayExp (r, e1, e2) ->
       let f1, u1 = translate_exp ~config env e1 in
@@ -227,7 +227,7 @@ module ITGL = struct
       let f2, u2 = translate_exp ~config env e2 in
       let f3, u3 = translate_exp ~config env e3 in
       let u1' = cont_array u1 in
-      if Type_utils.is_static_type u1 && u1' = u3 then CC.PutExp (f1, c f2 r u2 TyInt, f3, None), TyUnit
+      if Type_utils.is_static_type u1 then CC.PutExp (f1, c f2 r u2 TyInt, c f3 r u3 u1', None), TyUnit
       else CC.PutExp (c f1 r u1 (TyArray u1'), c f2 r u2 TyInt, c f3 r u3 u1', Some u1'), TyUnit
     | LengthExp (r, e) ->
       let f, u = translate_exp ~config env e in
