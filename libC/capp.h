@@ -37,7 +37,7 @@ void sc_push(value r, valkind k, ty *u);
 void consume(void);
 #endif
 
-value coerce(value, crc*);
+value coerce(value, crc*, uint8_t);
 
 #endif
 
@@ -116,24 +116,18 @@ static inline uint16_t size_of(value v) {
 
 #ifndef CAST
 
-static inline value toplevel_coerce(value v, crc* s) {
-	#ifdef MONOTONIC
-	value v_ = coerce(v, s);
-	consume();
-	return v_;
-	#else
-	return coerce(v, s);
-	#endif
+static inline value apply_coerce(value v, crc* s) {
+	return coerce(v, s, 0);
 }
 
-static inline value toplevel_coerce_inj(value v, ground_ty g) {
+static inline value apply_coerce_inj(value v, ground_ty g) {
 	#ifdef PROFILE
 	current_cast++;
 	#endif
 	return tag_value(v, g);
 }
 
-static inline value toplevel_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_t polarity) {
+static inline value apply_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
 	blame_check_num++;
@@ -142,7 +136,7 @@ static inline value toplevel_coerce_proj(value v, ground_ty g, uint32_t rid, uin
 	return untag_value(v, g);
 }
 
-static inline value toplevel_coerce_proj_tp(value v, uint16_t size, uint32_t rid, uint8_t polarity) {
+static inline value apply_coerce_proj_tp(value v, uint16_t size, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
 	blame_check_num++;

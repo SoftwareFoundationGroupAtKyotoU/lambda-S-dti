@@ -24,7 +24,7 @@ value deref(ref *r) {
 		ty *u2 = (ty*)erase_1bit_tag(r->u2_p);
 		return cast(deref(r->w), u1->tydat.tyref, u2->tydat.tyref, r->rid, r->u2_p & 0b1);
 		#else
-		return toplevel_coerce(r->w->v, (crc*)erase_1bit_tag(r->c1_tag));
+		return apply_coerce(r->w->v, (crc*)erase_1bit_tag(r->c1_tag));
 		#endif
 	} else {
 		return r->v;
@@ -39,7 +39,7 @@ void subst(ref *r, value v) {
 		value casted = cast(v, u2->tydat.tyref, u1->tydat.tyref, r->rid, (r->u2_p & 0b1) ^ 1);
 		subst(r->w, casted);
 		#else
-		value coerced = toplevel_coerce(v, (crc*)erase_1bit_tag(r->c2));
+		value coerced = apply_coerce(v, (crc*)erase_1bit_tag(r->c2));
 		r->w->v = coerced;
 		#endif
 	} else {

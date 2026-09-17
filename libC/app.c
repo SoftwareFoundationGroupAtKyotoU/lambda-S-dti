@@ -38,7 +38,7 @@ value fun_wrapped_call_funcM(value cls, value arg) {
 	value ret = inner_f->funcM(inner_f_val, _arg);
 	return cast(ret, t12, t22, rid, polarity);
 	#else // CAST
-    value _arg = toplevel_coerce(arg, c1);
+    value _arg = apply_coerce(arg, c1);
 	if (c2 == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg);
 	} else {
@@ -60,7 +60,7 @@ value fun_wrapped_call_funcD(value cls, value arg1, value arg2) {
 
 	// Coercion 適用し、return
     crc *_arg2_crc = compose(c2, (crc*)arg2);
-    value _arg1 = toplevel_coerce(arg1, c1);
+    value _arg1 = apply_coerce(arg1, c1);
 	#ifdef ALT
 	if (_arg2_crc == &crc_id) {
 		return inner_f->funcM(inner_f_val, _arg1);

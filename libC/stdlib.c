@@ -3,7 +3,7 @@
 
 #ifdef ALT
 #define DEF_UNARY(fname, core) \
-  value fun_##fname(value cls, value v, value w) { return toplevel_coerce(core(cls, v), (crc*)w); } \
+  value fun_##fname(value cls, value v, value w) { return apply_coerce(core(cls, v), (crc*)w); } \
   value fun_alt_##fname(value cls, value v) { return core(cls, v); }
 #define DEF_BINARY(fname) \
   value fun_alt_##fname(value cls, value x) { \
@@ -18,7 +18,7 @@
     ((fun*)retv)->funcM = fun_alt_##fname##_x; \
     ((fun*)retv)->funcD = fun_##fname##_x; \
     ((fun*)retv)->env[0] = (void*)x; \
-    return toplevel_coerce(retv, (crc*)w); \
+    return apply_coerce(retv, (crc*)w); \
   }
 #elif defined(CAST) || defined(STATIC)
 #define DEF_UNARY(fname, core) \
@@ -32,13 +32,13 @@
   }
 #else
 #define DEF_UNARY(fname, core) \
-  value fun_##fname(value cls, value v, value w) { return toplevel_coerce(core(cls, v), (crc*)w); }
+  value fun_##fname(value cls, value v, value w) { return apply_coerce(core(cls, v), (crc*)w); }
 #define DEF_BINARY(fname) \
   value fun_##fname(value cls, value x, value w) { \
     value retv = (value)GC_MALLOC(sizeof(fun) + sizeof(void*) * 1); \
     ((fun*)retv)->funcD = fun_##fname##_x; \
     ((fun*)retv)->env[0] = (void*)x; \
-    return toplevel_coerce(retv, (crc*)w); \
+    return apply_coerce(retv, (crc*)w); \
   }
 #endif
 

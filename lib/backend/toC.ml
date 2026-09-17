@@ -380,7 +380,7 @@ and toC_assign ~config x f =
   | Cls.Deref (y, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
-      | Some u -> assign_x (App (Var "toplevel_coerce", [Arrow (Cast (PTR REF, Var y), "v"); App (Var "make_s_coercion", [Arrow (Cast (PTR REF, Var y), "u"); toC_ty u])]))
+      | Some u -> assign_x (App (Var "apply_coerce", [Arrow (Cast (PTR REF, Var y), "v"); App (Var "make_s_coercion", [Arrow (Cast (PTR REF, Var y), "u"); toC_ty u])]))
     else if config.static then
       assign_x (PreOp (Deref, (Cast (REF, Var y))))
     else
@@ -388,7 +388,7 @@ and toC_assign ~config x f =
   | Cls.Get (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
-      | Some u -> assign_x (App (Var "toplevel_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); App (Var "make_s_coercion", [Arrow (Cast (PTR ARR, Var y), "u"); toC_ty u])]))
+      | Some u -> assign_x (App (Var "apply_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); App (Var "make_s_coercion", [Arrow (Cast (PTR ARR, Var y), "u"); toC_ty u])]))
     else if config.static then
       assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
     else
@@ -407,7 +407,7 @@ and toC_assign ~config x f =
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), Var z) :: assign_x (Int 0)
-      | Some u -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")])])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+      | Some u -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")]); Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (PreOp (Deref, (Cast (REF, Var y))), Var z) :: assign_x (Int 0)
     else
@@ -415,7 +415,7 @@ and toC_assign ~config x f =
   | Cls.Put (y, z, v_x, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
-      | Some u -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR ARR, Var y), "u")])])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+      | Some u -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR ARR, Var y), "u")]); Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
     else
@@ -450,14 +450,14 @@ and toC_assign ~config x f =
     toC_assign ~config x (Cls.AppTy (y, i1, tas, n)) @ [SAssign (Var x, App (Var ("tfun_" ^ y), [Var x; dummy_value]))]
   | Cls.CApp (y, z) ->
     begin match Hashtbl.find_opt Static_manage.fast_inj z with
-    | Some g -> assign_x (App (Var "toplevel_coerce_inj", [Var y; Var ("G_" ^ string_of_tag g)]))
+    | Some g -> assign_x (App (Var "apply_coerce_inj", [Var y; Var ("G_" ^ string_of_tag g)]))
     | None ->
       match Hashtbl.find_opt Static_manage.fast_proj z with
-      | Some (g, r, p) -> assign_x (App (Var "toplevel_coerce_proj", [Var y; Var ("G_" ^ string_of_tag g); Int (rid r); Int (int_of_pos p)]))
+      | Some (g, r, p) -> assign_x (App (Var "apply_coerce_proj", [Var y; Var ("G_" ^ string_of_tag g); Int (rid r); Int (int_of_pos p)]))
       | None ->
         match Hashtbl.find_opt Static_manage.fast_proj_tp z with
-        | Some (n, r, p) -> assign_x (App (Var "toplevel_coerce_proj_tp", [Var y; Int n; Int (rid r); Int (int_of_pos p)]))
-        | None -> assign_x (App (Var "toplevel_coerce", [Var y; Cast (PTR CRC, Var z)]))
+        | Some (n, r, p) -> assign_x (App (Var "apply_coerce_proj_tp", [Var y; Int n; Int (rid r); Int (int_of_pos p)]))
+        | None -> assign_x (App (Var "apply_coerce", [Var y; Cast (PTR CRC, Var z)]))
     end
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2

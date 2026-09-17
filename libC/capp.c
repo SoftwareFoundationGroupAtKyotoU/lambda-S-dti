@@ -570,6 +570,31 @@ void sc_push(value r, valkind k, ty* u) {
     psi.count++;
 }
 
+static inline void ref_apply_monotonic_coercion(ref *r, ty *u) {
+	ty* u_ = r->u;
+	ty* u__ = unify_meet(u, u_);
+	if (!ty_equal(u_, u__)) {
+		value v = r->v;
+		crc* s = make_s_coercion(u_, u__);
+		value v_ = coerce(v, s, 1);
+		r->v = v_;
+		r->u = u__;
+	}
+}
+
+static inline void array_apply_monotonic_coercion(arr *a, ty *u) {
+	ty* u_ = a->u;
+	ty* u__ = unify_meet(u, u_);
+	if (!ty_equal(u_, u__)) {
+		uint32_t length = a->length;
+		crc* s = make_s_coercion(u_, u__);
+		for (int i = 0; i < length; i++) {
+			a->vs[i] = coerce(a->vs[i], s, 1);
+		}
+		a->u = u__;
+	}
+}
+
 void consume(void) {
 	uint64_t cursor = 0;
 	while (cursor < psi.count) {
@@ -578,40 +603,17 @@ void consume(void) {
 		ty* u = psi.data[cursor].u;
 		switch (k) {
 			case PSI_REF: {
-				ty* u_ = ((ref*)r)->u;
-				ty* u__ = unify_meet(u, u_);
-				if (!ty_equal(u_, u__)) {
-					value v = ((ref*)r)->v;
-					crc* s = make_s_coercion(u_, u__);
-					value v_ = coerce(v, s);
-					((ref*)r)->v = v_;
-					((ref*)r)->u = u__;
-				}
-				psi.data[cursor].r = (value)NULL;
-				psi.data[cursor].u = NULL;
-        		cursor++;
+				ref_apply_monotonic_coercion((ref*)r, u);
 				break;
 			}
 			case PSI_ARRAY: {
-				ty* u_ = ((arr*)r)->u;
-				ty* u__ = unify_meet(u, u_);
-				if (!ty_equal(u_, u__)) {
-					uint32_t length = ((arr*)r)->length;
-					value vs[length];
-					crc* s = make_s_coercion(u_, u__);
-					for (int i = 0; i < length; i++) {
-						vs[i] = coerce(((arr*)r)->vs[i], s);
-					}
-					for (int i = 0; i < length; i++) {
-						((arr*)r)->vs[i] = vs[i];
-					}
-					((arr*)r)->u = u__;
-				}
-				psi.data[cursor].r = (value)NULL;
-				psi.data[cursor].u = NULL;
-        		cursor++;
+				array_apply_monotonic_coercion((arr*)r, u);
+				break;
 			}
 		}
+		psi.data[cursor].r = (value)NULL;
+		psi.data[cursor].u = NULL;
+        cursor++;
 	}
 	psi.count = 0;
 }
@@ -636,7 +638,7 @@ static inline value apply_inj(const value v, const ground_ty g, const crc *s) {
 	}
 }
 
-value coerce(value v, crc *s) {
+value coerce(value v, crc *s, uint8_t suspend) {
 	// printf("coerce c:%d\n", s->crckind);
 	// fprintf(stderr, "TRACE coerce v=%lx ", v);
 	// trace_crc("s", s);
@@ -704,7 +706,7 @@ value coerce(value v, crc *s) {
 			while ((lst*)curr_src != NULL) {
 			    lst *new_lst = (lst*)GC_MALLOC(sizeof(lst));
 			    *dest = (value)new_lst;
-			    new_lst->h = coerce(((lst*)curr_src)->h, clist);
+			    new_lst->h = coerce(((lst*)curr_src)->h, clist, suspend);
 			    dest = &new_lst->t;
 			    curr_src = ((lst*)curr_src)->t;
 			}
@@ -738,7 +740,7 @@ value coerce(value v, crc *s) {
 			((tpl*)retv)->hdr.size = size;
 			for (int i = 0; i < size; i++) {
 				value inner_val = ((tpl*)v)->fields[i];
-				((tpl*)retv)->fields[i] = coerce(inner_val, s->crcdat.tpl_crc.crcs[i]);
+				((tpl*)retv)->fields[i] = coerce(inner_val, s->crcdat.tpl_crc.crcs[i], suspend);
 			}
 			return apply_inj(retv, G_TP, s);
 			#else // not EAGER
@@ -772,7 +774,11 @@ value coerce(value v, crc *s) {
 		case C_REF: { // v<(G?p;)ref(s')(;G!)>
 			v = remove_inj(v, G_RF, 0, s);
 			#ifdef MONOTONIC
-			sc_push(v, PSI_REF, s->crcdat.mref_crc);
+			if (suspend) {
+				sc_push(v, PSI_REF, s->crcdat.mref_crc);
+			} else {
+				ref_apply_monotonic_coercion((ref*)v, s->crcdat.mref_crc);
+			}
 			return apply_inj(v, G_RF, s);
 			#else
 			ref *w;
@@ -800,7 +806,11 @@ value coerce(value v, crc *s) {
 		case C_ARRAY: { // v<(G?p;)arr(s')(;G!)>
 			v = remove_inj(v, G_AR, 0, s);
 			#ifdef MONOTONIC
-			sc_push(v, PSI_ARRAY, s->crcdat.marray_crc);
+			if (suspend) {
+				sc_push(v, PSI_ARRAY, s->crcdat.marray_crc);
+			} else {
+				array_apply_monotonic_coercion((arr*)v, s->crcdat.marray_crc);
+			}
 			return apply_inj(v, G_AR, s);
 			#else
 			arr *w;
@@ -840,7 +850,7 @@ value coerce(value v, crc *s) {
 				default: break;
 			}
 			crc *norm = normalize_tv(s);
-			return coerce(v, norm);
+			return coerce(v, norm, suspend);
 		}
 		case C_BOT: { // v<(G?p;)⊥q>
 			remove_inj(v, s->crcdat.bot.g, s->crcdat.bot.size, s);

@@ -428,7 +428,7 @@ crc *normalize_tv(crc *c) {
 				.p_proj = c->crcdat.tv.p_inj ^ 1, .rid_proj = c->crcdat.tv.rid_inj,
 				.crcdat.tv = { .rid_inj = c->rid_proj, .p_inj = c->p_proj ^ 1 }
 			};
-			return new_ref(c, new_tv(c, tv->tydat.tyarray, c), new_tv(&inv_c, tv->tydat.tyarray, &inv_c), c);
+			return new_array(c, new_tv(c, tv->tydat.tyarray, c), new_tv(&inv_c, tv->tydat.tyarray, &inv_c), c);
 			#endif
 		}
 		case TYVAR: return c;
