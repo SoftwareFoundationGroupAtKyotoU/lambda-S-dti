@@ -21,7 +21,7 @@ let rec repl ppf lexbuf states ~config ~state =
             |> Pipeline.kNorm_funs ppf ~config
             |> Pipeline.closure ppf ~config
             |> Pipeline.toC ppf ~config ~bench:0
-            |> Builder.build_run ~config
+            |> Runner.build_run ~config
           in
           fprintf ppf "@.";
           Pipeline.init_state () ~config, []

@@ -2,13 +2,15 @@ open Lambda_S_dti
 
 let () =
   (* benchmark settings *)
-  let files, itr = ref [], ref 0 in
+  let files, itr, jobs = ref [], ref 0, ref 0 in
   (* evaluation mode *)
   let eagernesses, hash_modes, monotonicities = ref [], ref [], ref [] in
   (* benchmark modes *)
   let static, dynamize, grift = ref false, ref false, ref false in
   let specs = [
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
+    ("--jobs", Arg.Int (fun n -> jobs := n),
+     " Max parallel compile jobs for --dynamize/--static (default: nproc-1)");
     ("--eager", Arg.Unit (fun () -> eagernesses := true :: !eagernesses), " Run eager mode");
     ("--lazy", Arg.Unit (fun () -> eagernesses := false :: !eagernesses), " Run lazy mode");
     ("--hash", Arg.Unit (fun () -> hash_modes := true :: !hash_modes), " Run hash-consing mode");
@@ -30,6 +32,7 @@ let () =
   (* 指定がなければ全部、あればそれを対象にする *)
   let files = if !files = [] then Bench_config.all_targets else !files in
   let itr = if !itr = 0 then Bench_config.default_itr else !itr in
+  let jobs = if !jobs > 0 then !jobs else Bench_builder.default_jobs () in
   let eagernesses = if !eagernesses = [] then [true; false] else !eagernesses in
   let hash_modes = if !hash_modes = [] then [true; false] else !hash_modes in
   let monotonicities = if !monotonicities = [] then [true; false] else !monotonicities in
@@ -53,9 +56,18 @@ let () =
   if not (Sys.file_exists Bench_config.log_root) then Core_unix.mkdir Bench_config.log_root;
   if not (Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
 
-  (* 4. 実行: 各ターゲットを順番に *)
-  if !dynamize then Bench_runner.run_dynamize ~log_dir ~itr targets;
-  if !static then Bench_runner.run_static ~log_dir ~itr targets;
+  (* 4. コンパイル: dynamize/static 両方を先に終わらせてから実行する。
+     どちらか一方でもコンパイルに失敗したら、成功した方も含めて
+     ベンチマーク実行(Pass 3)は一切行わない。 *)
+  let batches =
+    (if !dynamize then [ Bench_compiler.compile_dynamize ~log_dir ~itr ~jobs targets ] else []) @
+    (if !static then [ Bench_compiler.compile_static ~log_dir ~itr ~jobs targets ] else [])
+  in
+  if List.exists (fun (b : Bench_compiler.compiled_batch) -> b.failed) batches then
+    Format.eprintf
+      "[Abort] compilation failed for one or more targets (dynamize/static); skipping all benchmark execution@."
+  else
+    List.iter Bench_runner.run_batch batches;
   if !grift then begin
     Bench_runner.run_dynamize_grift ~log_dir ~itr ~files ~monotonicities;
     if !static then Bench_runner.run_static_grift ~log_dir ~itr ~files ~monotonicities

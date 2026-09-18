@@ -4,10 +4,10 @@ open Bench_target
 let check_target ~log_dir ~expected ~ordinal ~total_targets (t : target) : bool =
   let mode_str = full_mode_name t.mode t.eager t.hash t.monotonic in
   try
-    let config = Bench_runner.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic t.mode in
-    let prog = Bench_runner.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
+    let config = Bench_compiler.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic t.mode in
+    let prog = Bench_compiler.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
     let mutants_length = List.length t.mutants in
-    let failing = Builder.build_run_bench_check ~log_dir ~file:t.file ~mode_str ~mutants_length ~config ~expected in
+    let failing = Bench_compiler.build_run_bench_check ~log_dir ~file:t.file ~mode_str ~mutants_length ~config ~expected in
     List.iter (fun (idx, actual) ->
       Format.printf "[FAIL] %s_%s mutant%d: expected %S but got %S@." mode_str t.file idx expected actual)
       failing;
@@ -27,7 +27,7 @@ let run_dynamize ~log_dir ~expected targets =
 
 let run_static ~log_dir ~expected targets =
   let targets =
-    Bench_runner.dedup_static targets
+    Bench_compiler.dedup_static targets
     |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
   in
   let total_targets = List.length targets in
