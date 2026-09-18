@@ -100,7 +100,7 @@ let run_static ~log_dir ~itr targets =
   ) targets
 
 let run_grift ~log_dir ~itr ~static ~files ~monotonicities =
-  let targets = List.concat_map (fun file -> List.map (fun b -> (file, b)) monotonicities) files in
+  let targets = Bench_target.restrict_grift_targets ~monotonicities files in
   let total_targets = List.length targets in
   List.iteri (fun i (file, monotonic) ->
     let grift_src = Bench_config.sample_path ~lang:`Grift file in

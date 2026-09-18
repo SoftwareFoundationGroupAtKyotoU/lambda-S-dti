@@ -62,3 +62,15 @@ let expand_targets ~eagernesses ~hash_modes ~monotonicities (prepared : (string 
         ) file_eagernesses
       ) modes
   ) prepared
+
+let restrict_grift_targets ~monotonicities files = 
+  List.concat_map (fun file ->
+    let r = Bench_config.restriction_of file in
+    let file_monotonicities = restrict_axis r.monotonic_only monotonicities in
+    if file_monotonicities = [] then begin
+      Format.eprintf
+        "[Skip grift] %s: no monotonic combination survives its axis restriction given the requested flags@." file;
+      []
+    end else
+      List.map (fun b -> (file, b)) file_monotonicities
+  ) files
