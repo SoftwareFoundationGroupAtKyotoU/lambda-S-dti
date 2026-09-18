@@ -20,22 +20,7 @@ let run_measured (p : Bench_compiler.prepared_target) =
 let run_batch (b : Bench_compiler.compiled_batch) =
   List.iter run_measured b.succeeded
 
-let run_grift ~log_dir ~itr ~static ~files ~monotonicities =
-  let targets = Bench_target.restrict_grift_targets ~monotonicities files in
-  let total_targets = List.length targets in
-  List.iteri (fun i (file, monotonic) ->
-    let grift_src = Bench_config.sample_path ~lang:`Grift file in
-    if not (Sys.file_exists grift_src) then
-      Format.eprintf "[Skip grift] %s: %s not found@." file grift_src
-    else
-      try
-        Bench_grift.run ~log_dir ~grift_src ~itr ~static ~file ~monotonic
-          ~ordinal:(i + 1) ~total_targets
-      with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e)
-  ) targets
-
-let run_dynamize_grift ~log_dir ~itr ~files ~monotonicities =
-  run_grift ~log_dir ~itr ~static:false ~files ~monotonicities
-
-let run_static_grift ~log_dir ~itr ~files ~monotonicities =
-  run_grift ~log_dir ~itr ~static:true ~files ~monotonicities
+(* GRIFT側: コンパイル済みの grift target を1つずつ直列に実行・計測する。
+   コンパイル(Bench_compiler.compile_grift 等)は Bench_compiler の役目。 *)
+let run_grift_batch (b : Bench_compiler.grift_compiled_batch) =
+  List.iter Bench_grift.run_compiled b.compiled

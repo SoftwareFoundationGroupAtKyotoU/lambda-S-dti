@@ -10,7 +10,7 @@ let () =
   let specs = [
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
-     " Max parallel compile jobs for --dynamize/--static (default: nproc-1)");
+     " Max parallel compile jobs for --dynamize/--static/--grift (default: nproc-1)");
     ("--eager", Arg.Unit (fun () -> eagernesses := true :: !eagernesses), " Run eager mode");
     ("--lazy", Arg.Unit (fun () -> eagernesses := false :: !eagernesses), " Run lazy mode");
     ("--hash", Arg.Unit (fun () -> hash_modes := true :: !hash_modes), " Run hash-consing mode");
@@ -56,21 +56,29 @@ let () =
   if not (Sys.file_exists Bench_config.log_root) then Core_unix.mkdir Bench_config.log_root;
   if not (Sys.file_exists log_dir) then Core_unix.mkdir log_dir;
 
-  (* 4. コンパイル: dynamize/static 両方を先に終わらせてから実行する。
-     どちらか一方でもコンパイルに失敗したら、成功した方も含めて
+  (* 4. コンパイル: dynamize/static/grift 全てを先に終わらせてから実行する。
+     いずれか1つでもコンパイルに失敗したら、他が成功していても
      ベンチマーク実行(Pass 3)は一切行わない。 *)
-  let batches =
+  let ml_batches =
     (if !dynamize then [ Bench_compiler.compile_dynamize ~log_dir ~itr ~jobs targets ] else []) @
     (if !static then [ Bench_compiler.compile_static ~log_dir ~itr ~jobs targets ] else [])
   in
-  if List.exists (fun (b : Bench_compiler.compiled_batch) -> b.failed) batches then
+  let grift_batches =
+    if !grift then
+      Bench_compiler.compile_dynamize_grift ~log_dir ~itr ~jobs ~files ~monotonicities ::
+      (if !static then [ Bench_compiler.compile_static_grift ~log_dir ~itr ~jobs ~files ~monotonicities ] else [])
+    else []
+  in
+  let any_failed =
+    List.exists (fun (b : Bench_compiler.compiled_batch) -> b.failed) ml_batches
+    || List.exists (fun (b : Bench_compiler.grift_compiled_batch) -> b.failed) grift_batches
+  in
+  if any_failed then
     Format.eprintf
-      "[Abort] compilation failed for one or more targets (dynamize/static); skipping all benchmark execution@."
-  else
-    List.iter Bench_runner.run_batch batches;
-  if !grift then begin
-    Bench_runner.run_dynamize_grift ~log_dir ~itr ~files ~monotonicities;
-    if !static then Bench_runner.run_static_grift ~log_dir ~itr ~files ~monotonicities
+      "[Abort] compilation failed for one or more targets (dynamize/static/grift); skipping all benchmark execution@."
+  else begin
+    List.iter Bench_runner.run_batch ml_batches;
+    List.iter Bench_runner.run_grift_batch grift_batches
   end;
 
   if not (!dynamize || !static || !grift) then

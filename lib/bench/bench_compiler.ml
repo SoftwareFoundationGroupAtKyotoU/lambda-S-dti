@@ -427,3 +427,56 @@ let compile_static ~log_dir ~itr ~jobs targets =
     |> List.map (fun t -> if t.mode = STATIC then { t with eager = true; hash = false; monotonic = false } else t)
   in
   compile_targets ~log_dir ~itr ~label:"static" ~jobs targets
+
+(* ==================== GRIFT側 ==================== *)
+
+(* dynamize/static (ML/C側) の compiled_batch に対応する、GRIFT側のバッチ
+   コンパイル結果。実行(Bench_grift.run_compiled、Bench_runner.run_grift_batch)
+   はまだ行っていない — bin/bench.ml が dynamize/static/grift すべての
+   コンパイル結果を見て、全て成功している場合にのみ実行する。 *)
+type grift_compiled_batch = {
+  label : string;
+  compiled : Bench_grift.grift_compiled list;
+  failed : bool;  (* 対象ファイルが見つからない・例外・grift側のコンパイル
+                      失敗のいずれかが1件でもあれば true *)
+}
+
+(* Phase 1(全target分, 直列で準備)+ Phase 2(全target・全mutant分の
+   ジョブをまとめて1回だけ並列コンパイル)。Phase 3(実行)は
+   Bench_runner.run_grift_batch まで行わない。
+   ML/C側の compile_targets(try_prepare_target で全target準備 →
+   Builder.build_all を1回だけ呼ぶ)と同じパターンを、grift target を
+   跨ぐレベルで適用している — target ごとに別々の Makefile/make -j を
+   呼んでいた以前の実装と異なり、全grift targetの全ジョブが1回の
+   make -j にまとまる。 *)
+let compile_grift ~log_dir ~itr ~jobs ~static ~files ~monotonicities ~label : grift_compiled_batch =
+  let targets = Bench_target.restrict_grift_targets ~monotonicities files in
+  let total_targets = List.length targets in
+  let prepared =
+    List.mapi (fun i (file, monotonic) ->
+      let grift_src = Bench_config.sample_path ~lang:`Grift file in
+      if not (Sys.file_exists grift_src) then begin
+        Format.eprintf "[Skip grift] %s: %s not found@." file grift_src;
+        None
+      end else
+        try
+          Some (Bench_grift.prepare ~log_dir ~grift_src ~itr ~static ~file ~monotonic
+                  ~ordinal:(i + 1) ~total_targets)
+        with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e); None
+    ) targets
+    |> List.filter_map (fun x -> x)
+  in
+  let prepare_failed = List.length prepared < total_targets in
+  let all_jobs = List.concat_map Bench_grift.jobs_of_prepared prepared in
+  Bench_builder.compile_all ~log_dir ~label ~jobs all_jobs;
+  let compiled = List.map Bench_grift.finalize prepared in
+  let failed =
+    prepare_failed || List.exists (fun (c : Bench_grift.grift_compiled) -> c.failed) compiled
+  in
+  { label; compiled; failed }
+
+let compile_dynamize_grift ~log_dir ~itr ~jobs ~files ~monotonicities =
+  compile_grift ~log_dir ~itr ~jobs ~static:false ~files ~monotonicities ~label:"grift_dynamize"
+
+let compile_static_grift ~log_dir ~itr ~jobs ~files ~monotonicities =
+  compile_grift ~log_dir ~itr ~jobs ~static:true ~files ~monotonicities ~label:"grift_static"
