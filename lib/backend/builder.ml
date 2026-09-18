@@ -125,6 +125,8 @@ let build_run c_code ~config = match config.file with
     if i != 0 then raise @@ Build_bad ".out fail";
     ()
 
+let crc_active (config : Config.t) = not config.intoB && not config.static
+
 let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   let src_files = asprintf "%s/%s/%s*.c" log_dir mode_str file in
   let mutant_num_list = List.init mutants_length (fun i -> i + 1) in
@@ -150,7 +152,7 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
     Include "\"../../../libC/types.h\""; Include "\"../../../benchC/bench_json.h\"";
     Include (Format.asprintf "\"%s%s_mutants.h\"" file mode_str);
   ] @
-    if config.hash then [Include "\"../../../libC/crc.h\""] else []
+    if crc_active config then [Include "\"../../../libC/crc.h\""] else []
   in
   let decls =
     (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
@@ -197,9 +199,32 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
     Include "\"../../../libC/types.h\""; Include "\"../../../benchC/bench_json.h\"";
     Include (Format.asprintf "\"%s%s_mutants.h\"" file mode_str);
   ] @
-    if config.hash then [Include "\"../../../libC/crc.h\""] else []
+    if crc_active config then [Include "\"../../../libC/crc.h\""] else []
   in
   (* --- メトリクス表 --- *)
+  let coerce_kind_metrics : (string * [ `Mem | `Scalar of string | `Arr of string * string ]) list = [
+    "coerce_id",         `Arr ("coerce_kind", "C_ID");
+    "coerce_fun",        `Arr ("coerce_kind", "C_FUN");
+    "coerce_list",       `Arr ("coerce_kind", "C_LIST");
+    "coerce_tuple",      `Arr ("coerce_kind", "C_TUPLE");
+    "coerce_ref",        `Arr ("coerce_kind", "C_REF");
+    "coerce_array",      `Arr ("coerce_kind", "C_ARRAY");
+    "coerce_tv",         `Arr ("coerce_kind", "C_TV");
+    "coerce_bot",        `Arr ("coerce_kind", "C_BOT");
+  ]
+  in
+  let dti_by_ground_metrics : (string * [ `Mem | `Scalar of string | `Arr of string * string ]) list = [
+    "dti_fn",            `Arr ("dti_by_ground", "G_FN");
+    "dti_li",            `Arr ("dti_by_ground", "G_LI");
+    "dti_tp",            `Arr ("dti_by_ground", "G_TP");
+    "dti_rf",            `Arr ("dti_by_ground", "G_RF");
+    "dti_ar",            `Arr ("dti_by_ground", "G_AR");
+    "dti_int",           `Arr ("dti_by_ground", "G_INT");
+    "dti_bool",          `Arr ("dti_by_ground", "G_BOOL");
+    "dti_float",         `Arr ("dti_by_ground", "G_FLOAT");
+    "dti_unit",          `Arr ("dti_by_ground", "G_UNIT");
+  ]
+  in
   let profile_metrics : (string * [ `Mem | `Scalar of string | `Arr of string * string ]) list = [
     "mem",               `Mem;
     "cast",              `Scalar "current_cast";
@@ -217,24 +242,9 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
     "compose_max_depth", `Scalar "compose_max_depth";
     "blame_check",       `Scalar "blame_check_num";
     "blame_raised",      `Scalar "blame_raised_num";
-    "coerce_id",         `Arr ("coerce_kind", "C_ID");
-    "coerce_fun",        `Arr ("coerce_kind", "C_FUN");
-    "coerce_list",       `Arr ("coerce_kind", "C_LIST");
-    "coerce_tuple",      `Arr ("coerce_kind", "C_TUPLE");
-    "coerce_ref",        `Arr ("coerce_kind", "C_REF");
-    "coerce_array",      `Arr ("coerce_kind", "C_ARRAY");
-    "coerce_tv",         `Arr ("coerce_kind", "C_TV");
-    "coerce_bot",        `Arr ("coerce_kind", "C_BOT");
-    "dti_fn",            `Arr ("dti_by_ground", "G_FN");
-    "dti_li",            `Arr ("dti_by_ground", "G_LI");
-    "dti_tp",            `Arr ("dti_by_ground", "G_TP");
-    "dti_rf",            `Arr ("dti_by_ground", "G_RF");
-    "dti_ar",            `Arr ("dti_by_ground", "G_AR");
-    "dti_int",           `Arr ("dti_by_ground", "G_INT");
-    "dti_bool",          `Arr ("dti_by_ground", "G_BOOL");
-    "dti_float",         `Arr ("dti_by_ground", "G_FLOAT");
-    "dti_unit",          `Arr ("dti_by_ground", "G_UNIT");
-  ]
+  ] @
+    (if crc_active config then coerce_kind_metrics else []) @
+    (if not config.static then dti_by_ground_metrics else [])
   in
   let nm = List.length profile_metrics in
   (* profile .c 側で定義すべき大域カウンタ*)
@@ -242,7 +252,9 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
                       "compose_cached"; "current_alloc"; "new_crc_num"; "alloc_hash"; "find_ty_num";
                       "ty_find_calls"; "ty_find_max_chain"; "normalize_tv_num"; "compose_max_depth";
                       "blame_check_num"; "blame_raised_num"] in
-  let counter_arr  = [("coerce_kind", "N_CRCKIND"); ("dti_by_ground", "N_GROUND_TY")] in
+  let counter_arr  =
+    (if crc_active config then [("coerce_kind", "N_CRCKIND")] else []) @
+    (if not config.static then [("dti_by_ground", "N_GROUND_TY")] else []) in
   let decls =
     (if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)]) @
     [ Decl (Static, LLONG, Format.asprintf "metric_data[%d][%d]" mutants_length nm, None);
