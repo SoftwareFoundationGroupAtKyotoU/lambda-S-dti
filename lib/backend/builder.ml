@@ -20,7 +20,7 @@ let unique_base (config : Config.t) filename =
   base ^ "_" ^ Digest.to_hex (Digest.string (abs_filename ^ mode_key))
 
 let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
-  ~config ~bench ~profile () =
+  ?(check=false) ~config ~bench ~profile () =
   let libc_dir = Resources.libc_dir () in
   let intoB = config.intoB in
   let static = config.static in
@@ -36,11 +36,12 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   let profile_var = (if profile then "-D PROFILE " else "") in
   if bench then
     let bench_opt_level = "-O3" in
+    let suffix = if profile then "_profile" else if check then "_check" else "" in
     asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%slibC/*.c benchC/*.c %s -o %s/bench/%s%s%s.out -lgc -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir
       file
       mode_str
-      (if profile then "_profile" else "")
+      suffix
       gc_ini_heap_var
       mode_var
       eager_var
@@ -52,7 +53,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       log_dir
       file
       mode_str
-      (if profile then "_profile" else "")
+      suffix
       bench_opt_level
   else
     let result_c_dir = Resources.result_c_dir () in
@@ -314,3 +315,67 @@ let build_run_bench ~log_dir ~file ~mode_str ~itr ~mutants_length ~config =
   let i = Sys.command cmd in
   if i != 0 then raise @@ Build_bad ".out(for profile) fail";
   ()
+
+let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expected =
+  let src_files = asprintf "%s/%s/%s*.c" log_dir mode_str file in
+  let mutant_num_list = List.init mutants_length (fun i -> i + 1) in
+  let mutants_h =
+    List.concat_map (fun k ->
+      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] }) ] @
+      (if config.static then []
+       else [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ])
+    ) mutant_num_list
+  in
+  let oc = open_out (asprintf "%s/bench/%s%s_check_mutants.h" log_dir file mode_str) in
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program mutants_h);
+  close_out oc;
+  let per_run_prelude n =
+    (if config.static then [] else [SExp (App (Var (Printf.sprintf "set_tys%d" n), []))]) @
+    (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else [])
+  in
+  let includes = [
+    Include "<stdio.h>"; Include "<gc.h>";
+    Include "\"../../../libC/types.h\"";
+    Include (Format.asprintf "\"%s%s_check_mutants.h\"" file mode_str);
+  ] @
+    if crc_active config then [Include "\"../../../libC/crc.h\""] else []
+  in
+  let decls = if config.static then [] else [Decl (No, PTR RANGE, "range_list", None)] in
+  let mutant_check_block n =
+    per_run_prelude n @
+    [ SExp (App (Var ("mutant" ^ string_of_int n), []));
+      SExp (App (Var "printf", [Str "\\n"]));
+      SExp (App (Var "rewind", [Var "stdin"])) ]
+  in
+  let main =
+    FunDef (No, { ret_ty = INT; fname = "main"; params = [] },
+      [ SExp (App (Var "GC_INIT", [])) ] @
+      List.concat_map mutant_check_block mutant_num_list @
+      [ SReturn (Int 0) ])
+  in
+  let oc = open_out (asprintf "%s/bench/%s%s_check.c" log_dir file mode_str) in
+  output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [main]));
+  close_out oc;
+  (* build *)
+  let cmd = build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false ~check:true () in
+  fprintf std_formatter "@.%s@." cmd;
+  let i = Sys.command cmd in
+  if i != 0 then raise @@ Build_bad "clang(for check) fail";
+  (* run: 標準出力をファイルに落として読み戻す（/dev/null に捨てない） *)
+  let stdout_path = asprintf "%s/bench/%s%s_check.stdout" log_dir file mode_str in
+  let cmd = asprintf "%s/bench/%s%s_check.out < samples/input/%s.txt > %s"
+    log_dir file mode_str file stdout_path in
+  fprintf std_formatter "%s@." cmd;
+  let i = Sys.command cmd in
+  if i != 0 then raise @@ Build_bad ".out(for check) fail";
+  let ic = open_in stdout_path in
+  let output = In_channel.input_all ic in
+  close_in ic;
+  let lines = String.split_on_char '\n' output in
+  let lines = match List.rev lines with "" :: rest -> List.rev rest | _ -> lines in
+  if List.length lines <> mutants_length then
+    raise @@ Build_bad (Printf.sprintf
+      "check: expected %d output lines (1 per mutant) but got %d - is print missing a trailing separator, or did a mutant crash silently?"
+      mutants_length (List.length lines));
+  List.mapi (fun i line -> (i + 1, line)) lines
+  |> List.filter (fun (_, line) -> line <> expected)

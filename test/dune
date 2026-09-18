@@ -1,7 +1,13 @@
 (executable
   (name runtests)
+  (modules runtests test_interpreter test_pp test_translate test_typing testcases)
   (libraries ounit2 lambda_S_dti))
 
 (rule
    (alias runtest)
    (action (run ./runtests.exe)))
+
+(executable
+  (name check_mutants)
+  (modules check_mutants)
+  (libraries lambda_S_dti core_unix.command_unix))

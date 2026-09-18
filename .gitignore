@@ -42,6 +42,7 @@ parser.mli
 
 .vscode/
 logs/
+.check_tmp/
 scripts/__pycache__
 
 *.out
