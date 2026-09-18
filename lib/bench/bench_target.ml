@@ -37,15 +37,28 @@ let parse_and_mutate (file : string) : Syntax.ITGL.program list =
   let state = Pipeline.bundle_states_ITGL states in
   Pipeline.mutate_all ppf state
 
+let restrict_axis (only : bool option) (requested : bool list) : bool list =
+  match only with
+  | None -> requested
+  | Some b -> if List.mem b requested then [b] else []
+
 let expand_targets ~eagernesses ~hash_modes ~monotonicities (prepared : (string * Syntax.ITGL.program list) list) : target list =
   List.concat_map (fun (file, mutants) ->
-    List.concat_map (fun mode ->
-      List.concat_map (fun eager ->
-        List.concat_map (fun hash ->
-          List.map (fun monotonic ->
-            { file; mode; eager; hash; monotonic; mutants }
-          ) monotonicities
-        ) hash_modes
-      ) eagernesses
-    ) modes
+    let r = Bench_config.restriction_of file in
+    let file_eagernesses = restrict_axis r.eager_only eagernesses in
+    let file_monotonicities = restrict_axis r.monotonic_only monotonicities in
+    if file_eagernesses = [] || file_monotonicities = [] then begin
+      Format.eprintf
+        "[Skip] %s: no (eager,monotonic) combination survives its axis restriction given the requested flags@." file;
+      []
+    end else
+      List.concat_map (fun mode ->
+        List.concat_map (fun eager ->
+          List.concat_map (fun hash ->
+            List.map (fun monotonic ->
+              { file; mode; eager; hash; monotonic; mutants }
+            ) file_monotonicities
+          ) hash_modes
+        ) file_eagernesses
+      ) modes
   ) prepared
