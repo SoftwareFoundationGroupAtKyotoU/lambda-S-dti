@@ -26,16 +26,19 @@ jobs:
 
       #  opamの依存関係（Core, Asyncなど）をキャッシュして、
       #  *.opam ファイルが変わらない限りインストールをスキップさせる
+      #  キーに -v2 を付けているのは、古い opam (レイアウト 2.2) で作られたキャッシュを
+      #  無効化するため。setup-ocaml が入れる opam のバージョンが上がってレイアウトが
+      #  非互換になると、復元したキャッシュに対して毎回マイグレーションが走ってしまう。
       - name: Restore opam cache
         id: cache-opam
         uses: actions/cache@v4
         with:
           path: ~/.opam
           # OS, コンパイラバージョン, opamファイルの内容 をキーにする
-          key: ${{ runner.os }}-opam-5.2-${{ hashFiles('*.opam') }}
+          key: ${{ runner.os }}-opam-5.2-v2-${{ hashFiles('*.opam') }}
           restore-keys: |
-            ${{ runner.os }}-opam-5.2-
-      
+            ${{ runner.os }}-opam-5.2-v2-
+
       - name: Install system packages
         run: |
           sudo apt-get update
@@ -43,9 +46,16 @@ jobs:
 
       # 依存ライブラリのインストール
         # --with-test : テストに必要なライブラリもinstall
+        # OPAMCONFIRMLEVEL=unsafe-yes : 非対話環境でのプロンプト（レイアウト移行の
+        #   確認や、GitHub Actions ランナーで bwrap サンドボックスが使えない場合の
+        #   無効化確認など）を自動で承認する
+        # opam update はレイアウト移行が走った直後は exit code 10 を返し
+        #   「もう一度実行してください」という仕様のため、1回だけリトライする
       - name: Install dependencies
+        env:
+          OPAMCONFIRMLEVEL: unsafe-yes
         run: |
-          opam update
+          opam update || opam update
           opam install . --deps-only --with-test
 
       # 【追加機能 1】 bench.ml のコメントアウトを外す
