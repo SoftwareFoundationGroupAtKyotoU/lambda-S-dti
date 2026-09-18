@@ -895,8 +895,8 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 				case BASE_UNIT: return new_id(&temp_proj, G_UNIT, 0, &temp);
 				case BASE_FLOAT: return new_id(&temp_proj, G_FLOAT, 0, &temp);
 				case TYFUN: {
-					crc *c1 = make_s_coercion(u2->tydat.tyfun.left, &tydyn);
-					crc *c2 = make_s_coercion(&tydyn, u2->tydat.tyfun.right);
+					crc *c1 = make_s_coercion_to_dyn(u2->tydat.tyfun.left);
+					crc *c2 = make_s_coercion_from_dyn(u2->tydat.tyfun.right);
 					if (c1 == &crc_id && c2 == &crc_id) {
 						return new_id(&temp_proj, G_FN, 0, &temp);
 					} else {
@@ -904,7 +904,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					}
 				}
 				case TYLIST: {
-					crc *c = make_s_coercion(&tydyn, u2->tydat.tylist);
+					crc *c = make_s_coercion_from_dyn(u2->tydat.tylist);
 					if (c == &crc_id) {
 						return new_id(&temp_proj, G_LI, 0, &temp);
 					} else {
@@ -916,7 +916,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
 					int all_id = 1;
 					for (int i = 0; i < size; i++) {
-						crcs[i] = make_s_coercion(&tydyn, u2->tydat.tytuple.tys[i]);
+						crcs[i] = make_s_coercion_from_dyn(u2->tydat.tytuple.tys[i]);
 						if (crcs[i] != &crc_id) all_id = 0;
 					}
 					if (all_id) {
@@ -981,8 +981,8 @@ crc *make_s_coercion(ty *u1, ty *u2) {
         case TYFUN: {
             switch (u2->tykind) {
                 case DYN: {
-					crc *c1 = make_s_coercion(&tydyn, u1->tydat.tyfun.left);
-					crc *c2 = make_s_coercion(u1->tydat.tyfun.right, &tydyn);
+					crc *c1 = make_s_coercion_from_dyn(u1->tydat.tyfun.left);
+					crc *c2 = make_s_coercion_to_dyn(u1->tydat.tyfun.right);
 					if (c1 == &crc_id && c2 == &crc_id) {
 						return &crc_inj_FN;
 					} else {
@@ -1008,9 +1008,9 @@ crc *make_s_coercion(ty *u1, ty *u2) {
         case TYLIST: {
             switch (u2->tykind) {
                 case DYN: {
-					crc *c = make_s_coercion(u1->tydat.tylist, &tydyn);
+					crc *c = make_s_coercion_to_dyn(u1->tydat.tylist);
 					if (c == &crc_id) {
-						return &crc_id;
+						return &crc_inj_LI;
 					} else {
 						return new_list(&temp, c, &temp_inj);
 					}
@@ -1037,7 +1037,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
 					int all_id = 1;
 					for (int i = 0; i < size; i++) {
-						crcs[i] = make_s_coercion(u1->tydat.tytuple.tys[i], u2->tydat.tytuple.tys[i]);
+						crcs[i] = make_s_coercion_to_dyn(u1->tydat.tytuple.tys[i]);
 						if (crcs[i] != &crc_id) all_id = 0;
 					}
                     if (all_id) {
@@ -1104,6 +1104,191 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 			return make_s_coercion(u1, u2);
 		}
     }
+}
+
+crc *wrap_list(crc *inner) {
+	if (inner == &crc_id) return &crc_id;
+	crc temp = {};
+	return new_list(&temp, inner, &temp);
+}
+
+crc *wrap_tuple(uint16_t size, crc **crcs) {
+	int all_id = 1;
+	for (int i = 0; i < size; i++) {
+		if (crcs[i] != &crc_id) { all_id = 0; break; }
+	}
+	if (all_id) return &crc_id;
+	crc temp = {};
+	return new_tuple(&temp, size, crcs, &temp);
+}
+
+crc *wrap_fn(crc *c1, crc *c2) {
+	if (c1 == &crc_id && c2 == &crc_id) return &crc_id;
+	crc temp = {};
+	return new_fun(&temp, c1, c2, &temp);
+}
+
+crc *make_s_coercion_to_dyn(ty *u1) {
+	crc temp = {};
+	crc temp_inj = { .has_inj = 1 };
+	switch (u1->tykind) {
+		case DYN: return &crc_id;
+		case BASE_INT: return &crc_inj_INT;
+		case BASE_BOOL: return &crc_inj_BOOL;
+		case BASE_UNIT: return &crc_inj_UNIT;
+		case BASE_FLOAT: return &crc_inj_FLOAT;
+		case TYFUN: {
+			crc *c1 = make_s_coercion_from_dyn(u1->tydat.tyfun.left);
+			crc *c2 = make_s_coercion_to_dyn(u1->tydat.tyfun.right);
+			if (c1 == &crc_id && c2 == &crc_id) {
+				return &crc_inj_FN;
+			} else {
+				return new_fun(&temp, c1, c2, &temp_inj);
+			}
+		}
+		case TYLIST: {
+			crc *c = make_s_coercion_to_dyn(u1->tydat.tylist);
+			if (c == &crc_id) {
+				return &crc_inj_LI;
+			} else {
+				return new_list(&temp, c, &temp_inj);
+			}
+		}
+		case TYTUPLE: {
+			uint16_t size = u1->tydat.tytuple.size;
+			crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+			int all_id = 1;
+			for (int i = 0; i < size; i++) {
+				crcs[i] = make_s_coercion_to_dyn(u1->tydat.tytuple.tys[i]);
+				if (crcs[i] != &crc_id) all_id = 0;
+			}
+			if (all_id) {
+				return new_id(&temp, G_TP, size, &temp_inj);
+			} else {
+				return new_tuple(&temp, size, crcs, &temp_inj);
+			}
+		}
+		// TyRef/TyArray(monotonic) は target = Dyn を保持するだけでよい(中身は不要)。
+		case TYREF: return new_mref(&temp, &tydyn, &temp_inj);
+		case TYARRAY: return new_marray(&temp, &tydyn, &temp_inj);
+		case TYVAR: return new_tv(&temp, u1, &temp_inj);
+		case SUBSTITUTED: return make_s_coercion_to_dyn(ty_find(u1));
+	}
+}
+
+crc *make_s_coercion_from_dyn(ty *u2) {
+	crc temp = {};
+	crc temp_proj = { .has_proj = 1 };
+	switch (u2->tykind) {
+		case DYN: return &crc_id;
+		case BASE_INT: return new_id(&temp_proj, G_INT, 0, &temp);
+		case BASE_BOOL: return new_id(&temp_proj, G_BOOL, 0, &temp);
+		case BASE_UNIT: return new_id(&temp_proj, G_UNIT, 0, &temp);
+		case BASE_FLOAT: return new_id(&temp_proj, G_FLOAT, 0, &temp);
+		case TYFUN: {
+			crc *c1 = make_s_coercion_to_dyn(u2->tydat.tyfun.left);
+			crc *c2 = make_s_coercion_from_dyn(u2->tydat.tyfun.right);
+			if (c1 == &crc_id && c2 == &crc_id) {
+				return new_id(&temp_proj, G_FN, 0, &temp);
+			} else {
+				return new_fun(&temp_proj, c1, c2, &temp);
+			}
+		}
+		case TYLIST: {
+			crc *c = make_s_coercion_from_dyn(u2->tydat.tylist);
+			if (c == &crc_id) {
+				return new_id(&temp_proj, G_LI, 0, &temp);
+			} else {
+				return new_list(&temp_proj, c, &temp);
+			}
+		}
+		case TYTUPLE: {
+			uint16_t size = u2->tydat.tytuple.size;
+			crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+			int all_id = 1;
+			for (int i = 0; i < size; i++) {
+				crcs[i] = make_s_coercion_from_dyn(u2->tydat.tytuple.tys[i]);
+				if (crcs[i] != &crc_id) all_id = 0;
+			}
+			if (all_id) {
+				return new_id(&temp_proj, G_TP, size, &temp);
+			} else {
+				return new_tuple(&temp_proj, size, crcs, &temp);
+			}
+		}
+		case TYREF: return new_mref(&temp_proj, u2->tydat.tyref, &temp);
+		case TYARRAY: return new_marray(&temp_proj, u2->tydat.tyarray, &temp);
+		case TYVAR: return new_tv(&temp_proj, u2, &temp);
+		case SUBSTITUTED: return make_s_coercion_from_dyn(ty_find(u2));
+	}
+}
+
+crc *make_s_coercion_to_ground(ty *u1, ground_ty g) {
+	if (u1 == &tydyn) {
+		crc temp = {};
+		crc temp_proj = { .has_proj = 1 };
+		return new_id(&temp_proj, g, 0, &temp);
+	} else {
+		return &crc_id;
+	}
+}
+
+crc *make_s_coercion_from_ground(ground_ty g, ty *u2) {
+	if (u2 == &tydyn) {
+		switch (g) {
+			case G_INT: return &crc_inj_INT;
+			case G_BOOL: return &crc_inj_BOOL;
+			case G_UNIT: return &crc_inj_UNIT;
+			case G_FLOAT: return &crc_inj_FLOAT;
+			default: exit(1);
+		}
+	} else {
+		return &crc_id;
+	}
+}
+
+crc *make_s_coercion_to_mref(ty *u1, ty *u2) {
+	if (u1 == &tydyn) {
+		crc temp = {};
+		crc temp_proj = { .has_proj = 1 };
+		return new_mref(&temp_proj, u2, &temp);
+	} else {
+		crc temp = {};
+		return new_mref(&temp, u2, &temp);
+	}
+}
+
+crc *make_s_coercion_from_mref(ty *u2) {
+	if (u2 == &tydyn) {
+		crc temp = {};
+		crc temp_inj = { .has_inj = 1 };
+		return new_mref(&temp, &tydyn, &temp_inj);
+	} else {
+		crc temp = {};
+		return new_mref(&temp, u2, &temp);
+	}
+}
+
+crc *make_s_coercion_to_marray(ty *u1, ty *u2) {
+	if (u1 == &tydyn) {
+		crc temp = {};
+		crc temp_proj = { .has_proj = 1 };
+		return new_marray(&temp_proj, u2, &temp);
+	} else {
+		crc temp = {};
+		return new_marray(&temp, u2, &temp);
+	}
+}
+
+crc *make_s_coercion_from_marray(ty *u2) {
+	if (u2 == &tydyn) {
+		crc temp = {};
+		crc temp_inj = { .has_inj = 1 };
+		return new_marray(&temp, &tydyn, &temp_inj);
+	} else {
+		crc temp = {};
+		return new_marray(&temp, u2, &temp);
+	}
 }
 #endif
 

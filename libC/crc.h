@@ -97,6 +97,21 @@ void clear_crc_caches();
 
 #ifdef MONOTONIC
 crc *make_s_coercion(ty*, ty*);
+
+// 複合型(TyFun/TyList/TyTuple)の外殻組み立てヘルパー。toC.ml がタグ判定+中身の再帰を行った後に呼ぶ。
+crc *wrap_list(crc*);
+crc *wrap_tuple(uint16_t, crc**);
+crc *wrap_fn(crc*, crc*);
+
+crc *make_s_coercion_to_dyn(ty*);
+crc *make_s_coercion_to_ground(ty*, ground_ty);
+crc *make_s_coercion_to_mref(ty*, ty*);
+crc *make_s_coercion_to_marray(ty*, ty*);
+
+crc *make_s_coercion_from_dyn(ty*);
+crc *make_s_coercion_from_ground(ground_ty, ty*);
+crc *make_s_coercion_from_mref(ty*);
+crc *make_s_coercion_from_marray(ty*);
 #endif
 
 #endif

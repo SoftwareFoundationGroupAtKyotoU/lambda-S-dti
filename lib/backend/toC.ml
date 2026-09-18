@@ -55,6 +55,9 @@ let toC_ta = function
   | Ty u -> toC_ty u
   | TyNu -> App (Var "newty", [])
 
+let monotonic_dummy_range : Utils.Error.range =
+  { start_p = Lexing.dummy_pos; end_p = Lexing.dummy_pos }
+
 let toC_tycontent = function
   | TyVar _ -> Struct ["tykind", Var "TYVAR"]
   | TyFun (u1, u2) ->
@@ -92,7 +95,7 @@ let rec check_has_tv = function
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
   | CMRef (u1, u2) | CMArray (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
 
-let rec toC_crc x c =
+let rec toC_crc_gen ~fresh_tmp x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
     | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
@@ -101,8 +104,9 @@ let rec toC_crc x c =
     | _ ->
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
-        let stm, exp = toC_crc x c in
-        let tmp = CrcTmpManager.find c in
+        let stm, exp = toC_crc_gen ~fresh_tmp x c in
+        let tmp_decl, tmp = fresh_tmp c in
+        (match tmp_decl with Some d -> [d] | None -> []) @
         SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
@@ -220,6 +224,93 @@ let rec toC_crc x c =
     | CSeq _ | CProj _ | CInj _ as c -> raise @@ ToC_bug (Format.asprintf "%a should not be passed to toC_crc" Pp.pp_coercion c)
     | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
+let toC_crc x c = toC_crc_gen ~fresh_tmp:(fun c -> None, CrcTmpManager.find c) x c
+
+let toC_crc_dyn c : stm list * exp =
+  match c with
+  | CId _ -> [], Addr "crc_id"
+  | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+  | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr "crc_inj_RF"
+  | CSeq (CMArray (_, TyDyn), CInj Ar) -> [], Addr "crc_inj_AR"
+  | _ when CrcManager.mem c -> [], Addr (CrcManager.find c)
+  | _ ->
+    let x = KNormal.genvar "_crc" in
+    let fresh_tmp _ = let n = KNormal.genvar "_crctmp" in Some (SDecl (CRC, n, None)), n in
+    let stm, exp = toC_crc_gen ~fresh_tmp x c in
+    let tmp_decl, tmp = fresh_tmp c in
+    let tmp_decl_stm = match tmp_decl with Some d -> [d] | None -> [] in
+    stm @ tmp_decl_stm @ [SAssign (Var tmp, Cast (CRC, exp))],
+    Cast (PTR CRC, App (Var "alloc_crc", [Addr tmp]))
+
+let rec make_s_coercion_call ~from u rtti : stm list * exp =
+  let call f = if from then App (Var f, [toC_ty u; rtti]) else App (Var f, [rtti; toC_ty u]) in
+  let tag_eq rtti tag = BinOp (Arrow (rtti, "tykind"), Eq, Var tag) in
+  (* u(静的)とDyn(タグ判定で確定)の間のコアーションをコンパイル時に計算し、Cコードに変換する *)
+  let dyn_branch () =
+    let dyn_c =
+      if from then Coercion.make_s_coercion ~monotonic:true u (monotonic_dummy_range, Pos) TyDyn
+      else Coercion.make_s_coercion ~monotonic:true TyDyn (monotonic_dummy_range, Pos) u
+    in
+    toC_crc_dyn dyn_c
+  in
+  match u with
+  | TyDyn -> [], App (Var (if from then "make_s_coercion_from_dyn" else "make_s_coercion_to_dyn"), [rtti])
+  | TyInt | TyBool | TyUnit | TyFloat ->
+    let g = match u with
+      | TyInt -> "G_INT" | TyBool -> "G_BOOL" | TyUnit -> "G_UNIT" | TyFloat -> "G_FLOAT"
+      | _ -> raise @@ ToC_bug "make_s_coercion_call: unreachable ground type"
+    in
+    [], (if from then App (Var "make_s_coercion_from_ground", [Var g; rtti])
+         else App (Var "make_s_coercion_to_ground", [rtti; Var g]))
+  | TyRef _ ->
+    [], if from then App (Var "make_s_coercion_from_mref", [rtti])
+      else App (Var "make_s_coercion_to_mref", [rtti; Dot (Arrow (toC_ty u, "tydat"), "tyref")])
+  | TyArray _ ->
+    [], if from then App (Var "make_s_coercion_from_marray", [rtti])
+      else App (Var "make_s_coercion_to_marray", [rtti; Dot (Arrow (toC_ty u, "tydat"), "tyarray")])
+  | TyList t ->
+    let elem_rtti = Dot (Arrow (rtti, "tydat"), "tylist") in
+    let dyn_stms, dyn_exp = dyn_branch () in
+    let elem_stms, elem_exp = make_s_coercion_call ~from t elem_rtti in
+    let result = KNormal.genvar "_crc" in
+    [SDecl (PTR CRC, result, None);
+     SIf (tag_eq rtti "DYN",
+          dyn_stms @ [SAssign (Var result, dyn_exp)],
+          [SIf (tag_eq rtti "TYLIST",
+                elem_stms @ [SAssign (Var result, App (Var "wrap_list", [elem_exp]))],
+                [SAssign (Var result, call "make_s_coercion")])])],
+    Var result
+  | TyTuple ts ->
+    let size = List.length ts in
+    let tys_field = Dot (Dot (Arrow (rtti, "tydat"), "tytuple"), "tys") in
+    let dyn_stms, dyn_exp = dyn_branch () in
+    let elems = List.mapi (fun i t -> make_s_coercion_call ~from t (Index (tys_field, Int i))) ts in
+    let elem_stms = List.concat (List.map fst elems) in
+    let elem_exps = List.map snd elems in
+    let result = KNormal.genvar "_crc" in
+    [SDecl (PTR CRC, result, None);
+     SIf (tag_eq rtti "DYN",
+          dyn_stms @ [SAssign (Var result, dyn_exp)],
+          [SIf (tag_eq rtti "TYTUPLE",
+                elem_stms @ [SAssign (Var result, App (Var "wrap_tuple", [Int size; Cast (ARRAY (PTR CRC), Array elem_exps)]))],
+                [SAssign (Var result, call "make_s_coercion")])])],
+    Var result
+  | TyFun (t1, t2) ->
+    let tyfun_field = Dot (Arrow (rtti, "tydat"), "tyfun") in
+    let left_rtti = Dot (tyfun_field, "left") in
+    let right_rtti = Dot (tyfun_field, "right") in
+    let dyn_stms, dyn_exp = dyn_branch () in
+    let c1_stms, c1_exp = make_s_coercion_call ~from:(not from) t1 left_rtti in
+    let c2_stms, c2_exp = make_s_coercion_call ~from t2 right_rtti in
+    let result = KNormal.genvar "_crc" in
+    [SDecl (PTR CRC, result, None);
+     SIf (tag_eq rtti "DYN",
+          dyn_stms @ [SAssign (Var result, dyn_exp)],
+          [SIf (tag_eq rtti "TYFUN",
+                c1_stms @ c2_stms @ [SAssign (Var result, App (Var "wrap_fn", [c1_exp; c2_exp]))],
+                [SAssign (Var result, call "make_s_coercion")])])],
+    Var result
+  | _ -> [], call "make_s_coercion"
 
 (* ========================================= *)
 
@@ -380,7 +471,9 @@ and toC_assign ~config x f =
   | Cls.Deref (y, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
-      | Some u -> assign_x (App (Var "apply_coerce", [Arrow (Cast (PTR REF, Var y), "v"); App (Var "make_s_coercion", [Arrow (Cast (PTR REF, Var y), "u"); toC_ty u])]))
+      | Some u ->
+        let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR REF, Var y), "u")) in
+        crc_stms @ assign_x (App (Var "apply_coerce", [Arrow (Cast (PTR REF, Var y), "v"); crc_exp]))
     else if config.static then
       assign_x (PreOp (Deref, (Cast (REF, Var y))))
     else
@@ -388,7 +481,9 @@ and toC_assign ~config x f =
   | Cls.Get (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
-      | Some u -> assign_x (App (Var "apply_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); App (Var "make_s_coercion", [Arrow (Cast (PTR ARR, Var y), "u"); toC_ty u])]))
+      | Some u ->
+        let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR ARR, Var y), "u")) in
+        crc_stms @ assign_x (App (Var "apply_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); crc_exp]))
     else if config.static then
       assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
     else
@@ -407,7 +502,9 @@ and toC_assign ~config x f =
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), Var z) :: assign_x (Int 0)
-      | Some u -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR REF, Var y), "u")]); Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+      | Some u ->
+        let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR REF, Var y), "u")) in
+        crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (PreOp (Deref, (Cast (REF, Var y))), Var z) :: assign_x (Int 0)
     else
@@ -415,7 +512,9 @@ and toC_assign ~config x f =
   | Cls.Put (y, z, v_x, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
-      | Some u -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; App (Var "make_s_coercion", [toC_ty u; Arrow (Cast (PTR ARR, Var y), "u")]); Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+      | Some u ->
+        let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR ARR, Var y), "u")) in
+        crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
     else
@@ -565,6 +664,7 @@ let toC_toplevel ~config toplevel =
 (* ================================ *)
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
+  RangeManager.register monotonic_dummy_range;
   let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in

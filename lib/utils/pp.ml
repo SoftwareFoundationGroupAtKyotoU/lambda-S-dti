@@ -1196,8 +1196,8 @@ module C = struct
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x
-    | Dot (e, x) -> fprintf ppf "%a.%s" pp_exp e x
-    | Arrow (e, x) -> fprintf ppf "%a->%s" pp_exp e x
+    | Dot (e, x) -> fprintf ppf "%a.%s" pp_exp_lhs e x
+    | Arrow (e, x) -> fprintf ppf "%a->%s" pp_exp_lhs e x
     | Cast (t, e) -> fprintf ppf "((%a)%a)" pp_ty t pp_exp e
     | Index (e1, e2) -> fprintf ppf "%a[%a]" pp_exp e1 pp_exp e2
     | Int i -> pp_print_int ppf i
@@ -1216,6 +1216,13 @@ module C = struct
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_content) l
     | Array es ->
       fprintf ppf "{ %a }" (pp_print_list ~pp_sep:sep_comma pp_exp) es
+
+  (* Dot/Arrow の左オペランドとして使う版: Addr は "&x" という単項式なので、
+     そのまま "&x->y" と出力すると C の演算子優先順位で "&(x->y)" と解釈されてしまう。
+     括弧を付けて "(&x)->y" にする。 *)
+  and pp_exp_lhs ppf = function
+    | Addr _ as e -> fprintf ppf "(%a)" pp_exp e
+    | e -> pp_exp ppf e
 
   let rec pp_stm ppf = function
     | SDecl (t, x, None) -> fprintf ppf "%a %s;" pp_ty t x
