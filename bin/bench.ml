@@ -4,7 +4,7 @@ let () =
   (* benchmark settings *)
   let files, itr = ref [], ref 0 in
   (* evaluation mode *)
-  let eagernesses, hash_modes = ref [], ref [] in
+  let eagernesses, hash_modes, monotonicities = ref [], ref [], ref [] in
   (* benchmark modes *)
   let static, dynamize, grift = ref false, ref false, ref false in
   let specs = [
@@ -13,6 +13,8 @@ let () =
     ("--lazy", Arg.Unit (fun () -> eagernesses := false :: !eagernesses), " Run lazy mode");
     ("--hash", Arg.Unit (fun () -> hash_modes := true :: !hash_modes), " Run hash-consing mode");
     ("--no-hash", Arg.Unit (fun () -> hash_modes := false :: !hash_modes), " Run no-hash-consing mode");
+    ("--guarded", Arg.Unit (fun () -> monotonicities := false :: !monotonicities), " Run guarded reference semantics");
+    ("--monotonic", Arg.Unit (fun () -> monotonicities := true :: !monotonicities), " Run monotonic reference semantics");
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
     ("--grift", Arg.Unit (fun () -> grift := true), " Benchmarking on grift");
@@ -30,6 +32,7 @@ let () =
   let itr = if !itr = 0 then Bench_config.default_itr else !itr in
   let eagernesses = if !eagernesses = [] then [true; false] else !eagernesses in
   let hash_modes = if !hash_modes = [] then [true; false] else !hash_modes in
+  let monotonicities = if !monotonicities = [] then [true; false] else !monotonicities in
 
   (* 1. 前処理: 全ファイルを parse→mutate *)
   let prepared : (string * Syntax.ITGL.program list) list =
@@ -37,7 +40,7 @@ let () =
   in
 
   (* 2. モード展開してターゲット配列を作る *)
-  let targets = Bench_target.expand_targets ~eagernesses ~hash_modes prepared in
+  let targets = Bench_target.expand_targets ~eagernesses ~hash_modes ~monotonicities prepared in
 
   (* 3. ログディレクトリ準備 *)
   let tm = Unix.localtime (Unix.time ()) in
@@ -54,8 +57,8 @@ let () =
   if !dynamize then Bench_runner.run_dynamize ~log_dir ~itr targets;
   if !static then Bench_runner.run_static ~log_dir ~itr targets;
   if !grift then begin
-    Bench_runner.run_dynamize_grift ~log_dir ~itr ~files;
-    if !static then Bench_runner.run_static_grift ~log_dir ~itr ~files
+    Bench_runner.run_dynamize_grift ~log_dir ~itr ~files ~monotonicities;
+    if !static then Bench_runner.run_static_grift ~log_dir ~itr ~files ~monotonicities
   end;
 
   if not (!dynamize || !static || !grift) then

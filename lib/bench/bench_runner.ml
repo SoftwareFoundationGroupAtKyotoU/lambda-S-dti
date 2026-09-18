@@ -1,16 +1,16 @@
 open Bench_target
 
-let config_of_target ~file ~eager ~hash = function
-  | S      -> Config.create ~eager ~hash ~file:(Some file) ~compile:true ()
-  | A      -> Config.create ~eager ~hash ~file:(Some file) ~alt:true ~compile:true ()
+let config_of_target ~file ~eager ~hash ~monotonic = function
+  | S      -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~compile:true ()
+  | A      -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~alt:true ~compile:true ()
   | B      -> Config.create ~eager ~hash ~file:(Some file) ~intoB:true ~compile:true ()
-  | STATIC -> Config.create ~eager ~hash ~file:(Some file) ~static:true ~compile:true ()
+  | STATIC -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~static:true ~compile:true ()
 
 (* -------- 1ファイル × 1モード（ターゲット）を実行 ------------------ *)
 let run_target ~log_dir ~itr ~ordinal ~total_targets (t : target) =
   let mode_str = full_mode_name t.mode t.eager t.hash in
   try
-    let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash t.mode in
+    let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic t.mode in
     let writer = Bench_output.open_writer ~log_dir ~mode_str ~file:t.file in
     let ppf = Utils.Format.empty_formatter in
     let null_fmt = Format.make_formatter (fun _ _ _ -> ()) (fun () -> ()) in
@@ -86,19 +86,22 @@ let run_static ~log_dir ~itr targets =
     run_target ~log_dir ~itr ~ordinal:(i+1) ~total_targets t
   ) targets
 
-let run_grift ~log_dir ~itr ~static ~files =
-  let total_targets = List.length files in
-  List.iteri (fun i file ->
+let run_grift ~log_dir ~itr ~static ~files ~monotonicities =
+  let targets = List.concat_map (fun file -> List.map (fun b -> (file, b)) monotonicities) files in
+  let total_targets = List.length targets in
+  List.iteri (fun i (file, monotonic) ->
     let grift_src = Bench_config.sample_path ~lang:`Grift file in
     if not (Sys.file_exists grift_src) then
       Format.eprintf "[Skip grift] %s: %s not found@." file grift_src
     else
       try
-        Bench_grift.run ~log_dir ~grift_src ~itr ~static ~file
+        Bench_grift.run ~log_dir ~grift_src ~itr ~static ~file ~monotonic
           ~ordinal:(i + 1) ~total_targets
       with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e)
-  ) files
+  ) targets
 
-let run_dynamize_grift ~log_dir ~itr ~files = run_grift ~log_dir ~itr ~static:false ~files
+let run_dynamize_grift ~log_dir ~itr ~files ~monotonicities =
+  run_grift ~log_dir ~itr ~static:false ~files ~monotonicities
 
-let run_static_grift ~log_dir ~itr ~files = run_grift ~log_dir ~itr ~static:true ~files
+let run_static_grift ~log_dir ~itr ~files ~monotonicities =
+  run_grift ~log_dir ~itr ~static:true ~files ~monotonicities

@@ -293,7 +293,7 @@ let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
       ("inference", `Null);
       ("longest", (match longest with Some l -> Bench_json.int l | None -> `Null)) ]
 
-let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
+let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~monotonic =
   let input_path = Bench_config.input_path ~static file in
   let src = read_file grift_src in
   let defs, groups = analyze_src src in
@@ -305,15 +305,19 @@ let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
   let input_prof = repeat (1 + 10) in
   let suffix = if static then "_fs" else "" in
   let g = Bench_config.grift_cmd in
-  let grift_dir = Filename.concat log_dir "GRIFT" in
+  let monotonic_flag = if monotonic then "--monotonic-references" else "" in
+  let monotonic_tag = if monotonic then "M" else "G" in
+  let mode_g = "GRIFT" ^ monotonic_tag in
+  let mode_gc = "GRIFTC" ^ monotonic_tag in
+  let grift_dir = Filename.concat log_dir mode_g in
   if not (Sys.file_exists grift_dir) then Sys.mkdir grift_dir 0o755;
-  let work = Filename.concat log_dir (Printf.sprintf "grift_work_%s%s" file suffix) in
+  let work = Filename.concat log_dir (Printf.sprintf "grift_work_%s%s%s" file suffix monotonic_tag) in
   if not (Sys.file_exists work) then Sys.mkdir work 0o755;
-  let oc_g = open_out (Printf.sprintf "%s/GRIFT_%s%s.jsonl" log_dir file suffix) in
-  let oc_gc = open_out (Printf.sprintf "%s/GRIFTC_%s%s.jsonl" log_dir file suffix) in
+  let oc_g = open_out (Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_g file suffix) in
+  let oc_gc = open_out (Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_gc file suffix) in
   let prog =
     Bench_progress.create
-      ~label:(Printf.sprintf "GRIFT_%s%s" file suffix)
+      ~label:(Printf.sprintf "%s_%s%s" mode_g file suffix)
       ~total:(List.length subsets) ~ordinal ~total_targets
   in
   List.iteri
@@ -328,7 +332,7 @@ let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
       write_file prof_f (base_code ^ driver_code 1);
       let compile label extra src out =
         let cmd =
-          Printf.sprintf "%s -O 3 %s -o %s %s > /dev/null 2>&1" g extra
+          Printf.sprintf "%s -O 3 %s %s -o %s %s > /dev/null 2>&1" g monotonic_flag extra
             (Filename.quote out) (Filename.quote src)
         in
         if Sys.command cmd <> 0 then
@@ -341,8 +345,8 @@ let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
       let dest_c = Printf.sprintf "%s%d.c" file idx in
       ignore
         (Sys.command
-           (Printf.sprintf "cd %s && %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
-              (Filename.quote cdir) g (Filename.quote dest_c)));
+           (Printf.sprintf "cd %s && %s %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
+              (Filename.quote cdir) g monotonic_flag (Filename.quote dest_c)));
       (try Sys.rename (Filename.concat cdir dest_c) (Filename.concat grift_dir dest_c)
        with _ -> ());
       (* 実行・計測 *)
@@ -362,9 +366,9 @@ let run ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets =
         | None -> []
       in
       Bench_json.to_channel_ln oc_g
-        (jrow ~mode:"GRIFT" ~idx ~after_mutate:base_code ~times ~cast ~longest);
+        (jrow ~mode:mode_g ~idx ~after_mutate:base_code ~times ~cast ~longest);
       Bench_json.to_channel_ln oc_gc
-        (jrow ~mode:"GRIFTC" ~idx ~after_mutate:base_code ~times:times_c ~cast:None
+        (jrow ~mode:mode_gc ~idx ~after_mutate:base_code ~times:times_c ~cast:None
            ~longest:None);
       Bench_progress.tick prog)
     subsets;

@@ -9,11 +9,15 @@ let string_of_mode = function
   | B -> "B"
   | STATIC -> "STATIC"
 
-let full_mode_name mode eager hash =
-  Printf.sprintf "%s%s%s" (string_of_mode mode) (if eager then "E" else "L") (if hash then "H" else "N")
+let full_mode_name mode eager hash monotonic =
+  Printf.sprintf "%s%s%s%s"
+    (string_of_mode mode)
+    (if eager     then "E" else "L")
+    (if hash      then "H" else "N")
+    (if monotonic then "M" else "G")
 
 type target = {
-  file : string; mode : mode; eager : bool; hash : bool;
+  file : string; mode : mode; eager : bool; hash : bool; monotonic : bool;
   mutants : Syntax.ITGL.program list;
 }
 
@@ -33,12 +37,14 @@ let parse_and_mutate (file : string) : Syntax.ITGL.program list =
   let state = Pipeline.bundle_states_ITGL states in
   Pipeline.mutate_all ppf state
 
-let expand_targets ~eagernesses ~hash_modes (prepared : (string * Syntax.ITGL.program list) list) : target list =
+let expand_targets ~eagernesses ~hash_modes ~monotonicities (prepared : (string * Syntax.ITGL.program list) list) : target list =
   List.concat_map (fun (file, mutants) ->
-    List.concat_map (fun mode -> 
+    List.concat_map (fun mode ->
       List.concat_map (fun eager ->
-        List.map (fun hash -> 
-          { file; mode; eager; hash; mutants }
+        List.concat_map (fun hash ->
+          List.map (fun monotonic ->
+            { file; mode; eager; hash; monotonic; mutants }
+          ) monotonicities
         ) hash_modes
       ) eagernesses
     ) modes
