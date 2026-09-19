@@ -15,4 +15,11 @@ exception Parser_bug of string
  * Pipeline.init_state at the start of a fresh session. *)
 let tynameenv : ty Environment.t ref = ref Environment.empty
 
-let reset () = tynameenv := Environment.empty
+(* field_name -> (index, field_ty, tuple_ty, field_order, owner_type_name).
+ * Field names are globally unique across every declared record type (pre-1998-OCaml style),
+ * so a field name alone determines its record type and tuple index. owner_type_name lets
+ * redeclaring a record type drop its own previous fields before the cross-type collision
+ * check, so redefinition is unremarkable shadowing rather than a false "already declared". *)
+let fieldenv : (int * ty * ty * id list * id) Environment.t ref = ref Environment.empty
+
+let reset () = tynameenv := Environment.empty; fieldenv := Environment.empty

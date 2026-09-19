@@ -1,0 +1,6 @@
+run_test "basic.ml" "3"
+run_test "reorder.ml" "30"
+run_test "nested.ml" "30"
+run_test "dynamic.ml" "7" "skip_static"
+run_test "redefinition.ml" "11"
+run_test "trailing_semi.ml" "3"

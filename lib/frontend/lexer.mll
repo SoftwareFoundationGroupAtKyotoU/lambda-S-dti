@@ -70,6 +70,8 @@ rule main = parse
 | ")" { Parser.RPAREN (range_of lexbuf) }
 | "[" { Parser.LBRACKET (range_of lexbuf) }
 | "]" { Parser.RBRACKET (range_of lexbuf) }
+| "{" { Parser.LBRACE (range_of lexbuf) }
+| "}" { Parser.RBRACE (range_of lexbuf) }
 | "," { Parser.COMMA (range_of lexbuf) }
 | ":" { Parser.COLON (range_of lexbuf) }
 | ";" { Parser.SEMI (range_of lexbuf) }

@@ -36,6 +36,7 @@ exception Parser_bug = Type_env.Parser_bug
 %token <Utils.Error.range> INT BOOL UNIT FLOAT STRING CHAR QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
+%token <Utils.Error.range> LBRACE RBRACE
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
@@ -103,6 +104,40 @@ Program :
       Type_env.tynameenv := Environment.add x.value u !(Type_env.tynameenv);
       TypeDecl (x.value, u)
     }
+  | TYPE x=ID EQ LBRACE fields=RecordFieldDecls RBRACE SEMISEMI {
+      List.iter (fun (_, fty) ->
+        if not (TV.is_empty (Ftv.ftv_ty fty)) then
+          raise (Parser_bug (Printf.sprintf "type %s: record fields may not contain 'a-style type variables" x.value))
+      ) fields;
+      let names = List.map fst fields in
+      let rec find_dup seen = function
+        | [] -> None
+        | n :: rest -> if V.mem n seen then Some n else find_dup (V.add n seen) rest
+      in
+      (match find_dup V.empty names with
+       | Some dup -> raise (Parser_bug (Printf.sprintf "type %s: field %s declared twice" x.value dup))
+       | None -> ());
+      (* redefinition safety: drop this type's own previous fields before the cross-type check *)
+      Type_env.fieldenv := Environment.filter (fun _ (_, _, _, _, owner) -> owner <> x.value) !(Type_env.fieldenv);
+      List.iter (fun f ->
+        if Environment.mem f !(Type_env.fieldenv) then
+          raise (Parser_bug (Printf.sprintf "field %s already declared in another record type" f))
+      ) names;
+      let tuple_ty = TyTuple (List.map snd fields) in
+      Type_env.tynameenv := Environment.add x.value tuple_ty !(Type_env.tynameenv);
+      List.iteri (fun i (fname, fty) ->
+        Type_env.fieldenv := Environment.add fname (i, fty, tuple_ty, names, x.value) !(Type_env.fieldenv)
+      ) fields;
+      TypeDecl (x.value, tuple_ty)
+    }
+
+RecordFieldDecls :
+  | f=FieldDecl { [f] }
+  | f=FieldDecl SEMI { [f] }
+  | f=FieldDecl SEMI fs=RecordFieldDecls { f :: fs }
+
+FieldDecl :
+  | x=ID COLON u=Type { (x.value, u) }
 
 Expr :
   | e1=BelowSemiExpr SEMI e2=Expr {
@@ -311,7 +346,18 @@ PostfixExpr :
       let r = join_range (range_of_exp e1) end_r in
       GetExp (r, e1, e2)
     }
-  | PrefixExpr { $1 } 
+  | e1=PostfixExpr DOT x=ID {
+      let (idx, _, tuple_ty, field_order, _owner) =
+        try Environment.find x.value !(Type_env.fieldenv)
+        with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" x.value))
+      in
+      let n = List.length field_order in
+      let r = join_range (range_of_exp e1) x.range in
+      MatchExp (r, AscExp (range_of_exp e1, e1, tuple_ty),
+        [(MatchTuple (List.init n (fun i -> if i = idx then MatchVar "$field" else MatchWild)),
+          Var (r, "$field", ref []))])
+    }
+  | PrefixExpr { $1 }
 
 PrefixExpr :
   | start_r=BANG e=PrefixExpr {
@@ -335,9 +381,44 @@ SimpleExpr :
       AscExp (join_range start last, e, u)
     }
   | start=LBRACKET l=ListElms last=RBRACKET {
-      l (join_range start last) 
+      l (join_range start last)
+    }
+  | start=LBRACE fields=RecordFieldInits last=RBRACE {
+      let r = join_range start last in
+      let fname0 = fst (List.hd fields) in
+      let (_, _, tuple_ty, field_order, _owner) =
+        try Environment.find fname0 !(Type_env.fieldenv)
+        with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" fname0))
+      in
+      let rec build seen acc = function
+        | [] -> List.rev acc
+        | (fname, fe) :: rest ->
+          if not (List.mem fname field_order) then
+            raise (Parser_bug (Printf.sprintf "field %s does not belong to this record type" fname));
+          if V.mem fname seen then
+            raise (Parser_bug (Printf.sprintf "field %s specified more than once" fname));
+          build (V.add fname seen) ((fname, fe) :: acc) rest
+      in
+      let provided = build V.empty [] fields in
+      let missing = List.filter (fun f -> not (List.mem_assoc f provided)) field_order in
+      if missing <> [] then
+        raise (Parser_bug (Printf.sprintf "record literal missing field(s): %s" (String.concat ", " missing)));
+      let field_tys = match tuple_ty with TyTuple us -> us | _ -> assert false in
+      let ordered = List.map2 (fun f fty ->
+        let fe = List.assoc f provided in
+        AscExp (range_of_exp fe, fe, fty)
+      ) field_order field_tys in
+      TupleExp (r, ordered)
     }
   | LPAREN e=Expr RPAREN { e }
+
+RecordFieldInits :
+  | f=RecordFieldInit { [f] }
+  | f=RecordFieldInit SEMI { [f] }
+  | f=RecordFieldInit SEMI fs=RecordFieldInits { f :: fs }
+
+RecordFieldInit :
+  | x=ID EQ e=BinOpExpr { (x.value, e) }
 
 ListElms :
   | /* empty */ { fun r -> NilExp(r, fresh_tyvar ()) }
