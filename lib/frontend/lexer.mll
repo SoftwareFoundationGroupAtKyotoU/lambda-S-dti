@@ -89,6 +89,7 @@ rule main = parse
 | "<>" { Parser.NEQ (range_of lexbuf) }
 | "->" { Parser.RARROW (range_of lexbuf) }
 | "<-" { Parser.LARROW (range_of lexbuf) }
+| "^" { Parser.CARET (range_of lexbuf) }
 | "+" { Parser.PLUS (range_of lexbuf) }
 | "-" { Parser.MINUS (range_of lexbuf) }
 | "*" { Parser.STAR (range_of lexbuf) }

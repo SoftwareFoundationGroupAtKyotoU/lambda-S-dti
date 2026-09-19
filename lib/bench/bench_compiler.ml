@@ -452,21 +452,27 @@ type grift_compiled_batch = {
 let compile_grift ~log_dir ~itr ~jobs ~static ~files ~monotonicities ~label : grift_compiled_batch =
   let targets = Bench_target.restrict_grift_targets ~monotonicities files in
   let total_targets = List.length targets in
-  let prepared =
+  (* grift版のソースが存在しないベンチマーク(church-65532/loop 等、grift と
+     比較不能な言語機能を使うため意図的に .grift を持たない)は、軸制限で
+     対象外になったケース(restrict_grift_targets)と同様に「このターゲットを
+     grift 比較から外すだけ」の skip として扱い、prepare_failed には
+     カウントしない。実際の prepare 中の例外(壊れた .grift ファイル等)は
+     引き続き全体を失敗させる。 *)
+  let results =
     List.mapi (fun i (file, monotonic) ->
       let grift_src = Bench_config.sample_path ~lang:`Grift file in
       if not (Sys.file_exists grift_src) then begin
         Format.eprintf "[Skip grift] %s: %s not found@." file grift_src;
-        None
+        `Skipped
       end else
         try
-          Some (Bench_grift.prepare ~log_dir ~grift_src ~itr ~static ~file ~monotonic
-                  ~ordinal:(i + 1) ~total_targets)
-        with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e); None
+          `Prepared (Bench_grift.prepare ~log_dir ~grift_src ~itr ~static ~file ~monotonic
+                       ~ordinal:(i + 1) ~total_targets)
+        with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e); `Failed
     ) targets
-    |> List.filter_map (fun x -> x)
   in
-  let prepare_failed = List.length prepared < total_targets in
+  let prepared = List.filter_map (function `Prepared p -> Some p | `Skipped | `Failed -> None) results in
+  let prepare_failed = List.exists (function `Failed -> true | `Prepared _ | `Skipped -> false) results in
   let all_jobs = List.concat_map Bench_grift.jobs_of_prepared prepared in
   Bench_builder.compile_all ~log_dir ~label ~jobs all_jobs;
   let compiled = List.map Bench_grift.finalize prepared in

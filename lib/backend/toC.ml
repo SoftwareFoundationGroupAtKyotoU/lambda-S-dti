@@ -504,6 +504,7 @@ and toC_assign ~config x f =
     | Plus | Minus | Mult | Div | Mod | And | Or | Eq | Neq | Lt | Lte | Gt | Gte -> assign_x (BinOp (Var y, op, Var z))
     | FPlus | FMinus | FMult | FDiv ->  assign_x (App (Var "of_double", [BinOp (App (Var "to_double", [Var y]), op, App (Var "to_double", [Var z]))]))
     | FEq | FNeq | FLt | FLte | FGt | FGte -> assign_x (BinOp (App (Var "to_double", [Var y]), op, App (Var "to_double", [Var z])))
+    | SConcat -> assign_x (App (Var "string_concat", [Var y; Var z]))
     end
   | Cls.Cons (y, z) -> assign_x (Malloc (VALUE, Sizeof LST)) @ [SAssign (PreOp (Deref, (Cast (PTR LST, Var x))), Cast (LST, Struct ["h", Var y; "t", Var z]))]
   | Cls.Subst (y, z, ou) ->

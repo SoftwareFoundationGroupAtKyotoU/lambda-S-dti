@@ -72,6 +72,7 @@ type tyarg = Ty of ty | TyNu
 type binop =
   | Plus | Minus | Mult | Div | Mod | FPlus | FMinus | FMult | FDiv
   | And | Or | Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte
+  | SConcat
 
 (* === Definitions for for-loop direction === *)
 

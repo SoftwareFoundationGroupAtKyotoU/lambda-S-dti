@@ -122,6 +122,7 @@ let pp_binop ppf op =
     | FLte -> "<=."
     | FGt -> ">."
     | FGte -> ">=."
+    | SConcat -> "^"
   end
 
 (* === pp for variables === *)
@@ -295,7 +296,7 @@ module ITGL = struct
     | DerefExp _ | GetExp _ -> 90
     | AppExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | BinOp (_, (Mult | Div | Mod | FMult | FDiv), _, _) -> 70
-    | BinOp (_, (Plus | Minus | FPlus | FMinus), _, _) -> 60
+    | BinOp (_, (Plus | Minus | FPlus | FMinus | SConcat), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp (_, (Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte), _, _) -> 40
     | BinOp (_, And, _, _) -> 35
@@ -456,7 +457,7 @@ module CC = struct
     | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | CAppExp _ -> 75
     | BinOp ((Mult | Div | Mod | FMult | FDiv), _, _) -> 70
-    | BinOp ((Plus | Minus | FPlus | FMinus), _, _) -> 60
+    | BinOp ((Plus | Minus | FPlus | FMinus | SConcat), _, _) -> 60
     | ConsExp _ -> 50
     | BinOp ((Eq | Neq | Lt | Lte | Gt | Gte | FEq | FNeq | FLt | FLte | FGt | FGte), _, _) -> 40
     | BinOp (And, _, _) -> 35
@@ -1207,6 +1208,7 @@ module C = struct
     | FLt -> fprintf ppf "<"
     | FGte -> fprintf ppf ">="
     | FGt -> fprintf ppf ">"
+    | SConcat -> raise Syntax_error
 
   let rec pp_exp ppf = function
     | Var x -> pp_print_string ppf x

@@ -50,6 +50,10 @@ STDLIB_BINARY_LIST(STDLIB_DECL_BINARY)
 #undef STDLIB_DECL_UNARY
 #undef STDLIB_DECL_BINARY
 
+/* runtime helper backing the `^` (SConcat) binop -- not a user-visible stdlib
+ * binding, so it bypasses the fun_ / closure machinery above entirely. */
+value string_concat(value, value);
+
 /* extern values (e.g. print_int) */
 // extern value print_int;
 #define STDLIB_DECL_EXTERN(n) extern value n;

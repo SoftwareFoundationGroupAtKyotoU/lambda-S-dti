@@ -17,6 +17,7 @@ let type_of_binop = function
   | Eq | Neq | Lt | Lte | Gt | Gte -> TyInt, TyInt, TyBool
   | FEq | FNeq | FLt | FLte | FGt | FGte -> TyFloat, TyFloat, TyBool
   | And | Or -> TyBool, TyBool, TyBool
+  | SConcat -> TyString, TyString, TyString
 
 let rec type_of_mf mf ids = match mf with
   | MatchILit _ -> TyInt, ids

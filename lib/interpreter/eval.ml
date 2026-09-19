@@ -38,6 +38,7 @@ module CC = struct
       | FLte, FloatV f1, FloatV f2 -> BoolV (f1 <= f2)
       | FGt, FloatV f1, FloatV f2 -> BoolV (f1 > f2)
       | FGte, FloatV f1, FloatV f2 -> BoolV (f1 >= f2)
+      | SConcat, StringV s1, StringV s2 -> StringV (s1 ^ s2)
       | _ -> raise @@ Eval_bug "binop: unexpected type of argument"
     end
 

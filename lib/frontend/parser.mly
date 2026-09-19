@@ -27,10 +27,28 @@ let make_seq r e1 e2 = LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
 
 exception Parser_bug = Type_env.Parser_bug
 
+(* checks that every field name in `fields` belongs to `field_order` and that no
+ * name is repeated; returns `fields` unchanged (in the order they were written) *)
+let check_record_fields field_order fields =
+  let rec build seen acc = function
+    | [] -> List.rev acc
+    | (fname, fe) :: rest ->
+      if not (List.mem fname field_order) then
+        raise (Parser_bug (Printf.sprintf "field %s does not belong to this record type" fname));
+      if V.mem fname seen then
+        raise (Parser_bug (Printf.sprintf "field %s specified more than once" fname));
+      build (V.add fname seen) ((fname, fe) :: acc) rest
+  in
+  build V.empty [] fields
+
+let find_field_owner fname0 =
+  try Environment.find fname0 !(Type_env.fieldenv)
+  with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" fname0))
+
 %}
 
 %token <Utils.Error.range> LPAREN RPAREN SEMI SEMISEMI COLON EQ QUOTE
-%token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR
+%token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR CARET
 %token <Utils.Error.range> PLUSDOT MINUSDOT STARDOT DIVDOT EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION TYPE
 %token <Utils.Error.range> INT BOOL UNIT FLOAT STRING CHAR QUESTION RARROW
@@ -62,7 +80,7 @@ exception Parser_bug = Type_env.Parser_bug
 %right    LAND
 %left     EQ NEQ LT LTE GT GTE EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT VBAR
 %right    COLCOL
-%left     PLUS MINUS PLUSDOT MINUSDOT
+%left     PLUS MINUS PLUSDOT MINUSDOT CARET
 %left     STAR DIV MOD STARDOT DIVDOT
 
 %%
@@ -307,6 +325,7 @@ BinOpExpr :
   | LTEDOT { FLte }
   | GTDOT { FGt }
   | GTEDOT { FGte }
+  | CARET { SConcat }
 
 UnaryExpr :
   | PLUS e=UnaryExpr { e }
@@ -347,10 +366,7 @@ PostfixExpr :
       GetExp (r, e1, e2)
     }
   | e1=PostfixExpr DOT x=ID {
-      let (idx, _, tuple_ty, field_order, _owner) =
-        try Environment.find x.value !(Type_env.fieldenv)
-        with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" x.value))
-      in
+      let (idx, _, tuple_ty, field_order, _owner) = find_field_owner x.value in
       let n = List.length field_order in
       let r = join_range (range_of_exp e1) x.range in
       MatchExp (r, AscExp (range_of_exp e1, e1, tuple_ty),
@@ -386,20 +402,8 @@ SimpleExpr :
   | start=LBRACE fields=RecordFieldInits last=RBRACE {
       let r = join_range start last in
       let fname0 = fst (List.hd fields) in
-      let (_, _, tuple_ty, field_order, _owner) =
-        try Environment.find fname0 !(Type_env.fieldenv)
-        with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" fname0))
-      in
-      let rec build seen acc = function
-        | [] -> List.rev acc
-        | (fname, fe) :: rest ->
-          if not (List.mem fname field_order) then
-            raise (Parser_bug (Printf.sprintf "field %s does not belong to this record type" fname));
-          if V.mem fname seen then
-            raise (Parser_bug (Printf.sprintf "field %s specified more than once" fname));
-          build (V.add fname seen) ((fname, fe) :: acc) rest
-      in
-      let provided = build V.empty [] fields in
+      let (_, _, tuple_ty, field_order, _owner) = find_field_owner fname0 in
+      let provided = check_record_fields field_order fields in
       let missing = List.filter (fun f -> not (List.mem_assoc f provided)) field_order in
       if missing <> [] then
         raise (Parser_bug (Printf.sprintf "record literal missing field(s): %s" (String.concat ", " missing)));
@@ -409,6 +413,24 @@ SimpleExpr :
         AscExp (range_of_exp fe, fe, fty)
       ) field_order field_tys in
       TupleExp (r, ordered)
+    }
+  | start=LBRACE r0=AppExpr WITH fields=RecordFieldInits last=RBRACE {
+      let rng = join_range start last in
+      let fname0 = fst (List.hd fields) in
+      let (_, _, tuple_ty, field_order, _owner) = find_field_owner fname0 in
+      let overrides = check_record_fields field_order fields in
+      let field_tys = match tuple_ty with TyTuple us -> us | _ -> assert false in
+      let pat = List.map (fun fname ->
+        if List.mem_assoc fname overrides then MatchWild
+        else MatchVar ("$fld_" ^ fname)
+      ) field_order in
+      let elems = List.map2 (fun fname fty ->
+        match List.assoc_opt fname overrides with
+        | Some fe -> AscExp (range_of_exp fe, fe, fty)
+        | None -> Var (rng, "$fld_" ^ fname, ref [])
+      ) field_order field_tys in
+      MatchExp (rng, AscExp (range_of_exp r0, r0, tuple_ty),
+        [(MatchTuple pat, TupleExp (rng, elems))])
     }
   | LPAREN e=Expr RPAREN { e }
 
