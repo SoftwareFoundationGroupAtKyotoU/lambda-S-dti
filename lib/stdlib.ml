@@ -57,6 +57,11 @@ module CC = struct
     | _ -> raise @@ Stdlib_bug "print_float: unexpected value"
   let lib_print_float ~config = lift1 ~config core_print_float
 
+  let core_print_char = function
+    | CharV c -> print_char c; UnitV
+    | _ -> raise @@ Stdlib_bug "print_char: unexpected value"
+  let lib_print_char ~config = lift1 ~config core_print_char
+
   let core_print_string = function
     | StringV s -> print_string s; UnitV
     | _ -> raise @@ Stdlib_bug "print_string: unexpected value"
@@ -87,6 +92,16 @@ module CC = struct
     | _ -> raise @@ Stdlib_bug "int_of_float: unexpected value"
   let lib_int_of_float ~config = lift1 ~config core_int_of_float
 
+  let core_char_of_int = function
+    | IntV i -> CharV (Char.chr i)
+    | _ -> raise @@ Stdlib_bug "char_of_int: unexpected value"
+  let lib_char_of_int ~config = lift1 ~config core_char_of_int
+
+  let core_int_of_char = function
+    | CharV c -> IntV (Char.code c)
+    | _ -> raise @@ Stdlib_bug "int_of_char: unexpected value"
+  let lib_int_of_char ~config = lift1 ~config core_int_of_char
+
   let lib_max_int ~config:_ = IntV max_int
   let lib_min_int ~config:_ = IntV min_int
 end
@@ -115,12 +130,15 @@ let builtins : builtin list = [
     { name = "print_bool";    impl = Native (CC.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit));    c_backing = CImpl "print_bool" };
     { name = "print_int";     impl = Native (CC.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit));      c_backing = CImpl "print_int" };
     { name = "print_float";   impl = Native (CC.lib_print_float, tysc_of_ty @@ TyFun (TyFloat, TyUnit));  c_backing = CImpl "print_float" };
+    { name = "print_char";    impl = Native (CC.lib_print_char, tysc_of_ty @@ TyFun (TyChar, TyUnit));     c_backing = CImpl "print_char" };
     { name = "print_string";  impl = Native (CC.lib_print_string, tysc_of_ty @@ TyFun (TyString, TyUnit)); c_backing = CImpl "print_string" };
     { name = "print_newline"; impl = Native (CC.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit)); c_backing = CImpl "print_newline" };
     { name = "read_int";      impl = Native (CC.lib_read_int, tysc_of_ty @@ TyFun (TyUnit, TyInt));       c_backing = CImpl "read_int" };
     { name = "read_float";    impl = Native (CC.lib_read_float, tysc_of_ty @@ TyFun (TyUnit, TyFloat));   c_backing = CImpl "read_float" };
     { name = "float_of_int";  impl = Native (CC.lib_float_of_int, tysc_of_ty @@ TyFun (TyInt, TyFloat));  c_backing = CImpl "float_of_int" };
     { name = "int_of_float";  impl = Native (CC.lib_int_of_float, tysc_of_ty @@ TyFun (TyFloat, TyInt));  c_backing = CImpl "int_of_float" };
+    { name = "char_of_int";   impl = Native (CC.lib_char_of_int, tysc_of_ty @@ TyFun (TyInt, TyChar));   c_backing = CImpl "char_of_int" };
+    { name = "int_of_char";   impl = Native (CC.lib_int_of_char, tysc_of_ty @@ TyFun (TyChar, TyInt));   c_backing = CImpl "int_of_char" };
     { name = "not";           impl = ITGL "let not b = if b then false else true;;";                      c_backing = CImpl "not_ml" };
     { name = "succ";          impl = ITGL "let succ x = x + 1;;";                                         c_backing = CImpl "succ" };
     { name = "prec";          impl = ITGL "let prec x = x - 1;;";                                         c_backing = CImpl "prec" };

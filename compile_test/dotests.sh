@@ -94,6 +94,7 @@ for TEST_DIR in \
   original/dynamic \
   original/float \
   original/string \
+  original/char \
   original/int \
   original/list \
   original/match \

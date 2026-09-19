@@ -49,6 +49,7 @@ module ITGL = struct
     | Var _
     | IConst _
     | FConst _
+    | CConst _
     | SConst _
     | BConst _
     | UConst _ -> TV.empty
@@ -83,6 +84,7 @@ module CC = struct
     | Var (_, us) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg us)
     | IConst _
     | FConst _
+    | CConst _
     | SConst _
     | BConst _
     | UConst -> TV.empty

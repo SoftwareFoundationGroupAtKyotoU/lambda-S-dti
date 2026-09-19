@@ -43,6 +43,7 @@ declare -A EXPECTED=(
 # ここに載っているターゲットだけ個別の値で上書きする。
 declare -A EXPECTED_STATIC=(
   [incsum]="50015000"
+  # TODO: array
 )
 
 LOGDIR="$(mktemp -d)"

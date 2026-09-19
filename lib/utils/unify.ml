@@ -82,7 +82,7 @@ let rec unify = function
   | CEqual (u1, u2) as c when not (is_static_type u1 && is_static_type u2) ->
     raise @@ Unify_error (asprintf "invalid constraint: %a" pp_constr c)
   (* ioType_bugta = iota *)
-  | CEqual (TyInt, TyInt) | CEqual (TyBool, TyBool) | CEqual (TyUnit, TyUnit) | CEqual (TyFloat, TyFloat) | CEqual (TyString, TyString) (*when t1 = t2 && is_base_type t1 *) -> ()
+  | CEqual (TyInt, TyInt) | CEqual (TyBool, TyBool) | CEqual (TyUnit, TyUnit) | CEqual (TyFloat, TyFloat) | CEqual (TyChar, TyChar) | CEqual (TyString, TyString) (*when t1 = t2 && is_base_type t1 *) -> ()
   (* X = X *)
   | CEqual (TyVar (a1, _), TyVar (a2, _)) when a1 = a2 -> ()
   (* T11->T12 = T21->T22 *)

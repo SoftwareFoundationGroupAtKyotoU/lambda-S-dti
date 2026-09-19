@@ -12,7 +12,7 @@ let with_paren flag ppf_e ppf e =
 
 let rec level_ty = function
   | TyVar (_, { contents = Some u }) -> level_ty u
-  | TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyFloat | TyString -> 100
+  | TyDyn | TyVar _ | TyInt | TyBool | TyUnit | TyFloat | TyChar | TyString -> 100
   | TyList _ | TyRef _ | TyArray _ -> 90
   | TyTuple _ -> 80
   | TyFun _ | TyCoercion _ -> 70
@@ -31,6 +31,7 @@ let pp_ty_main ppf ~pp_tyvar u =
     | TyBool -> pp_print_string ppf "bool"
     | TyUnit -> pp_print_string ppf "unit"
     | TyFloat -> pp_print_string ppf "float"
+    | TyChar -> pp_print_string ppf "char"
     | TyString -> pp_print_string ppf "string"
     | TyFun (u1, u2) as u ->
       fprintf ppf "%a -> %a"
@@ -187,6 +188,7 @@ let rec pp_matchform ppf = function
 let pp_tag ppf = function
   | I -> pp_print_string ppf "int"
   | F -> pp_print_string ppf "float"
+  | C -> pp_print_string ppf "char"
   | S -> pp_print_string ppf "string"
   | B -> pp_print_string ppf "bool"
   | U -> pp_print_string ppf "unit"
@@ -289,7 +291,7 @@ module ITGL = struct
   open Syntax.ITGL
 
   let level_exp = function
-    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | SConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
+    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ | TupleExp _ | AscExp _ -> 100
     | DerefExp _ | GetExp _ -> 90
     | AppExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
     | BinOp (_, (Mult | Div | Mod | FMult | FDiv), _, _) -> 70
@@ -332,6 +334,7 @@ module ITGL = struct
     | BConst (_, b) -> pp_print_bool ppf b
     | UConst _ -> pp_print_string ppf "()"
     | FConst (_, f) -> pp_print_float ppf f
+    | CConst (_, c) -> fprintf ppf "'%c'" c
     | SConst (_, s) -> fprintf ppf "\"%s\"" s
     | BinOp (_, op, e1, e2) as e ->
       fprintf ppf "%a %a %a"
@@ -445,7 +448,7 @@ module CC = struct
   open Syntax.CC
 
   let level_exp = function
-    | Var _ | IConst _ | BConst _ | UConst | FConst _ | SConst _ | NilExp _ | TupleExp _ | CoercionExp _ -> 100
+    | Var _ | IConst _ | BConst _ | UConst | FConst _ | CConst _ | SConst _ | NilExp _ | TupleExp _ | CoercionExp _ -> 100
     | CCompExp _ -> 95
     | DerefExp _ | GetExp _ -> 90
     | AppDExp _ | AppMExp _ | RefExp _ | MakeArrayExp _ | LengthExp _ -> 80
@@ -482,6 +485,7 @@ module CC = struct
     | BConst b -> pp_print_bool ppf b
     | UConst -> pp_print_string ppf "()"
     | FConst f -> pp_print_float ppf f
+    | CConst c -> fprintf ppf "'%c'" c
     | SConst s -> fprintf ppf "\"%s\"" s
     | BinOp (op, f1, f2) as f ->
       fprintf ppf "%a %a %a"
@@ -699,6 +703,7 @@ module CC = struct
       | BoolV b -> pp_print_bool ppf b
       | UnitV -> pp_print_string ppf "()"
       | FloatV f -> pp_print_float ppf f
+      | CharV c -> fprintf ppf "'%c'" c
       | StringV s -> fprintf ppf "\"%s\"" s
       | FunBV _ | FunSV _ | FunDualV _ | FunTyV _ -> pp_print_string ppf "<fun>"
       | CoercionV c ->

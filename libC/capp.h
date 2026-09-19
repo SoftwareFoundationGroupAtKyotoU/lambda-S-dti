@@ -51,9 +51,13 @@ static inline void update_longest(int new) {
 // Physical 3-bit tag embedded in the low bits of a `value` -- strictly the 8 patterns 000-111.
 // Kept as its own type, distinct from `ground_ty` (the logical dynamic type), because one
 // physical code -- PTAG_BOXED -- is shared by every ground type whose payload doesn't fit
-// inline (see `boxed` below), and PTAG_BOOL_UNIT is likewise shared by G_BOOL and G_UNIT.
-// Order must match `ground_ty` (types.h)'s first 8 members; converted via
-// ptag_of_ground_ty/ground_ty_of_tag below rather than relied on implicitly.
+// inline (see `boxed` below), and PTAG_BOOL_UNIT_CHAR is likewise shared by G_BOOL, G_UNIT, and
+// G_CHAR: a plain bool is `v << 3 | tag` for v in {0,1}, so bit 4 is always clear for a real
+// bool; bit 4 set means "not a plain bool", and among those, bit 3 clear is G_UNIT (its only
+// value, `0b10000 | tag`, already has bit 3 clear) and bit 3 set is G_CHAR, whose byte payload
+// is then shifted up 5 bits (past the 3 tag bits + these 2 discriminant bits) -- see tag_of/
+// tag_value/untag_value below. Order must match `ground_ty` (types.h)'s first 8 members;
+// converted via ptag_of_ground_ty/ground_ty_of_tag below rather than relied on implicitly.
 typedef enum ptag : uint8_t {
 	PTAG_FN,
 	PTAG_LI,
@@ -61,7 +65,7 @@ typedef enum ptag : uint8_t {
 	PTAG_RF,
 	PTAG_AR,
 	PTAG_INT,
-	PTAG_BOOL_UNIT,
+	PTAG_BOOL_UNIT_CHAR,
 	PTAG_BOXED,
 } ptag;
 
@@ -74,7 +78,8 @@ static inline ptag ptag_of_ground_ty(ground_ty g) {
 		case G_AR: return PTAG_AR;
 		case G_INT: return PTAG_INT;
 		case G_BOOL:
-		case G_UNIT: return PTAG_BOOL_UNIT;
+		case G_UNIT:
+		case G_CHAR: return PTAG_BOOL_UNIT_CHAR;
 		case G_FLOAT:
 		case G_STRING: return PTAG_BOXED;
 	}
@@ -88,7 +93,7 @@ static inline ground_ty ground_ty_of_tag(ptag tag) {
 		case PTAG_RF: return G_RF;
 		case PTAG_AR: return G_AR;
 		case PTAG_INT: return G_INT;
-		case PTAG_BOOL_UNIT: return G_BOOL; // ambiguous with G_UNIT; tag_of disambiguates before falling here
+		case PTAG_BOOL_UNIT_CHAR: return G_BOOL; // ambiguous with G_UNIT/G_CHAR; tag_of disambiguates before falling here
 		case PTAG_BOXED: return G_FLOAT;    // ambiguous with other boxed kinds; tag_of disambiguates before falling here
 	}
 }
@@ -112,8 +117,11 @@ typedef struct boxed {
 static inline uint8_t tag_of(value v) {
 	ptag tag = v & 0b111;
 	switch (tag) {
-		case PTAG_BOOL_UNIT: {
-			if (v == (0b10000 | PTAG_BOOL_UNIT)) return G_UNIT;
+		case PTAG_BOOL_UNIT_CHAR: {
+			if (v & 0b10000) {
+				if (v & 0b01000) return G_CHAR;
+				return G_UNIT;
+			}
 			return G_BOOL;
 		}
 		case PTAG_BOXED: {
@@ -154,7 +162,9 @@ static inline value tag_value(value v, ground_ty t) {
 			return (value)((value)b | PTAG_BOXED);
 		}
 		case G_UNIT:
-			return (value)(0b10000 | PTAG_BOOL_UNIT);
+			return (value)(0b10000 | PTAG_BOOL_UNIT_CHAR);
+		case G_CHAR:
+			return (value)((v << 5) | 0b11000 | PTAG_BOOL_UNIT_CHAR);
 	}
 }
 
@@ -165,6 +175,8 @@ static inline value untag_value(value v, ground_ty t) {
 			return (value)(v >> 3);
 		case G_UNIT:
 			return 0b0;
+		case G_CHAR:
+			return (value)(v >> 5);
 		case G_FLOAT:
 		case G_STRING: {
 			boxed *b = (boxed*)(v & ~0b111);

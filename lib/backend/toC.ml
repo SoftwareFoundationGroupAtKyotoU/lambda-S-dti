@@ -14,6 +14,7 @@ let string_of_tag = function
   | B -> "BOOL"
   | U -> "UNIT"
   | F -> "FLOAT"
+  | C -> "CHAR"
   | S -> "STRING"
   | Fn -> "FN"
   | Li -> "LI"
@@ -28,6 +29,7 @@ let toC_ty = function
   | TyBool -> Addr "tybool"
   | TyUnit -> Addr "tyunit"
   | TyFloat -> Addr "tyfloat"
+  | TyChar -> Addr "tychar"
   | TyString -> Addr "tystring"
   | TyDyn -> Addr "tydyn"
   | TyFun (TyDyn, TyDyn) -> Addr "tyfn"
@@ -124,7 +126,7 @@ let rec toC_crc_gen ~fresh_tmp x c =
   match c with
     | CId u ->
       let g, size = match u with
-        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFloat -> "G_FLOAT", 0 | TyString -> "G_STRING", 0 | TyFun _ -> "G_FN", 0
+        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFloat -> "G_FLOAT", 0 | TyChar -> "G_CHAR", 0 | TyString -> "G_STRING", 0 | TyFun _ -> "G_FN", 0
         | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0 | TyArray _ -> "G_AR", 0
         | TyDyn | TyVar _ | TyCoercion _ -> raise @@ ToC_bug "Seq CId shouldn't have tydyn, tyvar, tycoercion"
       in
@@ -231,7 +233,7 @@ let toC_crc x c = toC_crc_gen ~fresh_tmp:(fun c -> None, CrcTmpManager.find c) x
 let toC_crc_dyn c : stm list * exp =
   match c with
   | CId _ -> [], Addr "crc_id"
-  | CSeq (CId _, CInj (I | B | U | F | S | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+  | CSeq (CId _, CInj (I | B | U | F | C | S | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
   | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr "crc_inj_RF"
   | CSeq (CMArray (_, TyDyn), CInj Ar) -> [], Addr "crc_inj_AR"
   | _ when CrcManager.mem c -> [], Addr (CrcManager.find c)
@@ -448,7 +450,7 @@ and toC_assign ~config x f =
       []
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
-    | CSeq (CId _, CInj (I | B | U | F | S | Fn | Li | Rf | Ar as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CId _, CInj (I | B | U | F | C | S | Fn | Li | Rf | Ar as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
     | CSeq (CMArray (_, TyDyn), CInj Ar) -> assign_x (Cast (VALUE, Addr ("crc_inj_AR")))
     | _ ->

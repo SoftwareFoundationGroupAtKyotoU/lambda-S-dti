@@ -60,7 +60,7 @@ module CC = struct
   (* alpha : 変数の名前が被らないように付け替える *)
   let rec alpha_exp idenv = function
     | Var (x, tas) -> Var (Environment.find x idenv, tas)
-    | IConst _ | BConst _ | UConst | FConst _ | SConst _ as f -> f
+    | IConst _ | BConst _ | UConst | FConst _ | CConst _ | SConst _ as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, alpha_exp idenv f1, alpha_exp idenv f2)
     | IfExp (f1, f2, f3) ->
       IfExp (alpha_exp idenv f1, alpha_exp idenv f2, alpha_exp idenv f3)
@@ -165,6 +165,7 @@ module CC = struct
     | IConst i -> KNorm.IConst i
     | BConst b -> let i = if b then 1 else 0 in KNorm.IConst i
     | UConst -> KNorm.IConst 0
+    | CConst c -> KNorm.IConst (Char.code c)
     | FConst f -> KNorm.FConst f
     | SConst s -> KNorm.SConst s
     | BinOp (op, f1, f2) ->

@@ -23,6 +23,7 @@ typedef enum ground_ty : uint8_t {
 	G_INT,
 	G_BOOL,
 	G_UNIT,
+	G_CHAR,
 	G_FLOAT,
 	G_STRING,
 	G_FN,
@@ -90,7 +91,7 @@ extern int compose_max_depth;  // compose の再帰深さの最大
 // extern long long fun_alloc_num;   // クロージャ（fun）を GC_MALLOC した回数
 extern int blame_check_num;    // apply_coerce_proj / _proj_tp の動的タグ検査回数
 extern int coerce_kind[8];     // coerce() に渡った crc_kind の内訳
-extern int dti_by_ground[10];   // dti() が解決した ground_type の内訳
+extern int dti_by_ground[11];   // dti() が解決した ground_type の内訳
 #endif //PROFILE
 
 #endif //TYPES_H

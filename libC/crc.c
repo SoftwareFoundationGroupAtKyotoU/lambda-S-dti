@@ -18,6 +18,7 @@ crc crc_inj_INT = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_INT } }
 crc crc_inj_BOOL = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_BOOL } };
 crc crc_inj_UNIT = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_UNIT } };
 crc crc_inj_FLOAT = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_FLOAT } };
+crc crc_inj_CHAR = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_CHAR } };
 crc crc_inj_STRING = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_STRING } };
 crc crc_inj_FN = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_FN } };
 crc crc_inj_LI = { .crckind = C_ID, .has_inj = 1, .crcdat = { .id.g = G_LI } };
@@ -269,6 +270,7 @@ static inline crc *new_id(const crc *proj, const ground_ty g, const uint16_t siz
 			case G_BOOL: return &crc_inj_BOOL;
 			case G_UNIT: return &crc_inj_UNIT;
 			case G_FLOAT: return &crc_inj_FLOAT;
+			case G_CHAR: return &crc_inj_CHAR;
 			case G_STRING: return &crc_inj_STRING;
 			case G_FN: return &crc_inj_FN;
 			case G_LI: return &crc_inj_LI;
@@ -392,6 +394,7 @@ crc *normalize_tv(crc *c) {
 		case BASE_BOOL: return new_id(c, G_BOOL, 0, c);
 		case BASE_UNIT: return new_id(c, G_UNIT, 0, c);
 		case BASE_FLOAT: return new_id(c, G_FLOAT, 0, c);
+		case BASE_CHAR: return new_id(c, G_CHAR, 0, c);
 		case BASE_STRING: return new_id(c, G_STRING, 0, c);
 		case TYFUN: {
 			crc inv_c = {
@@ -453,6 +456,7 @@ static inline int occur_check_ty(ty *u, const ty *tv) {
 		case BASE_BOOL:
 		case BASE_UNIT:
 		case BASE_FLOAT:
+		case BASE_CHAR:
 		case BASE_STRING:
 			return 0;
 		case TYFUN:
@@ -898,6 +902,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 				case BASE_BOOL: return new_id(&temp_proj, G_BOOL, 0, &temp);
 				case BASE_UNIT: return new_id(&temp_proj, G_UNIT, 0, &temp);
 				case BASE_FLOAT: return new_id(&temp_proj, G_FLOAT, 0, &temp);
+				case BASE_CHAR: return new_id(&temp_proj, G_CHAR, 0, &temp);
 				case BASE_STRING: return new_id(&temp_proj, G_STRING, 0, &temp);
 				case TYFUN: {
 					crc *c1 = make_s_coercion_to_dyn(u2->tydat.tyfun.left);
@@ -976,6 +981,17 @@ crc *make_s_coercion(ty *u1, ty *u2) {
             switch (u2->tykind) {
                 case DYN: return &crc_inj_FLOAT;
                 case BASE_FLOAT: return &crc_id;
+				case SUBSTITUTED: {
+					u2 = ty_find(u2);
+					return make_s_coercion(u1, u2);
+				}
+				default: break;
+            }
+        }
+        case BASE_CHAR: {
+            switch (u2->tykind) {
+                case DYN: return &crc_inj_CHAR;
+                case BASE_CHAR: return &crc_id;
 				case SUBSTITUTED: {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
@@ -1153,6 +1169,7 @@ crc *make_s_coercion_to_dyn(ty *u1) {
 		case BASE_BOOL: return &crc_inj_BOOL;
 		case BASE_UNIT: return &crc_inj_UNIT;
 		case BASE_FLOAT: return &crc_inj_FLOAT;
+		case BASE_CHAR: return &crc_inj_CHAR;
 		case BASE_STRING: return &crc_inj_STRING;
 		case TYFUN: {
 			crc *c1 = make_s_coercion_from_dyn(u1->tydat.tyfun.left);
@@ -1202,6 +1219,7 @@ crc *make_s_coercion_from_dyn(ty *u2) {
 		case BASE_BOOL: return new_id(&temp_proj, G_BOOL, 0, &temp);
 		case BASE_UNIT: return new_id(&temp_proj, G_UNIT, 0, &temp);
 		case BASE_FLOAT: return new_id(&temp_proj, G_FLOAT, 0, &temp);
+		case BASE_CHAR: return new_id(&temp_proj, G_CHAR, 0, &temp);
 		case BASE_STRING: return new_id(&temp_proj, G_STRING, 0, &temp);
 		case TYFUN: {
 			crc *c1 = make_s_coercion_to_dyn(u2->tydat.tyfun.left);
@@ -1258,6 +1276,7 @@ crc *make_s_coercion_from_ground(ground_ty g, ty *u2) {
 			case G_BOOL: return &crc_inj_BOOL;
 			case G_UNIT: return &crc_inj_UNIT;
 			case G_FLOAT: return &crc_inj_FLOAT;
+			case G_CHAR: return &crc_inj_CHAR;
 			case G_STRING: return &crc_inj_STRING;
 			default: exit(1);
 		}

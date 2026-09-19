@@ -93,6 +93,13 @@ static inline value _core_print_string(value cls, value v) {
 }
 DEF_UNARY(print_string, _core_print_string)
 
+static inline value _core_print_char(value cls, value v) {
+	(void)cls;
+	putchar((int)v);
+	return 0;
+}
+DEF_UNARY(print_char, _core_print_char)
+
 static inline value _core_read_int(value cls, value v) {
 	(void)cls;
 	value retv;
@@ -138,6 +145,18 @@ static inline value _core_int_of_float(value cls, value x) {
 	return (value)to_double(x);
 }
 DEF_UNARY(int_of_float, _core_int_of_float)
+
+static inline value _core_char_of_int(value cls, value x) {
+	(void)cls;
+	return x;
+}
+DEF_UNARY(char_of_int, _core_char_of_int)
+
+static inline value _core_int_of_char(value cls, value x) {
+	(void)cls;
+	return x;
+}
+DEF_UNARY(int_of_char, _core_int_of_char)
 
 static inline value _core_not_ml(value cls, value b) {
 	(void)cls;

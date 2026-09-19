@@ -57,6 +57,7 @@ module CC = struct
     | BConst _
     | UConst
     | FConst _
+    | CConst _
     | SConst _ as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | IfExp (f1, f2, f3) -> IfExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3)

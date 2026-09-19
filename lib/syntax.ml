@@ -34,6 +34,7 @@ type ty =
   | TyFloat
   | TyBool
   | TyUnit
+  | TyChar
   | TyString
   | TyFun of ty * ty
   | TyList of ty
@@ -96,7 +97,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | F | S | Fn | Li | Tp of int | Rf | Ar
+type tag = I | B | U | F | C | S | Fn | Li | Tp of int | Rf | Ar
 
 type coercion =
   | CInj of tag
@@ -129,6 +130,7 @@ module ITGL = struct
     | BConst of range * bool
     | UConst of range
     | FConst of range * float
+    | CConst of range * char
     | SConst of range * string
     | BinOp of range * binop * exp * exp
     | AscExp of range * exp * ty
@@ -157,6 +159,7 @@ module ITGL = struct
     | BConst (r, _)
     | UConst r
     | FConst (r, _)
+    | CConst (r, _)
     | SConst (r, _)
     | AscExp (r, _, _)
     | BinOp (r, _, _, _)
@@ -194,6 +197,7 @@ module CC = struct
     | BConst of bool
     | UConst
     | FConst of float
+    | CConst of char
     | SConst of string
     | FunExp of tyvar list * fundef
     | FixExp of tyvar list * fixdef
@@ -238,6 +242,7 @@ module CC = struct
     | BoolV of bool
     | UnitV
     | FloatV of float
+    | CharV of char
     | StringV of string
     | FunBV of (ty list -> value -> value)
     | FunSV of (ty list -> (value * value) -> value)

@@ -57,6 +57,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			}
 			break;
 		}
+		case BASE_CHAR: {
+			switch (tk2) {
+				case DYN: return tag_value(x, G_CHAR); // define x:G=>? as dynamic type value
+				default: break;
+			}
+			break;
+		}
 		case BASE_STRING: {
 			switch (tk2) {
 				case DYN: return tag_value(x, G_STRING); // define x:G=>? as dynamic type value
@@ -361,6 +368,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						blame(rid, polarity);
 					}
 				}
+				case BASE_CHAR: {
+					if (tag_of(x) == G_CHAR) {													// when t1's injection ground type equals t2
+						return untag_value(x, G_CHAR);
+					} else {											// when t1's injection ground type dosen't equal t2
+						blame(rid, polarity);
+					}
+				}
 				case BASE_STRING: {
 					if (tag_of(x) == G_STRING) {													// when t1's injection ground type equals t2
 						return untag_value(x, G_STRING);
@@ -488,6 +502,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							#endif
 							*t2 = tyfloat;
 							return untag_value(x, G_FLOAT);
+						}
+						case(G_CHAR): {
+							#ifdef PROFILE
+							current_inference++;
+							#endif
+							*t2 = tychar;
+							return untag_value(x, G_CHAR);
 						}
 						case(G_STRING): {
 							#ifdef PROFILE
@@ -673,6 +694,7 @@ value coerce(value v, crc *s, uint8_t suspend) {
 	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
 	if (s == &crc_inj_FLOAT) return tag_value(v, G_FLOAT);
+	if (s == &crc_inj_CHAR) return tag_value(v, G_CHAR);
 	if (s == &crc_inj_STRING) return tag_value(v, G_STRING);
 	if (s == &crc_inj_FN) return tag_value(v, G_FN);
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);

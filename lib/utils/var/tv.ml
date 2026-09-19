@@ -15,6 +15,7 @@ module ITGL = struct
     | Var _
     | IConst _
     | FConst _
+    | CConst _
     | SConst _
     | BConst _
     | UConst _ -> TV.empty

@@ -9,8 +9,8 @@
   X(max_int) X(min_int)
 // for unary function
 #define STDLIB_UNARY_LIST(X) \
-  X(print_int) X(print_bool) X(print_newline) X(print_float) X(print_string) \
-  X(read_int) X(read_float)   X(float_of_int) X(int_of_float) \
+  X(print_int) X(print_bool) X(print_newline) X(print_float) X(print_string) X(print_char) \
+  X(read_int) X(read_float)   X(float_of_int) X(int_of_float) X(char_of_int) X(int_of_char) \
   X(ignore) X(abs_ml) X(prec) X(succ) X(not_ml)
 // for binary function
 #define STDLIB_BINARY_LIST(X) \

@@ -10,6 +10,7 @@ ty tydyn = { .tykind = DYN };
 ty tyint = { .tykind = BASE_INT };
 ty tybool = { .tykind = BASE_BOOL };
 ty tyunit = { .tykind = BASE_UNIT };
+ty tychar = { .tykind = BASE_CHAR };
 ty tyfloat = { .tykind = BASE_FLOAT };
 ty tystring = { .tykind = BASE_STRING };
 ty tyfn = { .tykind = TYFUN, .tydat = { .tyfun = { .left = &tydyn, .right = &tydyn } } };
@@ -46,6 +47,10 @@ inline void dti(const ground_ty g, const uint16_t size, ty *tv) {
 			// printf("DTI : unit was inferred\n");
 			// printf("%p <- unit\n", tv);
 			*tv = tyunit;
+			return;
+		}
+		case G_CHAR: {
+			*tv = tychar;
 			return;
 		}
 		case G_FLOAT: {
@@ -139,6 +144,7 @@ int ty_equal (ty *t1, ty *t2) {
 			case BASE_INT:
 			case BASE_BOOL:
 			case BASE_UNIT:
+			case BASE_CHAR:
 			case BASE_FLOAT:
 			case BASE_STRING:
 				return 1;
@@ -213,6 +219,18 @@ ty *unify_meet(ty* u1, ty* u2) {
                     return u1;
                 case TYVAR:
                     dti(G_UNIT, 0, u2);
+                    return u1;
+                case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
+                default: break;
+            }
+        }
+        case BASE_CHAR: {
+            switch (u2->tykind) {
+                case DYN:
+                case BASE_CHAR:
+                    return u1;
+                case TYVAR:
+                    dti(G_CHAR, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
                 default: break;
@@ -335,6 +353,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                 case BASE_INT: dti(G_INT, 0, u1); return u2;
                 case BASE_BOOL: dti(G_BOOL, 0, u1); return u2;
                 case BASE_UNIT: dti(G_UNIT, 0, u1); return u2;
+                case BASE_CHAR: dti(G_CHAR, 0, u1); return u2;
                 case BASE_FLOAT: dti(G_FLOAT, 0, u1); return u2;
                 case BASE_STRING: dti(G_STRING, 0, u1); return u2;
                 case TYFUN: dti(G_FN, 0, u1); return unify_meet(u1, u2);

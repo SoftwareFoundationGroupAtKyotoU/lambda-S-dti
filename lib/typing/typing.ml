@@ -87,6 +87,7 @@ module ITGL = struct
         end
       | IConst _, TyInt -> true
       | FConst _, TyFloat -> true
+      | CConst _, TyChar -> true
       | SConst _, TyString -> true
       | BConst _, TyBool -> true
       | UConst _, TyUnit -> true
@@ -165,6 +166,7 @@ module ITGL = struct
     in match e with
     | Var _
     | IConst _
+    | CConst _
     | FConst _
     | SConst _
     | BConst _
@@ -174,7 +176,7 @@ module ITGL = struct
     | NilExp _ -> true
     | ConsExp (_, e1, e2) -> is_pure_value env e1 && is_list_value env e2
     | TupleExp (_, es) -> List.fold_left (fun b e -> b && is_pure_value env e) true es
-    | AscExp (_, e, (TyInt | TyFloat | TyString | TyBool | TyUnit as u)) -> is_base_value env u e
+    | AscExp (_, e, (TyInt | TyFloat | TyChar | TyString | TyBool | TyUnit as u)) -> is_base_value env u e
     | AscExp (_, e, TyFun _) -> is_fun_value env e
     | AscExp (_, e, TyList _) -> is_list_value env e
     | AscExp (_, e, TyTuple _) -> is_tuple_value env e
@@ -196,6 +198,7 @@ module ITGL = struct
       end
     | IConst _ -> TyInt
     | FConst _ -> TyFloat
+    | CConst _ -> TyChar
     | SConst _ -> TyString
     | BConst _ -> TyBool
     | UConst _ -> TyUnit
@@ -370,6 +373,7 @@ module CC = struct
       end
     | IConst _ -> TyInt
     | FConst _ -> TyFloat
+    | CConst _ -> TyChar
     | SConst _ -> TyString
     | BConst _ -> TyBool
     | UConst -> TyUnit

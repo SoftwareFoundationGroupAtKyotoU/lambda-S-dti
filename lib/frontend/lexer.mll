@@ -15,6 +15,7 @@ let reservedWords = [
   ("false",    fun r -> Parser.FALSE r   );
   ("int",      fun r -> Parser.INT r     );
   ("string",   fun r -> Parser.STRING r  );
+  ("char",     fun r -> Parser.CHAR r    );
   ("float",    fun r -> Parser.FLOAT r   );
   ("bool",     fun r -> Parser.BOOL r    );
   ("unit",     fun r -> Parser.UNIT r    );
@@ -73,6 +74,12 @@ rule main = parse
 | ";" { Parser.SEMI (range_of lexbuf) }
 | "::" { Parser.COLCOL (range_of lexbuf)}
 | ";;" { Parser.SEMISEMI (range_of lexbuf) }
+| '\'' ([^ '\\' '\''] as c) '\'' { Parser.CHARV { value = c; range = range_of lexbuf } }
+| '\'' '\\' (['n' 't' '\\' '\''] as e) '\''
+  {
+    let c = match e with 'n' -> '\n' | 't' -> '\t' | c -> c in
+    Parser.CHARV { value = c; range = range_of lexbuf }
+  }
 | "'" { Parser.QUOTE (range_of lexbuf) }
 | "=" { Parser.EQ (range_of lexbuf) }
 | ":=" { Parser.SUBSTITUTE (range_of lexbuf) }
