@@ -4,14 +4,15 @@
 #include "types.h"
 #include "stdlib_macros.h"
 
-// NOTE: array_iteri is not yet implemented in C (it needs to call back into
-// a user closure argument); it remains interpreter-only (ITGL, c_backing =
-// CUnimplemented) for now.
 #define STDLIB_ARRAY_UNARY_LIST(X) \
   X(array_to_list)
+#define STDLIB_ARRAY_BINARY_LIST(X) \
+  X(array_iteri)
 
 STDLIB_ARRAY_UNARY_LIST(STDLIB_DECL_UNARY)
+STDLIB_ARRAY_BINARY_LIST(STDLIB_DECL_BINARY)
 
 STDLIB_ARRAY_UNARY_LIST(STDLIB_DECL_EXTERN)
+STDLIB_ARRAY_BINARY_LIST(STDLIB_DECL_EXTERN)
 
 #endif

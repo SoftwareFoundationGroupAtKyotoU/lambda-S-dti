@@ -6,17 +6,17 @@ let builtins : builtin list = [
       c_backing = CImpl "list_length" };
     { name = "list_map";
       impl = ITGL "let rec list_map f l = match l with [] -> [] | h :: t -> f h :: list_map f t;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_map" };
     { name = "list_fold_left";
       impl = ITGL "let rec list_fold_left f acc l = match l with [] -> acc | h :: t -> list_fold_left f (f acc h) t;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_fold_left" };
     { name = "list_init";
       impl = ITGL "let list_init n f = let rec aux i = if i >= n then [] else f i :: aux (i + 1) in aux 0;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_init" };
     { name = "list_mapi";
       impl = ITGL "let list_mapi f l = let rec aux i l = match l with [] -> [] | h :: t -> f i h :: aux (i + 1) t in aux 0 l;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_mapi" };
     { name = "list_iteri";
       impl = ITGL "let list_iteri f l = let rec aux i l = match l with [] -> () | h :: t -> f i h; aux (i + 1) t in aux 0 l;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_iteri" };
   ]

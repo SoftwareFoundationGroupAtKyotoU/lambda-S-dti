@@ -30,6 +30,17 @@
   STDLIB_DECL_UNARY(n) \
   STDLIB_DECL_UNARY(n##_x)
 
+// for trinary (3-argument curried) function, preparing two more curry stages
+// (e.g. list_fold_left : f -> acc -> l -> acc). Each stage is still a plain
+// one-argument fun_*, so the same STDLIB_DECL_UNARY shape covers all three.
+// value fun_list_fold_left(value, value, value);
+// value fun_list_fold_left_x(value, value, value);
+// value fun_list_fold_left_x_x(value, value, value);
+#define STDLIB_DECL_TRINARY(n) \
+  STDLIB_DECL_UNARY(n) \
+  STDLIB_DECL_UNARY(n##_x) \
+  STDLIB_DECL_UNARY(n##_x_x)
+
 /* extern values (e.g. print_int) */
 // extern value print_int;
 #define STDLIB_DECL_EXTERN(n) extern value n;
@@ -86,5 +97,17 @@
 #endif
 
 #define STDLIB_EXPORT(n) value n = (value)&f_##n;
+
+/* Apply a closure value f to a single argument x, discarding any further
+ * coercion on the result (used by stdlib functions that call back into a
+ * user-supplied closure argument, e.g. list_map). Mirrors the AppMCls/AppDCls
+ * codegen in toC.ml: under ALT/CAST/STATIC every closure has a valid funcM
+ * that can be called directly; otherwise funcD is called with the identity
+ * coercion (crc_id) since no further coercion is needed here. */
+#if defined(ALT) || defined(CAST) || defined(STATIC)
+  #define CALL1(f, x) (((fun*)(f))->funcM((f), (x)))
+#else
+  #define CALL1(f, x) (((fun*)(f))->funcD((f), (x), (value)&crc_id))
+#endif
 
 #endif // STDLIB_MACROS_H
