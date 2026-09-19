@@ -664,7 +664,7 @@ let toC_toplevel ~config toplevel =
 (* ================================ *)
 
 let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
-  RangeManager.register monotonic_dummy_range;
+  if not config.static then RangeManager.register monotonic_dummy_range;
   let tys = TyManager.get_definitions () in
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in

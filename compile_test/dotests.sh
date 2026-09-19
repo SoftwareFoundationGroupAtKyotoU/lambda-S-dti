@@ -12,12 +12,13 @@ if [ "$1" = "--worker" ]; then
   
   filepath="${test_dir:+$test_dir/}$filename"
 
-  # lSdti が並列実行により同じファイルを操作して「File exists」で落ちる対策。
-  # エラーに "File exists" が含まれている場合は少し待ってリトライする（最大5回）
+  # lSdti が並列実行により同じファイルを操作して「File exists」/「Text file busy」で落ちる対策。
+  # （出力バイナリ名がファイルパス+オプションのみから決まるハッシュのため、同じ組合せの
+  # 実行が重なると起きうる。エラーにこれらの文字列が含まれる場合は少し待ってリトライする（最大5回））
   for i in {1..5}; do
     actual=$(cd "${test_dir:-.}" && lSdti "$filename" $opt 2>&1)
-    
-    if [[ "$actual" != *"File exists"* ]]; then
+
+    if [[ "$actual" != *"File exists"* && "$actual" != *"Text file busy"* ]]; then
       break # 競合エラー以外（正常終了、または普通のテスト失敗）ならループを抜ける
     fi
     
