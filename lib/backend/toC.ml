@@ -14,6 +14,7 @@ let string_of_tag = function
   | B -> "BOOL"
   | U -> "UNIT"
   | F -> "FLOAT"
+  | S -> "STRING"
   | Fn -> "FN"
   | Li -> "LI"
   | Tp _ -> "TP"
@@ -27,6 +28,7 @@ let toC_ty = function
   | TyBool -> Addr "tybool"
   | TyUnit -> Addr "tyunit"
   | TyFloat -> Addr "tyfloat"
+  | TyString -> Addr "tystring"
   | TyDyn -> Addr "tydyn"
   | TyFun (TyDyn, TyDyn) -> Addr "tyfn"
   | TyFun (_, _) as u -> Addr (TyManager.find u)
@@ -122,7 +124,7 @@ let rec toC_crc_gen ~fresh_tmp x c =
   match c with
     | CId u ->
       let g, size = match u with
-        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFloat -> "G_FLOAT", 0 | TyFun _ -> "G_FN", 0
+        | TyInt -> "G_INT", 0 | TyBool -> "G_BOOL", 0 | TyUnit -> "G_UNIT", 0 | TyFloat -> "G_FLOAT", 0 | TyString -> "G_STRING", 0 | TyFun _ -> "G_FN", 0
         | TyList _ -> "G_LI", 0 | TyTuple us -> "G_TP", List.length us | TyRef _ -> "G_RF", 0 | TyArray _ -> "G_AR", 0
         | TyDyn | TyVar _ | TyCoercion _ -> raise @@ ToC_bug "Seq CId shouldn't have tydyn, tyvar, tycoercion"
       in
@@ -229,7 +231,7 @@ let toC_crc x c = toC_crc_gen ~fresh_tmp:(fun c -> None, CrcTmpManager.find c) x
 let toC_crc_dyn c : stm list * exp =
   match c with
   | CId _ -> [], Addr "crc_id"
-  | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+  | CSeq (CId _, CInj (I | B | U | F | S | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
   | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr "crc_inj_RF"
   | CSeq (CMArray (_, TyDyn), CInj Ar) -> [], Addr "crc_inj_AR"
   | _ when CrcManager.mem c -> [], Addr (CrcManager.find c)
@@ -405,7 +407,7 @@ let rec toC_exp ~is_main ~config = function
   | Cls.Match (x, ms) ->
     List.fold_left (fun stm (mf, f) -> [SIf (toC_mf ~config (Var x) mf, toC_exp ~is_main ~config f, stm)])
       [SExp (App (Var "printf", [Str "didn't match"])); SExp (App (Var "exit", [Int 1]))] (List.rev ms)
-  | Cls.Var _ | Cls.Int _ | Cls.Float _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
+  | Cls.Var _ | Cls.Int _ | Cls.Float _ | Cls.Str _ | Cls.Coercion _ | Cls.Nil | Cls.Tuple _ | Cls.Ref _ | Cls.MakeArray _
   | Cls.Hd _ | Cls.Tl _ | Cls.Tget _ | Cls.Deref _ | Cls.Get _ | Cls.Length _
   | Cls.BinOp _ | Cls.Cons _ | Cls.Subst _ | Cls.Put _ | Cls.CComp _
   | Cls.AppDDir _ | Cls.AppDCls _  | Cls.AppMDir _ | Cls.AppMCls _ | Cls.AppTy _ | Cls.AppTyFun _ | Cls.CApp _ | Cls.Cast _
@@ -419,6 +421,9 @@ and toC_assign ~config x f =
   | Cls.Var y -> assign_x (Var y)
   | Cls.Int i -> assign_x (Int i)
   | Cls.Float f -> assign_x (App (Var "of_double", [Float f]))
+  | Cls.Str s ->
+    let idx = int_of_string (StrManager.find s) in
+    assign_x (Cast (VALUE, Index (Var "local_str_list", Int idx)))
   | Cls.Nil -> assign_x dummy_value
   | Cls.Tuple ys ->
     let size = List.length ys in
@@ -443,7 +448,7 @@ and toC_assign ~config x f =
       []
   | Cls.Coercion c -> begin match c with
     | CId _ -> assign_x (Cast (VALUE, Addr "crc_id"))
-    | CSeq (CId _, CInj (I | B | U | F | Fn | Li | Rf | Ar as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
+    | CSeq (CId _, CInj (I | B | U | F | S | Fn | Li | Rf | Ar as g)) -> assign_x (Cast (VALUE, Addr ("crc_inj_" ^ string_of_tag g)))
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> assign_x (Cast (VALUE, Addr ("crc_inj_RF")))
     | CSeq (CMArray (_, TyDyn), CInj Ar) -> assign_x (Cast (VALUE, Addr ("crc_inj_AR")))
     | _ ->
@@ -620,6 +625,13 @@ let toC_ranges ranges =
 
 (* ================================ *)
 
+let toC_strs strs =
+  if List.length strs = 0 then []
+  else [Decl (Static, PTR CHAR, "local_str_list[]",
+    Some (Array (List.map (fun (s, _) -> Str (String.escaped s)) (List.sort (fun (_, i1) (_, i2) -> compare i1 i2) strs))))]
+
+(* ================================ *)
+
 let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) crcs
 
 let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc name c))) crcs
@@ -669,6 +681,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let ranges = RangeManager.get_definitions () in
   let crcs = CrcManager.get_definitions () in
   let tmpcrcs = CrcTmpManager.get_definitions () in
+  let strs = StrManager.get_definitions () in
   let inc = [
     Include "<gc.h>";
     Include (
@@ -679,6 +692,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   in
   let tydecl, tydef = toC_tys ~config tys in
   let rangedef = toC_ranges ranges in
+  let strdef = toC_strs strs in
   let crcdecl, crcdef, crcinit, n_static_crc = toC_crcs ~config crcs in
   let crctmpdecl = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) tmpcrcs in
   let fundecl, fundef = toC_toplevel ~config toplevel in
@@ -716,4 +730,4 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     )
   ]
   in
-  inc @ tydecl @ tydef @ rangedef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ fundecl @ fundef @ settys @ decl @ main
+  inc @ tydecl @ tydef @ rangedef @ strdef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ fundecl @ fundef @ settys @ decl @ main

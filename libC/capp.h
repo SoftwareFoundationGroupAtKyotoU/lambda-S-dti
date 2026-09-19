@@ -75,7 +75,8 @@ static inline ptag ptag_of_ground_ty(ground_ty g) {
 		case G_INT: return PTAG_INT;
 		case G_BOOL:
 		case G_UNIT: return PTAG_BOOL_UNIT;
-		case G_FLOAT: return PTAG_BOXED;
+		case G_FLOAT:
+		case G_STRING: return PTAG_BOXED;
 	}
 }
 
@@ -100,6 +101,7 @@ static inline ground_ty ground_ty_of_tag(ptag tag) {
 // new physical tag.
 typedef enum boxed_kind : uint8_t {
 	BOX_FLOAT,
+	BOX_STRING,
 } boxed_kind;
 
 typedef struct boxed {
@@ -118,6 +120,7 @@ static inline uint8_t tag_of(value v) {
 			boxed *b = (boxed*)(v & ~0b111);
 			switch (b->kind) {
 				case BOX_FLOAT: return G_FLOAT;
+				case BOX_STRING: return G_STRING;
 			}
 		}
 		default: return ground_ty_of_tag(tag);
@@ -144,6 +147,12 @@ static inline value tag_value(value v, ground_ty t) {
 			b->v = v;
 			return (value)((value)b | PTAG_BOXED);
 		}
+		case G_STRING: {
+			boxed *b = GC_MALLOC(sizeof(boxed));
+			b->kind = BOX_STRING;
+			b->v = v;
+			return (value)((value)b | PTAG_BOXED);
+		}
 		case G_UNIT:
 			return (value)(0b10000 | PTAG_BOOL_UNIT);
 	}
@@ -156,7 +165,8 @@ static inline value untag_value(value v, ground_ty t) {
 			return (value)(v >> 3);
 		case G_UNIT:
 			return 0b0;
-		case G_FLOAT: {
+		case G_FLOAT:
+		case G_STRING: {
 			boxed *b = (boxed*)(v & ~0b111);
 			return b->v;
 		}

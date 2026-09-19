@@ -15,6 +15,7 @@ module ITGL = struct
     | Var _
     | IConst _
     | FConst _
+    | SConst _
     | BConst _
     | UConst _ -> TV.empty
     | BinOp (_, _, e1, e2) -> TV.union (tv_exp e1) (tv_exp e2)

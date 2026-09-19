@@ -11,6 +11,7 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
   | Var x -> Cls.Var x
   | IConst i -> Cls.Int i
   | FConst f -> Cls.Float f
+  | SConst s -> Cls.Str s
   | BinOp (x, op, y) -> Cls.BinOp (x, op, y)
   | Nil -> Cls.Nil
   | Cons (x, y) -> Cls.Cons (x, y)

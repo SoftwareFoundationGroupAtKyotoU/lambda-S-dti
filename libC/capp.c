@@ -57,6 +57,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 			}
 			break;
 		}
+		case BASE_STRING: {
+			switch (tk2) {
+				case DYN: return tag_value(x, G_STRING); // define x:G=>? as dynamic type value
+				default: break;
+			}
+			break;
+		}
 		case TYFUN: {
 			switch (tk2) {
 				case TYFUN: { 				// when t1 and t2 are function type
@@ -354,6 +361,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 						blame(rid, polarity);
 					}
 				}
+				case BASE_STRING: {
+					if (tag_of(x) == G_STRING) {													// when t1's injection ground type equals t2
+						return untag_value(x, G_STRING);
+					} else {											// when t1's injection ground type dosen't equal t2
+						blame(rid, polarity);
+					}
+				}
 				case TYFUN: {
 					if (t2->tydat.tyfun.left->tykind == DYN && t2->tydat.tyfun.right->tykind == DYN) {
 						if (tag_of(x) == G_FN) {													// when t1's injection ground type equals t2
@@ -474,6 +488,13 @@ value cast(value x, ty *t1, ty *t2, uint32_t rid, uint8_t polarity) {			// input
 							#endif
 							*t2 = tyfloat;
 							return untag_value(x, G_FLOAT);
+						}
+						case(G_STRING): {
+							#ifdef PROFILE
+							current_inference++;
+							#endif
+							*t2 = tystring;
+							return untag_value(x, G_STRING);
 						}
 						case(G_FN):	{												// when t1's injection ground type is ?->?
 							// printf("DTI : arrow was inferenced\n");							// R_INSTARROW (x':?->?=>?=>X -[X:=X_1->X_2]> x':?->?=>X_1->X_2)
@@ -652,6 +673,7 @@ value coerce(value v, crc *s, uint8_t suspend) {
 	if (s == &crc_inj_BOOL) return tag_value(v, G_BOOL);
 	if (s == &crc_inj_UNIT) return tag_value(v, G_UNIT);
 	if (s == &crc_inj_FLOAT) return tag_value(v, G_FLOAT);
+	if (s == &crc_inj_STRING) return tag_value(v, G_STRING);
 	if (s == &crc_inj_FN) return tag_value(v, G_FN);
 	if (s == &crc_inj_LI) return tag_value(v, G_LI);
 	// tuple is intentionally omitted

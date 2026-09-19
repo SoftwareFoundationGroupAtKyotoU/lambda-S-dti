@@ -56,7 +56,8 @@ module CC = struct
     | IConst _
     | BConst _
     | UConst
-    | FConst _ as f -> f
+    | FConst _
+    | SConst _ as f -> f
     | BinOp (op, f1, f2) -> BinOp (op, subst_exp ~monotonic s f1, subst_exp ~monotonic s f2)
     | IfExp (f1, f2, f3) -> IfExp (subst_exp ~monotonic s f1, subst_exp ~monotonic s f2, subst_exp ~monotonic s f3)
     | ForExp (i, f1, f2, tag, f3) ->
@@ -108,7 +109,7 @@ module KNorm = struct
   open Syntax.KNorm
 
   let rec subst_exp ~monotonic s = function
-    | Var _ | IConst _ | FConst _ | Nil as f -> f
+    | Var _ | IConst _ | FConst _ | SConst _ | Nil as f -> f
     | BinOp _ | Cons _ | Tuple _ | Hd _ | Tl _ | Tget _ | Length _ as f -> f
     | Ref (x, u) -> Ref (x, subst_type s u)
     | Deref (x, uo) -> Deref (x, Option.map (subst_type s) uo)

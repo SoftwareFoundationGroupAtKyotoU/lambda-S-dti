@@ -11,14 +11,15 @@ typedef struct ty {
 		BASE_BOOL, //2
 		BASE_UNIT, //3
 		BASE_FLOAT, //4
-		TYFUN, //5
-		TYLIST, //6
-		TYTUPLE, //7
-		TYREF, //8
-		TYARRAY, //9
-		TYVAR, //10
+		BASE_STRING, //5
+		TYFUN, //6
+		TYLIST, //7
+		TYTUPLE, //8
+		TYREF, //9
+		TYARRAY, //10
+		TYVAR, //11
 		#ifndef CAST
-		SUBSTITUTED, //11
+		SUBSTITUTED, //12
 		#endif
 	} tykind;
 	union tydat {
@@ -42,6 +43,7 @@ extern ty tyint;
 extern ty tybool;
 extern ty tyunit;
 extern ty tyfloat;
+extern ty tystring;
 extern ty tyfn;
 extern ty tyli;
 extern ty tyrf;

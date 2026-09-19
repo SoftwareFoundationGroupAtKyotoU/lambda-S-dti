@@ -20,20 +20,20 @@ typedef struct range {
 } range;
 
 typedef enum ground_ty : uint8_t {
+	G_INT,
+	G_BOOL,
+	G_UNIT,
+	G_FLOAT,
+	G_STRING,
 	G_FN,
 	G_LI,
 	G_TP,
 	G_RF,
 	G_AR,
-	G_INT,
-	G_BOOL,
-	G_FLOAT,
-	// up to here is used for tag in dynamic value
-	G_UNIT,
 } ground_ty;
 
-// NOTE: rewrite if you change the definition of tykind
-#define N_GROUND_TY (G_UNIT + 1)
+// NOTE: rewrite if you change the definition of ground_ty
+#define N_GROUND_TY (G_AR + 1)
 
 typedef struct ty ty;
 
@@ -90,7 +90,7 @@ extern int compose_max_depth;  // compose の再帰深さの最大
 // extern long long fun_alloc_num;   // クロージャ（fun）を GC_MALLOC した回数
 extern int blame_check_num;    // apply_coerce_proj / _proj_tp の動的タグ検査回数
 extern int coerce_kind[8];     // coerce() に渡った crc_kind の内訳
-extern int dti_by_ground[9];   // dti() が解決した ground_type の内訳
+extern int dti_by_ground[10];   // dti() が解決した ground_type の内訳
 #endif //PROFILE
 
 #endif //TYPES_H

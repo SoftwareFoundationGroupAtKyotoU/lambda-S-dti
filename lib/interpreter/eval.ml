@@ -58,6 +58,7 @@ module CC = struct
       end
     | IConst i -> IntV i
     | FConst f -> FloatV f
+    | SConst s -> StringV s
     | BConst b -> BoolV b
     | UConst -> UnitV
     | BinOp (op, f1, f2) ->
@@ -431,16 +432,18 @@ module CC = struct
     | TyInt, TyInt
     | TyBool, TyBool
     | TyUnit, TyUnit
-    | TyFloat, TyFloat -> v
+    | TyFloat, TyFloat
+    | TyString, TyString -> v
     (* IdStar *)
     | TyDyn, TyDyn -> v
     (* Succeed / Fail *)
-    | TyDyn, (TyInt | TyBool | TyUnit | TyFloat | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u2) ->
+    | TyDyn, (TyInt | TyBool | TyUnit | TyFloat | TyString | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn as u2) ->
       begin match v, u2 with
       | Tagged (I, v), TyInt -> v
       | Tagged (B, v), TyBool -> v
       | Tagged (U, v), TyUnit -> v
       | Tagged (F, v), TyFloat -> v
+      | Tagged (S, v), TyString -> v
       | Tagged (Fn, v), TyFun (TyDyn, TyDyn) -> v
       | Tagged (Li, v), TyList TyDyn -> v
       | Tagged (Rf, v), TyRef TyDyn -> v
@@ -490,6 +493,7 @@ module CC = struct
     | TyBool, TyDyn -> Tagged (B, v)
     | TyUnit, TyDyn -> Tagged (U, v)
     | TyFloat, TyDyn -> Tagged (F, v)
+    | TyString, TyDyn -> Tagged (S, v)
     | TyFun (TyDyn, TyDyn), TyDyn -> Tagged (Fn, v)
     | TyList TyDyn, TyDyn -> Tagged (Li, v)
     | TyTuple us, TyDyn when List.fold_left (fun b u -> u = TyDyn && b) true us -> Tagged (Tp (List.length us), v)

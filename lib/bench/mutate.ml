@@ -63,7 +63,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   in
   let selected slot = match sel with Some s -> IntSet.mem slot s | None -> false in
   match t with
-  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | NilExp _ -> (k, t)
+  | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | SConst _ | NilExp _ -> (k, t)
 
   | FunExp (r, (x, annot, u), e) when is_synthetic x ->
     let k1, e' = recur k e in

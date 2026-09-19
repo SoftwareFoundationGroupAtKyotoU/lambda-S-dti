@@ -14,6 +14,7 @@ let reservedWords = [
   ("true",     fun r -> Parser.TRUE r    );
   ("false",    fun r -> Parser.FALSE r   );
   ("int",      fun r -> Parser.INT r     );
+  ("string",   fun r -> Parser.STRING r  );
   ("float",    fun r -> Parser.FLOAT r   );
   ("bool",     fun r -> Parser.BOOL r    );
   ("unit",     fun r -> Parser.UNIT r    );
@@ -43,6 +44,14 @@ rule main = parse
   [' ' '\t']+ { main lexbuf }
 | [' ' '\t' '\r']* '\n' { Lexing.new_line lexbuf; main lexbuf }
 | "(*" { comment lexbuf; main lexbuf }
+| '"'
+  {
+    let start_p = Lexing.lexeme_start_p lexbuf in
+    let buf = Buffer.create 16 in
+    string_lit buf lexbuf;
+    let end_p = Lexing.lexeme_end_p lexbuf in
+    Parser.STRINGV { value = Buffer.contents buf; range = { start_p; end_p } }
+  }
 | ['0'-'9']+ '.' ['0'-'9']*
   {
     let value = float_of_string (Lexing.lexeme lexbuf) in
@@ -112,3 +121,11 @@ and comment = parse
 | "(*" { comment lexbuf; comment lexbuf }
 | eof { Format.eprintf "Unclosed comment" (* TODO: raise exception? *) }
 | _ { comment lexbuf }
+and string_lit buf = parse
+  '"' { () }
+| '\\' 'n' { Buffer.add_char buf '\n'; string_lit buf lexbuf }
+| '\\' 't' { Buffer.add_char buf '\t'; string_lit buf lexbuf }
+| '\\' '\\' { Buffer.add_char buf '\\'; string_lit buf lexbuf }
+| '\\' '"' { Buffer.add_char buf '"'; string_lit buf lexbuf }
+| eof { Format.eprintf "Unclosed string" (* TODO: raise exception? *) }
+| _ { Buffer.add_string buf (Lexing.lexeme lexbuf); string_lit buf lexbuf }

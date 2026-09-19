@@ -55,6 +55,7 @@ let rec meet u1 u2 = match u1, u2 with
   | TyInt, TyInt -> TyInt
   | TyFloat, TyFloat -> TyFloat
   | TyUnit, TyUnit -> TyUnit
+  | TyString, TyString -> TyString
   | TyVar (a1, _ as tv), TyVar (a2, _) when a1 = a2 -> TyVar tv
   | TyDyn, u | u, TyDyn -> u
   | TyFun (u11, u12), TyFun (u21, u22) -> TyFun (meet u11 u21, meet u12 u22)
@@ -106,6 +107,7 @@ module ITGL = struct
       end
     | IConst (_, i) -> CC.IConst i, TyInt
     | FConst (_, f) -> CC.FConst f, TyFloat
+    | SConst (_, s) -> CC.SConst s, TyString
     | BConst (_, b) -> CC.BConst b, TyBool
     | UConst _ -> CC.UConst, TyUnit
     | BinOp (_, op, e1, e2) ->
@@ -279,6 +281,7 @@ module CC = struct
       Var (x, ys), u
     | IConst i -> IConst i, TyInt
     | FConst f -> FConst f, TyFloat
+    | SConst s -> SConst s, TyString
     | BConst b -> BConst b, TyBool
     | UConst -> UConst, TyUnit
     | NilExp u -> NilExp u, TyList u
@@ -447,7 +450,7 @@ module CC = struct
     | AppDExp _ | CCompExp _ | CoercionExp _ | FunExp _ | FixExp _ | CAppExp _ as f ->
       raise @@ Occur_LS1 (Format.asprintf "CC.translate_exp: already CPS:: %a" Pp.CC.pp_exp f)
   and translate_exp_k ~config env k uk1 uk2 = function
-    | Var _ | IConst _ | BConst _ | UConst | FConst _ | NilExp _ | BinOp _ | FunExp _ | FixExp _
+    | Var _ | IConst _ | BConst _ | UConst | FConst _ | SConst _ | NilExp _ | BinOp _ | FunExp _ | FixExp _
     | ConsExp _ | TupleExp _ | RefExp _ | DerefExp _ | SubstExp _ | MakeArrayExp _ | GetExp _ | PutExp _ | LengthExp _
     | ForExp _ | WhileExp _ as f ->
       let f, u = translate_exp ~config env f in
@@ -521,6 +524,7 @@ module Cls = struct
     | Var x -> Var (replace x)
     | Int i -> Int i
     | Float f -> Float f
+    | Str s -> Str s
     | Nil -> Nil
     | BinOp (x, op, y) -> BinOp (replace x, op, replace y)
     | Cons (x, y) -> Cons (replace x, replace y)

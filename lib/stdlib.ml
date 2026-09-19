@@ -57,6 +57,11 @@ module CC = struct
     | _ -> raise @@ Stdlib_bug "print_float: unexpected value"
   let lib_print_float ~config = lift1 ~config core_print_float
 
+  let core_print_string = function
+    | StringV s -> print_string s; UnitV
+    | _ -> raise @@ Stdlib_bug "print_string: unexpected value"
+  let lib_print_string ~config = lift1 ~config core_print_string
+
   let core_print_newline = function
     | UnitV -> print_newline (); UnitV
     | _ -> raise @@ Stdlib_bug "print_newline: unexpected value"
@@ -110,6 +115,7 @@ let builtins : builtin list = [
     { name = "print_bool";    impl = Native (CC.lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit));    c_backing = CImpl "print_bool" };
     { name = "print_int";     impl = Native (CC.lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit));      c_backing = CImpl "print_int" };
     { name = "print_float";   impl = Native (CC.lib_print_float, tysc_of_ty @@ TyFun (TyFloat, TyUnit));  c_backing = CImpl "print_float" };
+    { name = "print_string";  impl = Native (CC.lib_print_string, tysc_of_ty @@ TyFun (TyString, TyUnit)); c_backing = CImpl "print_string" };
     { name = "print_newline"; impl = Native (CC.lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit)); c_backing = CImpl "print_newline" };
     { name = "read_int";      impl = Native (CC.lib_read_int, tysc_of_ty @@ TyFun (TyUnit, TyInt));       c_backing = CImpl "read_int" };
     { name = "read_float";    impl = Native (CC.lib_read_float, tysc_of_ty @@ TyFun (TyUnit, TyFloat));   c_backing = CImpl "read_float" };

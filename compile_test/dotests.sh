@@ -93,6 +93,7 @@ for TEST_DIR in \
   original/bool \
   original/dynamic \
   original/float \
+  original/string \
   original/int \
   original/list \
   original/match \

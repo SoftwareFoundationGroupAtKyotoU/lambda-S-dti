@@ -33,7 +33,7 @@ exception Parser_bug of string
 %token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR
 %token <Utils.Error.range> PLUSDOT MINUSDOT STARDOT DIVDOT EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION
-%token <Utils.Error.range> INT BOOL UNIT FLOAT QUESTION RARROW
+%token <Utils.Error.range> INT BOOL UNIT FLOAT STRING QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
@@ -44,6 +44,7 @@ exception Parser_bug of string
 
 %token <int Utils.Error.with_range> INTV
 %token <float Utils.Error.with_range> FLOATV
+%token <Syntax.id Utils.Error.with_range> STRINGV
 %token <Syntax.id Utils.Error.with_range> ID
 
 %start toplevel
@@ -312,6 +313,7 @@ PrefixExpr :
 SimpleExpr :
   | i=INTV { IConst (i.range, i.value) }
   | f=FLOATV { FConst (f.range, f.value) }
+  | s=STRINGV { SConst (s.range, s.value) }
   | r=TRUE { BConst (r, true) }
   | r=FALSE { BConst (r, false) }
   | start=LPAREN last=RPAREN {
@@ -352,6 +354,7 @@ PostType :
 SimpleType :
   | INT { TyInt }
   | FLOAT { TyFloat }
+  | STRING { TyString }
   | BOOL { TyBool }
   | UNIT { TyUnit }
   | QUESTION { TyDyn }

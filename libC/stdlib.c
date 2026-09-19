@@ -86,6 +86,13 @@ static inline value _core_print_float(value cls, value v) {
 }
 DEF_UNARY(print_float, _core_print_float)
 
+static inline value _core_print_string(value cls, value v) {
+	(void)cls;
+	printf("%s", (char*)v);
+	return 0;
+}
+DEF_UNARY(print_string, _core_print_string)
+
 static inline value _core_read_int(value cls, value v) {
 	(void)cls;
 	value retv;

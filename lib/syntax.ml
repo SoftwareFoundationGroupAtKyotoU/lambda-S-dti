@@ -34,6 +34,7 @@ type ty =
   | TyFloat
   | TyBool
   | TyUnit
+  | TyString
   | TyFun of ty * ty
   | TyList of ty
   | TyTuple of ty list
@@ -95,7 +96,7 @@ type polarity = Pos | Neg
 (** Returns the negation of the given polarity. *)
 let neg = function Pos -> Neg | Neg -> Pos
 
-type tag = I | B | U | F | Fn | Li | Tp of int | Rf | Ar
+type tag = I | B | U | F | S | Fn | Li | Tp of int | Rf | Ar
 
 type coercion =
   | CInj of tag
@@ -128,6 +129,7 @@ module ITGL = struct
     | BConst of range * bool
     | UConst of range
     | FConst of range * float
+    | SConst of range * string
     | BinOp of range * binop * exp * exp
     | AscExp of range * exp * ty
     | IfExp of range * exp * exp * exp
@@ -155,6 +157,7 @@ module ITGL = struct
     | BConst (r, _)
     | UConst r
     | FConst (r, _)
+    | SConst (r, _)
     | AscExp (r, _, _)
     | BinOp (r, _, _, _)
     | IfExp (r, _, _, _)
@@ -191,6 +194,7 @@ module CC = struct
     | BConst of bool
     | UConst
     | FConst of float
+    | SConst of string
     | FunExp of tyvar list * fundef
     | FixExp of tyvar list * fixdef
     | CoercionExp of coercion
@@ -234,6 +238,7 @@ module CC = struct
     | BoolV of bool
     | UnitV
     | FloatV of float
+    | StringV of string
     | FunBV of (ty list -> value -> value)
     | FunSV of (ty list -> (value * value) -> value)
     | FunDualV of (ty list -> ((value -> value) * ((value * value) -> value)))
@@ -258,6 +263,7 @@ module KNorm = struct
     | Var of id
     | IConst of int
     | FConst of float
+    | SConst of string
     | BinOp of id * binop * id
     | Nil
     | Cons of id * id
@@ -311,6 +317,7 @@ module Cls = struct
     | Var of id
     | Int of int
     | Float of float
+    | Str of string
     | Nil
     | BinOp of id * binop * id
     | Cons of id * id

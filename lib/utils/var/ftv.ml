@@ -49,6 +49,7 @@ module ITGL = struct
     | Var _
     | IConst _
     | FConst _
+    | SConst _
     | BConst _
     | UConst _ -> TV.empty
     | BinOp (_, _, e1, e2) -> TV.union (ftv_exp e1) (ftv_exp e2)
@@ -82,6 +83,7 @@ module CC = struct
     | Var (_, us) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg us)
     | IConst _
     | FConst _
+    | SConst _
     | BConst _
     | UConst -> TV.empty
     | FunExp (tvs, fund) -> TV.diff (ftv_fund fund) (TV.of_list tvs)
@@ -130,7 +132,7 @@ module KNorm = struct
   open Syntax.KNorm
 
   let rec ftv_exp: exp -> TV.t = function
-    | Var _ | IConst _ | FConst _ | BinOp _ | Nil | Cons _ | Hd _ | Tl _ | Tuple _ | Tget _ | Length _ | AppMExp _ | AppDExp _
+    | Var _ | IConst _ | FConst _ | SConst _ | BinOp _ | Nil | Cons _ | Hd _ | Tl _ | Tuple _ | Tget _ | Length _ | AppMExp _ | AppDExp _
     | CAppExp _ | CCompExp _ -> TV.empty
     | IfExp (_, f1, f2) ->
       List.fold_left TV.union TV.empty (List.map ftv_exp [f1; f2])
