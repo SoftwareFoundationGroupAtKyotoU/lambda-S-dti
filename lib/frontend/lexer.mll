@@ -33,6 +33,8 @@ let reservedWords = [
   ("done",     fun r -> Parser.DONE r    );
   ("while",    fun r -> Parser.WHILE r   );
   ("type",     fun r -> Parser.TYPE r    );
+  ("begin",    fun r -> Parser.BEGIN r   );
+  ("end",      fun r -> Parser.END r     );
 ]
 
 let range_of lexbuf =
@@ -41,6 +43,9 @@ let range_of lexbuf =
     end_p=Lexing.lexeme_end_p lexbuf;
   }
 }
+
+let digit = ['0'-'9']
+let exponent = ('e' | 'E') ('+' | '-')? digit+
 
 rule main = parse
   [' ' '\t']+ { main lexbuf }
@@ -54,13 +59,19 @@ rule main = parse
     let end_p = Lexing.lexeme_end_p lexbuf in
     Parser.STRINGV { value = Buffer.contents buf; range = { start_p; end_p } }
   }
-| ['0'-'9']+ '.' ['0'-'9']*
+| digit+ '.' digit* exponent?
   {
     let value = float_of_string (Lexing.lexeme lexbuf) in
     let range = range_of lexbuf in
     Parser.FLOATV { value=value; range=range }
   }
-| ['0'-'9']+
+| digit+ exponent
+  {
+    let value = float_of_string (Lexing.lexeme lexbuf) in
+    let range = range_of lexbuf in
+    Parser.FLOATV { value=value; range=range }
+  }
+| digit+
   {
     let value = int_of_string (Lexing.lexeme lexbuf) in
     let range = range_of lexbuf in
@@ -68,6 +79,8 @@ rule main = parse
   }
 | "(" { Parser.LPAREN (range_of lexbuf) }
 | ")" { Parser.RPAREN (range_of lexbuf) }
+| "[|" { Parser.LARRBRACKET (range_of lexbuf) }
+| "|]" { Parser.RARRBRACKET (range_of lexbuf) }
 | "[" { Parser.LBRACKET (range_of lexbuf) }
 | "]" { Parser.RBRACKET (range_of lexbuf) }
 | "{" { Parser.LBRACE (range_of lexbuf) }

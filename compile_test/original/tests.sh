@@ -1,3 +1,4 @@
+run_test "begin_end.ml" "123"
 run_test "church_4.ml" "4"
 # run_test "dummy_blame.ml"
 run_test "fold.ml" "15"

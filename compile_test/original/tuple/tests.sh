@@ -1,4 +1,5 @@
 run_test "basic.ml"  "8"
+run_test "let_pattern.ml" "6"
 run_test "blame.ml" \
   "$(printf "Blame on the expression side:\nFile \"blame.ml\", line 2, character 7 -- line 2, character 8")" \
   "skip_static"

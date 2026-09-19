@@ -45,15 +45,30 @@ let find_field_owner fname0 =
   try Environment.find fname0 !(Type_env.fieldenv)
   with Not_found -> raise (Parser_bug (Printf.sprintf "unbound field %s" fname0))
 
+(* [| e0; e1; ...; en |] desugars to `let $arr = Array.make (n+1) e0 in
+   ($arr.(1) <- e1; ...; $arr.(n) <- en; $arr)`. Array.make already stores
+   e0 at index 0, so e0 is evaluated exactly once and no extra let-binding
+   is needed for it. *)
+let build_array_lit r es =
+  let n = List.length es in
+  let e0 = List.hd es and rest = List.tl es in
+  let arr = "$arr" in
+  let puts = List.mapi (fun i e ->
+      PutExp (range_of_exp e, Var (range_of_exp e, arr, ref []), IConst (range_of_exp e, i + 1), e)
+    ) rest in
+  let body = List.fold_right (fun p acc -> make_seq r p acc) puts (Var (r, arr, ref [])) in
+  LetExp (r, arr, MakeArrayExp (r, IConst (r, n), e0), body)
+
 %}
 
 %token <Utils.Error.range> LPAREN RPAREN SEMI SEMISEMI COLON EQ QUOTE
 %token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR CARET
 %token <Utils.Error.range> PLUSDOT MINUSDOT STARDOT DIVDOT EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT
 %token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION TYPE
+%token <Utils.Error.range> BEGIN END
 %token <Utils.Error.range> INT BOOL UNIT FLOAT STRING CHAR QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
-%token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
+%token <Utils.Error.range> COLCOL LBRACKET RBRACKET LARRBRACKET RARRBRACKET LIST
 %token <Utils.Error.range> LBRACE RBRACE
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
@@ -190,6 +205,14 @@ LetExpr :
       let e1 = List.fold_right (param_to_fun r) params e1 in
       LetExp (r, x.value, e1, e2)
     }
+  | start=LET p=LetPattern EQ e1=Expr IN e2=Expr {
+      let r = join_range start (range_of_exp e2) in
+      MatchExp (r, e1, [(p, e2)])
+    }
+  | start=LET LPAREN p=LetPattern RPAREN EQ e1=Expr IN e2=Expr {
+      let r = join_range start (range_of_exp e2) in
+      MatchExp (r, e1, [(p, e2)])
+    }
   | start=LET REC x=ID params=nonempty_list(Param) u2=OptTypeAnnot EQ e1=Expr IN e2=Expr {
       let r = join_range start (range_of_exp e2) in
       let annot2, u2 = opt_ty_to_annot_ty u2 in
@@ -248,6 +271,17 @@ LitMatchForm :
   // | LPAREN m=MatchFormExpr COLON t=Type RPAREN { MatchAsc (m, t) }
   | LPAREN m=MatchForm RPAREN { m }
   | UNDER { MatchWild }
+
+(* Restricted, irrefutable-only pattern for `let PAT = e1 in e2` — unlike
+   MatchForm/LitMatchForm this deliberately excludes literal/list/cons
+   patterns, which make no sense as a let-binding LHS. *)
+LetPattern :
+  | p1=LetPatternElem COMMA ps=separated_nonempty_list(COMMA, LetPatternElem) { MatchTuple (p1 :: ps) }
+
+LetPatternElem :
+  | x=ID { MatchVar x.value }
+  | UNDER { MatchWild }
+  | LPAREN p=LetPattern RPAREN { p }
 
 BelowSemiExpr :
   | IfExpr { $1 }
@@ -450,6 +484,10 @@ SimpleExpr :
         [(MatchTuple pat, TupleExp (rng, elems))])
     }
   | LPAREN e=Expr RPAREN { e }
+  | BEGIN e=Expr END { e }
+  | start=LARRBRACKET l=ArrayElms last=RARRBRACKET {
+      l (join_range start last)
+    }
 
 RecordFieldInits :
   | f=RecordFieldInit { [f] }
@@ -467,6 +505,15 @@ ListElms :
   | e=BinOpExpr SEMI l=ListElms { fun r ->
       ConsExp(range_of_exp e, e, l r)
     }
+
+ArrayElms :
+  | /* empty */ { fun _r -> raise (Parser_bug "empty array literal `[| |]` is not supported; use `Array.make 0 <value>` instead") }
+  | es=ArrayElmsNonEmpty { fun r -> build_array_lit r es }
+
+ArrayElmsNonEmpty :
+  | e=BinOpExpr { [e] }
+  | e=BinOpExpr SEMI { [e] }
+  | e=BinOpExpr SEMI es=ArrayElmsNonEmpty { e :: es }
 
 Type:
   | u1=Type RARROW u2=Type { TyFun (u1, u2) }

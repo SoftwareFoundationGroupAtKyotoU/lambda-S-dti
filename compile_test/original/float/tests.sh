@@ -1,4 +1,5 @@
 run_test "arith.ml" "4.0000003.5000006.0000003.500000"
+run_test "exponent.ml" "12.8000000.000950100000.000000"
 run_test "comparison_all.ml" "truetruetruetruetruetrue"
 run_test "dynamic.ml" "3.140000" "skip_static"
 run_test "ref.ml" "2.500000"

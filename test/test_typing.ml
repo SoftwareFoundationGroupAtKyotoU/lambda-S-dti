@@ -57,6 +57,12 @@ module ITGL = struct
       "1.5 <=. 2.5", "bool";
       "1.5 >. 2.5", "bool";
       "1.5 >=. 2.5", "bool";
+      "1.28e1", "float";
+      "9.5e-4", "float";
+      "1e5", "float";
+      (* begin/end *)
+      "begin 1 + 2 end", "int";
+      "begin let x = 1 in x end + 1", "int";
       (* fun *)
       "fun x -> x + 1", "int -> int";
       "fun x -> x", "'a -> 'a";
@@ -91,6 +97,14 @@ module ITGL = struct
       "((1, 2), 3)", "(int * int) * int";
       "fun x y -> (x, y)", "'a -> 'b -> 'a * 'b";
       "((1 : ?), false)", "? * bool";
+      (* tuple pattern let *)
+      "let (a, b) = (1, true) in a", "int";
+      "let a, b = (1, true) in b", "bool";
+      "let (a, (b, c)) = (1, (2, 3)) in a + b + c", "int";
+      "let (_, y) = (1, 2) in y", "int";
+      (* array *)
+      "[| 1; 2; 3 |]", "int array";
+      "let a = [| 1; 2; 3 |] in a.(0)", "int";
       (* ref *)
       "ref 1", "int ref";
       "!(ref true)", "bool";
@@ -163,15 +177,40 @@ module ITGL = struct
       "let x = ref 1 in x := !x + true";
       (* value restriction *)
       "let f = (fun x -> x) (fun y -> y) in (f 1, f true)";
+      (* tuple pattern let: pattern variables are bound monomorphically, unlike
+         plain `let`, so reusing one at two different types fails (see docs/todo.md) *)
+      "let (f, g) = ((fun x -> x), (fun x -> x)) in (f 1, f true)";
       (* TODO: "let r = ref [] in let _ = (r := [1]) in (r := [true])"; *)
       "let r = ref [] in let x = (r := [1]) in (r := [true])";
       "let r = ref [] in (1 :: !r, true :: !r)";
       "let r = ref (fun x -> x) in r := (fun x -> x + 1); !r true";
     ]
 
+  let test_parse_errors =
+    let test program =
+      program >:: fun _ ->
+        let message =
+          try
+            ignore @@ parse (program ^ ";;");
+            Some (asprintf "Type_env.Parser_bug is not raised: '%s'" program)
+          with
+          | Type_env.Parser_bug _ -> None
+          | _ -> Some (asprintf "Unexpected exception is raised: '%s'" program)
+        in
+        match message with
+        | None -> ()
+        | Some m -> assert_failure m
+    in
+    List.map test [
+      (* empty array literal has no way to obtain a fill value, unlike a
+         non-empty literal which sources it from its first element *)
+      "[| |]";
+    ]
+
   let suite = [
     "test_type_of_program">::: test_type_of_program;
     "test_type_of_program_errors">::: test_type_of_program_errors;
+    "test_parse_errors">::: test_parse_errors;
   ]
 end
 

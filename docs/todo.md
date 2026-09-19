@@ -45,6 +45,14 @@ monotonic reference/array の deref・subst（`GetExp`/`PutExp`/`DerefExp`/`Subs
 - `lib/backend/toC.ml:225` — `toC_crc` が `CFail` で `ToC_bug "toC_crc yet"`
 - `lib/backend/toC.ml:354` — `set_ty` が未知の `ty` パターンで `ToC_bug "set_ty yet"`
 
+## `let (a,b,c) = e in ...` タプルパターン束縛のパターン変数は単相
+
+`let (a,b,c) = e in ...`（`lib/frontend/parser.mly` の `LetExpr`/`LetPattern`）は既存の `.field` アクセサ等と同じイディオムで、単一ブランチの `MatchExp` に脱糖して実装している。しかし通常の `LetExp` が右辺 pure value のとき得る let-polymorphism（`lib/typing/typing.ml:262-269`）と異なり、`MatchExp` の各ブランチのパターン変数は `env_of_mf`（`lib/typing/typing.ml:49-59`）により単相にしか束縛されない。そのため `let (f, g) = ((fun x -> x), (fun x -> x)) in (f 1, g true)` のように、個別には多相な値をタプルパターンで受けた場合は型エラーになる（`f`/`g` がどちらも単相インスタンスにしかならないため）。
+
+（`let (f, g) = (id, id) in (f 1, g true)` のように別々のパターン変数を1回ずつ使うだけなら単相でも問題なく通る。単相性が実際に問題になるのは `let (f, g) = (id, id) in (f 1, f true)` のように同じパターン変数を複数の型でインスタンス化しようとしたとき。）
+
+対応する場合は `env_of_mf`/`MatchExp` の型付け側でブランチごとに generalize するよう変更する必要があり、`match` 全体の意味論に関わる別の大きな変更になる。現状は既知の制限として受容している（回帰テストは `test/test_typing.ml` を参照）。
+
 ## monotonic ref/array coercion の `has_tv` が未設定
 
 `libC/crc.c:325`（`new_mref`）・`crc.c:345`（`new_marray`）で `has_tv` フィールドがコメントアウトされたまま（`/*.has_tv = TODO yet, */`）になっており、実質 0 固定。`CMRef`/`CMArray` の runtime crc が型変数を含んでいても `has_tv` に反映されない。non-monotonic 版（`new_ref`/`new_array`）は `c1->has_tv | c2->has_tv` を正しく設定しているのと対称性が崩れている。影響範囲は未調査。

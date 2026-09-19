@@ -42,6 +42,10 @@ module Static = struct
     ["4.5 >. 3.5", "bool", "true"];
     ["3.5 >=. 3.5", "bool", "true"];
     ["-.1.5", "float", "-1.5"];
+    ["1.28e1", "float", "12.8"];
+    ["9.5e-4", "float", "0.00095"];
+    ["1e5", "float", "100000."];
+    ["1E2", "float", "100."];
   ]
 
   let if_then_else = [
@@ -78,6 +82,12 @@ module Static = struct
 
   let sequence = [
     ["(); 1 + 2", "int", "3"];
+  ]
+
+  let begin_end = [
+    ["begin 1 + 2 end", "int", "3"];
+    ["begin let x = 1 in x end + 1", "int", "2"];
+    ["begin print_int 1; print_int 2 end", "unit", "()"];
   ]
 
   let let_poly = [
@@ -182,6 +192,18 @@ module Static = struct
     ["1, 2, 3", "int * int * int", "(1, 2, 3)"];
     ["(1, true), 2", "(int * bool) * int", "((1, true), 2)"];
     ["let f x y = x, y in f 1 true", "int * bool", "(1, true)"];
+    ["let x, y = 1, true in x", "int", "1"];
+    ["let (x, y) = 1, true in y", "bool", "true"];
+    ["let (a, b, c) = (1, true, 2) in a + c", "int", "3"];
+    ["let (_, y) = (1, 2) in y", "int", "2"];
+    ["let (a, (b, c)) = (1, (2, 3)) in a + b + c", "int", "6"];
+  ]
+
+  let arrays = [
+    ["let a = [| 1; 2; 3 |] in a.(0)", "int", "1"];
+    ["let a = [| 1; 2; 3 |] in a.(2)", "int", "3"];
+    ["let a = [| 1; 2; 3 |] in Array.length a", "int", "3"];
+    ["let a = [| [| 1 |]; [| 2; 3 |] |] in Array.length a", "int", "2"];
   ]
 
   let refs = [
@@ -207,6 +229,25 @@ module Static = struct
     ["ignore true", "unit", "()"];
     ["succ (succ 1)", "int", "3"];
     ["prec (prec 10)", "int", "8"];
+    ["sqrt 9.0", "float", "3."];
+    ["exp 0.0", "float", "1."];
+    ["log 1.0", "float", "0."];
+    ["round 2.6", "float", "3."];
+    ["fmin 1.5 2.5", "float", "1.5"];
+    ["fmax 1.5 2.5", "float", "2.5"];
+    ["random_init 1; let x = random_int 100 in x >= 0 && x < 100", "bool", "true"];
+    ["random_init 1; let x = random_float 10.0 in x >=. 0.0 && x <. 10.0", "bool", "true"];
+    ["list_length (1 :: 2 :: 3 :: [])", "int", "3"];
+    ["list_length ([] : int list)", "int", "0"];
+    ["list_map (fun x -> x + 1) (1 :: 2 :: 3 :: [])", "int list", "2 :: 3 :: 4 :: []"];
+    ["list_fold_left (fun acc x -> acc + x) 0 (1 :: 2 :: 3 :: 4 :: [])", "int", "10"];
+    ["list_init 4 (fun i -> i * i)", "int list", "0 :: 1 :: 4 :: 9 :: []"];
+    ["list_mapi (fun i x -> i + x) (10 :: 20 :: 30 :: [])", "int list", "10 :: 21 :: 32 :: []"];
+    ["list_iteri (fun i x -> ()) (1 :: 2 :: [])", "unit", "()"];
+    ["array_to_list (Array.make 3 7)", "int list", "7 :: 7 :: 7 :: []"];
+    ["array_iteri (fun i x -> ()) (Array.make 3 0)", "unit", "()"];
+    ["Array.length (Array.init 5 (fun i -> i))", "int", "5"];
+    ["array_to_list (Array.init 4 (fun i -> i * 2))", "int list", "0 :: 2 :: 4 :: 6 :: []"];
   ]
 end
 
@@ -415,6 +456,7 @@ let suites ~config =
     "Application (EagerLazy)", EagerLazy.application ~config;
     "Sequence", Static.sequence;
     "Sequence (Gradual)", Gradual.sequence ~config;
+    "Begin/End", Static.begin_end;
     "Dinamic Type Inference", Gradual.dti ~config;
     "Let Polymorphism", Static.let_poly;
     "Let Polymorphism (Gradual)", Gradual.let_poly ~config;
@@ -433,5 +475,6 @@ let suites ~config =
     "Reference", Static.refs;
     "Reference (Gradual)", Gradual.refs ~config;
     "Reference (Monotonic)", Monotonic.refs ~config;
+    "Array", Static.arrays;
     "Functions in Standard Library", Static.stdlibs;
   ]
