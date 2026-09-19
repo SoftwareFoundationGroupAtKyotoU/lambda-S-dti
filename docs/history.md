@@ -7,120 +7,87 @@
 
 ---
 
-## bench のライブラリ化・インタプリタ計測廃止 — `f2a9c0a`（2026-09-02）
+## `--static` 時に不要な monotonic dummy range を登録しないように — `5abbac7`（2026-09-19）
 
-単一ファイルだった `bench/bench.ml`（430行超）を `bench_lib` ライブラリ
-（`bench_config` / `bench_target` / `bench_runner` / `bench_output` / `bench_progress` /
-`bench_json` ＋ `mutate`）と薄い `bench.ml` exe に分割し、`bench_utils.ml`（大半が
-デッドコード）を削除。合わせて:
+`toC_program` が `--static` 指定時にも `monotonic_dummy_range`（後述）を無条件で `RangeManager` に登録していたのを、非 static 時のみに修正。合わせて `compile_test/dotests.sh` の並列実行時競合対策（出力バイナリ名がファイルパス+オプションのみのハッシュのため、同じ組み合わせのテストが同時に走ると衝突する）に `Text file busy` エラーも捕捉してリトライするよう追加。
 
-- **インタプリタ計測を bench から撤去**しコンパイル専用に。旧 `mem_json` の
-  `Failure "interpreter yet"`、未実装の `Text` out_mode、core_bench ベースの
-  メモリ計測（`Fast_alloc` / `CB` / `measure_mem_to_json`）を削除。mutation 後
-  プログラムが型付け→キャスト挿入→評価まで通るかの回帰は新設
-  `test/test_mutate.ml` の差分カバレッジテストへ移した（[todo.md](todo.md) 参照）。
-- **mode 文字列から末尾 `C` を廃止**。旧 `SLHC`/`ALNC`/`STATICENC` の `C` は
-  「compiler（インタプリタ `I` の対）」の意で、計測がコンパイル専用になったため不要。
-  `full_mode_name` は `<S|A|STATIC><E|L><H|N>`（例 `SLH`）を返す。grift の C
-  バックエンドを指す `GRIFTC` の `C` は別意味なので温存。`scripts/benchviz.py` ほか
-  `plot_relative.py` / `report_absolute_times.py` / `report_herman.py` /
-  `report_ratio_extremes.py` の mode 名参照も追従。
-- **JSONL スキーマから `after_insertion` / `after_translation` を廃止**（`benchC/run_grift.py`
-  の該当キー出力と consumer 側 `.get(...)` も整理）。1行は
-  `mode, mutant_index, after_mutate, times_sec, mem, cast, inference, longest` の8フィールド。
-- **`mutate.ml` の TApp 次元を完全除去**。現行 ITGL AST に `TAppExp` は無く、
-  `count_tapp_nodes` はスタブ、`n_tapp` / `sel_tapp` / `apply` の `tappc` は常に空を
-  引き回す死んだ次元だった。併せて未使用の `drop` / `IntMap` を削除。
-- **`samples/` ツリーを再編**: `samples/src/` → `samples/src_gradti/{typed,untyped}/{original,grift_benchmark}/`、
-  `samples/src_grift/` も `{original,grift_benchmark}/` に整理。ベンチ対象名を
-  `-mono`（ハイフン）に統一し `samples/input/*_mono*.txt` をリネーム、
-  `matmult_fs.txt` / `quicksort_fs.txt` / `array_fs.txt` を追加。
-- 設定の一部を CLI フラグ化（`--out json|jsonl` / `--list`）。
+## deref/subst/get/put 向けの効率的な coercion 生成パス — `46a5692`（2026-09-19）
 
-## clang 最適化レベルの切り替え — `a2c97e2`（2026-08-08）
+monotonic reference/array の `Deref`/`Subst`/`Get`/`Put` は、それまでランタイムの `make_s_coercion`（C 関数、実行時型情報 `ty*` の木を毎回たどって `crc` を組み立てる）を毎アクセス呼んでいた。この commit で `toC.ml` に `make_s_coercion_call` を追加し、静的に分かっている片方の型 `u`（ITGL の型注釈から来る）をコンパイル時に再帰的に分解し、`TyDyn` との合流点（実行時 RTTI のタグ判定が必要な葉）だけ `make_s_coercion_from_dyn`/`_to_dyn` 等の専用 C 関数へ、残りは `wrap_list`/`wrap_tuple`/`wrap_fn` で直接組み立てる C コードを生成するように変更（[Phase H の「capp のショートサーキット最適化」](history/phase-h-ref-array-bench-refactor.md)と同じ「静的に分かる部分をインライン展開し、動的な葉だけ実行時ディスパッチに落とす」設計）。`libC/crc.c`/`crc.h` に対応する `make_s_coercion_from_ground`/`to_ground`/`from_mref`/`to_mref`/`from_marray`/`to_marray` 等の分解済み API を追加。
 
-`Config.t` の `opt_file` フィールドを `file` にリネームし、新たに `opt_level : string`（`-O0`/`-O1`/`-O2`/`-O3`（デフォルト）/`-Os`/`-Oz`/`-Ofast`）を追加。`Config.create` で `valid_opt_levels` に対する妥当性検査を行う。`bin/main.ml` に対応する CLI フラグ（`-O0`〜`-Ofast`）を追加し、`lib/backend/builder.ml` の `build_clang_cmd` はこれまで各箇所にハードコードしていた `-O3` を `config.opt_level` から埋め込むように変更（bench 経由の profile ビルドは `-O0` 固定）。`bench/bench.ml`・`compile_test/dotests.sh` も新しい `file`/`opt_level` 引数名に追従。
+## suspend フラグの導入・`toplevel_coerce_*` → `apply_coerce_*` リネーム — `4de44a7`（2026-09-18）
 
-## README にシンタックスリファレンスを追加 — `bac28d9`（2026-08-07）
+`coerce` に `uint8_t suspend` 引数を追加。monotonic ref/array への coercion 適用時、`suspend=1` なら従来通り `sc_push`（`consume()` まで遅延させる suspended-cast キュー、[Phase H の Reference 実装](history/phase-h-ref-array-bench-refactor.md)を参照）に積むが、`suspend=0` なら新設のヘルパー `ref_apply_monotonic_coercion`/`array_apply_monotonic_coercion` で即座に適用する。合わせて `toplevel_coerce_*`（`capp.c`/`capp.h`、[Phase H の capp ショートサーキット最適化](history/phase-h-ref-array-bench-refactor.md)由来）を `apply_coerce_*` に改名（「トップレベルからの呼び出し」ではなく「即時適用」を表す名前へ）。
 
-これまで `README.md` の構文一覧が古く（pattern match/list/tuple/reference/array/loop が未記載）、`TODO.md` の内容は古い課題メモが中心だった。README に pattern matching（`match`/`function`、変数・リテラル・wildcard・list/tuple パターンとその入れ子）、list（`[e1; e2; ...]`, `::`）、tuple、reference（`ref`/`!`/`:=`）、array（`Array.make`/`.()`/`Array.length`）、loop（`for`/`while`、いずれも `fun`/`let rec` への脱糖）の構文と、対応する型構文（`list`/`tuple`/`ref`/`array`）を追記。合わせて `TODO.md` を `memo.md` にリネームし、古い内容を削除（現状の残作業は [todo.md](todo.md) に一元化されている）。
+## monotonic coercion 生成のバグ修正・静的配置・最適化（09-07〜09-16）
 
-## capp のショートサーキット最適化 — `e04b71e`（2026-08-07）
+DTI のコア（型変数の実体化と coercion 合成）に対する一連のバグ修正・最適化。
 
-`lib/backend/static_manage.ml` に `fast_inj`/`fast_proj`/`fast_proj_tp` ハッシュテーブルを追加し、`Let (x, Coercion c, ...)` の形で束縛された coercion `c` が「単純な injection」「単純な projection（tag/tuple）」のパターンに一致する場合、変数名 `x` をそのパターンに登録（`register_fast_crc`）。
+- **c41fbf6**（09-07）「optimize for alloc crc_id」: `crc_id`（恒等 coercion）割り当ての最適化
+- **74b8a9f**（09-10）「optimize the CID;;CID case」: `compose` の `CId ; CId` ショートカットを簡素化
+- **15a5556**（09-11, WIP）: `libC/crc.c` の coercion intern table（hash-consing 用）とcompose メモ化キャッシュを、固定サイズのグローバル配列からポインタ + 遅延 `calloc`（`ensure_intern_table`/`ensure_compose_cache`）に変更し、`set_static_crcs` で登録された静的 crc 群を intern table 構築前にも線形探索でヒットさせられるようにした。`compose` を `compose`（`crc_id` ショートカット + `PROFILE` 時の再帰深さ計測）と `compose_body`（本体）に分離
+- **2291694**（09-11）「add reset_crc to set_ty」: `set_ty`（`toC.ml`）に `reset_crc` を追加
+- **7d941ca**（09-14）「FIX: add returning id in the tv coercion composition case」: 型変数の coercion 合成で `crc_id` を返し忘れていたケースを修正
+- **4e6668a**（09-16）「FIX id;;;id bug, id;;;tv bug」: `CId ; CId ; ...`・`CId ; ...; CTvInj` のような合成パターンでの不具合を修正（`libC/capp.c`/`crc.c`/`crc.h`/`ty.c`）
+- **c00201d**（09-16）「FIX: locate tmp coercion in static region」: `static_manage.ml`/`toC.ml`/`pipeline.ml` で、一時的な coercion 変数を静的領域に正しく配置するよう修正
+- **1b73f10**（09-18）「FIX: more efficient translation: choose None when the ref type is static」: `translate.ml` で、ref の型が静的に確定している場合は deref/subst の型注釈に `None` を選ぶよう変更（前述の deref/subst 高速パスが「型注釈なし＝高速パス」を判定できるようにするための下地）
 
-`toC.ml` の `Cls.CApp (y, z)` 変換時にこのテーブルを引き、該当すれば汎用の `coerce()`/`toplevel_coerce()` 呼び出しではなく、専用の軽量関数（`toplevel_coerce_inj`/`toplevel_coerce_proj`/`toplevel_coerce_proj_tp`、`libC/capp.h`/`capp.c`）を直接呼ぶコードを生成する。これにより injection/projection の大半のケースで crc 構造体の動的ディスパッチを回避できる。
+## `for`/`while` をネイティブ C の `for`/`while` 文へコンパイル — `17101bc`/`6d9ea4d`（2026-09-14）
 
-以前の CLAUDE.md には「injection 側のみシングルトン化済み、projection 側は blame 情報を持つため未着手」という TODO が書かれていたが、この commit で projection 側（tag 単体・tuple 双方）にも対応した。ただし「シングルトン化」ではなく「静的に判別可能なパターンを検出してインライン展開する」という別アプローチである点に注意（[todo.md](todo.md) 参照）。
+[Phase H の Array 実装](history/phase-h-ref-array-bench-refactor.md)の際に「`fun`/`let rec` への脱糖のみで新規 AST ノードなし」として追加された `for`/`while` を、`ForExp`/`WhileExp`（ITGL/CC）→ `For`/`While`（KNorm/Cls）→ `SFor`/`SWhile`（C 出力）という専用 AST ノードに置き換え、パーサレベルの脱糖（クロージャ呼び出し + 再帰）をやめてパイプライン全段で直接扱うようにした。C バックエンドは実際の `for (...)`/`while (...)` 文を出力するため、ループ本体を毎回クロージャ呼び出しする際のオーバーヘッドがなくなる。型推論（`typing.ml`）・翻訳（`translate.ml`）・k-正規化・クロージャ変換・`fv`/`ftv`/`subst`/`fresh_tv`/`normalize`・pretty-printer まで全段の対応が必要になった大きめの変更。
 
-## 二項演算子の表現統一 — `aa5e531`（2026-08-06）
+## ベンチマークの並列コンパイル化・`builder.ml` の分割（09-06〜09-18）
 
-演算子ごとに別コンストラクタを持つ AST（`Add`/`Sub`/... 相当）を `BinOp of binop * exp * exp` に統一。KNorm/Cls/toC/translate/eval/pp/fv/subst 等、パイプライン全段にまたがる変更。新しい二項演算子の追加や既存演算子の挙動変更が1箇所（`binop` 型とそのハンドラ）に閉じるようになった。
+計測フェーズ（直列でないと正確な時間計測ができない）とコンパイルフェーズ（並列化してよい）を分離する目的で、`lib/backend/builder.ml`（単一 clang コマンドの組み立てと実行の両方を持っていた）を分割:
 
-## Array（`TyArray` / `Array.make` / `.()` / `Array.length`）— 2026-07-25 〜 2026-08-06
+- `lib/backend/builder.ml` — `build_clang_cmd`（clang コマンド文字列の組み立て）と `unique_base`（ファイル名+モードからの一意なベース名生成）のみを残す
+- `lib/backend/runner.ml`（新設） — 単一プログラムのビルド・実行（`build_run`、`bin/main.ml` の `-c` モードが使う）
+- `lib/bench/bench_builder.ml`（新設） — `job list`（out_path + コマンド文字列）から Makefile を生成し `make -j<N> -k --output-sync=target` を1回呼ぶことで、複数の clang 呼び出しをまとめて並列コンパイルする機構（`.DELETE_ON_ERROR:` で失敗ジョブの生成物を自動削除するため、`Sys.file_exists job.out_path` だけで成否判定できる）。`-j` の既定値は `nproc - 1`
+- `lib/bench/bench_compiler.ml`（新設、約480行） — ベンチ対象ごとの mutant 生成・C ソース生成・ジョブ列挙・（`compile_dynamize`/`compile_static`/`compile_grift` 等）を担当。実行（計測）は分離された `lib/bench/bench_runner.ml` が、コンパイルが全ターゲット完了した後で直列に行う
 
-`ref` と同じ設計パターン（`CArray of coercion * coercion` / `CMArray of ty * ty`）で配列を追加。
+付随して:
+- **d21a368**（09-11）: ベンチ実行にウォームアップ（`warmup = 5`）を追加し、`benchC/bench_json.c` の `update_json_file_profile` を整理
+- **af65c0a**（09-18）: `crc_active`（`not config.intoB && not config.static`）を計測条件の判定に使うよう修正し、`intoB`/`static` 時に誤って crc 関連の指標を計測・出力していた不具合を修正
+- **ce7a74b**（09-18）「FIX: CI」: opam キャッシュキーに `-v2` を付与（`setup-ocaml` の opam レイアウト非互換対策）、`opam update` を1回リトライ、`OPAMCONFIRMLEVEL=unsafe-yes` で非対話プロンプトを自動承認
 
-- `c3480d8`「add Array.length」（08-06）: `LengthExp` を全パイプライン段に追加。`compile_test/original/array/` にテスト一式を新設
-- `c14f5ff`「add while, for, and benchmarks for array」（08-06）: `for`/`while` 構文をパーサレベルの脱糖として追加（新規 AST ノードなし）。`bench/` に array 用ベンチマークとサンプル（`matmult.ml`/`quicksort.ml`/`explosion_DTI.ml` 等）を追加
-- `fceaaf0`（07-27）: `compile_test/dotests.sh` の高速化、`builder.ml` 拡張
-- `f7dfb38`「complete array implementation」（07-27）: k-正規化・クロージャ変換・C バックエンド（`libC/arr.c`/`arr.h` 新設、`capp.c`/`crc.c`/`ty.c` 拡張）まで含めフルパイプライン対応完了
-- `013159b`〜`f653ef8`（07-25, 07-26）: ITGL/ty/coercion への `TyArray` 追加、lexer/parser 対応、CC の eval、DTI 対応
+`d055fa7`（09-18）で grift 側（`bench_grift.ml`）にも同じ並列コンパイル機構を適用。
 
-## `lib/utils/` の再構成 — 2026-07 中旬〜下旬
+## mutant × mode の正当性を検証するテストハーネスを追加 — `581f9d9`/`ccc68cd`（2026-09-06, 09-18）
 
-`compose`/`normalize_coercion` 等が `lib/interpreter/eval.ml` に同居していた構成から、以下のようにファイル分割された（現行の正確なファイルマップは [CLAUDE.md](../CLAUDE.md) の「主要ファイルと役割」を参照）:
+- **ccc68cd**（09-06）「show correct result of mutation」: mutation は mutant AST を pretty-print してソースへ戻し再コンパイルする方式のため、pretty-printer のバグがそのままミュータントの意味を壊しうる。暗黙型注釈の関数（`Impl`）を明示注釈として印字していた、`let rec` の多引数カリー化関数を正しく再構成できていなかった等の `lib/utils/pp.ml` の不具合を修正（`FixExp` は直接印字せず `let rec` の一部としてのみ扱うよう変更）。`parser.mly`/`fresh_tv.ml`/`normalize.ml`/`typing.ml`/`translate.ml` も関連修正
+- **581f9d9**（09-18）「add mutation tests」: `test/check_mutants.ml`（新設 exe）と `compile_test/mutation_test.sh` を追加。全 mutant × 全 mode（`--eager`/`--lazy` × `--hash`/`--no-hash` × `--guarded`/`--monotonic`、`--dynamize`/`--static`）の標準出力を、ベンチ対象ごとに人手で登録した正解値と突き合わせる end-to-end 正当性テスト。`compile_test/dotests.sh` と同じ思想だが、対象は `lib/bench/*` の mutation 機構自体（`test/test_mutate.ml` の ML 側差分カバレッジとは別に、実際にコンパイル・実行した結果まで検証する）
 
-- `lib/utils/coercion.ml` — `compose` などの coercion 演算
-- `lib/utils/unify.ml` / `type_utils.ml` — 型の unify・補助演算
-- `lib/utils/modify/`（`fresh_tv.ml` / `normalize.ml` / `subst.ml`）— AST を書き換える系の関数群
-- `lib/utils/var/`（`fv.ml` / `ftv.ml` / `tv.ml`）— 自由変数・自由型変数・型変数収集系
+## grift ベンチマーク対象の制限・monotonic/guarded 切り替え・サンプル整備（09-04〜09-18）
 
-過去バージョンの CLAUDE.md はこれ以前のフラットな `lib/utils/*.ml` 構成を前提に書かれていたため、ファイルパスの記述が古くなっていた（本ドキュメント作成時に修正）。
+- **2338bbc**（09-18）「add restriction for each benchmarks」/**e24dcb7**（09-18）「add restriction for grift benchmarks」: `bench_config.ml`/`bench_target.ml` に、特定のベンチ対象を特定のモード組み合わせ（未対応の評価戦略や grift 側で計測不能なケースなど）から除外する仕組みを追加
+- **4a19f0f**（09-18）「add switch for monotonic / guarded to bench」: `bin/bench.ml` に `--guarded`/`--monotonic` フラグを追加し、ベンチマークの reference/array 意味論を固定できるように（`test/check_mutants.ml` にも同名フラグがある）
+- ベンチマークサンプルの追加・修正: **c179807**（array/matmult/quicksort/tak の grift 側サンプルと church_mono/church_poly 入力を追加）、**8d91774**（grift の array/quicksort サンプル修正）、**20c84c0**（ベンチマークが複数プログラムの列を扱えるように、`pipeline.ml`/`pipeline.mli` 変更）、**eb84c11**（09-10、quicksort 等の入力データを大幅拡大）、**2243675**（array 入力の変更）、**0a59fe3**/**46f2dac**（church-2/church-4 サンプルの追加・修正）
 
-## Reference（`ref` / `!` / `:=`）— 2026-05-27 〜 2026-07-25
+## 型変数(tvs)最適化・`fresh_tv` タイミングの変更 — `84bb60f`/`448d270`（2026-09-03, 09-04）
 
-`CRef of coercion * coercion`（読み出し逆変換 `c_r` + 書き込み変換 `c_w`）と `CMRef of ty * ty`（monotonic 版、型変数の一方向インスタンス化のみ許す）の2種類の coercion で reference を表現。`eed500e`「add refs in syntax and frontend」（05-27）が起点で、途中に下記の issue1/2 対応（多相関数のバグ修正）を挟みつつ `9ac0e3b`（07-25）まで続いた。
+`bin/main.ml` に `--tvs_opt_off` フラグ（既定で最適化 on）を追加し、`Config.t` に `tvs_opt` フィールドを新設。`lib/backend/closure.ml`/`kNormal.ml`/`lib/utils/var/ftv.ml` に、クロージャが実際に使わない型変数を除去する最適化を追加。合わせて `fresh_tv.ml`（156行の書き換え）で型変数のリフレッシュ（一意な名前への付け替え）を行うタイミングをパイプライン内で見直し、進捗表示（`Bench_progress`）も正しいタイミングで出るよう修正。
 
-- **M1**: `pp_coercion`/`subst_coercion`/`type_of_coercion`/`unify TyRef` の基盤整備
-- **M2**: ITGL → CC 翻訳（RefExp/DerefExp/SubstExp）+ CC インタプリタ eval + CC 型検査 + `tv_renew`
-- **M3**: `compose` の `CRef`/`CMRef` 対応 + `cast TyRef`。monotonic は Deref/SubstExp の `unify_meet` 機構に透過的に任せ、non-monotonic は `CastRefV` でラップして force 時に解決。このタイミングで「`SubstExp` が代入値でなく古いセルの中身に write coercion を適用していた」バグを修正
-- **M4**: k-正規化・クロージャ変換 → C バックエンド。`libC/ref.h`/`ref.c` を `STATIC`/`MONOTONIC`/coercion-wrap 分岐で実装、`capp.c` に `cast()` の `TYREF`・`coerce()` の `REF`（monotonic は `sc_push`/`consume` による suspended-cast キュー）を追加。`crc.c` に `compose_refs`・monotonic 版 `make_s_coercion`、`ty.c` に `unify_meet`/`ty_find`（型変数の union-find 経路圧縮）を実装
-- 実装レビューで見つかったバグ（`tget`/`hd`/`tl` が入れ子 monotonic ref の `sc_push` 後に `consume()` を呼んでいなかった、`unify_meet`/`make_s_coercion` の `SUBSTITUTED` ケース漏れ、`make_s_coercion` の `TYTUPLE → DYN` で `G_AR` を誤用していた等）はその場で修正済み
+## bench を `lib/bench/` + `bin/bench.ml` へ移行、grift 計測を Python から OCaml へ移植 — `f9ff6ee`（2026-09-04）
 
-`CMArray`（前述の array 実装）は `CMRef` と対称的な設計として追加された。
+トップレベルの `bench/` ディレクトリ（OCaml ライブラリ）を廃止し、`lib/bench/`（ライブラリ）+ `bin/bench.ml`（薄い CLI エントリ、`bin/main.ml` と同じ `bin/` 配下）へ統合。合わせて `benchC/run_grift.py`（Python、429行、grift ベンチマークの mutate・実行・計測を担っていたスクリプト）を削除し、同等の機能を `lib/bench/bench_grift.ml`（OCaml、359行）として全面移植。`mutate.ml` も `lib/bench/` に移動。`lib/pipeline.mli` を新設し `pipeline.ml` の公開インターフェースを明示化。`test/test_interpreter.ml` もこの移動に追従。
 
-## 多相関数のバグ修正（issue1 / issue2）— 2026-06-04〜2026-06-11
+（09-04 の同日に `.gitignore` へ `__pycache__`/`*.pyc` を追加した2commit があるのも、この Python スクリプト削除の後始末）
 
-ref 実装の途中に割り込む形で行われた、`ref` とは別テーマの作業。ldti コンパイラが一部の多相関数宣言に対応できていなかった問題（`let f x :'a = x` のような宣言を `f (); f 3` のように使うと型エラーになる、旧 `TODO.md` にあった既知の課題）への対応として、クロージャの型変数まわり（`fundef`/`funty`/`AppTyFun`/`MakeTyCls`）を再設計した。
+## CLAUDE.md と docs/ を追加 — `a9c8901`（2026-09-18）
 
-- **7277a4e** (2026-06-11) 不要なコードを削除
-- **6648ba7**/**1c9b2dc** (2026-06-04) issue1 用コンパイラテストを追加・修正
-- **eda9dae**/**ed55367** (2026-06-04) issue2 用のテスト・インタプリタテストを追加
-- **7e09faf** (2026-06-04) funty 対応の修正
-- **56ae939** (2026-06-04) `AR` を見るべきところを `LI` で見ていたバグを修正
-- **2107f51**/**408225a** (2026-06-04) `tyfun`/`tvs` に伴うテスト修正
-- **7e1947f** (2026-06-04) match の型付けを refine、tvs 対応
-- **132d23c** (2026-06-04) tvs 周りの修正
-- **ff06bab** (2026-06-04) eval を tvs/fundef 対応に修正
-- **d24f977** (2026-06-04) int の役割に応じてリネーム、funty 機能を追加
-- **b75f824** (2026-06-04) funty の機能追加、クロージャ変換を fundef でまとめる
-- **6ad8642** (2026-06-04) kNormal を fundef 対応に修正
-- **e755b7e** (2026-06-04) tvs・FunTy を用いて翻訳を修正
-- **604ad33** (2026-06-04) `let_tyabses` を `tyabses` にリネーム、構文変更に追従
-- **c044622** (2026-06-04) `AppTyFun`/`MakeTyCls`/`FundefTy` を追加（issue2）、kNormal に fundef を追加、`Let` から tvs を除き `Funs` へ
-- **ecf1386** (2026-05-29) `A` を `Dual` にリネーム
+このファイルを含む `CLAUDE.md`/`docs/howto.md`/`docs/todo.md`/`docs/history.md`/`docs/history/phase-{a..g}-*.md` が最初に追加された commit。それ以前のこのドキュメント群には版がない。
 
 ---
 
-## プレヒストリ（ref / array 以前）
+## プレヒストリ（Phase H 以前）
 
-上記より前のすべての作業（2024-11-11〜2026-05-21、著者 `yukioshima11124457@gmail.com` による commit）は、量が多いため作業内容ごとに別ファイルへ分割している。**新しいフェーズから順に**並べる（＝一番下が最初期）。
+上記より前のすべての作業（2024-11-11〜2026-09-02、著者 `yukioshima11124457@gmail.com` による commit）は、量が多いため作業内容ごとに別ファイルへ分割している。**新しいフェーズから順に**並べる（＝一番下が最初期）。
 
-1. [Phase G — 論文実験・pipeline統合・タプル対応](history/phase-g-pipeline-tuple.md)（2026-04-01〜2026-05-21）
-2. [Phase F — grift比較ベンチマーク・静的最適化](history/phase-f-grift-optimization.md)（2026-02-03〜2026-03-16、最大のフェーズ）
-3. [Phase E — lambda-S-dtiへの命名統一・CI整備・fully-staticコンパイラ](history/phase-e-rename-ci.md)（2026-01-02〜2026-01-23）
-4. [Phase D — Cバックエンド立ち上げ・ベンチマーク基盤](history/phase-d-cbackend-bootstrap.md)（2025-09-27〜2025-12-31）
-5. [Phase C — K正規化体系の修正](history/phase-c-knormal-fix.md)（2025-05-07〜2025-06-26）
-6. [Phase B — GC導入・多相対応・lambdaS1DTIインタプリタ完成](history/phase-b-gc-polymorphism.md)（2025-01-06〜2025-04-28）
-7. [Phase A — 最初期: K正規化・クロージャ変換の基礎実装](history/phase-a-foundation.md)（2024-11-11〜2024-12-07、最も古いフェーズ）
+1. [Phase H — Reference/Array実装・utils再構成・bench基盤の整理](history/phase-h-ref-array-bench-refactor.md)（2026-05-27〜2026-09-02）
+2. [Phase G — 論文実験・pipeline統合・タプル対応](history/phase-g-pipeline-tuple.md)（2026-04-01〜2026-05-21）
+3. [Phase F — grift比較ベンチマーク・静的最適化](history/phase-f-grift-optimization.md)（2026-02-03〜2026-03-16、最大のフェーズ）
+4. [Phase E — lambda-S-dtiへの命名統一・CI整備・fully-staticコンパイラ](history/phase-e-rename-ci.md)（2026-01-02〜2026-01-23）
+5. [Phase D — Cバックエンド立ち上げ・ベンチマーク基盤](history/phase-d-cbackend-bootstrap.md)（2025-09-27〜2025-12-31）
+6. [Phase C — K正規化体系の修正](history/phase-c-knormal-fix.md)（2025-05-07〜2025-06-26）
+7. [Phase B — GC導入・多相対応・lambdaS1DTIインタプリタ完成](history/phase-b-gc-polymorphism.md)（2025-01-06〜2025-04-28）
+8. [Phase A — 最初期: K正規化・クロージャ変換の基礎実装](history/phase-a-foundation.md)（2024-11-11〜2024-12-07、最も古いフェーズ）

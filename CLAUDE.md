@@ -36,7 +36,7 @@ Space-efficient coercion による動的型推論（DTI）を特徴とする。
     ▼
 [C コード生成]    lib/backend/toC.ml      (Cls → C)
     ▼
-[C コンパイル]    lib/backend/builder.ml  (clang 呼び出し)
+[C コンパイル]    lib/backend/runner.ml   (clang 呼び出し。コマンド組み立ては builder.ml)
 ```
 
 パイプライン全体は `lib/pipeline.ml` が統括。REPL / ファイル実行は `bin/main.ml`。
@@ -55,6 +55,7 @@ Space-efficient coercion による動的型推論（DTI）を特徴とする。
 - **Tag**: `I | B | U | Fn | Li | Tp n | Rf | Ar` — ground type 識別子
 - **DTI (Dynamic Type Inference)**: `compose` 関数内で `CTvInj ; CProj(tag)` が出会った時に型変数を具体化する
 - **Space-efficient**: Coercion の合成 (`compose`) により冗長な cast を削減
+- **for/while**: 他の多くの構文糖（match の一部等）と異なり `fun`/`let rec` への脱糖ではなく、`ForExp`/`WhileExp`（ITGL/CC）→ `For`/`While`（KNorm/Cls）という専用 AST ノードを持ち、C バックエンドはネイティブの `for`/`while` 文（`SFor`/`SWhile`）を直接出力する
 
 ---
 
@@ -96,15 +97,17 @@ Syntax.Cls.exp   — クロージャ変換後 AST
 | `lib/backend/kNormal.ml` | k-正規化（CC → KNorm）|
 | `lib/backend/closure.ml` | クロージャ変換（KNorm → Cls）|
 | `lib/backend/static_manage.ml` | `toC.ml` 向けの静的管理（ty/range/coercion のシングルトン登録、capp ショートサーキット用の `fast_inj`/`fast_proj`/`fast_proj_tp`） |
-| `lib/backend/toC.ml` | C コード生成（Cls → C）|
-| `lib/backend/builder.ml` | clang 呼び出し（`Resources.*` で絶対パスを取得）|
-| `lib/pipeline.ml` | パイプライン全体の統括 |
+| `lib/backend/toC.ml` | C コード生成（Cls → C）。monotonic ref/array の deref/subst/get/put 向けに、静的な型から coercion 生成 C コードをコンパイル時に組み立てる `make_s_coercion_call` も持つ |
+| `lib/backend/builder.ml` | clang コマンド文字列の組み立て（`build_clang_cmd`）・出力の一意な命名（`unique_base`）。`Resources.*` で絶対パスを取得。実行自体は `runner.ml`（単一プログラム）/ `lib/bench/bench_builder.ml`+`bench_compiler.ml`（ベンチ、並列コンパイル）が担う |
+| `lib/backend/runner.ml` | 単一プログラムのビルド・実行（`-c` モード、`Runner.build_run`） |
+| `lib/pipeline.ml`（+ `pipeline.mli`） | パイプライン全体の統括。`bin/main.ml`/`bin/bench.ml`/テストが共通で使う公開インターフェースを `.mli` で明示 |
 | `bin/main.ml` | REPL / ファイル実行エントリポイント |
 | `libC/` | C ランタイム。`capp.c`/`crc.c`/`ty.c` が coercion 適用の中核、`ref.c`/`arr.c`/`lst.c`/`tpl.c` が各型の実装 |
 | `test/testcases.ml` | インタプリタテストケース本体（`test_interpreter.ml` から10通りの config で実行） |
 | `test/test_typing.ml` | 型推論テスト（OUnit2）|
-| `test/test_mutate.ml` / `test/test_grift.ml` | `bench/mutate.ml`（出現順スロット付番・全 mutant のインタプリタ差分カバレッジ）と `bench/bench_grift.ml`（S式 round-trip・スロット数が ML 側と一致）のテスト |
-| `bench/` | mutation ベンチマーク。`bench_lib`（`bench_config`/`bench_target`/`bench_runner`/`bench_grift`/`bench_output`/`bench_progress`/`bench_json` ＋ `mutate`）＋ 薄い `bench.ml` exe。コンパイル専用。mutation スロットはソース出現順に番号付けし、ML 側（`mutate`）と grift 側（`bench_grift`）で同一の `mutant_index` を共有。詳細は [docs/howto.md](docs/howto.md) |
+| `test/test_mutate.ml` / `test/test_grift.ml` | `lib/bench/mutate.ml`（出現順スロット付番・全 mutant のインタプリタ差分カバレッジ）と `lib/bench/bench_grift.ml`（S式 round-trip・スロット数が ML 側と一致）のユニットテスト |
+| `test/check_mutants.ml` | mutant × mode（eager/lazy × hash/no-hash × guarded/monotonic × dynamize/static）を実際にコンパイル・実行し、標準出力が正解値と一致するかを見る end-to-end 正当性テスト。`compile_test/mutation_test.sh` から呼ぶ |
+| `bin/bench.ml` + `lib/bench/` | mutation ベンチマーク。`lib/bench/`（`bench_config`/`bench_target`/`bench_builder`/`bench_compiler`/`bench_runner`/`bench_grift`/`bench_output`/`bench_progress`/`bench_json`/`mutate`）＋ 薄い `bin/bench.ml`。コンパイル専用。コンパイル（`bench_builder`/`bench_compiler`、並列）と計測（`bench_runner`、直列）を分離。mutation スロットはソース出現順に番号付けし、ML 側（`mutate`）と grift 側（`bench_grift`）で同一の `mutant_index` を共有。詳細は [docs/howto.md](docs/howto.md) |
 
 正確なファイル一覧は `find lib libC -name "*.ml" -o -name "*.c" -o -name "*.h"` で随時確認すること（このリポジトリはファイル配置がしばしば変わるため、本表は目安）。
 

@@ -1,6 +1,6 @@
 # Phase G — 論文実験・pipeline統合・タプル対応（2026-04-01〜2026-05-21）
 
-[docs/history.md](../history.md) の「プレヒストリ」から参照。一つ新しい話題は [Reference (ref) の実装](../history.md#reference-ref--%E3%80%9C2026-05-27-%E3%81%8B%E3%82%89) へ、一つ古い話題は [Phase F](phase-f-grift-optimization.md) へ。
+[docs/history.md](../history.md) の「プレヒストリ」から参照。一つ新しい話題は [Phase H](phase-h-ref-array-bench-refactor.md) へ、一つ古い話題は [Phase F](phase-f-grift-optimization.md) へ。
 
 論文用の実験データ収集（church_compare 等）と並行して、`LS1` を `CC` に統合する・`pipeline.ml` に処理をまとめる・`config` を整理するといった内部構造の整理が進んだ時期。末尾でタプル対応がインタプリタ・コンパイラ双方に入る。
 
