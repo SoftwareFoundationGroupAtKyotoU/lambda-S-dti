@@ -58,7 +58,7 @@ let find_field_owner fname0 =
 %token <Utils.Error.range> MATCH WITH VBAR UNDER
 %token <Utils.Error.range> COMMA
 %token <Utils.Error.range> REF SUBSTITUTE BANG
-%token <Utils.Error.range> ARRAY MAKEARRAY LENGTHARRAY DOT LARROW
+%token <Utils.Error.range> ARRAY MAKEARRAY LENGTHARRAY INITARRAY DOT LARROW
 %token <Utils.Error.range> FOR TO DOWNTO DO DONE WHILE
 
 %token <int Utils.Error.with_range> INTV
@@ -357,6 +357,23 @@ AppExpr :
   | start_r=LENGTHARRAY e=PostfixExpr {
       let r = join_range start_r (range_of_exp e) in
       LengthExp (r, e)
+    }
+  | start_r=INITARRAY e1=PostfixExpr e2=PostfixExpr {
+      (* Array.init n f desugars to:
+         let $n = n in let $f = f in let $arr = Array.make $n ($f 0) in
+         (for $i = 1 to $n - 1 do $arr.($i) <- $f $i done); $arr
+         This reuses Array.make/for/.()<- (already correct for every config,
+         monotonic included) instead of adding a dedicated AST node. *)
+      let r = join_range start_r (range_of_exp e2) in
+      let n_var = Var (r, "$n", ref []) and f_var = Var (r, "$f", ref []) in
+      let arr_var = Var (r, "$arr", ref []) and i_var = Var (r, "$i", ref []) in
+      let fill = AppExp (r, f_var, IConst (r, 0)) in
+      let body = PutExp (r, arr_var, i_var, AppExp (r, f_var, i_var)) in
+      let loop = ForExp (r, "$i", IConst (r, 1), BinOp (r, Minus, n_var, IConst (r, 1)), To, body) in
+      LetExp (r, "$n", e1,
+        LetExp (r, "$f", e2,
+          LetExp (r, "$arr", MakeArrayExp (r, n_var, fill),
+            LetExp (r, "_", loop, arr_var))))
     }
   | PostfixExpr { $1 }
 
