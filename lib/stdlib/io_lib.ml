@@ -53,7 +53,7 @@ let core_read_char = function
 let lib_read_char ~config = Prim_lib.lift1 ~config core_read_char
 
 let builtins : builtin list = [
-    { name = "exit";          impl = Native (lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit));           c_backing = CUnimplemented };
+    { name = "exit";          impl = Native (lib_exit, tysc_of_ty @@ TyFun (TyInt, TyUnit));           c_backing = CImpl "exit_ml" };
     { name = "print_bool";    impl = Native (lib_print_bool, tysc_of_ty @@ TyFun (TyBool, TyUnit));    c_backing = CImpl "print_bool" };
     { name = "print_int";     impl = Native (lib_print_int, tysc_of_ty @@ TyFun (TyInt, TyUnit));      c_backing = CImpl "print_int" };
     { name = "print_float";   impl = Native (lib_print_float, tysc_of_ty @@ TyFun (TyFloat, TyUnit));  c_backing = CImpl "print_float" };
@@ -62,5 +62,5 @@ let builtins : builtin list = [
     { name = "print_newline"; impl = Native (lib_print_newline, tysc_of_ty @@ TyFun (TyUnit, TyUnit)); c_backing = CImpl "print_newline" };
     { name = "read_int";      impl = Native (lib_read_int, tysc_of_ty @@ TyFun (TyUnit, TyInt));       c_backing = CImpl "read_int" };
     { name = "read_float";    impl = Native (lib_read_float, tysc_of_ty @@ TyFun (TyUnit, TyFloat));   c_backing = CImpl "read_float" };
-    { name = "read_char";     impl = Native (lib_read_char, tysc_of_ty @@ TyFun (TyUnit, TyChar));     c_backing = CUnimplemented };
+    { name = "read_char";     impl = Native (lib_read_char, tysc_of_ty @@ TyFun (TyUnit, TyChar));     c_backing = CImpl "read_char" };
   ]

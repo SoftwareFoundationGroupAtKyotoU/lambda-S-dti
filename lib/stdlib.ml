@@ -10,12 +10,16 @@ let builtins : builtin list =
 
 let pervasives ~config =
   let initial_envs = Environment.empty, Environment.empty in
-  let add_to_envs (env, tyenv) builtin = match builtin.impl with
+  let add_to_envs (env, tyenv) builtin =
+    (* CUnimplemented builtins have no C backing, so they must stay out of the
+       environment while compiling -- otherwise they type-check fine (their
+       ITGL/Native definition is still visible here) but later crash deep in
+       the backend when it fails to find their (nonexistent) C name. *)
+    if config.Config.compile && builtin.c_backing = CUnimplemented then
+      env, tyenv
+    else match builtin.impl with
     | Native (f, tysc) ->
-      if config.Config.compile && builtin.c_backing = CUnimplemented then
-        env, tyenv
-      else
-        Environment.add builtin.name (f ~config) env, Environment.add builtin.name tysc tyenv
+      Environment.add builtin.name (f ~config) env, Environment.add builtin.name tysc tyenv
     | ITGL str ->
       let e = Parser.toplevel Lexer.main @@ Lexing.from_string str in
       let e, u = Typing.ITGL.type_of_program tyenv e in

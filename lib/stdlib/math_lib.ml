@@ -33,10 +33,10 @@ let builtins : builtin list = [
     { name = "min";     impl = ITGL "let min x y = if x < y then x else y;;";               c_backing = CImpl "min" };
     { name = "max";     impl = ITGL "let max x y = if x > y then x else y;;";               c_backing = CImpl "max" };
     { name = "abs";     impl = ITGL "let abs x = if x < 0 then -x else x;;";                c_backing = CImpl "abs_ml" };
-    { name = "sqrt";  impl = Native (lib_sqrt, tysc_of_ty @@ TyFun (TyFloat, TyFloat));  c_backing = CUnimplemented };
-    { name = "exp";   impl = Native (lib_exp, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CUnimplemented };
-    { name = "log";   impl = Native (lib_log, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CUnimplemented };
-    { name = "round"; impl = Native (lib_round, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CUnimplemented };
-    { name = "fmin";  impl = ITGL "let fmin x y = if x <. y then x else y;;";            c_backing = CUnimplemented };
-    { name = "fmax";  impl = ITGL "let fmax x y = if x >. y then x else y;;";            c_backing = CUnimplemented };
+    { name = "sqrt";  impl = Native (lib_sqrt, tysc_of_ty @@ TyFun (TyFloat, TyFloat));  c_backing = CImpl "sqrt_ml" };
+    { name = "exp";   impl = Native (lib_exp, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "exp_ml" };
+    { name = "log";   impl = Native (lib_log, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "log_ml" };
+    { name = "round"; impl = Native (lib_round, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CImpl "round_ml" };
+    { name = "fmin";  impl = ITGL "let fmin x y = if x <. y then x else y;;";            c_backing = CImpl "fmin_ml" };
+    { name = "fmax";  impl = ITGL "let fmax x y = if x >. y then x else y;;";            c_backing = CImpl "fmax_ml" };
   ]

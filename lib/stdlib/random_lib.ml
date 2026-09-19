@@ -18,7 +18,7 @@ let core_random_float = function
 let lib_random_float ~config = Prim_lib.lift1 ~config core_random_float
 
 let builtins : builtin list = [
-    { name = "random_init";  impl = Native (lib_random_init, tysc_of_ty @@ TyFun (TyInt, TyUnit));     c_backing = CUnimplemented };
-    { name = "random_int";   impl = Native (lib_random_int, tysc_of_ty @@ TyFun (TyInt, TyInt));       c_backing = CUnimplemented };
-    { name = "random_float"; impl = Native (lib_random_float, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CUnimplemented };
+    { name = "random_init";  impl = Native (lib_random_init, tysc_of_ty @@ TyFun (TyInt, TyUnit));     c_backing = CImpl "random_init" };
+    { name = "random_int";   impl = Native (lib_random_int, tysc_of_ty @@ TyFun (TyInt, TyInt));       c_backing = CImpl "random_int" };
+    { name = "random_float"; impl = Native (lib_random_float, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CImpl "random_float" };
   ]
