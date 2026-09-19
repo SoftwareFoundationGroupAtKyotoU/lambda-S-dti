@@ -185,6 +185,7 @@ module ITGL = struct
   type program =
     | Exp of exp
     | LetDecl of id * exp
+    | TypeDecl of id * ty
 end
 
 (** Syntax of the blame calculus with dynamic type inference. *)

@@ -67,6 +67,7 @@ module ITGL = struct
   let normalize_program = function
     | Exp e -> Exp (normalize_exp e)
     | LetDecl (x, e) -> LetDecl (x, normalize_exp e)
+    | TypeDecl (x, u) -> TypeDecl (x, normalize_type u)
 
   let normalize env p u =
     normalize_tyenv env,

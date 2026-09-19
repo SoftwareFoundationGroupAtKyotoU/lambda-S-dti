@@ -442,6 +442,8 @@ module ITGL = struct
       fprintf ppf "let %s = %a"
         x
         pp_exp e
+    | TypeDecl (x, u) ->
+      fprintf ppf "type %s = %a" x pp_ty u
 end
 
 module CC = struct

@@ -263,6 +263,7 @@ module ITGL = struct
         if tvs <> [] then env, CC.LetDecl (x, CC.FunExp (tvs, CC.FunTy f)), u
         else env, CC.LetDecl (x, f), u
       end
+    | TypeDecl (_, _) -> env, CC.LetDecl ("_", CC.UConst), TyUnit
 end
 
 module CC = struct

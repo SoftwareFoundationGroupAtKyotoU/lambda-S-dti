@@ -40,6 +40,10 @@ let rec repl ppf lexbuf states ~config ~state =
       fprintf err_formatter "Parser.Error: unexpected token %s@." token;
       Utils.Lexing.flush_input lexbuf;
       state, states
+    | Type_env.Parser_bug message ->
+      fprintf err_formatter "Parser_bug: %s@." message;
+      Utils.Lexing.flush_input lexbuf;
+      state, states
     | Typing.Type_error message ->
       fprintf err_formatter "Type_error: %s@." message;
       state, states

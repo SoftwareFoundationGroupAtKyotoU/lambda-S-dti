@@ -25,14 +25,14 @@ let opt_ty_to_annot_ty = function
 
 let make_seq r e1 e2 = LetExp (r, "_", AscExp (range_of_exp e1, e1, TyUnit), e2)
 
-exception Parser_bug of string
+exception Parser_bug = Type_env.Parser_bug
 
 %}
 
 %token <Utils.Error.range> LPAREN RPAREN SEMI SEMISEMI COLON EQ QUOTE
 %token <Utils.Error.range> PLUS MINUS STAR DIV MOD LT LTE GT GTE NEQ LAND LOR
 %token <Utils.Error.range> PLUSDOT MINUSDOT STARDOT DIVDOT EQDOT NEQDOT LTDOT LTEDOT GTDOT GTEDOT
-%token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION
+%token <Utils.Error.range> LET REC IN FUN IF THEN ELSE FUNCTION TYPE
 %token <Utils.Error.range> INT BOOL UNIT FLOAT STRING CHAR QUESTION RARROW
 %token <Utils.Error.range> TRUE FALSE
 %token <Utils.Error.range> COLCOL LBRACKET RBRACKET LIST
@@ -93,6 +93,15 @@ Program :
       | (y, Some u1) :: params ->
         let e, u2 = List.fold_right (param_to_fun_ty r) params (e, u2) in
         LetDecl (x.value, FixExp (r, x.value, (y.value, Expl, u1), (annot2, u2), e))
+    }
+  | TYPE x=ID EQ u=Type SEMISEMI {
+      let ftvs = Ftv.ftv_ty u in
+      if not (TV.is_empty ftvs) then
+        raise (Parser_bug (Printf.sprintf
+          "type %s: type declarations may not contain 'a-style type variables (found %d free)"
+          x.value (TV.cardinal ftvs)));
+      Type_env.tynameenv := Environment.add x.value u !(Type_env.tynameenv);
+      TypeDecl (x.value, u)
     }
 
 Expr :
@@ -368,6 +377,10 @@ SimpleType :
         let u = fresh_tyvar () in
         tyvenv := Environment.add x.value u !tyvenv;
         u
+    }
+  | x=ID {
+      try Environment.find x.value !(Type_env.tynameenv)
+      with Not_found -> raise (Parser_bug (Printf.sprintf "unbound type name %s" x.value))
     }
   // | LBRACKET u=Type RBRACKET { TyList u }
   | LPAREN u=Type RPAREN { u }

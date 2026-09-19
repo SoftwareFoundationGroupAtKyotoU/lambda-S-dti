@@ -31,6 +31,7 @@ let change_state_program program state =
 
 (* --- public API --- *)
 let init_state program ~config =
+  Type_env.reset ();
   let env, tyenv, compile_env = Stdlib.pervasives ~config in
   { program; ty = TyVar (-1, { contents = None }); tyenv; env; compile_env }
 
@@ -38,8 +39,10 @@ let bundle_states_ITGL states =
   let rec to_exp = function
     | { program = Syntax.ITGL.Exp e; _ } :: [] -> e
     | { program = Syntax.ITGL.LetDecl _; _ } :: [] -> raise Not_Exp
+    | { program = Syntax.ITGL.TypeDecl _; _ } :: [] -> raise Not_Exp
     | { program = Syntax.ITGL.LetDecl (x, e); _ } :: t ->
       Syntax.ITGL.LetExp (Utils.Error.dummy_range, x, e, to_exp t)
+    | { program = Syntax.ITGL.TypeDecl _; _ } :: t -> to_exp t
     | _ -> raise @@ Compile_bad "exp must appear only at the last position"
   in
   change_state_program (Syntax.ITGL.Exp (to_exp (List.rev states))) @@ List.hd states
@@ -161,7 +164,10 @@ let toC ppf state ~config ~bench =
   str_c
 
 let mutate_all ppf state =
-  let t = match state.program with ITGL.Exp t | ITGL.LetDecl (_, t) -> t in
+  let t = match state.program with
+    | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
+    | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutate_all: TypeDecl not supported"
+  in
   let n_total = Mutate.analyze t in
   let subsets = Mutate.all_subsets_by_length n_total in
   List.map (fun idxs ->

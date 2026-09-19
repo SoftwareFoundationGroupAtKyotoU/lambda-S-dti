@@ -229,4 +229,5 @@ module ITGL = struct
   | LetDecl (id, e) ->
     let e, _ = tv_renew_exp e Syntax.Environment.empty in
     LetDecl (id, e)
+  | TypeDecl (id, u) -> TypeDecl (id, u)
 end

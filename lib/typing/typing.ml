@@ -313,6 +313,7 @@ module ITGL = struct
     | LetDecl (x, e) ->
       let u = type_of_exp env e in
       LetDecl (x, e), u
+    | TypeDecl (x, u) -> TypeDecl (x, u), TyUnit
     with Unify_error msg -> raise @@ Type_error msg
 end
 

@@ -95,6 +95,7 @@ for TEST_DIR in \
   original/float \
   original/string \
   original/char \
+  original/typedecl \
   original/int \
   original/list \
   original/match \

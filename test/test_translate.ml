@@ -7,6 +7,7 @@ let id x = x
 
 module CC_Translation = struct
   let parse str =
+    Type_env.reset ();
     Parser.toplevel Lexer.main @@ Lexing.from_string str
 
   let test_translation =

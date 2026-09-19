@@ -32,6 +32,7 @@ let reservedWords = [
   ("do",       fun r -> Parser.DO r      );
   ("done",     fun r -> Parser.DONE r    );
   ("while",    fun r -> Parser.WHILE r   );
+  ("type",     fun r -> Parser.TYPE r    );
 ]
 
 let range_of lexbuf =

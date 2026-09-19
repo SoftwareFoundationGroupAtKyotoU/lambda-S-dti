@@ -12,6 +12,7 @@ module ITGL = struct
   open Typing.ITGL
 
   let parse str =
+    Type_env.reset ();
     Parser.toplevel Lexer.main @@ Lexing.from_string str
 
   let test_type_of_program =
