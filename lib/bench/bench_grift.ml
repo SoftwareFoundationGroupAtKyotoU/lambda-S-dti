@@ -325,8 +325,17 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr defs groups si subset : grift_p
   write_file perf_f (base_code ^ driver_code itr);
   write_file prof_f (base_code ^ driver_code 1);
   let job extra src out =
+    (* grift --backend C は中間 .c ファイルを Racket の make-temporary-file で
+       TMPDIR (既定 /var/tmp) 直下に作る。このリポジトリが対象とする Racket 7.2 の
+       make-temporary-file は (current-seconds)+(current-inexact-milliseconds) から
+       ファイル名を作るだけで衝突時のリトライを持たないため、make -j で大量の
+       grift プロセスを同時起動すると同一ミリ秒に同名を生成して
+       "with-output-to-file: file exists" で失敗することがある(mutant 数の多い
+       ターゲットほど発生しやすい)。TMPDIR をこの mutant 専用の cdir に向けて
+       プロセス間で温度ディレクトリを共有させないことで衝突自体を無くす。 *)
     let cmd =
-      Printf.sprintf "%s -O 3 %s %s -o %s %s > /dev/null 2>&1" g monotonic_flag extra
+      Printf.sprintf "TMPDIR=%s %s -O 3 %s %s -o %s %s > /dev/null 2>&1"
+        (Filename.quote cdir) g monotonic_flag extra
         (Filename.quote out) (Filename.quote src)
     in
     { Bench_builder.out_path = out; cmd }
