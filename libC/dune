@@ -17,6 +17,8 @@
   (ref.c as libC/ref.c)
   (arr.h as libC/arr.h)
   (arr.c as libC/arr.c)
+  (str.h as libC/str.h)
+  (str.c as libC/str.c)
   (runtime.h as libC/runtime.h)
   (stdlib_macros.h as libC/stdlib_macros.h)
   (stdlib_io.c as libC/stdlib_io.c)

@@ -15,6 +15,7 @@
 #include "ref.h"
 #include "arr.h"
 #include "dbl.h"
+#include "str.h"
 
 #include "app.h"
 #include "capp.h"

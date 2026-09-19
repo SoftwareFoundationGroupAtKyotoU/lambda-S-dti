@@ -17,7 +17,7 @@ type 't state = {
   ty : ty;
   tyenv : tysc Environment.t;
   env : CC.value Environment.t;
-  compile_env : (id Environment.t * tyvar list Environment.t * id Environment.t) * V.t * (id list * int) Environment.t;
+  compile_env : (id Environment.t * tyvar list Environment.t * id Environment.t * TV.t Environment.t) * V.t * (id list * int) Environment.t;
 }
 
 let change_state_program program state =
@@ -113,15 +113,15 @@ let eval ppf ppf_show state ~config =
   { state with env }, x, v
 
 let kNorm_funs ppf state ~config =
-  let (alphaenv, tvsenv, betaenv), _, _ = state.compile_env in
+  let (alphaenv, tvsenv, betaenv, opt_tvs_env), _, _ = state.compile_env in
   print_title ppf "k-Normalization";
   let f, alphaenv = KNormal.CC.alpha_program alphaenv state.program in
   fprintf ppf "alpha: %a@." Pp.CC.pp_program f;
   let f, tvsenv = KNormal.CC.k_normalize_program tvsenv f ~static:config.static in
   fprintf ppf "k_normalize: %a@." Pp.KNorm.pp_program f;
-  let f = 
+  let f =
     if config.tvs_opt then
-      let f = KNormal.KNorm.omit_unused_tv_program Environment.empty f in
+      let f = KNormal.KNorm.omit_unused_tv_program opt_tvs_env f in
       fprintf ppf "omit_unused_tv: %a@." Pp.KNorm.pp_program f;
       f
     else

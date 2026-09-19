@@ -87,8 +87,4 @@
 
 #define STDLIB_EXPORT(n) value n = (value)&f_##n;
 
-/* runtime helper backing the `^` (SConcat) binop -- not a user-visible stdlib
- * binding, so it bypasses the fun_ / closure machinery above entirely. */
-value string_concat(value, value);
-
 #endif // STDLIB_MACROS_H

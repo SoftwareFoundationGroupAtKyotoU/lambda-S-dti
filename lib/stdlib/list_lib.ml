@@ -3,7 +3,7 @@ open Types_lib
 let builtins : builtin list = [
     { name = "list_length";
       impl = ITGL "let rec list_length l = match l with [] -> 0 | _ :: t -> 1 + list_length t;;";
-      c_backing = CUnimplemented };
+      c_backing = CImpl "list_length" };
     { name = "list_map";
       impl = ITGL "let rec list_map f l = match l with [] -> [] | h :: t -> f h :: list_map f t;;";
       c_backing = CUnimplemented };
