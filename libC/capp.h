@@ -48,14 +48,79 @@ static inline void update_longest(int new) {
 }
 #endif
 
-static inline uint8_t tag_of(value v) {
-	uint8_t tag = v & 0b111;
+// Physical 3-bit tag embedded in the low bits of a `value` -- strictly the 8 patterns 000-111.
+// Kept as its own type, distinct from `ground_ty` (the logical dynamic type), because one
+// physical code -- PTAG_BOXED -- is shared by every ground type whose payload doesn't fit
+// inline (see `boxed` below), and PTAG_BOOL_UNIT is likewise shared by G_BOOL and G_UNIT.
+// Order must match `ground_ty` (types.h)'s first 8 members; converted via
+// ptag_of_ground_ty/ground_ty_of_tag below rather than relied on implicitly.
+typedef enum ptag : uint8_t {
+	PTAG_FN,
+	PTAG_LI,
+	PTAG_TP,
+	PTAG_RF,
+	PTAG_AR,
+	PTAG_INT,
+	PTAG_BOOL_UNIT,
+	PTAG_BOXED,
+} ptag;
+
+static inline ptag ptag_of_ground_ty(ground_ty g) {
+	switch (g) {
+		case G_FN: return PTAG_FN;
+		case G_LI: return PTAG_LI;
+		case G_TP: return PTAG_TP;
+		case G_RF: return PTAG_RF;
+		case G_AR: return PTAG_AR;
+		case G_INT: return PTAG_INT;
+		case G_BOOL:
+		case G_UNIT: return PTAG_BOOL_UNIT;
+		case G_FLOAT: return PTAG_BOXED;
+	}
+}
+
+static inline ground_ty ground_ty_of_tag(ptag tag) {
 	switch (tag) {
-		case G_BOOL: {
-			if (v == (0b10000 | G_BOOL)) return G_UNIT;
+		case PTAG_FN: return G_FN;
+		case PTAG_LI: return G_LI;
+		case PTAG_TP: return G_TP;
+		case PTAG_RF: return G_RF;
+		case PTAG_AR: return G_AR;
+		case PTAG_INT: return G_INT;
+		case PTAG_BOOL_UNIT: return G_BOOL; // ambiguous with G_UNIT; tag_of disambiguates before falling here
+		case PTAG_BOXED: return G_FLOAT;    // ambiguous with other boxed kinds; tag_of disambiguates before falling here
+	}
+}
+
+// Generic box for ground types whose payload doesn't fit inline in a tagged `value` (see
+// docs/todo.md "「Boxed」的な汎用タグの導入"). `kind` disambiguates which ground type a given
+// box actually holds. Only BOX_FLOAT exists today (this is a pure refactor of the existing
+// float-boxing code, kept behavior-identical) -- a future type (e.g. a string) would add its
+// own `boxed_kind` plus one `case` in each of tag_of/tag_value/untag_value below, spending no
+// new physical tag.
+typedef enum boxed_kind : uint8_t {
+	BOX_FLOAT,
+} boxed_kind;
+
+typedef struct boxed {
+	uint8_t kind;
+	value v;
+} boxed;
+
+static inline uint8_t tag_of(value v) {
+	ptag tag = v & 0b111;
+	switch (tag) {
+		case PTAG_BOOL_UNIT: {
+			if (v == (0b10000 | PTAG_BOOL_UNIT)) return G_UNIT;
 			return G_BOOL;
 		}
-		default: return tag;
+		case PTAG_BOXED: {
+			boxed *b = (boxed*)(v & ~0b111);
+			switch (b->kind) {
+				case BOX_FLOAT: return G_FLOAT;
+			}
+		}
+		default: return ground_ty_of_tag(tag);
 	}
 }
 
@@ -69,17 +134,18 @@ static inline value tag_value(value v, ground_ty t) {
 		case G_TP:
 		case G_RF:
 		case G_AR:
-			return (value)(v | t);
+			return (value)(v | ptag_of_ground_ty(t));
 		case G_INT:
 		case G_BOOL:
-			return (value)(v << 3 | t);
+			return (value)(v << 3 | ptag_of_ground_ty(t));
 		case G_FLOAT: {
-			value *v_ = GC_MALLOC(sizeof(value*));
-			*v_ = v;
-			return (value)((value)v_ | t);
+			boxed *b = GC_MALLOC(sizeof(boxed));
+			b->kind = BOX_FLOAT;
+			b->v = v;
+			return (value)((value)b | PTAG_BOXED);
 		}
 		case G_UNIT:
-			return (value)(0b10000 | G_BOOL);
+			return (value)(0b10000 | PTAG_BOOL_UNIT);
 	}
 }
 
@@ -90,8 +156,10 @@ static inline value untag_value(value v, ground_ty t) {
 			return (value)(v >> 3);
 		case G_UNIT:
 			return 0b0;
-		case G_FLOAT:
-			return *(value*)(v & ~0b111);
+		case G_FLOAT: {
+			boxed *b = (boxed*)(v & ~0b111);
+			return b->v;
+		}
 		case G_FN:
 		case G_LI:
 		case G_TP:
