@@ -19,7 +19,10 @@ let build_run c_code ~config = match config.file with
     let cmd = Filename.concat (Resources.result_dir ()) (base ^ ".out") in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
-    if i != 0 then raise @@ Build_bad ".out fail";
+    (* コンパイル自体は成功しているので、実行時の終了コード（exit_ml による
+       意図的な非0終了を含む）は「ビルド失敗」ではなく、そのままプロセスの
+       終了コードとして伝播させる（eval モードの Stdlib_exit と同様の扱い）*)
+    if i <> 0 then raise @@ Types_lib.Stdlib_exit i;
     ()
   | None ->
     (* 標準入力モード *)
@@ -35,5 +38,5 @@ let build_run c_code ~config = match config.file with
     let cmd = Filename.concat (Resources.result_dir ()) "stdin.out" in
     if config.debug then fprintf err_formatter "@.%s@." cmd;
     let i = Sys.command cmd in
-    if i != 0 then raise @@ Build_bad ".out fail";
+    if i <> 0 then raise @@ Types_lib.Stdlib_exit i;
     ()

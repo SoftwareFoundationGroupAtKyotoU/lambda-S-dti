@@ -437,18 +437,3 @@ module KNorm = struct
     | LetDecl (x, f) -> LetDecl (x, assoc_exp f)
     | LetFunDecl (x, tvs, fd) -> LetFunDecl (x, tvs, assoc_fd fd)
 end
-
-let kNorm_funs ~tvs_opt (tvsenv, alphaenv, betaenv) f = 
-  let f, alphaenv = CC.alpha_program alphaenv f in
-  let f, tvsenv = CC.k_normalize_program tvsenv f ~static:false in
-  let f = 
-    if tvs_opt then KNorm.omit_unused_tv_program Environment.empty f
-    else f
-  in
-  let rec iter betaenv f =
-    let fbeta, betaenv = KNorm.beta_program betaenv f in
-    let fassoc = KNorm.assoc_program fbeta in
-    if f = fassoc then f, (tvsenv, alphaenv, betaenv)
-    else iter betaenv fassoc
-  in let kf, kfunenvs = iter betaenv f in
-  kf, kfunenvs
