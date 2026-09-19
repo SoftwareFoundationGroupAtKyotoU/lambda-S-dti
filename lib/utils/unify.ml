@@ -181,6 +181,8 @@ let rec unify_meet u1 u2 = match u1, u2 with
   | TyBool, TyBool -> TyBool
   | TyUnit, TyUnit -> TyUnit
   | TyFloat, TyFloat -> TyFloat
+  | TyChar, TyChar -> TyChar
+  | TyString, TyString -> TyString
   | TyDyn, u | u, TyDyn ->
     unify @@ CConsistent (u, TyDyn);
     u
