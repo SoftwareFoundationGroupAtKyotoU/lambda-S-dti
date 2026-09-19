@@ -1,11 +1,12 @@
 open Syntax
-open Types
+open Types_lib
 
-exception Stdlib_bug = Types.Stdlib_bug
-exception Stdlib_exit = Types.Stdlib_exit
+exception Stdlib_bug = Types_lib.Stdlib_bug
+exception Stdlib_exit = Types_lib.Stdlib_exit
 
 let builtins : builtin list =
-  Io.builtins @ Predicates.builtins @ Basic.builtins
+  Io_lib.builtins @ Predicates_lib.builtins @ Basic_lib.builtins @ Math_lib.builtins
+  @ Random_lib.builtins @ List_lib.builtins @ Array_lib.builtins
 
 let pervasives ~config =
   let initial_envs = Environment.empty, Environment.empty in

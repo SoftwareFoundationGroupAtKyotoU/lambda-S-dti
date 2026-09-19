@@ -1,6 +1,6 @@
 open Syntax
 open Config
-open Types
+open Types_lib
 
 let lift1 ~config (core : CC.value -> CC.value) : CC.value =
   if config.intoB then

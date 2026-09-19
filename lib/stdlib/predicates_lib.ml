@@ -1,7 +1,7 @@
 open Syntax
 open Config
 open Type_utils
-open Types
+open Types_lib
 
 let is_some_type = tysc_of_ty @@ TyFun (TyDyn, TyBool)
 
@@ -16,7 +16,7 @@ let core_is_some ~config t v =
     | CC.CoerceV (_, CSeq (_, CInj t')) when t = t' -> CC.BoolV true
     | CC.CoerceV _ -> CC.BoolV false
     | _ -> raise @@ Stdlib_bug "not dyn value"
-let lib_is_some t ~config = Prim.lift1 ~config (core_is_some ~config t)
+let lib_is_some t ~config = Prim_lib.lift1 ~config (core_is_some ~config t)
 
 let builtins : builtin list = [
     { name = "is_int";        impl = Native (lib_is_some I, is_some_type);   c_backing = CUnimplemented };
