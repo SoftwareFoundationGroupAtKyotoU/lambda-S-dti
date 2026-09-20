@@ -22,20 +22,30 @@ type target = {
 }
 
 (* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
-let parse_and_mutate (file : string) : Syntax.ITGL.program list =
-  let path = Bench_config.sample_path ~lang:`Gradti file in
+let parse_and_mutate ?(typed=false) (file : string) : Syntax.ITGL.program list =
+  let path = Bench_config.sample_path ~lang:`Gradti ~typed file in
   let ppf = Utils.Format.empty_formatter in
   let config = Config.create ~compile:true () in
   let channel, lexbuf = Pipeline.lex ppf (Some path) in
+  (* init_state once: it resets Type_env's record-type/field tables as a
+     side effect, so calling it per statement would forget any `type ... = { ... }`
+     declared earlier in the same file by the time a later statement refers to it. *)
+  let init_state = Pipeline.init_state () ~config in
   let rec loop acc =
-    match Pipeline.parse ppf lexbuf (Pipeline.init_state () ~config) with
+    match Pipeline.parse ppf lexbuf init_state with
     | state -> loop (state :: acc)
     | exception Lexer.Eof -> acc
   in
   let states = loop [] in
   close_in channel;
   let state = Pipeline.bundle_states_ITGL states in
-  Pipeline.mutate_all ppf state
+  match Bench_config.suite_of file with
+  | Bench_config.GtpBenchmark ->
+    (* GTP_benchmark 対象は型注釈スロット数が既存対象より桁違いに多く、
+       全部分集合の全列挙 (2^n 通り) では計算不能になりうるためサンプリングする。 *)
+    Pipeline.mutate_sampled ~samples_per_slot:Bench_config.gtp_samples_per_slot ppf state
+  | Bench_config.Original | Bench_config.GriftBenchmark ->
+    Pipeline.mutate_all ppf state
 
 let restrict_axis (only : bool option) (requested : bool list) : bool list =
   match only with

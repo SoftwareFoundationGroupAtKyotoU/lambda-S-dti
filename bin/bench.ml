@@ -7,6 +7,7 @@ let () =
   let eagernesses, hash_modes, monotonicities = ref [], ref [], ref [] in
   (* benchmark modes *)
   let static, dynamize, grift = ref false, ref false, ref false in
+  let typed = ref false in
   let specs = [
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
@@ -17,6 +18,7 @@ let () =
     ("--no-hash", Arg.Unit (fun () -> hash_modes := false :: !hash_modes), " Run no-hash-consing mode");
     ("--guarded", Arg.Unit (fun () -> monotonicities := false :: !monotonicities), " Run guarded reference semantics");
     ("--monotonic", Arg.Unit (fun () -> monotonicities := true :: !monotonicities), " Run monotonic reference semantics");
+    ("--typed", Arg.Unit (fun () -> typed := true), " Use samples/src_gradti/typed/ sources instead of untyped/");
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
     ("--grift", Arg.Unit (fun () -> grift := true), " Benchmarking on grift");
@@ -37,9 +39,18 @@ let () =
   let hash_modes = if !hash_modes = [] then [true; false] else !hash_modes in
   let monotonicities = if !monotonicities = [] then [true; false] else !monotonicities in
 
-  (* 1. 前処理: 全ファイルを parse→mutate *)
+  (* 1. 前処理: 全ファイルを parse→mutate。対象ソースが存在しない場合は
+     （例: untyped/GTP_benchmark/ がまだ無い等）他の対象を巻き込んで
+     落ちないよう、[Skip] 警告を出してそのターゲットだけ除外する。 *)
   let prepared : (string * Syntax.ITGL.program list) list =
-    List.map (fun file -> (file, Bench_target.parse_and_mutate file)) files
+    List.filter_map (fun file ->
+      let path = Bench_config.sample_path ~lang:`Gradti ~typed:!typed file in
+      if not (Sys.file_exists path) then begin
+        Format.eprintf "[Skip] %s: sample not found (%s)@." file path;
+        None
+      end else
+        Some (file, Bench_target.parse_and_mutate ~typed:!typed file)
+    ) files
   in
 
   (* 2. モード展開してターゲット配列を作る *)

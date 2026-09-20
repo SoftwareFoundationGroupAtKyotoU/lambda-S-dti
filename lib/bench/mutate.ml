@@ -187,3 +187,45 @@ let all_subsets_by_length (n : int) : int list list =
     else loop (k + 1) (choose k xs :: acc)
   in
   loop 0 [] |> List.concat
+
+(* all_subsets_by_length の全列挙 (2^n 通り) が現実的でないほどスロット数 n が大きい
+   対象（GTP_benchmark 等）向けのランダムサンプリング版。
+   fully-typed（空集合）と fully-dynamic（全要素）の2点は必ず両端として残し、
+   残り (samples_per_slot * n - 2) 個を要素数 1..n-1 の部分集合から重複なく
+   ランダムに抽出する。合計はちょうど samples_per_slot * n 件
+   （候補が尽きた場合はその時点までに見つかった分だけ）。 *)
+module IntListSet = Set.Make (struct
+  type t = int list
+  let compare = compare
+end)
+
+let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list =
+  if n <= 1 then all_subsets_by_length n
+  else begin
+    let xs = Array.init n (fun i -> i + 1) in
+    let full = Array.to_list xs in
+    let random_subset () =
+      let k = 1 + Random.int (n - 1) in (* k in [1, n-1] *)
+      let a = Array.copy xs in
+      let len = Array.length a in
+      for i = 0 to k - 1 do
+        let j = i + Random.int (len - i) in
+        let tmp = a.(i) in
+        a.(i) <- a.(j);
+        a.(j) <- tmp
+      done;
+      Array.to_list (Array.sub a 0 k) |> List.sort compare
+    in
+    let target_middle = max 0 ((samples_per_slot * n) - 2) in
+    let max_attempts = (target_middle * 30) + 100 in
+    let rec go attempts_left seen =
+      if IntListSet.cardinal seen >= target_middle || attempts_left <= 0 then seen
+      else go (attempts_left - 1) (IntListSet.add (random_subset ()) seen)
+    in
+    let middle =
+      go max_attempts IntListSet.empty
+      |> IntListSet.elements
+      |> List.sort (fun a b -> compare (List.length a, a) (List.length b, b))
+    in
+    [] :: middle @ [ full ]
+  end

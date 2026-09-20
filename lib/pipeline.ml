@@ -163,15 +163,15 @@ let toC ppf state ~config ~bench =
   Static_manage.StrManager.init ();
   str_c
 
-let mutate_all ppf state =
+let mutate_with subsets_of ppf state =
   let t = match state.program with
     | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
     | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutate_all: TypeDecl not supported"
   in
   let n_total = Mutate.analyze t in
-  let subsets = Mutate.all_subsets_by_length n_total in
+  let subsets = subsets_of n_total in
   List.map (fun idxs ->
-    let program = 
+    let program =
       ITGL.Exp (Mutate.mutate_term_with_indices idxs t)
       |> Fresh_tv.ITGL.tv_renew
     in
@@ -179,3 +179,10 @@ let mutate_all ppf state =
     state.program
   )
   subsets
+
+let mutate_all ppf state = mutate_with Mutate.all_subsets_by_length ppf state
+
+(* all_subsets_by_length の全列挙 (2^n 通り) が現実的でないほどスロット数 n が
+   大きい対象向け。k=0..n の各要素数から最大 samples_per_slot 個をランダム抽出する。 *)
+let mutate_sampled ~samples_per_slot ppf state =
+  mutate_with (Mutate.sample_subsets_by_length ~samples_per_slot) ppf state

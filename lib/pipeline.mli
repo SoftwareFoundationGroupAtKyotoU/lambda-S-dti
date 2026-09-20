@@ -20,3 +20,4 @@ val closure : formatter -> KNorm.program state -> config:Config.t -> Cls.program
 val toC : formatter -> Cls.program state -> config:Config.t -> bench:int -> string
 
 val mutate_all : formatter -> ITGL.program state -> ITGL.program list
+val mutate_sampled : samples_per_slot:int -> formatter -> ITGL.program state -> ITGL.program list

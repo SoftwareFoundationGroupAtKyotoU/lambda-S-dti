@@ -31,13 +31,34 @@ let originals = [
   "zipwith";
   "zipwith-mono";
 ]
-let all_targets = grift_benchmarks @ originals
+let gtp_benchmarks = [
+  "fsm";
+]
+(* GTP_benchmark は型注釈スロット数 n が既存対象（最大でも十数個）より桁違いに
+   多くなりうるため、全部分集合 (2^n 通り) の代わりに fully-typed / fully-dynamic
+   の両端を残しつつ残りをランダム抽出する（合計はちょうど samples_per_slot * n）。 *)
+let gtp_samples_per_slot = 10
+let all_targets = grift_benchmarks @ gtp_benchmarks @ originals
 
-let sample_path ~(lang:[`Gradti | `Grift]) (target : string) : string =
-  let sub = if List.mem target grift_benchmarks then "grift_benchmark" else "original" in
+type suite = Original | GriftBenchmark | GtpBenchmark
+
+let suite_of (target : string) : suite =
+  if List.mem target grift_benchmarks then GriftBenchmark
+  else if List.mem target gtp_benchmarks then GtpBenchmark
+  else Original
+
+let suite_dir = function
+  | Original -> "original"
+  | GriftBenchmark -> "grift_benchmark"
+  | GtpBenchmark -> "GTP_benchmark"
+
+let sample_path ~(lang:[`Gradti | `Grift]) ?(typed=false) (target : string) : string =
   match lang with
-  | `Gradti -> Printf.sprintf "samples/src_gradti/untyped/%s/%s.ml" sub target
-  | `Grift  -> Printf.sprintf "samples/src_grift/%s/%s.grift" sub target
+  | `Gradti ->
+    let variant = if typed then "typed" else "untyped" in
+    Printf.sprintf "samples/src_gradti/%s/%s/%s.ml" variant (suite_dir (suite_of target)) target
+  | `Grift ->
+    Printf.sprintf "samples/src_grift/%s/%s.grift" (suite_dir (suite_of target)) target
 
 let input_path ?(static=false) (target : string) : string =
   Printf.sprintf "samples/input/%s%s.txt" target (if static then "_fs" else "")
