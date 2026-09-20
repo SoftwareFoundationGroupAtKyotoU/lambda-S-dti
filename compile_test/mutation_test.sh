@@ -32,7 +32,7 @@ declare -A EXPECTED=(
   [loop]="0"
   [loop-mono]="0"
   [incsum]="2003000"
-  [array]="100000"
+  [array]="50000"
   [matmult]="38852480"
   [quicksort]="9999"
 )
@@ -43,7 +43,7 @@ declare -A EXPECTED=(
 # ここに載っているターゲットだけ個別の値で上書きする。
 declare -A EXPECTED_STATIC=(
   [incsum]="50015000"
-  # TODO: array
+  [array]="100000"
 )
 
 LOGDIR="$(mktemp -d)"
