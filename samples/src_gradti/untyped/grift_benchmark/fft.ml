@@ -50,7 +50,7 @@ let rec loop3 mmax =
   if mmax < n then
     let theta = pi_2 /. (float_of_int mmax) in
     let wpr = let x = sin (0.5 *. theta) in
-              -2.0 *. (x *. x) in
+              -.2.0 *. (x *. x) in
     let wpi = sin theta in
     (loop4 1.0 0.0 0 mmax wpr wpi;
     loop3 (mmax * 2))
@@ -61,4 +61,4 @@ in
 loop 0 0; (* bit-reversal section *)
 loop3 2;(* Danielson-Lanczos section *)
 print_float data.(0)
-)
+);;
