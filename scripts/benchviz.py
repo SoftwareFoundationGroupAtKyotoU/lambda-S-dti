@@ -21,24 +21,42 @@ except Exception:
     stats = None
 
 TARGET_PAIRS = [ # (base, comp)
-    ("SLN", ["SLH", "ALN", "ALH"]),
-    ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFTC"]),
-    ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
-    ("GRIFTC", ["ALH", "SLH", "ALN", "SLN", "GRIFT"]),
-    ("GRIFTC", ["SLH"]),
-    ("STATICEN", ["GRIFTC", "SLH"]),
-    ("SLN", ["SLH"]),
-    ("SLH", ["ALN"]),
+    # ("SLNM", ["ALHM", "ALHG", "SLHM", "SLHG", "ALNM", "ALNG", "SLNG"]),
+    ("SLNM", ["ALHM", "SLHM", "ALNM"]),
+    ("SLHM", ["ALHM"]),        # A効果（H on側）— A x H 2x2グリッドの残り2辺
+    ("ALNM", ["ALHM"]),        # H効果（A on側）
+    ("GRIFTCM", ["ALHM"]),
+    ("GRIFTM", ["ALHM"]),
+    ("STATICENG", ["ALHM", "GRIFTCM", "GRIFTM"]),  # static実行時のみ有効
+    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFTC"]),
+    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
+    # ("GRIFTCM", ["ALHM", "ALHG", "SLHM", "SLHG", "ALNM", "ALNG", "SLNM", "SLNG", "GRIFTG", "GRIFTCG", "GRIFTM"]),
+    # ("STATICEN", ["GRIFTC", "SLH"]),
+    # ("SLN", ["SLH"]),
+    # ("SLH", ["ALN"]),
 ]
 
 STYLE_MAP = {
-    "SLN": {"color": "tab:blue", "marker": "s"},
-    "ALN": {"color": "tab:orange", "marker": "^"},
-    "SLH": {"color": "tab:green", "marker": "d"},
-    "ALH": {"color": "tab:purple", "marker": "<"},
-    "GRIFT": {"color": "tab:red", "marker": "v"},
-    "GRIFTC": {"color": "tab:brown", "marker": ">"},
-    "STATICEN": {"color": "tab:pink", "marker": "p"},
+    # --- SL 系 (Blue / Cyan ベース) ---
+    "SLNM":      {"color": "#1f77b4", "marker": "o"},  # 丸
+    "SLNG":     {"color": "#aec7e8", "marker": "s"},  # 四角
+    "SLHM":      {"color": "#17becf", "marker": "^"},  # 上三角
+    "SLHG":     {"color": "#9edae5", "marker": "v"},  # 下三角
+
+    # --- AL 系 (Orange / Amber ベース) ---
+    "ALNM":      {"color": "#ff7f0e", "marker": "D"},  # ダイヤ（大）
+    "ALNG":     {"color": "#ffbb78", "marker": "d"},  # ダイヤ（小）
+    "ALHM":      {"color": "#d62728", "marker": "<"},  # 左三角
+    "ALHG":     {"color": "#ff9896", "marker": ">"},  # 右三角
+
+    # --- GRIFT 系 (Green / Purple / Pink ベース) ---
+    "GRIFT":    {"color": "#2ca02c", "marker": "P"},  # プラス（太）
+    "GRIFTC":   {"color": "#9467bd", "marker": "X"},  # バツ（太）
+    "GRIFTCM":  {"color": "#9467bd", "marker": "X"},  # バツ（太）
+    "GRIFTM":   {"color": "#e377c2", "marker": "*"},  # スター
+
+    # --- その他 ---
+    "STATICENG": {"color": "#7f7f7f", "marker": "h"},  # 六角形
 }
 
 # =========================
@@ -56,13 +74,13 @@ def format_comp_label(name: str) -> str:
     #     hc_opt = "ON" if name[2].upper() == 'H' else "OFF"
     #     return f"Gradti (HashCons: {hc_opt})"
     # if name == "STATICEN"
-    if name == "SLH":
-        return "Polymorphic"
-        # return "Gradti"
-    if name == "ALN":
-        return "Molymorphic"
-    if name == "GRIFTC":
-        return "Grift (C backend)"
+    # if name == "SLH":
+    #     return "Polymorphic"
+    #     # return "Gradti"
+    # if name == "ALN":
+    #     return "Molymorphic"
+    # if name == "GRIFTC":
+    #     return "Grift (C backend)"
     return name
 
 def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:

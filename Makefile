@@ -95,24 +95,25 @@ report: check-python check-uv
 	@uv run python scripts/check_requirements.py
 	@uv run python scripts/report_herman.py
 	@uv run python scripts/report_ratio_extremes.py
+	@uv run python scripts/report_ablation_summary.py
 	@echo "✅ Graphs generated."
 
-# report_confidence.py (相対時間の長いTop 30) を実行するターゲット
-# デフォルト値を設定（コマンドラインから上書き可能）
-BASE ?= STATICENC
-COMP ?= ALHC
+# 相対時間の比が極端なmutantを report_ratio_extremes.py で洗い出すターゲット
+# (旧 report_confidence.py は存在しないファイルを指していたため、
+#  benchviz.TARGET_PAIRS 駆動の report_ratio_extremes.py に差し替え済み。
+#  比較対象は benchviz.py の TARGET_PAIRS で指定する。)
 report-longest: check-python check-uv
 	@if [ ! -f scripts/requirements.txt ]; then \
 		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
 	fi
 	@uv venv
 	@uv pip install -q -r scripts/requirements.txt
-	@uv run python scripts/report_confidence.py --base $(BASE) --comp $(COMP)
+	@uv run python scripts/report_ratio_extremes.py
 	@echo "✅ Longest execution time report generated."
 
 # report_absolute_times.py (絶対時間の長いTop 30) を実行するターゲット
 # デフォルト値を設定（コマンドラインから上書き可能）
-TARGET ?= SLHC
+TARGET ?= ALHM
 TOP ?= 30
 METRICS ?= mem cast inference
 
