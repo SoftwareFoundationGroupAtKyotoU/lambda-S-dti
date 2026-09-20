@@ -3,8 +3,10 @@ open Lambda_S_dti
 let () =
   (* benchmark settings *)
   let files, itr, jobs = ref [], ref 0, ref 0 in
-  (* evaluation mode *)
-  let eagernesses, hash_modes, monotonicities = ref [], ref [], ref [] in
+  (* 軸別アブレーションフラグ: 立てた軸だけ、fully-optimized 基準値(ALHMT)
+     から1つ反転させた2点比較を行う。複数指定しても軸間の直積は取らない。 *)
+  let id_opt, eagerness, hash_axis, monotonic_axis, tvs_axis =
+    ref false, ref false, ref false, ref false, ref false in
   (* benchmark modes *)
   let static, dynamize, grift = ref false, ref false, ref false in
   let typed = ref false in
@@ -12,16 +14,21 @@ let () =
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
      " Max parallel compile jobs for --dynamize/--static/--grift (default: nproc-1)");
-    ("--eager", Arg.Unit (fun () -> eagernesses := true :: !eagernesses), " Run eager mode");
-    ("--lazy", Arg.Unit (fun () -> eagernesses := false :: !eagernesses), " Run lazy mode");
-    ("--hash", Arg.Unit (fun () -> hash_modes := true :: !hash_modes), " Run hash-consing mode");
-    ("--no-hash", Arg.Unit (fun () -> hash_modes := false :: !hash_modes), " Run no-hash-consing mode");
-    ("--guarded", Arg.Unit (fun () -> monotonicities := false :: !monotonicities), " Run guarded reference semantics");
-    ("--monotonic", Arg.Unit (fun () -> monotonicities := true :: !monotonicities), " Run monotonic reference semantics");
+    ("--id_opt", Arg.Unit (fun () -> id_opt := true),
+     " Ablate id-specialization (mode A vs S) against the ALHMT baseline");
+    ("--eagerness", Arg.Unit (fun () -> eagerness := true),
+     " Ablate eager vs lazy against the ALHMT baseline");
+    ("--hash", Arg.Unit (fun () -> hash_axis := true),
+     " Ablate hash-consing on vs off against the ALHMT baseline");
+    ("--monotonic", Arg.Unit (fun () -> monotonic_axis := true),
+     " Ablate monotonic vs guarded reference semantics against the ALHMT baseline");
+    ("--tvs_opt", Arg.Unit (fun () -> tvs_axis := true),
+     " Ablate tvs_opt on vs off against the ALHMT baseline");
     ("--typed", Arg.Unit (fun () -> typed := true), " Use samples/src_gradti/typed/ sources instead of untyped/");
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
-    ("--grift", Arg.Unit (fun () -> grift := true), " Benchmarking on grift");
+    ("--grift", Arg.Unit (fun () -> grift := true),
+     " Benchmarking against GRIFT's C backend (GRIFTCM vs our own fully-optimized ALHMT config)");
     ("--all", Arg.Unit (fun () -> dynamize := true; static := true; grift := true), " Benchmarking all (--static --dynamize --grift)");
     ("--out", Arg.String (fun s -> Bench_output.out_mode := (match s with
         | "json" -> Bench_output.Json | "jsonl" -> Bench_output.JsonLines
@@ -35,9 +42,12 @@ let () =
   let files = if !files = [] then Bench_config.all_targets else !files in
   let itr = if !itr = 0 then Bench_config.default_itr else !itr in
   let jobs = if !jobs > 0 then !jobs else Bench_builder.default_jobs () in
-  let eagernesses = if !eagernesses = [] then [true; false] else !eagernesses in
-  let hash_modes = if !hash_modes = [] then [true; false] else !hash_modes in
-  let monotonicities = if !monotonicities = [] then [true; false] else !monotonicities in
+  let axes =
+    List.filter_map (fun (r, ax) -> if !r then Some ax else None)
+      [ (id_opt, Bench_target.Id_opt); (eagerness, Bench_target.Eagerness);
+        (hash_axis, Bench_target.Hash); (monotonic_axis, Bench_target.Monotonic);
+        (tvs_axis, Bench_target.Tvs) ]
+  in
 
   (* 1. 前処理: 全ファイルを parse→mutate。対象ソースが存在しない場合は
      （例: untyped/GTP_benchmark/ がまだ無い等）他の対象を巻き込んで
@@ -53,8 +63,22 @@ let () =
     ) files
   in
 
-  (* 2. モード展開してターゲット配列を作る *)
-  let targets = Bench_target.expand_targets ~eagernesses ~hash_modes ~monotonicities prepared in
+  (* 2. ターゲット配列を作る。expand_ablation_targets は要求された axes を
+     まとめて一度だけ受け取るので、複数の軸フラグを同時指定しても
+     fully-optimized 基準点(ALHMT)はファイルごとに1つしか生成されない
+     (=1回しかコンパイル・実行されない)。 *)
+  let dynamize_targets = Bench_target.expand_ablation_targets ~axes prepared in
+  (* --static 用: 完全静的プログラムでの「fully-optimized(基準+反転) vs
+     STATIC モード」比較。dynamize_targets をそのまま使い回すことで、S/A側の
+     基準+反転を再計算しない。STATIC 側の基準ターゲットだけファイルごとに
+     1つ追加する(dedup_static が eager/hash/monotonic を STATIC 用の固定値に
+     上書きし、mutants を fully-typed の1件に絞る)。 *)
+  let static_targets =
+    List.map (fun (file, mutants) ->
+      { (Bench_target.baseline_target file mutants) with Bench_target.mode = Bench_target.STATIC })
+      prepared
+    @ dynamize_targets
+  in
 
   (* 3. ログディレクトリ準備 *)
   let tm = Unix.localtime (Unix.time ()) in
@@ -71,13 +95,15 @@ let () =
      いずれか1つでもコンパイルに失敗したら、他が成功していても
      ベンチマーク実行(Pass 3)は一切行わない。 *)
   let ml_batches =
-    (if !dynamize then [ Bench_compiler.compile_dynamize ~log_dir ~itr ~jobs targets ] else []) @
-    (if !static then [ Bench_compiler.compile_static ~log_dir ~itr ~jobs targets ] else [])
+    (if !dynamize then [ Bench_compiler.compile_dynamize ~log_dir ~itr ~jobs dynamize_targets ] else []) @
+    (if !static then [ Bench_compiler.compile_static ~log_dir ~itr ~jobs static_targets ] else [])
   in
   let grift_batches =
     if !grift then
-      Bench_compiler.compile_dynamize_grift ~log_dir ~itr ~jobs ~files ~monotonicities ::
-      (if !static then [ Bench_compiler.compile_static_grift ~log_dir ~itr ~jobs ~files ~monotonicities ] else [])
+      (* --grift は軸フラグの有無に関わらず、fully-optimized 基準値の
+         monotonic=true(ALHMT の M)側のみで GRIFTCM と比較する独立した計測。 *)
+      Bench_compiler.compile_dynamize_grift ~log_dir ~itr ~jobs ~files ~monotonicities:[true] ::
+      (if !static then [ Bench_compiler.compile_static_grift ~log_dir ~itr ~jobs ~files ~monotonicities:[true] ] else [])
     else []
   in
   let any_failed =

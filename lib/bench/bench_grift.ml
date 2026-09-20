@@ -304,18 +304,21 @@ let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
    同居は一切行わないため、GCやタイミング計測の共有状態汚染、障害分離の
    後退、--cast-profiler の累積といったリスクは発生しない。 *)
 
-type grift_job_kind = Perf | Prof | Cbackend
+type grift_job_kind = Perf | Prof | Cbackend | CbackendStatic
 
 type grift_prepared_mutant = {
   idx : int;
   base_code : string;         (* jsonl の after_mutate に使う *)
   cdir : string;
-  jobs : (grift_job_kind * Bench_builder.job) list;  (* このmutantの3ジョブ *)
+  jobs : (grift_job_kind * Bench_builder.job) list;  (* このmutantの3(or 4)ジョブ *)
 }
 
-(* Phase 1 の1 mutant分: perf.grift / prof.grift を書き出し、3種類の
-   コンパイルジョブを組み立てるだけ。Sys.command は一切呼ばない。 *)
-let prepare_mutant ~work ~g ~monotonic_flag ~itr defs groups si subset : grift_prepared_mutant =
+(* Phase 1 の1 mutant分: perf.grift / prof.grift を書き出し、コンパイル
+   ジョブを組み立てるだけ。Sys.command は一切呼ばない。~static:true のときは
+   grift 自身のネイティブ --static (cast-representation=Static) を追加した
+   Cバックエンドのジョブも作り、通常の(coercionベースの) Cバックエンドと
+   両方計測できるようにする。 *)
+let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset : grift_prepared_mutant =
   let idx = si + 1 in
   let base_code = serialize_variant defs groups subset in
   let cdir = Printf.sprintf "%s/config_%d" work idx in
@@ -343,12 +346,18 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr defs groups si subset : grift_p
   let bench_perf = Filename.concat cdir "bench_perf" in
   let bench_prof = Filename.concat cdir "bench_prof" in
   let bench_c_perf = Filename.concat cdir "bench_c_perf" in
-  { idx; base_code; cdir;
-    jobs = [
-      Perf,     job ""                 perf_f bench_perf;
-      Prof,     job "--cast-profiler"  prof_f bench_prof;
-      Cbackend, job "--backend C"      perf_f bench_c_perf;
-    ] }
+  let base_jobs = [
+    Perf,     job ""                 perf_f bench_perf;
+    Prof,     job "--cast-profiler"  prof_f bench_prof;
+    Cbackend, job "--backend C"      perf_f bench_c_perf;
+  ] in
+  let jobs =
+    if static then
+      let bench_c_perf_static = Filename.concat cdir "bench_c_perf_static" in
+      base_jobs @ [ CbackendStatic, job "--backend C --static" perf_f bench_c_perf_static ]
+    else base_jobs
+  in
+  { idx; base_code; cdir; jobs }
 
 (* Phase 1 の結果。まだコンパイルしていない。呼び出し側(Bench_compiler)が
    複数 target 分の prepare をまとめてから、全target分のジョブを1回の
@@ -359,12 +368,14 @@ type grift_prepared = {
   file : string;
   mode_g : string;
   mode_gc : string;
+  mode_gcs : string option;      (* grift ネイティブ --static 付きの C backend (static=true のときのみ) *)
   grift_dir : string;
   work : string;
   g : string;
   monotonic_flag : string;
   jsonl_g_path : string;
   jsonl_gc_path : string;
+  jsonl_gcs_path : string option;
   prog : Bench_progress.t;
   prepared : grift_prepared_mutant list;
   input_perf : string;
@@ -407,8 +418,9 @@ let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~mono
   in
   (* 全mutant分の grift ソース生成 + コンパイルジョブ組み立て。 *)
   let prepared =
-    List.mapi (fun si subset -> prepare_mutant ~work ~g ~monotonic_flag ~itr defs groups si subset) subsets
+    List.mapi (fun si subset -> prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset) subsets
   in
+  let mode_gcs = if static then Some (mode_gc ^ "S") else None in
   (* コンパイル前に、after_mutate 入りのプレースホルダー行(times_sec は空)を
      書いてすぐ閉じておく。ML/C側の compile_mutants (Bench_output 経由) と
      同じパターン — こうしておくと、この後の並列コンパイルや実行(Phase 3)が
@@ -422,14 +434,15 @@ let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~mono
         (Bench_output.mutant_json ~mode_str ~idx:p.idx ~after_mutate:p.base_code ~times_sec:[])
     ) prepared;
     Bench_output.close_writer w
-  ) [ mode_g; mode_gc ];
+  ) ([ mode_g; mode_gc ] @ (match mode_gcs with Some m -> [m] | None -> []));
   (* 実行結果を書く先のパスだけ覚えておく。実際に開く(常に新規truncateする
      open_out で、上のプレースホルダーを上書きする)のは run_compiled の
      冒頭 — Phase 3 が実際に走る場合にのみ、ここで初めて発生する。 *)
   let jsonl_g_path = Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_g file suffix in
   let jsonl_gc_path = Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_gc file suffix in
-  { file; mode_g; mode_gc; grift_dir; work; g; monotonic_flag;
-    jsonl_g_path; jsonl_gc_path; prog; prepared; input_perf; input_prof }
+  let jsonl_gcs_path = Option.map (fun m -> Printf.sprintf "%s/%s_%s%s.jsonl" log_dir m file suffix) mode_gcs in
+  { file; mode_g; mode_gc; mode_gcs; grift_dir; work; g; monotonic_flag;
+    jsonl_g_path; jsonl_gc_path; jsonl_gcs_path; prog; prepared; input_perf; input_prof }
 
 let jobs_of_prepared (p : grift_prepared) : Bench_builder.job list =
   List.concat_map (fun m -> List.map snd m.jobs) p.prepared
@@ -442,12 +455,14 @@ type grift_compiled = {
   file : string;
   mode_g : string;
   mode_gc : string;
+  mode_gcs : string option;
   grift_dir : string;
   work : string;
   g : string;
   monotonic_flag : string;
   jsonl_g_path : string;
   jsonl_gc_path : string;
+  jsonl_gcs_path : string option;
   prog : Bench_progress.t;
   prepared : grift_prepared_mutant list;
   input_perf : string;
@@ -465,9 +480,10 @@ let finalize (p : grift_prepared) : grift_compiled =
       (fun m -> List.exists (fun (_, j) -> not (Sys.file_exists j.Bench_builder.out_path)) m.jobs)
       p.prepared
   in
-  { file = p.file; mode_g = p.mode_g; mode_gc = p.mode_gc; grift_dir = p.grift_dir; work = p.work;
+  { file = p.file; mode_g = p.mode_g; mode_gc = p.mode_gc; mode_gcs = p.mode_gcs;
+    grift_dir = p.grift_dir; work = p.work;
     g = p.g; monotonic_flag = p.monotonic_flag;
-    jsonl_g_path = p.jsonl_g_path; jsonl_gc_path = p.jsonl_gc_path;
+    jsonl_g_path = p.jsonl_g_path; jsonl_gc_path = p.jsonl_gc_path; jsonl_gcs_path = p.jsonl_gcs_path;
     prog = p.prog; prepared = p.prepared; input_perf = p.input_perf; input_prof = p.input_prof; failed }
 
 (* Phase 3 (直列): mutant ごとに実行・計測する。
@@ -478,6 +494,7 @@ let run_compiled (c : grift_compiled) : unit =
      行はここで上書きされる。 *)
   let oc_g = open_out c.jsonl_g_path in
   let oc_gc = open_out c.jsonl_gc_path in
+  let oc_gcs = Option.map open_out c.jsonl_gcs_path in
   List.iter
     (fun p ->
       let find kind = List.assoc kind p.jobs in
@@ -506,6 +523,21 @@ let run_compiled (c : grift_compiled) : unit =
           | None -> []
         else []
       in
+      (match c.mode_gcs, oc_gcs with
+       | Some mode_gcs, Some oc_gcs ->
+         if not (ok CbackendStatic) then
+           Format.eprintf "[grift compile failed] %s#%d c-static@." c.file p.idx;
+         let times_cs =
+           if ok CbackendStatic then
+             match run_bin (find CbackendStatic).Bench_builder.out_path c.input_perf with
+             | Some o -> parse_times o
+             | None -> []
+           else []
+         in
+         Bench_json.to_channel_ln oc_gcs
+           (jrow ~mode:mode_gcs ~idx:p.idx ~after_mutate:p.base_code ~times:times_cs ~cast:None
+              ~longest:None)
+       | _ -> ());
       (* ログ用に .c を1つ取り出す *)
       let dest_c = Printf.sprintf "%s%d.c" c.file p.idx in
       ignore
@@ -524,4 +556,5 @@ let run_compiled (c : grift_compiled) : unit =
   Bench_progress.print ~final:true c.prog;
   close_out oc_g;
   close_out oc_gc;
+  Option.iter close_out oc_gcs;
   ignore (Sys.command (Printf.sprintf "rm -rf %s" (Filename.quote c.work)))

@@ -278,11 +278,11 @@ let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expe
   List.mapi (fun i line -> (i + 1, line)) lines
   |> List.filter (fun (_, line) -> line <> expected)
 
-let config_of_target ~file ~eager ~hash ~monotonic = function
-  | S      -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~compile:true ()
-  | A      -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~alt:true ~compile:true ()
-  | B      -> Config.create ~eager ~hash ~file:(Some file) ~intoB:true ~compile:true ()
-  | STATIC -> Config.create ~eager ~hash ~monotonic ~file:(Some file) ~static:true ~compile:true ()
+let config_of_target ~file ~eager ~hash ~monotonic ~tvs_opt = function
+  | S      -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~compile:true ()
+  | A      -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~alt:true ~compile:true ()
+  | B      -> Config.create ~eager ~hash ~tvs_opt ~file:(Some file) ~intoB:true ~compile:true ()
+  | STATIC -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~static:true ~compile:true ()
 
 (* -------- 1ファイル×1モード分の mutant を全て C にコンパイルし、
    log_dir/mode_str/ 以下に .c ファイルとして書き出す。ベンチ実行（try_prepare_target）と
@@ -348,9 +348,9 @@ type prepared_target = {
    失敗した target は今までどおり [Skip] で握りつぶし、後続のコンパイル
    対象にも含めない。 *)
 let try_prepare_target ~log_dir ~itr ~ordinal ~total_targets (t : target) : prepared_target option =
-  let mode_str = full_mode_name t.mode t.eager t.hash t.monotonic in
+  let mode_str = Bench_target.ablation_mode_str t in
   try
-    let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic t.mode in
+    let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
     let prog = compile_mutants ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
     let b = generate_bench_sources ~log_dir ~file:t.file ~mode_str ~itr
               ~mutants_length:(List.length t.mutants) ~config in
