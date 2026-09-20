@@ -102,7 +102,7 @@ let rec check_has_tv = function
 let rec toC_crc_gen ~fresh_tmp x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
-    | CSeq (CId _, CInj (I | B | U | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
+    | CSeq (CId _, CInj (I | B | U | F | C | S | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
     | CSeq (CMRef (_, TyDyn), CInj Rf) -> [], Addr ("crc_inj_RF")
     | CSeq (CMArray (_, TyDyn), CInj Ar) -> [], Addr ("crc_inj_AR")
     | _ ->
