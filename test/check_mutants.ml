@@ -4,7 +4,7 @@ open Bench_target
 let check_target ~log_dir ~expected ~ordinal ~total_targets (t : target) : bool =
   let mode_str = full_mode_name t.mode t.eager t.hash t.monotonic in
   try
-    let config = Bench_compiler.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic t.mode in
+    let config = Bench_compiler.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
     let prog = Bench_compiler.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
     let mutants_length = List.length t.mutants in
     let failing = Bench_compiler.build_run_bench_check ~log_dir ~file:t.file ~mode_str ~mutants_length ~config ~expected in
