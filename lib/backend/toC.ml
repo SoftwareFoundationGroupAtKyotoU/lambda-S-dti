@@ -74,6 +74,25 @@ let toC_tycontent = function
   | TyArray u -> Struct ["tykind", Var "TYARRAY"; "tydat", Struct ["tyarray", toC_ty u]]
   | _ as u -> raise @@ ToC_bug (Format.asprintf "toC_content yet: %a" Pp.pp_ty u)
 
+(* toC_tycontent の TyTuple ケースは、生成される C の compound literal
+   (ty*[]){...} がブロックスコープの自動記憶域を持つため、ファイルスコープの
+   static 初期化子（toC_tycontents 経由）にしか安全に使えない。set_ty のように
+   実行時に評価される代入文の右辺に使うと、compound literal の生存期間が
+   enclosing block を出た時点で切れ、後から参照するとダングリングポインタに
+   なる（stack-use-after-return）。実行時パスでは配列を GC_MALLOC してから
+   要素ごとに代入することで、GC 管理下のヒープに置く。 *)
+let toC_tycontent_dyn = function
+  | TyTuple us ->
+    let size = List.length us in
+    let arr = KNormal.genvar "_tys" in
+    let arr_stms =
+      SDecl (PTR (PTR TY), arr, Some (Malloc (PTR (PTR TY), BinOp (Sizeof (PTR TY), Mult, Int size))))
+      :: List.mapi (fun i u -> SAssign (Index (Var arr, Int i), toC_ty u)) us
+    in
+    arr_stms,
+    Struct ["tykind", Var "TYTUPLE"; "tydat", Struct ["tytuple", Struct ["size", Int size; "tys", Var arr]]]
+  | u -> [], toC_tycontent u
+
 (* ========================================= *)
 
 let int_of_pos = function Pos -> 1 | Neg -> 0
@@ -99,7 +118,7 @@ let rec check_has_tv = function
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
   | CMRef (u1, u2) | CMArray (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
 
-let rec toC_crc_gen ~fresh_tmp x c =
+let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
   let stm_crc x c = match c with
     | CId _ -> [], Addr "crc_id"
     | CSeq (CId _, CInj (I | B | U | F | C | S | Fn | Li | Rf | Ar as g)) -> [], Addr ("crc_inj_" ^ string_of_tag g)
@@ -108,7 +127,7 @@ let rec toC_crc_gen ~fresh_tmp x c =
     | _ ->
       if CrcManager.mem c then [], Addr (CrcManager.find c)
       else
-        let stm, exp = toC_crc_gen ~fresh_tmp x c in
+        let stm, exp = toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c in
         let tmp_decl, tmp = fresh_tmp c in
         (match tmp_decl with Some d -> [d] | None -> []) @
         SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
@@ -158,13 +177,36 @@ let rec toC_crc_gen ~fresh_tmp x c =
       )
     | CTuple cs ->
       let stms, ptr_crcs = List.split @@ List.mapi (fun i c -> stm_crc (x ^ "_elm" ^ string_of_int i) c) cs in
-      List.flatten stms,
-      Struct (
-        ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
-          "crcdat", Struct ["tpl_crc", Struct ["size", Int (List.length cs); "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
-        ]
-      )
+      let size = List.length cs in
+      (* heap_tuple_arr=false は、生成した crc がファイルスコープの static
+         初期化子としてのみ使われる場合（toC_crccontents）専用。ネストした
+         C の compound literal がその場で static storage duration に昇格
+         されるため安全。それ以外（実行時に評価される代入文の右辺）では、
+         compound literal の生存期間がブロックを出た時点で切れてしまい、
+         alloc_crc がその crcs ポインタを shallow copy するだけなので、
+         後で参照するとダングリングポインタ（stack-use-after-return）に
+         なる。そのため crcs 配列を GC_MALLOC してから要素ごとに代入する。 *)
+      if heap_tuple_arr then
+        let arr = x ^ "_crcs" in
+        let arr_stms =
+          SDecl (PTR (PTR CRC), arr, Some (Malloc (PTR (PTR CRC), BinOp (Sizeof (PTR CRC), Mult, Int size))))
+          :: List.mapi (fun i e -> SAssign (Index (Var arr, Int i), e)) ptr_crcs
+        in
+        List.flatten stms @ arr_stms,
+        Struct (
+          ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
+            "has_tv", Int has_tv_val;
+            "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Var arr]]
+          ]
+        )
+      else
+        List.flatten stms,
+        Struct (
+          ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
+            "has_tv", Int has_tv_val;
+            "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
+          ]
+        )
     | CRef (c1, c2) ->
       let stm1, ptr_crc1 = stm_crc (x ^ "_ref1") c1 in
       let stm2, ptr_crc2 = stm_crc (x ^ "_ref2") c2 in
@@ -228,7 +270,7 @@ let rec toC_crc_gen ~fresh_tmp x c =
     | CSeq _ | CProj _ | CInj _ as c -> raise @@ ToC_bug (Format.asprintf "%a should not be passed to toC_crc" Pp.pp_coercion c)
     | CFail _ as c -> raise @@ ToC_bug (Format.asprintf "toC_crc yet: %a" Pp.pp_coercion c)
 
-let toC_crc x c = toC_crc_gen ~fresh_tmp:(fun c -> None, CrcTmpManager.find c) x c
+let toC_crc ~heap_tuple_arr x c = toC_crc_gen ~fresh_tmp:(fun c -> None, CrcTmpManager.find c) ~heap_tuple_arr x c
 
 let toC_crc_dyn c : stm list * exp =
   match c with
@@ -240,7 +282,7 @@ let toC_crc_dyn c : stm list * exp =
   | _ ->
     let x = KNormal.genvar "_crc" in
     let fresh_tmp _ = let n = KNormal.genvar "_crctmp" in Some (SDecl (CRC, n, None)), n in
-    let stm, exp = toC_crc_gen ~fresh_tmp x c in
+    let stm, exp = toC_crc_gen ~fresh_tmp ~heap_tuple_arr:true x c in
     let tmp_decl, tmp = fresh_tmp c in
     let tmp_decl_stm = match tmp_decl with Some d -> [d] | None -> [] in
     stm @ tmp_decl_stm @ [SAssign (Var tmp, Cast (CRC, exp))],
@@ -291,12 +333,17 @@ let rec make_s_coercion_call ~from u rtti : stm list * exp =
     let elems = List.mapi (fun i t -> make_s_coercion_call ~from t (Index (tys_field, Int i))) ts in
     let elem_stms = List.concat (List.map fst elems) in
     let elem_exps = List.map snd elems in
+    let arr = KNormal.genvar "_crcs" in
+    let arr_stms =
+      SDecl (PTR (PTR CRC), arr, Some (Malloc (PTR (PTR CRC), BinOp (Sizeof (PTR CRC), Mult, Int size))))
+      :: List.mapi (fun i e -> SAssign (Index (Var arr, Int i), e)) elem_exps
+    in
     let result = KNormal.genvar "_crc" in
     [SDecl (PTR CRC, result, None);
      SIf (tag_eq rtti "DYN",
           dyn_stms @ [SAssign (Var result, dyn_exp)],
           [SIf (tag_eq rtti "TYTUPLE",
-                elem_stms @ [SAssign (Var result, App (Var "wrap_tuple", [Int size; Cast (ARRAY (PTR CRC), Array elem_exps)]))],
+                elem_stms @ arr_stms @ [SAssign (Var result, App (Var "wrap_tuple", [Int size; Var arr]))],
                 [SAssign (Var result, call "make_s_coercion")])])],
     Var result
   | TyFun (t1, t2) ->
@@ -357,7 +404,8 @@ let set_ty i opu =
       u, "_tyarray" ^ string_of_int i
     | Some u -> raise @@ ToC_bug (Format.asprintf "set_ty yet: %a" Pp.pp_ty u)
   in
-  name, [SAssign (PreOp (Deref, (Var name)), Cast (TY, toC_tycontent u))]
+  let arr_stms, content = toC_tycontent_dyn u in
+  name, arr_stms @ [SAssign (PreOp (Deref, (Var name)), Cast (TY, content))]
 
 let rec toC_mf ~config x_exp = function
   | MatchVar _ | MatchBLit _ | MatchULit -> raise @@ ToC_bug "MatchVar, MatchBLit, MatchULit should not appear in toC"
@@ -456,7 +504,7 @@ and toC_assign ~config x f =
     | _ ->
       if CrcManager.mem c then assign_x (Cast (VALUE, Addr (CrcManager.find c)))
       else
-        let stm, exp = toC_crc x c in
+        let stm, exp = toC_crc ~heap_tuple_arr:true x c in
         let tmp = CrcTmpManager.find c in
         stm @ [SAssign (Var tmp, Cast (CRC, exp))] @ assign_x (Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))
     end
@@ -637,7 +685,7 @@ let toC_strs strs =
 
 let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None)) crcs
 
-let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc name c))) crcs
+let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc ~heap_tuple_arr:false name c))) crcs
 
 let toC_crcs ~config crcs =
   let static_crc_names =
@@ -703,14 +751,16 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     if bench = 0 || config.static then []
     else
       let resets =
-        List.filter_map (fun (u, name) -> match u with
-          | TyVar _ -> Some (SAssign (Var name, Cast (TY, toC_tycontent u)))
-          | _ -> None)
+        List.concat_map (fun (u, name) -> match u with
+          | TyVar _ ->
+            let arr_stms, content = toC_tycontent_dyn u in
+            arr_stms @ [SAssign (Var name, Cast (TY, content))]
+          | _ -> [])
           tys
       in
       let crc_resets =
         List.filter_map (fun (c, name) ->
-          let _, exp = toC_crc name c in
+          let _, exp = toC_crc ~heap_tuple_arr:true name c in
           match exp with
           | Struct fields when List.assoc_opt "crckind" fields = Some (Var "C_TV") ->
             Some (SAssign (Var name, Cast (CRC, exp)))
