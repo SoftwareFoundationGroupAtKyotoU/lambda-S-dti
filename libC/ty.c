@@ -185,6 +185,12 @@ ty *get_dyn_tuple_ty(uint16_t size) {
 #endif
 
 #ifdef MONOTONIC
+static void cannot_unify(ty *u1, ty *u2) __attribute__((noreturn));
+static void cannot_unify(ty *u1, ty *u2) {
+    printf("cannot_unify; %d ~ %d", u1->tykind, u2->tykind);
+    blame(0, 0);
+}
+
 ty *unify_meet(ty* u1, ty* u2) {
     switch (u1->tykind) {
         case DYN: return u2;
@@ -197,7 +203,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_INT, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case BASE_BOOL: {
@@ -209,7 +215,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_BOOL, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case BASE_UNIT: {
@@ -221,7 +227,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_UNIT, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case BASE_CHAR: {
@@ -233,7 +239,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_CHAR, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case BASE_FLOAT: {
@@ -245,7 +251,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_FLOAT, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case BASE_STRING: {
@@ -257,7 +263,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_STRING, 0, u2);
                     return u1;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYFUN: {
@@ -274,7 +280,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_FN, 0, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYLIST: {
@@ -290,7 +296,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_LI, 0, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYTUPLE: {
@@ -298,7 +304,7 @@ ty *unify_meet(ty* u1, ty* u2) {
             switch (u2->tykind) {
                 case DYN: return u1;
                 case TYTUPLE: {
-                    if (size != u2->tydat.tytuple.size) break;
+                    if (size != u2->tydat.tytuple.size) cannot_unify(u1, u2);
                     ty *retu = (ty*)GC_MALLOC(sizeof(ty));
                     retu->tykind = TYTUPLE;
                     retu->tydat.tytuple.size = size;
@@ -312,7 +318,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_TP, size, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYREF: {
@@ -328,7 +334,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_RF, 0, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYARRAY: {
@@ -344,7 +350,7 @@ ty *unify_meet(ty* u1, ty* u2) {
                     dti(G_AR, 0, u2);
                     return unify_meet(u1, u2);
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
-                default: break;
+                default: cannot_unify(u1, u2);
             }
         }
         case TYVAR: {
@@ -362,14 +368,15 @@ ty *unify_meet(ty* u1, ty* u2) {
                 case TYREF: dti(G_RF, 0, u1); return unify_meet(u1, u2);
                 case TYARRAY: dti(G_AR, 0, u1); return unify_meet(u1, u2);
                 case TYVAR:
-                    u1->tykind = SUBSTITUTED;
-                    u1->tydat.tv = u2;
+                    if (u1 != u2) {
+                        u1->tykind = SUBSTITUTED;
+                        u1->tydat.tv = u2;
+                    }
                     return u2;
                 case SUBSTITUTED: return unify_meet(u1, ty_find(u2));
             }
         }
         case SUBSTITUTED: return unify_meet(ty_find(u1), u2);
-        default: printf("cannot_unify; %d ~ %d", u1->tykind, u2->tykind); blame(0, 0); //dummy, yet, TODO
     }
 }
 #endif
