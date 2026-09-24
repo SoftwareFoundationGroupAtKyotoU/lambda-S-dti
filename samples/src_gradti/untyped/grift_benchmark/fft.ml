@@ -1,12 +1,3 @@
-let sin (f : float) =
-  let rec compute (t : float) (n : float) (sum : float) =
-    if t >. -.0.0000000000001 || t <. 0.0000000000001 then sum
-    else
-      let next = t *. (-. f *. f) /. ((2. *. n +. 2.) *. (2. *. n +. 3.)) in
-      compute next (n +. 1.) (sum +. next)
-  in
-  compute f 0. f
-in
 let n = read_int () in
 let data = Array.make n 0.0 in
 let pi_2 = 6.28318530717959 in

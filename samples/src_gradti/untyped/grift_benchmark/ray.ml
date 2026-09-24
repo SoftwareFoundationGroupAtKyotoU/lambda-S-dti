@@ -94,7 +94,12 @@ let color_at x y =
   int_of_float (round ((sendray eye ray) *. 255.0));;
 
 let tracer res =
-  let extent = res * 100 in
+  (* grift の ray.grift 本来のスケールは res*100（例: res=1 で 100x100=10000px）
+     だが、それだと最小入力 (res=1) でもこのベンチマーク一式の他の対象
+     （array/quicksort 等）より一桁以上遅くなってしまう。mutation ベンチマーク
+     としての実行時間を揃えるため、ここだけ *10 に縮小してある
+     （レンダリング結果の見た目の正しさはこの用途では問題にしない）。 *)
+  let extent = res * 10 in
   (**)
   print_char 'P';
   print_int 2;
