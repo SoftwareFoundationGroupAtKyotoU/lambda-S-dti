@@ -888,7 +888,12 @@ crc* compose(crc *c1, crc *c2) {
 }
 
 #ifdef MONOTONIC
-// blame label is not implemented, yet TODO
+static void cannot_unify_crc(ty *u1, ty *u2) __attribute__((noreturn));
+static void cannot_unify_crc(ty *u1, ty *u2) {
+	printf("cannot_unify; %d ~ %d", u1->tykind, u2->tykind);
+	blame(0, 0);
+}
+
 crc *make_s_coercion(ty *u1, ty *u2) {
 	if (ty_equal(u1, u2)) return &crc_id;
 	crc temp = {};
@@ -952,7 +957,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case BASE_BOOL: {
@@ -963,7 +968,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case BASE_UNIT: {
@@ -974,7 +979,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case BASE_FLOAT: {
@@ -985,7 +990,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case BASE_CHAR: {
@@ -996,7 +1001,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case BASE_STRING: {
@@ -1007,7 +1012,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-				default: break;
+				default: cannot_unify_crc(u1, u2);
             }
         }
         case TYFUN: {
@@ -1034,7 +1039,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
         case TYLIST: {
@@ -1059,7 +1064,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
         case TYTUPLE: {
@@ -1095,7 +1100,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
         case TYREF: {
@@ -1106,7 +1111,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
         case TYARRAY: {
@@ -1117,7 +1122,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
         case TYVAR: {
@@ -1128,7 +1133,7 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 					u2 = ty_find(u2);
 					return make_s_coercion(u1, u2);
 				}
-                default: break;
+                default: cannot_unify_crc(u1, u2);
             }
         }
 		case SUBSTITUTED: {
