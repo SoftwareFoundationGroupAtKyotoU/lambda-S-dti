@@ -31,6 +31,12 @@ static inline value _core_sqrt_ml(value cls, value v) {
 }
 DEF_UNARY(sqrt_ml, _core_sqrt_ml)
 
+static inline value _core_sin_ml(value cls, value v) {
+	(void)cls;
+	return of_double(sin(to_double(v)));
+}
+DEF_UNARY(sin_ml, _core_sin_ml)
+
 static inline value _core_exp_ml(value cls, value v) {
 	(void)cls;
 	return of_double(exp(to_double(v)));

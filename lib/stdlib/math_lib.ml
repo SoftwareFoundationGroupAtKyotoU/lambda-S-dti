@@ -7,6 +7,11 @@ let core_sqrt = function
   | _ -> raise @@ Stdlib_bug "sqrt: unexpected value"
 let lib_sqrt ~config = Prim_lib.lift1 ~config core_sqrt
 
+let core_sin = function
+  | CC.FloatV f -> CC.FloatV (sin f)
+  | _ -> raise @@ Stdlib_bug "sin: unexpected value"
+let lib_sin ~config = Prim_lib.lift1 ~config core_sin
+
 let core_exp = function
   | CC.FloatV f -> CC.FloatV (exp f)
   | _ -> raise @@ Stdlib_bug "exp: unexpected value"
@@ -34,6 +39,7 @@ let builtins : builtin list = [
     { name = "max";     impl = ITGL "let max x y = if x > y then x else y;;";               c_backing = CImpl "max" };
     { name = "abs";     impl = ITGL "let abs x = if x < 0 then -x else x;;";                c_backing = CImpl "abs_ml" };
     { name = "sqrt";  impl = Native (lib_sqrt, tysc_of_ty @@ TyFun (TyFloat, TyFloat));  c_backing = CImpl "sqrt_ml" };
+    { name = "sin";   impl = Native (lib_sin, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "sin_ml" };
     { name = "exp";   impl = Native (lib_exp, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "exp_ml" };
     { name = "log";   impl = Native (lib_log, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "log_ml" };
     { name = "round"; impl = Native (lib_round, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CImpl "round_ml" };

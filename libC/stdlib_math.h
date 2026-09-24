@@ -7,7 +7,7 @@
 #define STDLIB_MATH_CONSTANT_LIST(X) \
   X(max_int) X(min_int)
 #define STDLIB_MATH_UNARY_LIST(X) \
-  X(succ) X(prec) X(abs_ml) X(sqrt_ml) X(exp_ml) X(log_ml) X(round_ml)
+  X(succ) X(prec) X(abs_ml) X(sqrt_ml) X(sin_ml) X(exp_ml) X(log_ml) X(round_ml)
 #define STDLIB_MATH_BINARY_LIST(X) \
   X(min) X(max) X(fmin_ml) X(fmax_ml)
 

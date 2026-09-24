@@ -230,6 +230,7 @@ module Static = struct
     ["succ (succ 1)", "int", "3"];
     ["prec (prec 10)", "int", "8"];
     ["sqrt 9.0", "float", "3."];
+    ["sin 0.0", "float", "0."];
     ["exp 0.0", "float", "1."];
     ["log 1.0", "float", "0."];
     ["round 2.6", "float", "3."];
