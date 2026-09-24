@@ -1,17 +1,8 @@
-let sin (f : float) =
-  let rec compute (t : float) (n : float) (sum : float) =
-    if t >. -.0.0000000000001 || t <. 0.0000000000001 then sum
-    else
-      let next = t *. (-. f *. f) /. ((2. *. n +. 2.) *. (2. *. n +. 3.)) in
-      compute next (n +. 1.) (sum +. next)
-  in
-  compute f 0. f
-in
 let n = read_int () in
 let data = Array.make n 0.0 in
 let pi_2 = 6.28318530717959 in
-let rec loop i j =
-  let rec loop2 m j i =
+let rec loop (i : int) (j : int) : unit =
+  let rec loop2 (m : int) (j : int) (i : int) : unit =
     if (m >= 2) && (j >= m)
     then loop2 (m/2) (j-m) i
     else loop (i+2) (j+m)
@@ -28,9 +19,9 @@ let rec loop i j =
      loop2 (n/2) j i)
   else ()
 in
-let rec loop3 mmax =
-  let rec loop4 wr wi m mmax wpr wpi =
-    let rec loop5 i mmax wr wi m wpr wpi =
+let rec loop3 (mmax : int) : unit =
+  let rec loop4 (wr : float) (wi : float) (m : int) (mmax : int) (wpr : float) (wpi : float) : unit =
+    let rec loop5 (i : int) (mmax : int) (wr : float) (wi : float) (m : int) (wpr : float) (wpi : float) : unit =
       if i < n then
         let j = i + mmax in
         let tmpr = (wr *. data.(j)) -. (wi *. data.(j+1)) in
@@ -50,7 +41,7 @@ let rec loop3 mmax =
   if mmax < n then
     let theta = pi_2 /. (float_of_int mmax) in
     let wpr = let x = sin (0.5 *. theta) in
-              -2.0 *. (x *. x) in
+              -.2.0 *. (x *. x) in
     let wpi = sin theta in
     (loop4 1.0 0.0 0 mmax wpr wpi;
     loop3 (mmax * 2))
@@ -61,4 +52,4 @@ in
 loop 0 0; (* bit-reversal section *)
 loop3 2;(* Danielson-Lanczos section *)
 print_float data.(0)
-)
+);;
