@@ -557,7 +557,7 @@ module Cls = struct
     | Let (x, f1, f2) -> Let (x, replace_var vx vy f1, replace_var vx vy f2)
     | MakeCls (x, { entry; fvs; offset; ftvs }, f) -> MakeCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
     | MakeTyCls (x, { entry; fvs; offset; ftvs }, f) -> MakeTyCls (x, { entry = to_label (replace (to_id entry)); fvs = List.map replace fvs; offset; ftvs }, replace_var vx vy f)
-    | SetTy _ -> raise @@ Translation_bug "SetTy appear in replace"
+    | SetTy (tv, f) -> SetTy (tv, replace_var vx vy f)
     | AppMCls _ | AppMDir _ -> raise @@ Translation_bug "AppM appear in replace"
     | Cast _ -> raise @@ Translation_bug "Cast appear in replace"
 
@@ -587,6 +587,7 @@ module Cls = struct
     | CApp (x, k) when V.mem k ids -> Var x
     | MakeCls (x, cls, f) -> MakeCls (x, cls, to_alt ids f)
     | MakeTyCls (x, cls, f) -> MakeTyCls (x, cls, to_alt ids f)
+    | SetTy (tv, f) -> SetTy (tv, to_alt ids f)
     | AppMCls _ | AppMDir _ -> raise @@ Translation_bug "AppM appear in to_alt"
     | Cast _ -> raise @@ Translation_bug "Cast appear in to_alt"
     | f -> f
