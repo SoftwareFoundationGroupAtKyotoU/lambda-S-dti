@@ -3,3 +3,8 @@ Dockerfile
 logs/*
 result/*
 result_C/*
+.check_tmp/*
+.venv/*
+_build/*
+*.zip
+experiments/*
