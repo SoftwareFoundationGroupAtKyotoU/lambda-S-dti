@@ -22,7 +22,7 @@
                     (let ([x : Float (fl- #i1.0 (fl* x n-prime-of-x))])
                       (if sign (fl- #i1.0 x) x))))))))))))
 
-(define (black-scholes [spot : Float]) : (Float -> (Float -> (Float -> (Float -> (Float -> (Int -> (Float -> Float)))))))
+(define (black-scholes [spot : Float]) : (Float -> (Float -> (Float -> (Float -> (Int -> (Float -> Float))))))
   (lambda ([strike : Float]) (lambda ([rate : Float]) (lambda ([volatility : Float]) (lambda ([time : Float]) (lambda ([option-type : Int]) (lambda ([timet : Float])
     (let ([log : Float (fllog (fl/ spot strike))]
           [pow : Float (fl* #i0.5 (fl* volatility volatility))]
