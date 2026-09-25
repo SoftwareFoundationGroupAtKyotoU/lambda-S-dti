@@ -1038,9 +1038,19 @@ module Cls = struct
     | SetTy ((i, { contents = Some (TyTuple us) }), f) ->
       let pp_sep ppf () = fprintf ppf ", " in
       let pp_list ppf tys = pp_print_list pp_ty ppf tys ~pp_sep:pp_sep in
-      fprintf ppf "set _tylist%d = TYTUPLE(%a) in %a"
+      fprintf ppf "set _tytuple%d = TYTUPLE(%a) in %a"
         i
         pp_list us
+        pp_exp f
+    | SetTy ((i, { contents = Some (TyRef u) }), f) ->
+      fprintf ppf "set _tyref%d = TYREF(%a) in %a"
+        i
+        pp_ty u
+        pp_exp f
+    | SetTy ((i, { contents = Some (TyArray u) }), f) ->
+      fprintf ppf "set _tyarray%d = TYARRAY(%a) in %a"
+        i
+        pp_ty u
         pp_exp f
     | SetTy _ -> raise @@ Syntax_error
     | Cast (x, u1, u2, _) ->
