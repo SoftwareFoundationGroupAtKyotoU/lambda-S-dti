@@ -5,8 +5,8 @@
 # だが、対象はベンチマークのソース＋mutation機構（lib/bench/*, lib/backend/builder.ml の
 # Builder.build_run_bench_check）を、test/check_mutants.ml の専用ハーネス経由で確認する。
 #
-# 何も標準出力しないベンチ（church-2/church-4/fold/fold-mono/map/map-mono/mklist/
-# zipwith/zipwith-mono）は比較対象がないため対象外。
+# 何も標準出力しないベンチ（church-2/church-4/fold/map/mklist/zipwith）は
+# 比較対象がないため対象外。
 #
 # 使用法: 有効な opam switch 上で実行すること（`eval $(opam env)` 済み、または
 #         `opam exec -- ./compile_test/mutation_test.sh`）。
@@ -30,7 +30,6 @@ declare -A EXPECTED=(
   [church-65532]="65536"
   [evenodd]="true"
   [loop]="0"
-  [loop-mono]="0"
   [incsum]="2003000"
   [array]="50000"
   [matmult]="38852480"
