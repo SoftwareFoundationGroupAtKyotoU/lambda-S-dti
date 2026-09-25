@@ -80,8 +80,8 @@ let rec serialize (dyn : IntSet.t) (s : sx) : string =
 
 (* ===================== analyze（出現順スロット列挙） ===================== *)
 
-(* mutation 対象外の define 名（grift サンプルのリスト表現ヘルパと entry point） *)
-let fixed_names = [ "benchmark"; "empty-list"; "cons"; "is-empty"; "head"; "tail" ]
+(* mutation 対象外の define 名（entry point） *)
+let fixed_names = [ "benchmark" ]
 
 let atom_is s = function { k = Atom a; _ } -> a = s | _ -> false
 
@@ -91,10 +91,10 @@ let rec nested_type_slots (s : sx) : sx list =
   | Lst (a :: op :: b :: _) when atom_is "->" op -> a :: nested_type_slots b
   | _ -> [ s ]
 
-let rec is_referenced (name : string) (s : sx) : bool =
-  match s.k with
-  | Atom a -> a = name
-  | Lst xs -> List.exists (is_referenced name) xs
+(* grift の define 名を ML 側の識別子に揃える（ハイフン区切り → アンダースコア区切り）。
+   例: energy-loop-o ↔ energy_loop_o *)
+let ml_name_of_grift (name : string) : string =
+  String.map (fun c -> if c = '-' then '_' else c) name
 
 (* [arg : T] 形から T を取り出す *)
 let typed_binding_ty (s : sx) : sx option =
@@ -114,8 +114,11 @@ let rec collect_lambda_arg_tys (acc : sx list) (s : sx) : sx list =
   in
   match s.k with Lst xs -> List.fold_left collect_lambda_arg_tys acc xs | Atom _ -> acc
 
-(* 1 つの define から、出現順のスロット群（各群 = 一緒に Dyn 化する sx ノード）を返す。 *)
-let slots_of_define (d : sx) : sx list list =
+(* 1 つの define から、出現順のスロット群（各群 = 一緒に Dyn 化する sx ノード）を返す。
+   返り値型スロットは、ML 側で let rec 定義されている関数（fix_names に
+   含まれる名前）に対応する define にだけ割り当てる（ML 側 Mutate.walk では
+   FixExp だけが return スロットを持つため）。 *)
+let slots_of_define ~(fix_names : string list) (d : sx) : sx list list =
   match d.k with
   | Lst (hd :: header :: _rest) when atom_is "define" hd ->
     let name = match header.k with Lst ({ k = Atom n; _ } :: _) -> n | _ -> "" in
@@ -145,7 +148,7 @@ let slots_of_define (d : sx) : sx list list =
           (fun i lt -> if i < n_ret - 1 then [ lt; List.nth ret_slots i ] else [ lt ])
           lam_tys
       in
-      let is_rec = List.exists (is_referenced name) body_nodes in
+      let is_rec = List.mem (ml_name_of_grift name) fix_names in
       let arg_groups = List.map (fun t -> [ t ]) arg_tys in
       let ret_group =
         if is_rec && n_ret > 0 then [ [ List.nth ret_slots (n_ret - 1) ] ] else []
@@ -162,13 +165,27 @@ let top_defines (forms : sx list) : sx list =
        | _ -> false)
     forms
 
-(* 公開: grift ソース文字列 → (top-level define 群, 出現順スロット群) *)
-let analyze_src (src : string) : sx list * sx list list =
+let define_name (d : sx) : string option =
+  match d.k with
+  | Lst (hd :: { k = Lst ({ k = Atom n; _ } :: _); _ } :: _) when atom_is "define" hd -> Some n
+  | _ -> None
+
+(* 公開: grift ソース文字列 → (top-level define 群, 出現順スロット群)
+   fix_names = ML 側で let rec 定義されている関数名（Bench_target.fix_names）。
+   その全てに対応する関数 define が grift 側に無ければ、ML 側とスロットが
+   対応しなくなるのでエラーにする。 *)
+let analyze_src ~(fix_names : string list) (src : string) : sx list * sx list list =
   let forms = parse_forms (tokenize src) in
   let defs = top_defines forms in
-  (defs, List.concat_map slots_of_define defs)
+  let grift_funs = List.filter_map (fun d -> Option.map ml_name_of_grift (define_name d)) defs in
+  (match List.filter (fun x -> not (List.mem x grift_funs)) fix_names with
+   | [] -> ()
+   | missing ->
+     failwith ("grift: no function define corresponding to ML let rec: "
+               ^ String.concat ", " missing));
+  (defs, List.concat_map (slots_of_define ~fix_names) defs)
 
-let n_slots (src : string) : int = List.length (snd (analyze_src src))
+let n_slots ~fix_names (src : string) : int = List.length (snd (analyze_src ~fix_names src))
 
 (* subset = 1-based のスロット群インデックス列。該当群のノードを Dyn 化して module 文字列に。
    parse は 1 回だけ行い、グルーピングと serialize で同じノード（同じ id）を使う。 *)
@@ -184,8 +201,8 @@ let serialize_variant (defs : sx list) (groups : sx list list) (subset : int lis
   String.concat "\n" (List.map (serialize dyn) defs)
 
 (* テスト・デバッグ用: src を parse し subset を Dyn 化した module 文字列を返す *)
-let render_variant (src : string) (subset : int list) : string =
-  let defs, groups = analyze_src src in
+let render_variant ~fix_names (src : string) (subset : int list) : string =
+  let defs, groups = analyze_src ~fix_names src in
   serialize_variant defs groups subset
 
 (* ===================== grift 実行 ===================== *)
@@ -388,9 +405,20 @@ type grift_prepared = {
 let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~monotonic : grift_prepared =
   let input_path = Bench_config.input_path ~static file in
   let src = read_file grift_src in
-  let defs, groups = analyze_src src in
+  let defs, groups = analyze_src ~fix_names:(Bench_target.fix_names file) src in
   let n = List.length groups in
-  let subsets = if static then [ [] ] else Mutate.all_subsets_by_length n in
+  (* ML 側 (Pipeline.mutate_auto) と同じ閾値でスロット数が大きい場合は
+     全部分集合 (2^n 通り) の代わりにサンプリングする。閾値未満なら全列挙、
+     以上なら Mutate.sample_subsets_by_length に切り替える判断はここでも
+     揃える必要がある — さもないと blacksholes/fft/n_body/ray のような
+     スロット数の多い対象で 2^n が現実的でなくなり
+     (例: blacksholes は 2^17 = 131072 通り)、Mutate.all_subsets_by_length
+     内部の再帰が stack overflow を起こす。 *)
+  let subsets =
+    if static then [ [] ]
+    else if n < Bench_config.mutation_slot_threshold then Mutate.all_subsets_by_length n
+    else Mutate.sample_subsets_by_length ~samples_per_slot:Bench_config.samples_per_slot n
+  in
   let base_input = String.trim (read_file input_path) in
   let repeat k = String.concat "" (List.init k (fun _ -> base_input ^ "\n")) in
   let input_perf = repeat (itr + 10) in

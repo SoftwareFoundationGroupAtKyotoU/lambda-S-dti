@@ -1,6 +1,6 @@
 #!/bin/bash
-# 各ベンチマークについて、全 mutant × 全 mode（test/check_mutants.exe --dynamize --static が
-# 展開する組み合わせ全部）の標準出力が、下記に人手で登録した正解値と一致するかを
+# 各ベンチマークについて、全 mutant × ベンチと同じアブレーションターゲット（untypedALHMT 基準 +
+# 各軸を1つずつ反転。test/check_mutants.exe は軸フラグ省略時に全軸を反転する）の標準出力が、下記に人手で登録した正解値と一致するかを
 # 確認する正当性テスト。compile_test/dotests.sh と同じ思想（run_test filename expected_output）
 # だが、対象はベンチマークのソース＋mutation機構（lib/bench/*, lib/backend/builder.ml の
 # Builder.build_run_bench_check）を、test/check_mutants.ml の専用ハーネス経由で確認する。

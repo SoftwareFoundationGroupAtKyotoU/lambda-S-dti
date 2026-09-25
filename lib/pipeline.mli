@@ -21,3 +21,5 @@ val toC : formatter -> Cls.program state -> config:Config.t -> bench:int -> stri
 
 val mutate_all : formatter -> ITGL.program state -> ITGL.program list
 val mutate_sampled : samples_per_slot:int -> formatter -> ITGL.program state -> ITGL.program list
+val mutate_auto : threshold:int -> samples_per_slot:int -> formatter -> ITGL.program state -> ITGL.program list
+val fix_names : ITGL.program state -> id list

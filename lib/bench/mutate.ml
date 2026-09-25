@@ -30,6 +30,26 @@ module IntSet = Set.Make (Int)
 let is_synthetic (x : id) : bool =
   String.length x > 0 && x.[0] = '_'
 
+(* 非合成 FixExp（= ユーザーが書いた let rec）の名前を出現順に集める。
+   return スロットを持つのはこれらの関数だけなので、grift 側
+   （bench_grift.ml）はこの名前集合を受け取り、対応する define にだけ
+   返り値型スロットを割り当てる。 *)
+let fix_names (t : exp) : id list =
+  let rec go acc = function
+    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ -> acc
+    | FixExp (_, x, _, _, e) -> go (if is_synthetic x then acc else x :: acc) e
+    | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e) | DerefExp (_, e) | LengthExp (_, e) ->
+      go acc e
+    | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2) | LetExp (_, _, e1, e2)
+    | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) | WhileExp (_, e1, e2) ->
+      go (go acc e1) e2
+    | IfExp (_, e1, e2, e3) | ForExp (_, _, e1, e2, _, e3) | PutExp (_, e1, e2, e3) ->
+      go (go (go acc e1) e2) e3
+    | MatchExp (_, e, ms) -> List.fold_left (fun acc (_, me) -> go acc me) (go acc e) ms
+    | TupleExp (_, es) -> List.fold_left go acc es
+  in
+  List.rev (go [] t)
+
 (* ty = a1 -> a2 -> ... -> an -> r を (doms, ret) に分解 *)
 let split_arrows (t : ty) : ty list * ty =
   let rec loop acc = function
@@ -193,7 +213,16 @@ let all_subsets_by_length (n : int) : int list list =
    fully-typed（空集合）と fully-dynamic（全要素）の2点は必ず両端として残し、
    残り (samples_per_slot * n - 2) 個を要素数 1..n-1 の部分集合から重複なく
    ランダムに抽出する。合計はちょうど samples_per_slot * n 件
-   （候補が尽きた場合はその時点までに見つかった分だけ）。 *)
+   （候補が尽きた場合はその時点までに見つかった分だけ）。
+
+   乱数は OCaml の大域 Random ではなく、(n, samples_per_slot) から決定的に
+   種付けしたローカルな Random.State を使う。ALHMT（基準点）と
+   --eager/--hash/--monotonic 等のアブレーション軸、さらに ML 側と
+   grift 側（bench_grift.ml も同じ関数を同じ引数で呼ぶ）とで、同じ
+   mutant_index が実際に同じスロット選択を指すという保証がこれで初めて成り立つ。
+   大域 Random だと、それまでに何個の対象を処理したか（＝何回 Random.int を
+   消費したか）で結果が変わってしまい、対象の指定順序や本数を変えるだけで
+   同じベンチマークの mutant 集合ごと変わってしまう。 *)
 module IntListSet = Set.Make (struct
   type t = int list
   let compare = compare
@@ -202,14 +231,15 @@ end)
 let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list =
   if n <= 1 then all_subsets_by_length n
   else begin
+    let rng = Random.State.make [| n; samples_per_slot |] in
     let xs = Array.init n (fun i -> i + 1) in
     let full = Array.to_list xs in
     let random_subset () =
-      let k = 1 + Random.int (n - 1) in (* k in [1, n-1] *)
+      let k = 1 + Random.State.int rng (n - 1) in (* k in [1, n-1] *)
       let a = Array.copy xs in
       let len = Array.length a in
       for i = 0 to k - 1 do
-        let j = i + Random.int (len - i) in
+        let j = i + Random.State.int rng (len - i) in
         let tmp = a.(i) in
         a.(i) <- a.(j);
         a.(j) <- tmp

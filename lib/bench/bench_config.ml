@@ -3,41 +3,41 @@ let log_root = "logs"
 
 let grift_benchmarks = [
   "array";
-  (* "blacksholes"; *)
-  (* "fft"; *)
+  "blacksholes";
+  "fft";
   "matmult";
-  (* "n-body"; *)
+  "n_body";
   "quicksort";
-  (* "ray"; *)
+  "ray";
   (* "sieve"; *)
   "tak";
 ]
 let originals = [
-  "church-2";
-  "church-4";
+  (* "church-2"; *)
+  (* "church-4"; *)
   "church-65532";
   (* "easy"; *)
   "evenodd";
   "fib";
   "loop";
-  "loop-mono";
   (* original_list *)
   "fold";
-  "fold-mono";
   "incsum";
   "map";
-  "map-mono";
   "mklist";
   "zipwith";
-  "zipwith-mono";
 ]
 let gtp_benchmarks = [
   "fsm";
 ]
-(* GTP_benchmark は型注釈スロット数 n が既存対象（最大でも十数個）より桁違いに
-   多くなりうるため、全部分集合 (2^n 通り) の代わりに fully-typed / fully-dynamic
-   の両端を残しつつ残りをランダム抽出する（合計はちょうど samples_per_slot * n）。 *)
-let gtp_samples_per_slot = 10
+(* スロット数 n が大きい対象（GTP_benchmark の fsm や、grift_benchmark の
+   blacksholes/fft/n_body/ray 等）では、全部分集合 (2^n 通り) の列挙が
+   非現実的になる。スイートに関係なく、スロット数が mutation_slot_threshold
+   以上の対象は Pipeline.mutate_auto が自動的にサンプリング（fully-typed /
+   fully-dynamic の両端を残しつつ残りをランダム抽出、合計ちょうど
+   samples_per_slot * n）に切り替える（Bench_target.parse_and_mutate 参照）。 *)
+let mutation_slot_threshold = 6
+let samples_per_slot = 10
 let all_targets = grift_benchmarks @ gtp_benchmarks @ originals
 
 type suite = Original | GriftBenchmark | GtpBenchmark
@@ -93,23 +93,23 @@ let inpure_bench_without_eagerness = { eager_only = Some false; monotonic_only =
    あるため、ソースを読むだけでは判定を誤りうる — 例: quicksort は
    swap が単相なのに全体としては DIFFERS になる)。 *)
 let restrictions : (string * axis_restriction) list = [
-  "church-65532", pure_functional_bench;                                    (* DIFFERS *)
-  "evenodd",      { pure_functional_bench with tvs_only = Some true };
-  "fib",          { pure_functional_bench with tvs_only = Some true };
-  "loop-mono",    { pure_functional_bench with tvs_only = Some true };
-  "loop",         pure_functional_bench;                                    (* DIFFERS *)
-  "array",        { inpure_bench_without_eagerness with tvs_only = Some true };
-  "matmult",      { inpure_bench_without_eagerness with tvs_only = Some true };
-  "quicksort",    inpure_bench_without_eagerness;                           (* DIFFERS *)
-  "tak",          { pure_functional_bench with tvs_only = Some true };
-  "fold",         { no_restriction with tvs_only = Some true };
-  "fold-mono",    { no_restriction with tvs_only = Some true };
-  "incsum",       { no_restriction with tvs_only = Some true };
-  "map",          { no_restriction with tvs_only = Some true };
-  "map-mono",     { no_restriction with tvs_only = Some true };
-  "mklist",       { no_restriction with tvs_only = Some true };
-  "zipwith",      { no_restriction with tvs_only = Some true };
-  "zipwith-mono", { no_restriction with tvs_only = Some true };
+  "church-65532", no_restriction;                                    (* DIFFERS *)
+  "evenodd",      no_restriction;
+  "fib",          no_restriction;
+  "loop",         no_restriction;                                    (* DIFFERS *)
+  "array",        no_restriction;
+  "matmult",      no_restriction;
+  "quicksort",    no_restriction;                           (* DIFFERS *)
+  "tak",          no_restriction;
+  "blacksholes",  no_restriction;
+  "fft",          no_restriction;
+  "n_body",       no_restriction;
+  "ray",          no_restriction;
+  "fold",         no_restriction;
+  "incsum",       no_restriction;
+  "map",          no_restriction;
+  "mklist",       no_restriction;
+  "zipwith",      no_restriction;
   (* church-2/church-4/fsm: DIFFERS, and no other axis restriction applies,
      so they are intentionally absent (resolve to no_restriction). *)
 ]

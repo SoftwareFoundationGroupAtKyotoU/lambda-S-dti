@@ -399,10 +399,11 @@ let compile_targets ~log_dir ~itr ~label ~jobs (targets : target list) : compile
   report_compile_failures failed;
   { label; succeeded; failed = prepare_failed || failed <> [] }
 
+(* STATIC は dynamize では走らせない。分母にも含めない *)
+let dynamize_targets targets = List.filter (fun t -> t.mode <> STATIC) targets
+
 let compile_dynamize ~log_dir ~itr ~jobs targets =
-  (* STATIC は dynamize では走らせない。分母にも含めない *)
-  let targets = List.filter (fun t -> t.mode <> STATIC) targets in
-  compile_targets ~log_dir ~itr ~label:"dynamize" ~jobs targets
+  compile_targets ~log_dir ~itr ~label:"dynamize" ~jobs (dynamize_targets targets)
 
 (* STATIC モードは config が eager=true / hash=false に固定されるため、
    eager×hash の 4 通りは同一の実行になる。ファイルごとに 1 つへ畳む。
@@ -420,13 +421,13 @@ let dedup_static (targets : target list) : target list =
     | _ -> true
   ) targets
 
+let static_targets targets =
+  dedup_static targets
+  |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
+  |> List.map (fun t -> if t.mode = STATIC then { t with eager = true; hash = false; monotonic = false } else t)
+
 let compile_static ~log_dir ~itr ~jobs targets =
-  let targets =
-    dedup_static targets
-    |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
-    |> List.map (fun t -> if t.mode = STATIC then { t with eager = true; hash = false; monotonic = false } else t)
-  in
-  compile_targets ~log_dir ~itr ~label:"static" ~jobs targets
+  compile_targets ~log_dir ~itr ~label:"static" ~jobs (static_targets targets)
 
 (* ==================== GRIFT側 ==================== *)
 
@@ -452,7 +453,7 @@ type grift_compiled_batch = {
 let compile_grift ~log_dir ~itr ~jobs ~static ~files ~monotonicities ~label : grift_compiled_batch =
   let targets = Bench_target.restrict_grift_targets ~monotonicities files in
   let total_targets = List.length targets in
-  (* grift版のソースが存在しないベンチマーク(church-65532/loop 等、grift と
+  (* grift版のソースが存在しないベンチマーク(church-65532 やリストを用いる fold/incsum/map 等、grift と
      比較不能な言語機能を使うため意図的に .grift を持たない)は、軸制限で
      対象外になったケース(restrict_grift_targets)と同様に「このターゲットを
      grift 比較から外すだけ」の skip として扱い、prepare_failed には

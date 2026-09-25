@@ -186,3 +186,22 @@ let mutate_all ppf state = mutate_with Mutate.all_subsets_by_length ppf state
    大きい対象向け。k=0..n の各要素数から最大 samples_per_slot 個をランダム抽出する。 *)
 let mutate_sampled ~samples_per_slot ppf state =
   mutate_with (Mutate.sample_subsets_by_length ~samples_per_slot) ppf state
+
+(* スロット数 n が threshold 未満なら mutate_all（全部分集合、2^n 通り）、
+   threshold 以上なら mutate_sampled（ランダム抽出）に自動で振り分ける。
+   スイート（Original/GriftBenchmark/GtpBenchmark）に関係なく、純粋に
+   スロット数だけで判断する。 *)
+let mutate_auto ~threshold ~samples_per_slot ppf state =
+  let t = match state.program with
+    | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
+    | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutate_auto: TypeDecl not supported"
+  in
+  if Mutate.analyze t < threshold then mutate_all ppf state
+  else mutate_sampled ~samples_per_slot ppf state
+
+(* ユーザーが書いた let rec（非合成 FixExp）の名前を出現順に返す。
+   grift 側で返り値型スロットを割り当てる define を決めるのに使う。 *)
+let fix_names state =
+  match state.program with
+  | ITGL.Exp t | ITGL.LetDecl (_, t) -> Mutate.fix_names t
+  | ITGL.TypeDecl _ -> raise @@ Compile_bad "fix_names: TypeDecl not supported"

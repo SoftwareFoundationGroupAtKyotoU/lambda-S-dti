@@ -2,7 +2,7 @@ open Lambda_S_dti
 open Bench_target
 
 let check_target ~log_dir ~expected ~ordinal ~total_targets (t : target) : bool =
-  let mode_str = full_mode_name t.mode t.eager t.hash t.monotonic in
+  let mode_str = ablation_mode_str t in
   try
     let config = Bench_compiler.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
     let prog = Bench_compiler.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
@@ -16,39 +16,21 @@ let check_target ~log_dir ~expected ~ordinal ~total_targets (t : target) : bool 
   with
   | e -> Format.eprintf "[Skip] %s: %s@." mode_str (Printexc.to_string e); false
 
-let run_dynamize ~log_dir ~expected targets =
-  (* STATIC は dynamize では走らせない。分母にも含めない *)
-  let targets = List.filter (fun t -> t.mode <> STATIC) targets in
+let check_all ~log_dir ~expected targets =
   let total_targets = List.length targets in
   List.mapi (fun i t ->
-    check_target ~log_dir ~expected ~ordinal:(i + 1) ~total_targets t
-  ) targets
-  |> List.for_all (fun ok -> ok)
-
-let run_static ~log_dir ~expected targets =
-  let targets =
-    Bench_compiler.dedup_static targets
-    |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
-  in
-  let total_targets = List.length targets in
-  List.mapi (fun i t ->
-    let t = if t.mode = STATIC then { t with eager = true; hash = false; monotonic = false } else t in
     check_target ~log_dir ~expected ~ordinal:(i + 1) ~total_targets t
   ) targets
   |> List.for_all (fun ok -> ok)
 
 let () =
   let files = ref [] in
-  let eagernesses, hash_modes, monotonicities = ref [], ref [], ref [] in
+  (* ベンチ(bin/bench.ml)と同じ軸フラグ。fully-optimized 基準値(ALHMT)と、
+     立てた軸だけ1つ反転させたターゲットを検査する。1つも立てなければ全軸。 *)
+  let axis_specs, requested_axes = Bench_target.axis_specs () in
   let static, dynamize = ref false, ref false in
   let expected = ref None in
-  let specs = [
-    ("--eager", Arg.Unit (fun () -> eagernesses := true :: !eagernesses), " Check eager mode");
-    ("--lazy", Arg.Unit (fun () -> eagernesses := false :: !eagernesses), " Check lazy mode");
-    ("--hash", Arg.Unit (fun () -> hash_modes := true :: !hash_modes), " Check hash-consing mode");
-    ("--no-hash", Arg.Unit (fun () -> hash_modes := false :: !hash_modes), " Check no-hash-consing mode");
-    ("--guarded", Arg.Unit (fun () -> monotonicities := false :: !monotonicities), " Check guarded reference semantics");
-    ("--monotonic", Arg.Unit (fun () -> monotonicities := true :: !monotonicities), " Check monotonic reference semantics");
+  let specs = axis_specs @ [
     ("--static", Arg.Unit (fun () -> static := true), " Check fully-static compilation");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Check mutated (dynamized) programs");
     ("--expected", Arg.String (fun s -> expected := Some s),
@@ -56,7 +38,7 @@ let () =
   ]
   in
   Arg.parse specs (fun f -> files := f :: !files)
-    " Usage: ./check_mutants.exe <file> --expected <output> [--dynamize] [--static] [--eager|--lazy] [--hash|--no-hash] [--guarded|--monotonic]";
+    " Usage: ./check_mutants.exe <file> --expected <output> [--dynamize] [--static] [--id_opt] [--eagerness] [--hash] [--monotonic] [--tvs_opt] [--typed]";
 
   let files = !files in
   (match files with
@@ -72,14 +54,10 @@ let () =
     prerr_endline "nothing to do: pass --dynamize and/or --static";
     exit 2
   end;
-  let eagernesses = if !eagernesses = [] then [true; false] else !eagernesses in
-  let hash_modes = if !hash_modes = [] then [true; false] else !hash_modes in
-  let monotonicities = if !monotonicities = [] then [true; false] else !monotonicities in
+  let axes = match requested_axes () with [] -> Bench_target.all_axes | axes -> axes in
 
-  let prepared : (string * Syntax.ITGL.program list) list =
-    List.map (fun file -> (file, Bench_target.parse_and_mutate file)) files
-  in
-  let targets = Bench_target.expand_targets ~eagernesses ~hash_modes ~monotonicities prepared in
+  let prepared = Bench_target.prepare ~axes files in
+  let targets = Bench_target.expand_ablation_targets ~axes prepared in
 
   let check_tmp_root = ".check_tmp" in
   if not (Sys.file_exists check_tmp_root) then Core_unix.mkdir check_tmp_root;
@@ -88,7 +66,10 @@ let () =
   at_exit (fun () -> ignore (Sys.command (Printf.sprintf "rm -rf %s" (Filename.quote log_dir))));
 
   let ok = ref true in
-  if !dynamize then ok := run_dynamize ~log_dir ~expected targets && !ok;
-  if !static then ok := run_static ~log_dir ~expected targets && !ok;
+  if !dynamize then
+    ok := check_all ~log_dir ~expected (Bench_compiler.dynamize_targets targets) && !ok;
+  if !static then
+    ok := check_all ~log_dir ~expected
+            (Bench_compiler.static_targets (Bench_target.with_static_baselines prepared targets)) && !ok;
   Printf.printf "done\n";
   if not !ok then exit 1
