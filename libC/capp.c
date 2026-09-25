@@ -822,6 +822,7 @@ value coerce(value v, crc *s, uint8_t suspend) {
 				sc_push(v, PSI_REF, s->crcdat.mref_crc);
 			} else {
 				ref_apply_monotonic_coercion((ref*)v, s->crcdat.mref_crc);
+				consume();
 			}
 			return apply_inj(v, G_RF, s);
 			#else
@@ -854,6 +855,7 @@ value coerce(value v, crc *s, uint8_t suspend) {
 				sc_push(v, PSI_ARRAY, s->crcdat.marray_crc);
 			} else {
 				array_apply_monotonic_coercion((arr*)v, s->crcdat.marray_crc);
+				consume();
 			}
 			return apply_inj(v, G_AR, s);
 			#else
