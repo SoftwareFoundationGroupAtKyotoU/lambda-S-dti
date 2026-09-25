@@ -1,0 +1,16 @@
+docker build -t env .
+// -e HOST_UID/-e HOST_GID を渡すと、entrypoint.sh がコンテナ内で書いた logs/ を
+// 実行後に自動で呼び出し元ユーザーの所有に戻すので、毎回 sudo chown する必要がない
+docker run --rm -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) -v $(pwd)/logs:/app/logs env bench (filename_for_benchmark) --paper --all
+make plot
+
+// for comparison of polymorphic and monomorphic
+docker run --rm -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) -v $(pwd)/logs:/app/logs env bench church_mono_{10..1} church_poly_{10..1} --compare -m SC --hash --dynamize --zaly
+...
+make plot_cpompare
+
+// for caption
+make plot_caption
+make plot_caption_horiz
+
+
