@@ -50,7 +50,7 @@ lSdti file.ldti -c           # コンパイルモード（→ C → clang → �
 ```bash
 dune runtest                       # OUnit2 ユニットテスト（test/ 以下）
 bash compile_test/dotests.sh       # コンパイルテスト一括実行（`-c`/`-c -a`/`-c -b --non_monotonic`/`-c --static` 全パターン）
-bash compile_test/mutation_test.sh # mutant × mode（eager/lazy × hash/no-hash × guarded/monotonic × dynamize/static）の
+bash compile_test/mutation_test.sh # 全 mutant × ベンチと同じアブレーションターゲット（untypedALHMT 基準 + 各軸を1つずつ反転、× dynamize/static）の
                                     # 標準出力が正解値と一致するかの end-to-end 検証（test/check_mutants.exe 経由）
 ```
 
@@ -92,7 +92,7 @@ lattice / mutation ベンチマーク。未型付けのサンプルを取り、`
 |---|---|
 | `bench_config` | ベンチ対象リスト・既定反復回数・`sample_path`/`input_path` |
 | `mutate` | mutant 生成（`analyze` / `mutate_all`） |
-| `bench_target` | `mode` 型・`full_mode_name`・`parse_and_mutate`・ターゲット展開・対象ごとの制限（未対応モード除外） |
+| `bench_target` | `mode` 型・`parse_and_mutate`/`prepare`・軸別アブレーションのターゲット展開（`expand_ablation_targets`）・出力ラベル（`ablation_mode_str`）・対象ごとの制限（未対応モード除外） |
 | `bench_builder` | `job list`（out_path + clang コマンド）から Makefile を生成し `make -j<N> -k --output-sync=target` で並列コンパイル。`-j` 既定値は `nproc - 1` |
 | `bench_compiler` | 対象ごとの mutant 生成・C ソース生成・並列コンパイルジョブの列挙・オーケストレーション（`compile_dynamize` / `compile_static` / `compile_dynamize_grift` / `compile_static_grift`） |
 | `bench_runner` | コンパイル済みターゲットの直列実行・計測（`run_batch` / `run_grift_batch`） |
@@ -105,10 +105,26 @@ lattice / mutation ベンチマーク。未型付けのサンプルを取り、`
 
 ### 入出力
 
-- ソース: `samples/src_gradti/untyped/{original,grift_benchmark}/<name>.ml`。
+- ソース: `samples/src_gradti/{typed,untyped}/{original,grift_benchmark,GTP_benchmark}/<name>.ml`。
+  既定は `untyped`、`--typed` を付けると `typed` 側を読む（同名ターゲットでも
+  スイート・バリアントによって中身が同一とは限らない点に注意）。
+  対象がどのスイートに属するかは `Bench_config.suite_of`（`grift_benchmarks` /
+  `gtp_benchmarks` に列挙されたものだけ各専用ディレクトリ、それ以外は `original`）で決まる。
+  対応するソースファイルが存在しないターゲットは `[Skip] <name>: sample not found (...)`
+  と表示されて自動的に除外され、他の対象の実行は継続する。
+  `GTP_benchmark` は型注釈スロット数 n が既存対象（最大でも十数個）より桁違いに
+  多くなりうるため（`fsm` で 65）、他スイートのような全部分集合 (2^n 通り) の
+  列挙ではなく `Mutate.sample_subsets_by_length`（fully-typed / fully-dynamic の
+  両端 + 残り `gtp_samples_per_slot * n - 2` 個をランダム抽出、合計ちょうど
+  `gtp_samples_per_slot * n` 件）を使う。**既知の問題**: `fsm --dynamize` は
+  未注釈のローカル再帰関数のパラメータを `?` 化した mutant の多くで
+  kNorm→closure→toC 側の未捕捉 `Not_found` が発生し、コンパイルが失敗する
+  （`--static` は単一の fully-typed mutant のみなので問題なく動く）。バックエンド側の
+  デバッグが必要な別課題として残っている。
 - driver 入力: `samples/input/<name>.txt`（`--static` は `<name>_fs.txt`）。
 - grift 比較用ソース: `samples/src_grift/{original,grift_benchmark}/<name>.grift`。
   `--grift` は `grift`（racket 実装、`GRIFT` 環境変数でパス上書き可）を要する。
+  `GTP_benchmark` には対応する `.grift` が無いため `--grift` では自動的にスキップされる。
 - 出力: `logs/<YYYYMMDD-HH:MM:SS>/<MODE>_<name>.jsonl`（NDJSON、1行=1 mutant）。
   ほかに `logs/<ts>/<MODE>/<name>_<n>.c`（mutant ごとの生成 C）、
   `logs/<ts>/bench/`（計測ドライバと `.out`）、
@@ -128,6 +144,7 @@ lattice / mutation ベンチマーク。未型付けのサンプルを取り、`
 ```bash
 dune exec ./bin/bench.exe -- --all -i 500        # 既定対象を全モードで
 dune exec ./bin/bench.exe -- --dynamize fib tak  # 対象を指定して dynamize のみ
+dune exec ./bin/bench.exe -- --typed --dynamize array  # typed/ 側のソースを使う
 make benchmark                                   # = dune exec ./bin/bench.exe（引数なし）
 make plot                                        # scripts/plot_all.py で可視化
 ```
