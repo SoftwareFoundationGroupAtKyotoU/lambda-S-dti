@@ -85,7 +85,18 @@ shift\n\
 \n\
 case "$COMMAND" in\n\
   bench)\n\
-    exec dune exec ./_build/default/bin/bench.exe -- "$@"\n\
+    # bind mount した logs/ が root 所有になって、毎回 sudo chown する羽目にならないよう、\n\
+    # docker run 側で -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) を渡しておけば\n\
+    # 実行後に自動で呼び出し元ユーザーの所有に戻す。exec だと後続処理が走らないので\n\
+    # ここだけ通常実行にして、終了コードを保ったまま exit する。\n\
+    set +e\n\
+    dune exec ./_build/default/bin/bench.exe -- "$@"\n\
+    status=$?\n\
+    set -e\n\
+    if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then\n\
+      chown -R "${HOST_UID}:${HOST_GID}" /app/logs 2>/dev/null || true\n\
+    fi\n\
+    exit "$status"\n\
     ;; \n\
   main)\n\
     exec dune exec ./_build/default/bin/main.exe -- "$@"\n\
