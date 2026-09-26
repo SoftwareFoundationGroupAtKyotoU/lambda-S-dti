@@ -89,12 +89,20 @@ case "$COMMAND" in\n\
     # docker run 側で -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) を渡しておけば\n\
     # 実行後に自動で呼び出し元ユーザーの所有に戻す。exec だと後続処理が走らないので\n\
     # ここだけ通常実行にして、終了コードを保ったまま exit する。\n\
+    # 過去の logs/ 全体を毎回 chown -R すると遅いので、実行前に logs/ 直下の一覧を\n\
+    # 控えておき、今回の実行で新しく増えたエントリ（logs/<timestamp>/）だけを対象にする。\n\
+    before=$(ls -A /app/logs 2>/dev/null || true)\n\
     set +e\n\
     dune exec ./_build/default/bin/bench.exe -- "$@"\n\
     status=$?\n\
     set -e\n\
     if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then\n\
-      chown -R "${HOST_UID}:${HOST_GID}" /app/logs 2>/dev/null || true\n\
+      chown "${HOST_UID}:${HOST_GID}" /app/logs 2>/dev/null || true\n\
+      for entry in $(ls -A /app/logs 2>/dev/null); do\n\
+        if ! grep -qxF -- "$entry" <<< "$before"; then\n\
+          chown -R "${HOST_UID}:${HOST_GID}" "/app/logs/$entry" 2>/dev/null || true\n\
+        fi\n\
+      done\n\
     fi\n\
     exit "$status"\n\
     ;; \n\
