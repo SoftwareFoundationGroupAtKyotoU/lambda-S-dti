@@ -133,6 +133,18 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
+  (* 子を持つ crc の has_tv は子の has_tv の OR。static な子（Addr）はコンパイル時に分かるが、
+     実行時に alloc_crc した子（型変数を含むテンプレート）は、型変数が解決済みなら has_tv = 0 に
+     正規化されうるので、その値を実行時に読む。コンパイル時の近似（check_has_tv）を埋め込むと、
+     子が解決済みでも 1 のまま残り、intern されず compose cache にも載らない。 *)
+  let has_tv_of_children children =
+    let static_tv = List.exists (fun (c, e) -> match e with Addr _ -> check_has_tv c | _ -> false) children in
+    let dyn = List.filter_map (fun (_, e) -> match e with Addr _ -> None | e -> Some (Arrow (e, "has_tv"))) children in
+    match static_tv, dyn with
+    | true, _ -> Int 1
+    | false, [] -> Int 0
+    | false, e :: es -> List.fold_left (fun acc e -> BinOp (acc, Or, e)) e es
+  in
   let c, info_proj_inj = match c with
     | CSeq (CProj (_, (r, p)), (CSeq (c, CInj _))) -> c, ["has_proj", Int 1; "has_inj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
     | CSeq (CProj (_, (r, p)), c) -> c, ["has_proj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
@@ -162,7 +174,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_FUN") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -171,7 +183,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm,
       Struct (
         ("crckind", Var "C_LIST") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c, ptr_crc];
           "crcdat", Struct ["lst_crc", ptr_crc]
         ]
       )
@@ -195,7 +207,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms @ arr_stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Var arr]]
           ]
         )
@@ -203,7 +215,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
           ]
         )
@@ -213,7 +225,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_REF") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -231,7 +243,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_ARRAY") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["array_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -695,10 +707,12 @@ let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None
 
 let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc ~heap_tuple_arr:false name c))) crcs
 
+(* set_static_crcs に渡すのは has_tv = 0 の crc だけ。has_tv = 1 の crc は alloc_crc が intern しないので
+   表に入れても引かれない *)
 let toC_crcs ~config crcs =
   let static_crc_names =
     ["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
-    @ (List.map snd crcs)
+    @ List.filter_map (fun (c, name) -> if check_has_tv c then None else Some name) crcs
   in
   let crcinit =
     if config.hash then
