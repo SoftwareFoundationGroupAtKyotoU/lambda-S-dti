@@ -526,6 +526,8 @@ and toC_assign ~config x f =
   | Cls.Deref (y, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
+      | Some TyDyn ->
+        assign_x (App (Var "read_to_dyn", [Arrow (Cast (PTR REF, Var y), "v"); Arrow (Cast (PTR REF, Var y), "u")]))
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR REF, Var y), "u")) in
         crc_stms @ assign_x (App (Var "apply_coerce", [Arrow (Cast (PTR REF, Var y), "v"); crc_exp]))
@@ -536,6 +538,8 @@ and toC_assign ~config x f =
   | Cls.Get (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
+      | Some TyDyn ->
+        assign_x (App (Var "read_to_dyn", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); Arrow (Cast (PTR ARR, Var y), "u")]))
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR ARR, Var y), "u")) in
         crc_stms @ assign_x (App (Var "apply_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); crc_exp]))
@@ -558,6 +562,8 @@ and toC_assign ~config x f =
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), Var z) :: assign_x (Int 0)
+      | Some TyDyn ->
+        SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "write_from_dyn", [Var z; Arrow (Cast (PTR REF, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR REF, Var y), "u")) in
         crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
@@ -568,6 +574,8 @@ and toC_assign ~config x f =
   | Cls.Put (y, z, v_x, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
+      | Some TyDyn ->
+        SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "write_from_dyn", [Var v_x; Arrow (Cast (PTR ARR, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR ARR, Var y), "u")) in
         crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)

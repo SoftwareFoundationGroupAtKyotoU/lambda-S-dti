@@ -235,6 +235,59 @@ static inline value apply_coerce_proj_tp(value v, uint16_t size, uint32_t rid, u
 	return untag_value(v, G_TP);
 }
 
+#ifdef MONOTONIC
+#include "ty.h"
+#include "crc.h"
+
+// monotonic ref/array の要素を静的型 Dyn として読み出す（Deref/Get）。
+// apply_coerce(v, make_s_coercion_to_dyn(u)) と同じ意味で、実行時型 u が Dyn/base なら
+// coercion を経由せず直接タグ付けする。それ以外（TYVAR/SUBSTITUTED/複合型）は従来経路。
+static inline value read_to_dyn(value v, ty *u) {
+	switch (u->tykind) {
+		case DYN: {
+			#ifdef PROFILE
+			current_cast++;
+			#endif
+			return v;
+		}
+		case BASE_INT: return apply_coerce_inj(v, G_INT);
+		case BASE_BOOL: return apply_coerce_inj(v, G_BOOL);
+		case BASE_UNIT: return apply_coerce_inj(v, G_UNIT);
+		case BASE_FLOAT: return apply_coerce_inj(v, G_FLOAT);
+		case BASE_CHAR: return apply_coerce_inj(v, G_CHAR);
+		case BASE_STRING: return apply_coerce_inj(v, G_STRING);
+		default: return coerce(v, make_s_coercion_to_dyn(u), 0);
+	}
+}
+
+// 静的型 Dyn の値 v を monotonic ref/array（実行時型 u）へ書き込む値に変換する（Subst/Put）。
+// coerce(v, make_s_coercion_from_dyn(u), 1) と同じ意味で、u が Dyn/base なら crc を割り当てずに
+// 直接タグ検査する。blame ラベルは make_s_coercion_from_dyn と同じ (0, 0)。
+// 呼び出し側は従来どおり「書き込み → consume_pending()」の順にすること（consume は書き込み後）。
+static inline value write_from_dyn(value v, ty *u) {
+	switch (u->tykind) {
+		case DYN: {
+			#ifdef PROFILE
+			current_cast++;
+			#endif
+			return v;
+		}
+		case BASE_INT: return apply_coerce_proj(v, G_INT, 0, 0);
+		case BASE_BOOL: return apply_coerce_proj(v, G_BOOL, 0, 0);
+		case BASE_UNIT: return apply_coerce_proj(v, G_UNIT, 0, 0);
+		case BASE_FLOAT: return apply_coerce_proj(v, G_FLOAT, 0, 0);
+		case BASE_CHAR: return apply_coerce_proj(v, G_CHAR, 0, 0);
+		case BASE_STRING: return apply_coerce_proj(v, G_STRING, 0, 0);
+		default: return coerce(v, make_s_coercion_from_dyn(u), 1);
+	}
+}
+
+// psi が空なら consume() は何もしないので、関数呼び出しを省く
+static inline void consume_pending(void) {
+	if (psi.count) consume();
+}
+#endif
+
 #endif
 
 #endif
