@@ -130,6 +130,15 @@ module CC = struct
     | FixDual (_, (_, u1), _, (_, uk), (f1, f2)) -> TV.union (ftv_ty u1) @@ TV.union (ftv_ty uk) @@ TV.union (ftv_exp f1) (ftv_exp f2)
 end
 
+(* 実行時に型引数の中身が必要な型変数のみ。CId u は C では crc_id か u の head (ground) しか使わない *)
+let rec ftv_coercion_rt = function
+  | CId _ -> TV.empty
+  | CFun (c1, c2) | CRef (c1, c2) | CArray (c1, c2) | CSeq (c1, c2) -> TV.union (ftv_coercion_rt c1) (ftv_coercion_rt c2)
+  | CList c -> ftv_coercion_rt c
+  | CTuple cs -> TV.big_union (List.map ftv_coercion_rt cs)
+  | CMRef (_, u2) | CMArray (_, u2) -> ftv_ty u2
+  | c -> ftv_coercion c
+
 module KNorm = struct
   open Syntax.KNorm
 
@@ -148,7 +157,7 @@ module KNorm = struct
     | Deref (_, None) | Subst (_, _, None) | Get (_, _, None) | Put (_, _, _, None) -> TV.empty
     | Deref (_, Some u) | Subst (_, _, Some u) | Get (_, _, Some u) | Put (_, _, _, Some u) -> ftv_ty u
     | CastExp (_, u1, u2, _) -> TV.union (ftv_ty u1) (ftv_ty u2)
-    | CoercionExp c -> ftv_coercion c
+    | CoercionExp c -> ftv_coercion_rt c
     | AppTy (_, _, tas) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg tas)
   and ftv_fund = function
     | FunB (_, f) -> ftv_exp f
