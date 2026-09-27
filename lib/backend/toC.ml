@@ -313,9 +313,10 @@ let rec make_s_coercion_call ~from u rtti : stm list * exp =
   in
   match u with
   | TyDyn -> [], App (Var (if from then "make_s_coercion_from_dyn" else "make_s_coercion_to_dyn"), [rtti])
-  | TyInt | TyBool | TyUnit | TyFloat ->
+  | TyInt | TyBool | TyUnit | TyFloat | TyChar | TyString ->
     let g = match u with
       | TyInt -> "G_INT" | TyBool -> "G_BOOL" | TyUnit -> "G_UNIT" | TyFloat -> "G_FLOAT"
+      | TyChar -> "G_CHAR" | TyString -> "G_STRING"
       | _ -> raise @@ ToC_bug "make_s_coercion_call: unreachable ground type"
     in
     [], (if from then App (Var "make_s_coercion_from_ground", [Var g; rtti])
@@ -344,18 +345,26 @@ let rec make_s_coercion_call ~from u rtti : stm list * exp =
     let dyn_stms, dyn_exp = dyn_branch () in
     let elems = List.mapi (fun i t -> make_s_coercion_call ~from t (Index (tys_field, Int i))) ts in
     let elem_stms = List.concat (List.map fst elems) in
-    let elem_exps = List.map snd elems in
+    (* 要素の crc を一旦変数に束縛し、全部 id なら配列を確保せずに crc_id を返す *)
+    let elem_vars = List.map (fun _ -> KNormal.genvar "_crce") elems in
+    let elem_bind_stms = List.map2 (fun v (_, e) -> SDecl (PTR CRC, v, Some e)) elem_vars elems in
+    let all_id =
+      List.fold_left (fun acc v -> BinOp (acc, And, BinOp (Var v, Eq, Addr "crc_id"))) (Int 1) elem_vars
+    in
     let arr = KNormal.genvar "_crcs" in
     let arr_stms =
       SDecl (PTR (PTR CRC), arr, Some (Malloc (PTR (PTR CRC), BinOp (Sizeof (PTR CRC), Mult, Int size))))
-      :: List.mapi (fun i e -> SAssign (Index (Var arr, Int i), e)) elem_exps
+      :: List.mapi (fun i v -> SAssign (Index (Var arr, Int i), Var v)) elem_vars
     in
     let result = KNormal.genvar "_crc" in
     [SDecl (PTR CRC, result, None);
      SIf (tag_eq rtti "DYN",
           dyn_stms @ [SAssign (Var result, dyn_exp)],
           [SIf (tag_eq rtti "TYTUPLE",
-                elem_stms @ arr_stms @ [SAssign (Var result, App (Var "wrap_tuple", [Int size; Var arr]))],
+                elem_stms @ elem_bind_stms
+                @ [SIf (all_id,
+                        [SAssign (Var result, Addr "crc_id")],
+                        arr_stms @ [SAssign (Var result, App (Var "wrap_tuple", [Int size; Var arr]))])],
                 [SAssign (Var result, call "make_s_coercion")])])],
     Var result
   | TyFun (t1, t2) ->
@@ -578,7 +587,7 @@ and toC_assign ~config x f =
         SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "write_from_dyn", [Var z; Arrow (Cast (PTR REF, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR REF, Var y), "u")) in
-        crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+        crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (PreOp (Deref, (Cast (REF, Var y))), Var z) :: assign_x (Int 0)
     else
@@ -590,7 +599,7 @@ and toC_assign ~config x f =
         SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "write_from_dyn", [Var v_x; Arrow (Cast (PTR ARR, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR ARR, Var y), "u")) in
-        crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+        crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
     else
