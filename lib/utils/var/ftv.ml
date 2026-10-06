@@ -42,6 +42,20 @@ let rec ftv_coercion = function
   | CSeq (c1, c2) -> TV.union (ftv_coercion c1) (ftv_coercion c2)
   | CFail _ -> TV.empty
 
+(* Type variables that the run-time representation of a coercion refers to
+   (toC.ml, toC_crc_gen). CId u only keeps the ground tag and the tuple size of
+   u, and CMRef/CMArray only keep the target type u2. Used by tvs-opt (KNorm
+   below) to drop type parameters that no generated code reads; use
+   ftv_coercion everywhere else. *)
+let rec ftv_coercion_rt = function
+  | CId _ -> TV.empty
+  | CMRef (_, u2) | CMArray (_, u2) -> ftv_ty u2
+  | CFun (c1, c2) | CRef (c1, c2) | CArray (c1, c2) | CSeq (c1, c2) ->
+    TV.union (ftv_coercion_rt c1) (ftv_coercion_rt c2)
+  | CList c -> ftv_coercion_rt c
+  | CTuple cs -> TV.big_union (List.map ftv_coercion_rt cs)
+  | (CInj _ | CProj _ | CTvInj _ | CTvProj _ | CTvProjInj _ | CFail _) as c -> ftv_coercion c
+
 module ITGL = struct
   open Syntax.ITGL
 
@@ -148,7 +162,7 @@ module KNorm = struct
     | Deref (_, None) | Subst (_, _, None) | Get (_, _, None) | Put (_, _, _, None) -> TV.empty
     | Deref (_, Some u) | Subst (_, _, Some u) | Get (_, _, Some u) | Put (_, _, _, Some u) -> ftv_ty u
     | CastExp (_, u1, u2, _) -> TV.union (ftv_ty u1) (ftv_ty u2)
-    | CoercionExp c -> ftv_coercion c
+    | CoercionExp c -> ftv_coercion_rt c
     | AppTy (_, _, tas) -> List.fold_left TV.union TV.empty (List.map ftv_tyarg tas)
   and ftv_fund = function
     | FunB (_, f) -> ftv_exp f
