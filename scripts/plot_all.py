@@ -24,6 +24,7 @@ from plot_relative import plot_relative, plot_static_summary
 from plot_scattered import plot_scattered
 from plot_metric import plot_metric
 from plot_compare import plot_compare  # ★ plot_compare をインポート追加
+from plot_stacked_time import run as run_plot_stacked_time  # ★ 累積性能グラフ
 
 EXTRA_METRICS = ["cast", "inference", "mem", "longest"]
 
@@ -115,6 +116,14 @@ def main():
         # plot_compare 側で該当ログがなければ自動でスキップされるので安全です
         plot_compare(mode, static=False)
         plot_compare(mode, static=True)
+
+    # ==========================================
+    # ★ 追加: 累積積み上げ折れ線（modeごとの実行時間を昇順ソート→累積和）
+    # TARGET_PAIRS（旧モード命名前提）に依存せず、ログディレクトリ内の
+    # jsonl をベンチマーク名の末尾一致で直接読むので、モード命名が変わっても動く。
+    # ==========================================
+    print("\n=== Processing Stacked Time Plots ===")
+    run_plot_stacked_time(date_dir)
 
     # 生成物ゼロで作られてしまった空フォルダを掃除
     prune_empty_dirs(date_dir)

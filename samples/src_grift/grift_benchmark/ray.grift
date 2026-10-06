@@ -29,45 +29,33 @@
 
 (define eye : (Tuple Float Float Float) (((make-point #i0.0) #i0.0) #i200.0))
 
-(define (tracer [res : Int]) : ()
-  (let ([extent : Int (* res 100)])
-    (begin
-      (display-char #\P)
-      (print-int 2)
-      (display-char #\space)
-      (print-int extent)
-      (display-char #\space)
-      (print-int extent)
-      (display-char #\space)
-      (print-int 255)
-      (display-char #\newline)
-      (repeat (y 0 extent) (_ : Unit ())
-        (repeat (x 0 extent) (_ : Unit ())
-          (begin
-            (print-int
-             ((color-at
-               (fl+ #i-50.0
-                    (fl/ (int->float x) (int->float res))))
-              (fl+ #i-50.0
-                   (fl/ (int->float y) (int->float res)))))
-            (display-char #\newline)))))))
+(define (make-sphere
+         [color : Float]) : (Float -> ((Tuple Float Float Float) -> (Tuple Float Float (Tuple Float Float Float))))
+  (lambda ([radius : Float]) (lambda ([center : (Tuple Float Float Float)]) (tuple color radius center))))
 
-(define (color-at [x : Float]) : (Float -> Int)
-  (lambda ([y : Float])
-    (let ([ray : (Tuple Float Float Float)
-             (((unit-vector (fl- x (point-x eye))) (fl- y (point-y eye))) (flnegate (point-z eye)))])
-    (float->int (flround (fl* ((sendray eye) ray) #i255.0))))))
+(define (sphere-color [s : (Tuple Float Float (Tuple Float Float Float))]) : Float
+  (tuple-proj s 0))
 
-(define (sendray [pt : (Tuple Float Float Float)]) : ((Tuple Float Float Float) -> Float)
-  (lambda ([ray : (Tuple Float Float Float)])
-    (let ([x : (Tuple (Tuple Float Float (Tuple Float Float Float)) (Tuple Float Float Float))
-             ((((((((loop pt) ray) 0) (vector-length *world*)) *world*) (tuple #i0 #i0 (tuple #i0 #i0 #i0))) (tuple #i0 #i0 #i0)) #i1e308)])
-    (let ([s : (Tuple Float Float (Tuple Float Float Float))
-             (tuple-proj x 0)])
-      (let ([int : (Tuple Float Float Float)
-                 (tuple-proj x 1)])
-        (fl* (((lambert s) int) ray)
-             (sphere-color s)))))))
+(define (sphere-radius [s : (Tuple Float Float (Tuple Float Float Float))]) : Float
+  (tuple-proj s 1))
+
+(define (sphere-center [s : (Tuple Float Float (Tuple Float Float Float))]) : (Tuple Float Float Float)
+  (tuple-proj s 2))
+
+(define (sphere-normal [s : (Tuple Float Float (Tuple Float Float Float))]) : ((Tuple Float Float Float) -> (Tuple Float Float Float))
+                       (lambda ([pt : (Tuple Float Float Float)])
+                         (let ([c : (Tuple Float Float Float)
+                                (sphere-center s)])
+                           (((unit-vector (fl- (point-x c) (point-x pt)))
+                             (fl- (point-y c) (point-y pt)))
+                            (fl- (point-z c) (point-z pt))))))
+
+(define (lambert [s : (Tuple Float Float (Tuple Float Float Float))]) : ((Tuple Float Float Float) -> ((Tuple Float Float Float) -> Float))
+  (lambda ([int : (Tuple Float Float Float)]) (lambda ([ray : (Tuple Float Float Float)]) (let ([n : (Tuple Float Float Float) ((sphere-normal s) int)])
+    (flmax #i0.0
+           (fl+ (fl* (point-x ray) (point-x n))
+                (fl+ (fl* (point-y ray) (point-y n))
+                     (fl* (point-z ray) (point-z n)))))))))
 
 (define (loop
          [pt : (Tuple Float Float Float)]) : ((Tuple Float Float Float) -> (Int -> (Int -> ((Vect (Tuple Float Float (Tuple Float Float Float))) -> ((Tuple Float Float (Tuple Float Float Float)) -> ((Tuple Float Float Float) -> (Float -> (Tuple (Tuple Float Float (Tuple Float Float Float)) (Tuple Float Float Float)))))))))
@@ -111,25 +99,45 @@
                                          ((((((((loop pt) ray) (+ index 1)) lst-len) lst) s) h) d)
                                          ((((((((loop pt) ray) (+ index 1)) lst-len) lst) surface) hit) dist)))))))))))))))))))))
 
-(define (lambert [s : (Tuple Float Float (Tuple Float Float Float))]) : ((Tuple Float Float Float) -> ((Tuple Float Float Float) -> Float))
-  (lambda ([int : (Tuple Float Float Float)]) (lambda ([ray : (Tuple Float Float Float)]) (let ([n : (Tuple Float Float Float) ((sphere-normal s) int)])
-    (flmax #i0.0
-           (fl+ (fl* (point-x ray) (point-x n))
-                (fl+ (fl* (point-y ray) (point-y n))
-                     (fl* (point-z ray) (point-z n)))))))))
+(define (sendray [pt : (Tuple Float Float Float)]) : ((Tuple Float Float Float) -> Float)
+  (lambda ([ray : (Tuple Float Float Float)])
+    (let ([x : (Tuple (Tuple Float Float (Tuple Float Float Float)) (Tuple Float Float Float))
+             ((((((((loop pt) ray) 0) (vector-length *world*)) *world*) (tuple #i0 #i0 (tuple #i0 #i0 #i0))) (tuple #i0 #i0 #i0)) #i1e308)])
+    (let ([s : (Tuple Float Float (Tuple Float Float Float))
+             (tuple-proj x 0)])
+      (let ([int : (Tuple Float Float Float)
+                 (tuple-proj x 1)])
+        (fl* (((lambert s) int) ray)
+             (sphere-color s)))))))
 
-(define (make-sphere
-         [color : Float]) : (Float -> ((Tuple Float Float Float) -> (Tuple Float Float (Tuple Float Float Float))))
-  (lambda ([radius : Float]) (lambda ([center : (Tuple Float Float Float)]) (tuple color radius center))))
+(define (color-at [x : Float]) : (Float -> Int)
+  (lambda ([y : Float])
+    (let ([ray : (Tuple Float Float Float)
+             (((unit-vector (fl- x (point-x eye))) (fl- y (point-y eye))) (flnegate (point-z eye)))])
+    (float->int (flround (fl* ((sendray eye) ray) #i255.0))))))
 
-(define (sphere-color [s : (Tuple Float Float (Tuple Float Float Float))]) : Float
-  (tuple-proj s 0))
-
-(define (sphere-radius [s : (Tuple Float Float (Tuple Float Float Float))]) : Float
-  (tuple-proj s 1))
-
-(define (sphere-center [s : (Tuple Float Float (Tuple Float Float Float))]) : (Tuple Float Float Float)
-  (tuple-proj s 2))
+(define (tracer [res : Int]) : ()
+  (let ([extent : Int (* res 100)])
+    (begin
+      (display-char #\P)
+      (print-int 2)
+      (display-char #\space)
+      (print-int extent)
+      (display-char #\space)
+      (print-int extent)
+      (display-char #\space)
+      (print-int 255)
+      (display-char #\newline)
+      (repeat (y 0 extent) (_ : Unit ())
+        (repeat (x 0 extent) (_ : Unit ())
+          (begin
+            (print-int
+             ((color-at
+               (fl+ #i-50.0
+                    (fl/ (int->float x) (int->float res))))
+              (fl+ #i-50.0
+                   (fl/ (int->float y) (int->float res)))))
+            (display-char #\newline)))))))
 
 (define (defsphere
           [i : Int]) : (Float -> (Float -> (Float -> (Float -> (Float -> (Tuple Float Float (Tuple Float Float Float)))))))
@@ -138,14 +146,6 @@
             (begin
               (vector-set! *world* i s)
               s))))))))
-
-(define (sphere-normal [s : (Tuple Float Float (Tuple Float Float Float))]) : ((Tuple Float Float Float) -> (Tuple Float Float Float))
-                       (lambda ([pt : (Tuple Float Float Float)])
-                         (let ([c : (Tuple Float Float Float)
-                                (sphere-center s)])
-                           (((unit-vector (fl- (point-x c) (point-x pt)))
-                             (fl- (point-y c) (point-y pt)))
-                            (fl- (point-z c) (point-z pt))))))
 
 (define (benchmark) : Unit
   (let ([res : Int (read-int)])

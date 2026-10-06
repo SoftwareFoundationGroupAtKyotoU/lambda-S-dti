@@ -2,7 +2,7 @@
    並列コンパイルは Bench_compiler の役目。 *)
 
 (* Pass 3: コンパイルが成功した target のみ、1 つずつ直列に実行・計測する。
-   Pass 2（並列コンパイル、Bench_compiler.compile_targets）が完全に終わった
+   コンパイルフェーズ（並列コンパイル、Bench_compiler.compile_batch）が完全に終わった
    後にしか呼ばれないので、実行中に他 target のコンパイルが裏で走っている
    ことは無い。 *)
 let run_bench_binaries (j : Bench_compiler.bench_job) =
@@ -17,8 +17,8 @@ let run_measured (p : Bench_compiler.prepared_target) =
   try run_bench_binaries p.b
   with e -> Format.eprintf "[Skip] %s: %s@." p.mode_str (Printexc.to_string e)
 
-let run_batch (b : Bench_compiler.compiled_batch) =
-  List.iter run_measured b.succeeded
+let run_batch (b : Bench_compiler.batch) =
+  List.iter run_measured b.targets
 
 (* GRIFT側: コンパイル済みの grift target を1つずつ直列に実行・計測する。
    コンパイル(Bench_compiler.compile_grift 等)は Bench_compiler の役目。 *)

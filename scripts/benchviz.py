@@ -20,43 +20,60 @@ try:
 except Exception:
     stats = None
 
+# 旧命名（S/A x E/L x H/N x M/G の総当たり式）は bin/bench.ml が ablation 方式
+# （ALHMT 基準値 + 単軸反転: --id_opt/--hash/--tvs_opt/--typed）に置き換わったため、
+# 実際のログに出てくるモード文字列も変わった。過去ログとの互換のため残してはいるが、
+# 現行の bin/bench.ml が出す jsonl は下の新命名側しかマッチしない。
+# 旧命名（参考として残す。現行ログには存在しない）:
+# TARGET_PAIRS = [
+#     ("SLNM", ["ALHM", "SLHM", "ALNM"]),
+#     ("SLHM", ["ALHM"]),
+#     ("ALNM", ["ALHM"]),
+#     ("GRIFTCM", ["ALHM"]),
+#     ("GRIFTM", ["ALHM"]),
+#     ("STATICENG", ["ALHM", "GRIFTCM", "GRIFTM"]),
+# ]
+
+# 新命名（ablation 方式）。基準値は untypedALHMT（Alt, Lazy, Hash-consing on,
+# Monotonic, tvs_opt on）。各 comp は基準値から1軸だけ反転させたもの:
+#   untypedSLHMT  = id_opt off（A→S）
+#   untypedALhMT  = hash-consing off（H→h）
+#   untypedALHMt  = tvs_opt off（T→t）
+#   typedALHMT    = typed/untyped 軸（untyped→typed ソースに差し替え）
+#   untypedSTATICEhGT = 完全静的コンパイル（DTI/coercion機構なし）
 TARGET_PAIRS = [ # (base, comp)
-    # ("SLNM", ["ALHM", "ALHG", "SLHM", "SLHG", "ALNM", "ALNG", "SLNG"]),
-    ("SLNM", ["ALHM", "SLHM", "ALNM"]),
-    ("SLHM", ["ALHM"]),        # A効果（H on側）— A x H 2x2グリッドの残り2辺
-    ("ALNM", ["ALHM"]),        # H効果（A on側）
-    ("GRIFTCM", ["ALHM"]),
-    ("GRIFTM", ["ALHM"]),
-    ("STATICENG", ["ALHM", "GRIFTCM", "GRIFTM"]),  # static実行時のみ有効
-    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN", "GRIFT", "GRIFTC"]),
-    # ("STATICEN", ["ALH", "SLH", "ALN", "SLN"]),
-    # ("GRIFTCM", ["ALHM", "ALHG", "SLHM", "SLHG", "ALNM", "ALNG", "SLNM", "SLNG", "GRIFTG", "GRIFTCG", "GRIFTM"]),
-    # ("STATICEN", ["GRIFTC", "SLH"]),
-    # ("SLN", ["SLH"]),
-    # ("SLH", ["ALN"]),
+    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt", "typedALHMT"]),  # 4軸まとめて概観
+    ("untypedSLHMT", ["untypedALHMT"]),   # id_opt 効果
+    ("untypedALhMT", ["untypedALHMT"]),   # hash-consing 効果
+    ("untypedALHMt", ["untypedALHMT"]),   # tvs_opt 効果
+    ("typedALHMT", ["untypedALHMT"]),     # typed/untyped 効果
+    ("untypedSTATICEhGT", ["untypedALHMT"]),  # static実行時のみ有効（完全静的 vs 完全動的基準値）
 ]
 
 STYLE_MAP = {
-    # --- SL 系 (Blue / Cyan ベース) ---
+    # --- 旧命名（参考として残す） ---
     "SLNM":      {"color": "#1f77b4", "marker": "o"},  # 丸
     "SLNG":     {"color": "#aec7e8", "marker": "s"},  # 四角
     "SLHM":      {"color": "#17becf", "marker": "^"},  # 上三角
     "SLHG":     {"color": "#9edae5", "marker": "v"},  # 下三角
-
-    # --- AL 系 (Orange / Amber ベース) ---
     "ALNM":      {"color": "#ff7f0e", "marker": "D"},  # ダイヤ（大）
     "ALNG":     {"color": "#ffbb78", "marker": "d"},  # ダイヤ（小）
     "ALHM":      {"color": "#d62728", "marker": "<"},  # 左三角
     "ALHG":     {"color": "#ff9896", "marker": ">"},  # 右三角
-
-    # --- GRIFT 系 (Green / Purple / Pink ベース) ---
     "GRIFT":    {"color": "#2ca02c", "marker": "P"},  # プラス（太）
     "GRIFTC":   {"color": "#9467bd", "marker": "X"},  # バツ（太）
     "GRIFTCM":  {"color": "#9467bd", "marker": "X"},  # バツ（太）
     "GRIFTM":   {"color": "#e377c2", "marker": "*"},  # スター
-
-    # --- その他 ---
     "STATICENG": {"color": "#7f7f7f", "marker": "h"},  # 六角形
+
+    # --- 新命名（ablation 方式）。全プロット種別（herman/relative/scattered/
+    #     metric/compare/stacked_time）で共通してこの色を使う ---
+    "untypedALHMT":      {"color": "#d62728", "marker": "<"},  # 基準値（旧ALHM相当）
+    "untypedSLHMT":      {"color": "#1f77b4", "marker": "o"},  # id_opt off（旧SLHM相当）
+    "untypedALhMT":      {"color": "#ff7f0e", "marker": "D"},  # hash off（旧ALNM相当）
+    "untypedALHMt":      {"color": "#2ca02c", "marker": "P"},  # tvs_opt off
+    "typedALHMT":        {"color": "#9467bd", "marker": "X"},  # typed軸
+    "untypedSTATICEhGT": {"color": "#7f7f7f", "marker": "h"},  # 完全静的
 }
 
 # =========================
@@ -100,7 +117,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
             "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak",
-            "church-65532", "church-65532-mono",
+            "church-65536", "church-65536-mono",
             "evenodd", "fib", "loop",
             "fold", "incsum", "map", "mklist", "zipwith", 
             "map-mono", "fold-mono", "zipwith-mono", "loop-mono",
@@ -108,26 +125,27 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         # 相対グラフ
         "relative": {
             "outdir": "relative",
-            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-            "ylabel": f"Relative Execution Time ({comp_label} / {base})",
-            "title_prefix": "Relative Performance",
+            "xlabel": "Mutant index (ordered by number of dynamized slots)",
+            "xlabel_sorted": "Mutants (sorted by relative time)",
+            "ylabel": f"Execution time relative to {base}",
+            "title_prefix": "Relative performance",
             "zigzag_tiers": 10,
             "zigzag_fontsize": 5
         },
         # 散布グラフ
         "scattered": {
             "outdir": "scattered",
-            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-            "ylabel": "Execution Time (seconds)",
-            "title_prefix": "Benchmark"
+            "xlabel": "Mutant index (ordered by number of dynamized slots)",
+            "ylabel": "Execution time (s, mean with 95% CI)",
+            "title_prefix": "Execution time"
         },
         # Herman
         "herman": {
             "outdir": "herman",
             "mad_k": 1,
             "min_n": 2,
-            "xlabel": "Pattern for Replacing Type Variables with Dyn (n)",
-            "ylabel": f"Relative Execution Time ({comp_label} / {base})",
+            "xlabel": "Mutant index (ordered by number of dynamized slots)",
+            "ylabel": f"Execution time relative to {base}",
             "title_prefix": "Herman (robust)"
         },
         # 極端比レポート
@@ -212,10 +230,30 @@ def get_plot_style(comp_name: str, index: int) -> dict:
 # 共通 I/O
 # =========================
 
+_TIMESTAMP_DIR = re.compile(r"\d{8}-\d{2}:\d{2}:\d{2}")
+
+
 def latest_date_dir(log_root: str) -> Tuple[str, str]:
-    dates = [d for d in os.listdir(log_root) if os.path.isdir(os.path.join(log_root, d))]
+    """既定では logs/ 以下で辞書順（=時系列）最新のディレクトリを使う。
+    複数人/複数セッションが同じ logs/ を共有していると、他セッションが後から
+    作ったディレクトリの方が「最新」判定されてしまうことがあるため、
+    環境変数 BENCH_LOG_DIR でディレクトリ名を明示指定できるようにしてある
+    （例: BENCH_LOG_DIR=20260923-10:33:53 make plot）。"""
+    override = os.environ.get("BENCH_LOG_DIR")
+    if override:
+        path = os.path.join(log_root, override)
+        if not os.path.isdir(path):
+            raise SystemExit(f"BENCH_LOG_DIR={override!r} not found under '{log_root}/'.")
+        return override, path
+
+    # 名前を付け直したディレクトリ（例: array-quicksort-tak-church-loop）は英字が数字より
+    # 辞書順で後ろに来て常に「最新」になってしまうので、自動選択はタイムスタンプ名だけに限る。
+    # 名前付きのものは BENCH_LOG_DIR で指定する。
+    dates = [d for d in os.listdir(log_root)
+             if os.path.isdir(os.path.join(log_root, d)) and _TIMESTAMP_DIR.fullmatch(d)]
     if not dates:
-        raise SystemExit(f"No log directories found under '{log_root}/'.")
+        raise SystemExit(f"No timestamped log directories found under '{log_root}/' "
+                         f"(set BENCH_LOG_DIR to use a named one).")
     latest = max(dates)  # "YYYYMMDD-HH:MM:SS" は辞書順=時系列
     return latest, os.path.join(log_root, latest)
 
@@ -413,7 +451,9 @@ def draw_binomial_boundaries(ax, n_total: int):
     for x in midlines:
         ax.axvline(x=x, color='lightgray', linestyle=':', linewidth=0.9, zorder=0)
 
-HIDE_PLOT_TEXTS = True
+# タイトル・軸ラベル・凡例を消した図（論文でキャプションを別に付ける用）が欲しいときは
+# BENCH_HIDE_PLOT_TEXTS=1 make plot のように指定する。既定は表示する。
+HIDE_PLOT_TEXTS = os.environ.get("BENCH_HIDE_PLOT_TEXTS", "0") == "1"
 
 def apply_decorations(ax, xlabel: str, ylabel: str, title: str):
     """タイトル、軸ラベル、凡例の描画を共通化し、フラグで一括ON/OFFする"""

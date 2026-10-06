@@ -74,9 +74,11 @@ let collect_head_funs (e : exp) : (range * id * anotated * ty) list * exp =
 
 (* sel = None      : スロットを数えるだけ（変換しない）
    sel = Some s    : s に含まれるスロット番号の注釈を TyDyn 化
+   path            : このスロットを囲む LetExp 束縛名の列（外→内）。
+                     スロットを消費するたびに on_slot slot path を呼ぶ（slot_paths 用）
    戻り値 = (消費したスロット数, 変換後の式) *)
-let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
-  let recur k e = walk sel k e in
+let rec walk ?(on_slot = fun _ _ -> ()) (sel : IntSet.t option) (path : id list) (k : int) (t : exp) : int * exp =
+  let recur k e = walk ~on_slot sel path k e in
   let dyn_if slot u = match sel with
     | Some s when IntSet.mem slot s -> TyDyn
     | _ -> u
@@ -90,6 +92,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     (k1, FunExp (r, (x, annot, u), e'))
   | FunExp (r, (x, annot, u), e) ->
     let slot = k + 1 in
+    on_slot slot path;
     let u' = dyn_if slot u in
     let annot = if u' = TyDyn then Expl else annot in
     let k1, e' = recur slot e in
@@ -105,6 +108,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     (* param スロット: k+1 = y/u1, k+1+i = heads[i-1]/doms[i-1] (i=1..n_heads)
        return スロット: k+1+n_heads+1 *)
     let ret_slot = k + n_heads + 2 in
+    for slot = k + 1 to ret_slot do on_slot slot path done;
     let u1' = dyn_if (k + 1) u1 in
     let annot = if u1' = TyDyn then Expl else annot in
     let doms' = List.mapi (fun j d -> dyn_if (k + 2 + j) d) doms in
@@ -145,7 +149,8 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   | ConsExp (r, e1, e2) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, ConsExp (r, e1', e2'))
   | LetExp (r, id, e1, e2) ->
-    let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, LetExp (r, id, e1', e2'))
+    let k1, e1' = walk ~on_slot sel (path @ [id]) k e1 in
+    let k2, e2' = recur k1 e2 in (k2, LetExp (r, id, e1', e2'))
   | SubstExp (r, e1, e2) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, SubstExp (r, e1', e2'))
   | MakeArrayExp (r, e1, e2) ->
@@ -182,13 +187,84 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     (k1, TupleExp (r, List.rev es_rev))
 
 (* スロット総数 *)
-let analyze (t : exp) : int = fst (walk None 0 t)
+let analyze (t : exp) : int = fst (walk None [] 0 t)
 
 (* ---------- 公開 API ---------- *)
 
 let mutate_term_with_indices (idxs : int list) (t : exp) : exp =
   let sel = List.fold_left (fun s i -> IntSet.add i s) IntSet.empty idxs in
-  snd (walk (Some sel) 0 t)
+  snd (walk (Some sel) [] 0 t)
+
+(* ---------- untyped ↔ typed のスロット対応 ----------
+
+   typed ソースは、untyped では多相に使われる関数を単相版に複製していることが
+   ある（例: church-4 の two → two0/two1）。そのためスロット番号の単純な
+   一致は期待できない。各スロットに
+     key = (囲む let 束縛名の経路を canon で正規化したもの, 正規化前の経路内での出現序数)
+   を振り、キーが等しいスロット同士を対応させる。序数は正規化「前」の経路で
+   数えるので、two0 の第1引数と two1 の第1引数はどちらも (["two"], 0) になり、
+   untyped の two の第1引数に対応する。 *)
+
+type slot_key = id list * int
+
+let string_of_slot_key ((path, ord) : slot_key) : string =
+  Printf.sprintf "%s#%d" (if path = [] then "<top>" else String.concat "/" path) ord
+
+(* スロット番号順のキー列 *)
+let slot_keys ~(canon : id -> id) (t : exp) : slot_key list =
+  let paths = ref [] in
+  ignore (walk ~on_slot:(fun _ path -> paths := path :: !paths) None [] 0 t);
+  let seen = Hashtbl.create 16 in
+  List.map (fun path ->
+    let ord = Option.value (Hashtbl.find_opt seen path) ~default:0 in
+    Hashtbl.replace seen path (ord + 1);
+    (List.map canon path, ord)
+  ) (List.rev !paths)
+
+(* LetExp で束縛される名前の集合（単相版対応表の名前が実在するかの検査用） *)
+let let_names (t : exp) : id list =
+  let names = ref [] in
+  let rec go = function
+    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ -> ()
+    | LetExp (_, x, e1, e2) -> names := x :: !names; go e1; go e2
+    | FixExp (_, _, _, _, e) | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e)
+    | DerefExp (_, e) | LengthExp (_, e) -> go e
+    | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2)
+    | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) | WhileExp (_, e1, e2) ->
+      go e1; go e2
+    | IfExp (_, e1, e2, e3) | ForExp (_, _, e1, e2, _, e3) | PutExp (_, e1, e2, e3) ->
+      go e1; go e2; go e3
+    | MatchExp (_, e, ms) -> go e; List.iter (fun (_, me) -> go me) ms
+    | TupleExp (_, es) -> List.iter go es
+  in
+  go t;
+  List.rev !names
+
+(* untyped の各スロット i (1-based) に対応する typed スロット番号列を
+   返す（配列の添字 i-1）。対応の取れないスロットが片側にでもあればエラー。 *)
+let correspond ~(untyped : exp) ~(typed : exp) ~(canon : id -> id) : (int list array, string list) result =
+  let ku = Array.of_list (slot_keys ~canon:Fun.id untyped) in
+  let kt = slot_keys ~canon typed in
+  let map = Array.make (Array.length ku) [] in
+  let index = Hashtbl.create 16 in
+  Array.iteri (fun i k -> Hashtbl.replace index k i) ku;
+  let orphans_t =
+    List.concat (List.mapi (fun j k ->
+      match Hashtbl.find_opt index k with
+      | Some i -> map.(i) <- map.(i) @ [j + 1]; []
+      | None -> [Printf.sprintf "typed slot %d (%s) has no untyped counterpart" (j + 1) (string_of_slot_key k)]
+    ) kt)
+  in
+  let orphans_u =
+    List.concat (List.mapi (fun i k ->
+      if map.(i) = [] then
+        [Printf.sprintf "untyped slot %d (%s) has no typed counterpart" (i + 1) (string_of_slot_key k)]
+      else []
+    ) (Array.to_list ku))
+  in
+  match orphans_u @ orphans_t with
+  | [] -> Ok map
+  | errs -> Error errs
 
 (* 0..n のすべての部分集合を要素数順に全列挙（昇順）。ML 側と grift 側で共有する列挙順。 *)
 let all_subsets_by_length (n : int) : int list list =
@@ -259,3 +335,9 @@ let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list
     in
     [] :: middle @ [ full ]
   end
+
+(* スロット数 n が threshold 未満なら全列挙（2^n 通り）、以上ならサンプリング。
+   ML 側（untyped/typed）と grift 側でこの結果を共有する。 *)
+let subsets_auto ~(threshold : int) ~(samples_per_slot : int) (n : int) : int list list =
+  if n < threshold then all_subsets_by_length n
+  else sample_subsets_by_length ~samples_per_slot n

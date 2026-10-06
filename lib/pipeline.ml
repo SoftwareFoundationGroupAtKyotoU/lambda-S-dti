@@ -163,13 +163,17 @@ let toC ppf state ~config ~bench =
   Static_manage.StrManager.init ();
   str_c
 
-let mutate_with subsets_of ppf state =
-  let t = match state.program with
-    | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
-    | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutate_all: TypeDecl not supported"
-  in
-  let n_total = Mutate.analyze t in
-  let subsets = subsets_of n_total in
+(* mutation 対象の項。ベンチ対象は bundle 済みの単一の式である前提。 *)
+let mutation_term state =
+  match state.program with
+  | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
+  | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutation_term: TypeDecl not supported"
+
+(* idx_lists の各要素（Dyn 化するスロット番号列）ごとに1つ mutant を作り、
+   型推論まで通す。どの部分集合を選ぶか（全列挙/サンプリング、typed 側への
+   対応付け）は呼び出し側（lib/bench/）の責務。 *)
+let mutate_with_indices ppf state (idx_lists : int list list) =
+  let t = mutation_term state in
   List.map (fun idxs ->
     let program =
       ITGL.Exp (Mutate.mutate_term_with_indices idxs t)
@@ -178,26 +182,7 @@ let mutate_with subsets_of ppf state =
     let state = typing_ITGL ppf { state with program } in
     state.program
   )
-  subsets
-
-let mutate_all ppf state = mutate_with Mutate.all_subsets_by_length ppf state
-
-(* all_subsets_by_length の全列挙 (2^n 通り) が現実的でないほどスロット数 n が
-   大きい対象向け。k=0..n の各要素数から最大 samples_per_slot 個をランダム抽出する。 *)
-let mutate_sampled ~samples_per_slot ppf state =
-  mutate_with (Mutate.sample_subsets_by_length ~samples_per_slot) ppf state
-
-(* スロット数 n が threshold 未満なら mutate_all（全部分集合、2^n 通り）、
-   threshold 以上なら mutate_sampled（ランダム抽出）に自動で振り分ける。
-   スイート（Original/GriftBenchmark/GtpBenchmark）に関係なく、純粋に
-   スロット数だけで判断する。 *)
-let mutate_auto ~threshold ~samples_per_slot ppf state =
-  let t = match state.program with
-    | ITGL.Exp t | ITGL.LetDecl (_, t) -> t
-    | ITGL.TypeDecl _ -> raise @@ Compile_bad "mutate_auto: TypeDecl not supported"
-  in
-  if Mutate.analyze t < threshold then mutate_all ppf state
-  else mutate_sampled ~samples_per_slot ppf state
+  idx_lists
 
 (* ユーザーが書いた let rec（非合成 FixExp）の名前を出現順に返す。
    grift 側で返り値型スロットを割り当てる define を決めるのに使う。 *)

@@ -107,7 +107,7 @@ Syntax.Cls.exp   — クロージャ変換後 AST
 | `test/test_typing.ml` | 型推論テスト（OUnit2）|
 | `test/test_mutate.ml` / `test/test_grift.ml` | `lib/bench/mutate.ml`（出現順スロット付番・全 mutant のインタプリタ差分カバレッジ）と `lib/bench/bench_grift.ml`（S式 round-trip・スロット数が ML 側と一致）のユニットテスト |
 | `test/check_mutants.ml` | ベンチと同じ軸別アブレーション（untypedALHMT 基準 + id_opt/eagerness/hash/monotonic/tvs_opt/typed を1つずつ反転、× dynamize/static）の各ターゲットで全 mutant を実際にコンパイル・実行し、標準出力が正解値と一致するかを見る end-to-end 正当性テスト。`compile_test/mutation_test.sh` から呼ぶ |
-| `bin/bench.ml` + `lib/bench/` | mutation ベンチマーク。`lib/bench/`（`bench_config`/`bench_target`/`bench_builder`/`bench_compiler`/`bench_runner`/`bench_grift`/`bench_output`/`bench_progress`/`bench_json`/`mutate`）＋ 薄い `bin/bench.ml`。コンパイル専用。コンパイル（`bench_builder`/`bench_compiler`、並列）と計測（`bench_runner`、直列）を分離。mutation スロットはソース出現順に番号付けし、ML 側（`mutate`）と grift 側（`bench_grift`）で同一の `mutant_index` を共有。詳細は [docs/howto.md](docs/howto.md) |
+| `bin/bench.ml` + `lib/bench/` | mutation ベンチマーク。`lib/bench/`（`bench_config`/`bench_target`/`bench_phases`/`bench_builder`/`bench_compiler`/`bench_runner`/`bench_grift`/`bench_output`/`bench_progress`/`bench_json`/`mutate`）＋ 薄い `bin/bench.ml`。コンパイル専用。前処理（`bench_phases`: restriction 解決→ソース/input 存在→parse→スロット対応→mutate）→コード生成→コンパイル（`bench_builder`/`bench_compiler`、並列）→計測（`bench_runner`、直列）の各フェーズで、エラーがあればそのフェーズで停止する。mutation スロットはソース出現順に番号付けし、ML 側（`mutate`）と grift 側（`bench_grift`）で同一の `mutant_index` を共有。詳細は [docs/howto.md](docs/howto.md) |
 
 正確なファイル一覧は `find lib libC -name "*.ml" -o -name "*.c" -o -name "*.h"` で随時確認すること（このリポジトリはファイル配置がしばしば変わるため、本表は目安）。
 

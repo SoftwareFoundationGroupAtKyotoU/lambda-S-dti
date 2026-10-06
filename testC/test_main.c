@@ -1,6 +1,10 @@
 #include "unity.h"
 #include "test_common.h"
 
+// blame.c から extern 参照されるが、compose() のテストでは blame() は
+// 実際には呼ばれないため中身は空でよい。リンクを通すためだけに定義する。
+range *range_list = NULL;
+
 // 外部（test_cases.c）から使われるグローバル変数
 ComposeTestCase* current_case = NULL;
 

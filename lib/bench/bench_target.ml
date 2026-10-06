@@ -13,63 +13,18 @@ type target = {
 }
 
 (* typed/untyped 軸のアブレーション用に、1ファイル分の untyped/typed 両方の
-   mutant 列をまとめて持つ。typed ソースが無い（あるいは呼び出し側が
-   Typed 軸を要求していない）場合は typed = None。 *)
+   mutant 列をまとめて持つ。Typed 軸が要求されていない場合は typed = None。
+   typed の k 番目の mutant は untyped の k 番目と同じスロット選択を
+   （Mutate.correspond の対応表経由で）Dyn 化したもの。 *)
 type variant_mutants = {
   untyped : Syntax.ITGL.program list;
   typed : Syntax.ITGL.program list option;
 }
 
-(* -------- Parsing & mutation (1回で両モードに使い回す) --------------- *)
-let parse_bundled ?(typed=false) (file : string) : Syntax.ITGL.program Pipeline.state =
-  let path = Bench_config.sample_path ~lang:`Gradti ~typed file in
-  let ppf = Utils.Format.empty_formatter in
-  let config = Config.create ~compile:true () in
-  let channel, lexbuf = Pipeline.lex ppf (Some path) in
-  (* init_state once: it resets Type_env's record-type/field tables as a
-     side effect, so calling it per statement would forget any `type ... = { ... }`
-     declared earlier in the same file by the time a later statement refers to it. *)
-  let init_state = Pipeline.init_state () ~config in
-  let rec loop acc =
-    match Pipeline.parse ppf lexbuf init_state with
-    | state -> loop (state :: acc)
-    | exception Lexer.Eof -> acc
-  in
-  let states = loop [] in
-  close_in channel;
-  Pipeline.bundle_states_ITGL states
-
-let parse_and_mutate ?(typed=false) (file : string) : Syntax.ITGL.program list =
-  let state = parse_bundled ~typed file in
-  (* スイートに関係なく、スロット数だけを見て全列挙かサンプリングかを決める
-     （Bench_config.mutation_slot_threshold 参照）。 *)
-  Pipeline.mutate_auto
-    ~threshold:Bench_config.mutation_slot_threshold
-    ~samples_per_slot:Bench_config.samples_per_slot
-    Utils.Format.empty_formatter state
-
-(* ML 側で let rec 定義されている関数名。grift 側の返り値型スロットの有無を
-   これに合わせる（Bench_grift.prepare 参照）。let rec の名前は typed/untyped
-   で共通なので、常に存在する untyped ソースから取る。 *)
-let fix_names (file : string) : string list =
-  Pipeline.fix_names (parse_bundled file)
-
 let restrict_axis (only : bool option) (requested : bool list) : bool list =
   match only with
   | None -> requested
   | Some b -> if List.mem b requested then [b] else []
-
-let restrict_grift_targets ~monotonicities files =
-  List.concat_map (fun file ->
-    let r = Bench_config.restriction_of file in
-    let file_monotonicities = restrict_axis r.monotonic_only monotonicities in
-    if file_monotonicities = [] then begin
-      Format.eprintf
-        "[Skip grift] %s: no monotonic combination survives its axis restriction given the requested flags@." file;
-      []
-    end else
-      List.map (fun b -> (file, b)) file_monotonicities
-  ) files
 
 (* ==================== 軸別アブレーション ====================
    「fully-optimized 基準値(ALHMT)を固定し、要求された軸だけ1つずつ反転する」
@@ -123,33 +78,6 @@ let baseline_target file (vm : variant_mutants) : target =
     monotonic = baseline_monotonic; tvs_opt = baseline_tvs_opt;
     typed = baseline_typed; mutants = vm.untyped }
 
-(* 前処理: 全ファイルを parse→mutate。対象ソースが存在しない場合は
-   （例: untyped/GTP_benchmark/ がまだ無い等）他の対象を巻き込んで
-   落ちないよう、[Skip] 警告を出してそのターゲットだけ除外する。
-   比較の主軸は untypedALHMT なので untyped は常に読む。typed/ 側は
-   Typed 軸が要求されたときだけ（存在すれば）追加で読む。 *)
-let prepare ~(axes : axis list) (files : string list) : (string * variant_mutants) list =
-  List.filter_map (fun file ->
-    let untyped_path = Bench_config.sample_path ~lang:`Gradti ~typed:false file in
-    if not (Sys.file_exists untyped_path) then begin
-      Format.eprintf "[Skip] %s: sample not found (%s)@." file untyped_path;
-      None
-    end else begin
-      let untyped = parse_and_mutate ~typed:false file in
-      let typed =
-        if not (List.mem Typed axes) then None
-        else
-          let typed_path = Bench_config.sample_path ~lang:`Gradti ~typed:true file in
-          if Sys.file_exists typed_path then Some (parse_and_mutate ~typed:true file)
-          else begin
-            Format.eprintf "[Skip] %s: typed sample not found (%s); typed axis unavailable for this target@." file typed_path;
-            None
-          end
-      in
-      Some (file, { untyped; typed })
-    end
-  ) files
-
 let flip_target (axis : axis) (vm : variant_mutants) (base : target) : target =
   match axis with
   | Id_opt -> { base with mode = S }
@@ -160,42 +88,79 @@ let flip_target (axis : axis) (vm : variant_mutants) (base : target) : target =
   | Typed ->
     (match vm.typed with
      | Some typed_mutants -> { base with typed = true; mutants = typed_mutants }
-     | None -> base (* axis_allowed already filters this case out *))
+     | None -> invalid_arg "flip_target: typed mutants were not prepared")
 
-(* id_opt/hash には per-file restriction を設けない(要件通り)。
-   eagerness/monotonic/tvs は既存の axis_restriction フィールドで、
-   反転後の値がそのファイルで許可されるかを判定する。typed は
-   typed/ ソースが実際に存在し、かつ呼び出し側が用意できていた場合のみ許可する。 *)
-let axis_allowed (axis : axis) (r : Bench_config.axis_restriction) (vm : variant_mutants) (base : target) : bool =
+(* id_opt/hash/typed には per-file restriction を設けない。
+   eagerness/monotonic/tvs は axis_restriction の各フィールドで、
+   反転後の値がそのファイルで許可されるかを判定する。typed は要求されたら
+   必ず測る（typed ソースが無ければソース存在確認フェーズでエラーになる）。 *)
+let axis_allowed (axis : axis) (r : Bench_config.axis_restriction) : bool =
   match axis with
-  | Id_opt | Hash -> true
-  | Eagerness -> restrict_axis r.eager_only [not base.eager] <> []
-  | Monotonic -> restrict_axis r.monotonic_only [not base.monotonic] <> []
-  | Tvs -> restrict_axis r.tvs_only [not base.tvs_opt] <> []
-  | Typed -> vm.typed <> None
+  | Id_opt | Hash | Typed -> true
+  | Eagerness -> restrict_axis r.eager_only [not baseline_eager] <> []
+  | Monotonic -> restrict_axis r.monotonic_only [not baseline_monotonic] <> []
+  | Tvs -> restrict_axis r.tvs_only [not baseline_tvs_opt] <> []
 
-(* ファイルごとに基準ターゲットを1つ生成し、要求された axes それぞれに
-   ついて許可されれば反転ターゲットを1つ追加する。呼び出し側(bin/bench.ml)
-   は全軸フラグをまとめてこの関数に一度だけ渡すこと — そうすることで
-   軸を何個指定しても基準点(ALHMT)の重複コンパイルを避けられる。 *)
-let expand_ablation_targets ~(axes : axis list) (prepared : (string * variant_mutants) list) : target list =
-  List.concat_map (fun (file, vm) ->
-    let r = Bench_config.restriction_of file in
-    let base = baseline_target file vm in
-    if restrict_axis r.eager_only [base.eager] = [] ||
-       restrict_axis r.monotonic_only [base.monotonic] = [] ||
-       restrict_axis r.tvs_only [base.tvs_opt] = [] then begin
+(* ==================== restriction の解決（フェーズ 1） ====================
+   ファイルごとに「何を測るか」を restriction だけから確定する。ここで
+   除外されたもの（restriction による意図的な除外）は [Skip] の info を
+   出すだけでエラーにはしない。以降のフェーズはこの plan が要求するもの
+   （ソース・input・typed/grift）が揃っていなければエラーにする。 *)
+type plan = {
+  spec : Bench_config.target_spec;
+  ml : bool;                (* ML 側 (dynamize/static) で ALHMT 基準を測るか *)
+  flips : axis list;        (* 基準から反転して測る軸（restriction を通ったもの） *)
+  grift_monos : bool list;  (* grift で測る monotonicity（空 = grift 比較しない） *)
+}
+
+let plan_name (p : plan) = p.spec.name
+let needs_typed (p : plan) = List.mem Typed p.flips
+let needs_grift (p : plan) = p.grift_monos <> []
+
+let plan_of_spec ~(axes : axis list) ~(ml : bool) ~(grift : bool) (spec : Bench_config.target_spec) : plan =
+  let file = spec.name in
+  let r = spec.restriction in
+  let ml =
+    ml &&
+    if restrict_axis r.eager_only [baseline_eager] = [] ||
+       restrict_axis r.monotonic_only [baseline_monotonic] = [] ||
+       restrict_axis r.tvs_only [baseline_tvs_opt] = [] then begin
       Format.eprintf
         "[Skip] %s: fully-optimized baseline (ALHMT) is incompatible with this file's axis restriction@." file;
-      []
+      false
+    end else true
+  in
+  let flips =
+    if not ml then []
+    else List.filter (fun ax ->
+      axis_allowed ax r || begin
+        Format.eprintf "[Skip] %s: %s axis excluded by this file's axis restriction@." file (axis_name ax);
+        false
+      end) axes
+  in
+  (* --grift は軸フラグの有無に関わらず、fully-optimized 基準値の
+     monotonic=true(ALHMT の M)側のみで GRIFTCM と比較する独立した計測。 *)
+  let grift_monos =
+    if not grift then []
+    else if not r.grift then begin
+      Format.eprintf "[Skip grift] %s: excluded by this file's restriction@." file; []
     end else
-      base :: List.filter_map (fun ax ->
-        if axis_allowed ax r vm base then Some (flip_target ax vm base)
-        else begin
-          Format.eprintf
-            "[Skip] %s: %s axis excluded by this file's axis restriction@." file (axis_name ax);
-          None
-        end) axes
+      match restrict_axis r.monotonic_only [baseline_monotonic] with
+      | [] ->
+        Format.eprintf
+          "[Skip grift] %s: no monotonic combination survives its axis restriction given the requested flags@." file;
+        []
+      | ms -> ms
+  in
+  { spec; ml; flips; grift_monos }
+
+(* ファイルごとに基準ターゲットを1つ生成し、plan で許可された反転軸ごとに
+   反転ターゲットを1つ追加する。軸を何個指定しても基準点(ALHMT)は
+   ファイルごとに1つしか生成されない(=重複コンパイルしない)。 *)
+let expand_ablation_targets (prepared : (plan * variant_mutants) list) : target list =
+  List.concat_map (fun ((p : plan), vm) ->
+    let base = baseline_target p.spec.name vm in
+    base :: List.map (fun ax -> flip_target ax vm base) p.flips
   ) prepared
 
 (* --static 用: 完全静的プログラムでの「fully-optimized(基準+反転) vs
@@ -203,8 +168,8 @@ let expand_ablation_targets ~(axes : axis list) (prepared : (string * variant_mu
    基準+反転を再計算しない。STATIC 側の基準ターゲットだけファイルごとに
    1つ追加する(Bench_compiler.static_targets が eager/hash/monotonic を
    STATIC 用の固定値に上書きし、mutants を fully-typed の1件に絞る)。 *)
-let with_static_baselines (prepared : (string * variant_mutants) list) (dynamize_targets : target list) : target list =
-  List.map (fun (file, vm) -> { (baseline_target file vm) with mode = STATIC }) prepared
+let with_static_baselines (prepared : (plan * variant_mutants) list) (dynamize_targets : target list) : target list =
+  List.map (fun ((p : plan), vm) -> { (baseline_target p.spec.name vm) with mode = STATIC }) prepared
   @ dynamize_targets
 
 (* 出力ラベル用の mode 文字列。{typed/untyped}{ALHMT/...} の形にする

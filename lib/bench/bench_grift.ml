@@ -171,7 +171,7 @@ let define_name (d : sx) : string option =
   | _ -> None
 
 (* 公開: grift ソース文字列 → (top-level define 群, 出現順スロット群)
-   fix_names = ML 側で let rec 定義されている関数名（Bench_target.fix_names）。
+   fix_names = ML 側で let rec 定義されている関数名（Pipeline.fix_names）。
    その全てに対応する関数 define が grift 側に無ければ、ML 側とスロットが
    対応しなくなるのでエラーにする。 *)
 let analyze_src ~(fix_names : string list) (src : string) : sx list * sx list list =
@@ -185,7 +185,15 @@ let analyze_src ~(fix_names : string list) (src : string) : sx list * sx list li
                ^ String.concat ", " missing));
   (defs, List.concat_map (slots_of_define ~fix_names) defs)
 
-let n_slots ~fix_names (src : string) : int = List.length (snd (analyze_src ~fix_names src))
+(* ソース解析結果。parse は 1 回だけ行い、グルーピングと serialize で同じ
+   ノード（同じ id）を使う。 *)
+type analysis = { defs : sx list; groups : sx list list }
+
+let analyze ~fix_names (src : string) : analysis =
+  let defs, groups = analyze_src ~fix_names src in
+  { defs; groups }
+
+let n_slots (a : analysis) : int = List.length a.groups
 
 (* subset = 1-based のスロット群インデックス列。該当群のノードを Dyn 化して module 文字列に。
    parse は 1 回だけ行い、グルーピングと serialize で同じノード（同じ id）を使う。 *)
@@ -216,17 +224,24 @@ let read_file p =
 let write_file p s =
   let oc = open_out p in output_string oc s; close_out oc
 
-let driver_code (loop_count : int) : string =
+let driver_code ~(warmup : int) (loop_count : int) : string =
   Printf.sprintf
     "\n;; --- Auto-generated Loop Driver ---\n\
+     (define (run-warmup-loop [k : Int]) : Unit\n\
+    \  (if (<= k 0)\n\
+    \      ()\n\
+    \      (begin\n\
+    \        (benchmark)\n\
+    \        (run-warmup-loop (- k 1)))))\n\
      (define (run-benchmark-loop [k : Int]) : Unit\n\
     \  (if (<= k 0)\n\
     \      ()\n\
     \      (begin\n\
     \        (time (benchmark))\n\
     \        (run-benchmark-loop (- k 1)))))\n\
+     (run-warmup-loop %d)\n\
      (run-benchmark-loop %d)\n"
-    loop_count
+    warmup loop_count
 
 (* "marker" の直後に現れる数値トークンを全部拾う *)
 let numbers_after (marker : string) (s : string) : string list =
@@ -342,8 +357,9 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset :
   if not (Sys.file_exists cdir) then Sys.mkdir cdir 0o755;
   let perf_f = Filename.concat cdir "perf.grift" in
   let prof_f = Filename.concat cdir "prof.grift" in
-  write_file perf_f (base_code ^ driver_code itr);
-  write_file prof_f (base_code ^ driver_code 1);
+  write_file perf_f (base_code ^ driver_code ~warmup:Bench_config.warmup itr);
+  (* The cast profiler counts over the whole process, so prof runs the benchmark once. *)
+  write_file prof_f (base_code ^ driver_code ~warmup:0 1);
   let job extra src out =
     (* grift --backend C は中間 .c ファイルを Racket の make-temporary-file で
        TMPDIR (既定 /var/tmp) 直下に作る。このリポジトリが対象とする Racket 7.2 の
@@ -402,26 +418,18 @@ type grift_prepared = {
 (* Phase 1(直列, 準備)のみ行う。grift ソース生成・コンパイルジョブの組み立て・
    jsonl のプレースホルダー行書き込みまでで、Bench_builder.compile_all は
    呼ばない(呼び出し側が複数 target 分をまとめてから1回だけ呼ぶ)。 *)
-let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~monotonic : grift_prepared =
+let prepare ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~monotonic
+    ~(analysis : analysis) ~(subsets : int list list) : grift_prepared =
   let input_path = Bench_config.input_path ~static file in
-  let src = read_file grift_src in
-  let defs, groups = analyze_src ~fix_names:(Bench_target.fix_names file) src in
-  let n = List.length groups in
-  (* ML 側 (Pipeline.mutate_auto) と同じ閾値でスロット数が大きい場合は
-     全部分集合 (2^n 通り) の代わりにサンプリングする。閾値未満なら全列挙、
-     以上なら Mutate.sample_subsets_by_length に切り替える判断はここでも
-     揃える必要がある — さもないと blacksholes/fft/n_body/ray のような
-     スロット数の多い対象で 2^n が現実的でなくなり
-     (例: blacksholes は 2^17 = 131072 通り)、Mutate.all_subsets_by_length
-     内部の再帰が stack overflow を起こす。 *)
-  let subsets =
-    if static then [ [] ]
-    else if n < Bench_config.mutation_slot_threshold then Mutate.all_subsets_by_length n
-    else Mutate.sample_subsets_by_length ~samples_per_slot:Bench_config.samples_per_slot n
-  in
+  let { defs; groups } = analysis in
+  (* subsets は ML 側（untyped）と共有する部分集合列（Mutate.subsets_auto）。
+     スロット数が ML 側と一致することはスロット対応検査フェーズで確認済みなので、
+     同じ mutant_index が同じスロット選択を指す。 *)
+  let subsets = if static then [ [] ] else subsets in
+  (* grift binaries read input once per run (warm-up runs included), so repeat it (+10 spare copies). *)
   let base_input = String.trim (read_file input_path) in
   let repeat k = String.concat "" (List.init k (fun _ -> base_input ^ "\n")) in
-  let input_perf = repeat (itr + 10) in
+  let input_perf = repeat (Bench_config.warmup + itr + 10) in
   let input_prof = repeat (1 + 10) in
   let suffix = if static then "_fs" else "" in
   let g = Bench_config.grift_cmd in
