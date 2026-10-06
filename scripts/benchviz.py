@@ -262,6 +262,66 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+# ---- ログファイルの読み込み（plot_stacked_time.py などが使う） ----
+LOG_EXTENSIONS = (".jsonl", ".json")
+
+# 既知のベンチマーク名（Bench_config の targets と extra_targets）
+BENCHMARK_ORDER = [
+    "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "tak",
+    "fsm",
+    "church-65536", "evenodd", "fib", "loop", "fold", "incsum", "map", "mklist", "zipwith",
+    "church-2", "church-4", "easy", "fsm_check",
+]
+_BENCHMARKS_BY_LEN = sorted(BENCHMARK_ORDER, key=len, reverse=True)
+
+
+def parse_log_filename(fname: str, benchmarks: Optional[List[str]] = None) -> Optional[Tuple[str, str, bool]]:
+    """"<mode>_<benchmark>[_fs].json(l)" を (mode, benchmark, is_static) に分解する。
+    "n_body" のようにベンチマーク名自体が '_' を含むので、既知のベンチマーク名
+    （既定は BENCHMARK_ORDER）への末尾一致で判定する（長い名前から試す）。
+    マッチしなければ None。"""
+    ext = next((e for e in LOG_EXTENSIONS if fname.endswith(e)), None)
+    if ext is None:
+        return None
+    core = fname[: -len(ext)]
+    is_static = core.endswith("_fs")
+    if is_static:
+        core = core[: -len("_fs")]
+    names = _BENCHMARKS_BY_LEN if benchmarks is None else sorted(benchmarks, key=len, reverse=True)
+    for bench in names:
+        suffix = "_" + bench
+        if core.endswith(suffix) and len(core) > len(suffix):
+            return core[: -len(suffix)], bench, is_static
+    return None
+
+
+def iter_log_records(path: str):
+    """jsonl（1行1 mutant）と json（{"mode", "file", "mutants": [...]}）の両方を読む。"""
+    with open(path, "r", encoding="utf-8") as f:
+        if path.endswith(".jsonl"):
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
+        else:
+            top = json.load(f)
+            for rec in top.get("mutants", []):
+                rec.setdefault("mode", top.get("mode"))
+                yield rec
+
+
+def mean_time(samples: Any) -> Optional[float]:
+    """1 mutant の代表実行時間 = times_sec の算術平均（Takikawa POPL'16 / Grift PLDI'19 と同じ）。
+    空・非有限・平均が 0 以下（タイマ分解能未満で全部 0 など）なら None。"""
+    if not isinstance(samples, list) or not samples:
+        return None
+    values = np.asarray(samples, dtype=float)
+    if not np.all(np.isfinite(values)):
+        return None
+    mean = float(np.mean(values))
+    return mean if mean > 0 else None
+
+
 def _extract_c_pm_from_mem(mem_obj: Any) -> Optional[float]:
     """'mem' → promoted/minor（words/Run）比（base 用）"""
     if not isinstance(mem_obj, dict):
