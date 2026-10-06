@@ -739,7 +739,16 @@ let toC_fundef ~config fundef =
   let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
   let fvs_ftvs = pick_env name vs tvs in
   let body = toC_exp ~is_main:false ~config body in
-  FunDecl (Static, f_s), FunDef (Static, f_s, fvs_ftvs @ body)
+  (* I6: in alt mode every FundefD has a FundefM twin (fun_alt_<name>); when the
+     continuation coercion turns out to be the identity at run time, jump to it so
+     that the identity is neither passed along nor applied on return. *)
+  let id_switch = match fundef with
+    | Cls.FundefD { arg = (y, k); _ } when config.alt ->
+      [SIf (BinOp (Var k, Eq, Cast (VALUE, Addr "crc_id")),
+            [SReturn (App (Var ("fun_alt_" ^ name), [Var name; Var y]))], [])]
+    | _ -> []
+  in
+  FunDecl (Static, f_s), FunDef (Static, f_s, id_switch @ fvs_ftvs @ body)
 
 let toC_toplevel ~config toplevel =
   List.split @@ List.map (fun fd -> toC_fundef ~config fd) toplevel
