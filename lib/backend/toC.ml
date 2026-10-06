@@ -62,6 +62,13 @@ let toC_ta = function
 let monotonic_dummy_range : Utils.Error.range =
   { start_p = Lexing.dummy_pos; end_p = Lexing.dummy_pos }
 
+let rec has_tv_ty = function
+  | TyVar _ -> true
+  | TyFun (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
+  | TyList u' | TyRef u' | TyArray u' -> has_tv_ty u'
+  | TyTuple us -> List.exists has_tv_ty us
+  | _ -> false
+
 let toC_tycontent = function
   | TyVar _ -> Struct ["tykind", Var "TYVAR"]
   | TyFun (u1, u2) ->
@@ -103,13 +110,6 @@ let rid r =
   with
     Not_found -> raise @@ ToC_bug "rid cannot find r"
 
-let rec has_tv_ty = function
-  | TyVar _ -> true
-  | TyFun (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
-  | TyList u' | TyRef u' | TyArray u' -> has_tv_ty u'
-  | TyTuple us -> List.exists has_tv_ty us
-  | _ -> false
-
 let rec check_has_tv = function
   | CId _ | CInj _ | CProj _ | CFail _ -> false
   | CList c' -> check_has_tv c'
@@ -133,6 +133,18 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
+  (* 子を持つ crc の has_tv は子の has_tv の OR。static な子（Addr）はコンパイル時に分かるが、
+     実行時に alloc_crc した子（型変数を含むテンプレート）は、型変数が解決済みなら has_tv = 0 に
+     正規化されうるので、その値を実行時に読む。コンパイル時の近似（check_has_tv）を埋め込むと、
+     子が解決済みでも 1 のまま残り、intern されず compose cache にも載らない。 *)
+  let has_tv_of_children children =
+    let static_tv = List.exists (fun (c, e) -> match e with Addr _ -> check_has_tv c | _ -> false) children in
+    let dyn = List.filter_map (fun (_, e) -> match e with Addr _ -> None | e -> Some (Arrow (e, "has_tv"))) children in
+    match static_tv, dyn with
+    | true, _ -> Int 1
+    | false, [] -> Int 0
+    | false, e :: es -> List.fold_left (fun acc e -> BinOp (acc, Or, e)) e es
+  in
   let c, info_proj_inj = match c with
     | CSeq (CProj (_, (r, p)), (CSeq (c, CInj _))) -> c, ["has_proj", Int 1; "has_inj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
     | CSeq (CProj (_, (r, p)), c) -> c, ["has_proj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
@@ -162,7 +174,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_FUN") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -171,7 +183,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm,
       Struct (
         ("crckind", Var "C_LIST") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c, ptr_crc];
           "crcdat", Struct ["lst_crc", ptr_crc]
         ]
       )
@@ -195,7 +207,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms @ arr_stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Var arr]]
           ]
         )
@@ -203,7 +215,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
           ]
         )
@@ -213,7 +225,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_REF") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -231,7 +243,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_ARRAY") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["array_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -526,6 +538,8 @@ and toC_assign ~config x f =
   | Cls.Deref (y, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Arrow (Cast (PTR REF, Var y), "v"))
+      | Some TyDyn ->
+        assign_x (App (Var "read_to_dyn", [Arrow (Cast (PTR REF, Var y), "v"); Arrow (Cast (PTR REF, Var y), "u")]))
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR REF, Var y), "u")) in
         crc_stms @ assign_x (App (Var "apply_coerce", [Arrow (Cast (PTR REF, Var y), "v"); crc_exp]))
@@ -536,6 +550,8 @@ and toC_assign ~config x f =
   | Cls.Get (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
+      | Some TyDyn ->
+        assign_x (App (Var "read_to_dyn", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); Arrow (Cast (PTR ARR, Var y), "u")]))
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:false u (Arrow (Cast (PTR ARR, Var y), "u")) in
         crc_stms @ assign_x (App (Var "apply_coerce", [Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z); crc_exp]))
@@ -558,6 +574,8 @@ and toC_assign ~config x f =
   | Cls.Subst (y, z, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Arrow (Cast (PTR REF, Var y), "v"), Var z) :: assign_x (Int 0)
+      | Some TyDyn ->
+        SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "write_from_dyn", [Var z; Arrow (Cast (PTR REF, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR REF, Var y), "u")) in
         crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
@@ -568,6 +586,8 @@ and toC_assign ~config x f =
   | Cls.Put (y, z, v_x, ou) ->
     if config.monotonic then match ou with
       | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
+      | Some TyDyn ->
+        SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "write_from_dyn", [Var v_x; Arrow (Cast (PTR ARR, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR ARR, Var y), "u")) in
         crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
