@@ -464,6 +464,24 @@ let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
 (* I9: array bounds check; BOUNDS_CHECK is a no-op unless compiled with -D BOUNDS (libC/arr.h) *)
 let bounds_check y z = SExp (App (Var "BOUNDS_CHECK", [Var y; Var z]))
 
+(* I1: k-normalization puts the computation of the second argument between
+   the partial application "fmin a" and its use, so sink the (pure) partial
+   application down to the first binding that uses it before matching. *)
+let rec sink_prims (e : Cls.exp) : Cls.exp = match e with
+  | Cls.Let (t, (Cls.AppMDir (l, _) as p), rest) when is_prim2 l -> sink_into t p (sink_prims rest)
+  | Cls.Let (x, f1, f2) -> Cls.Let (x, sink_prims f1, sink_prims f2)
+  | Cls.If (x, f1, f2) -> Cls.If (x, sink_prims f1, sink_prims f2)
+  | Cls.For (i, lo, hi, d, f) -> Cls.For (i, lo, hi, d, sink_prims f)
+  | Cls.While (f1, f2) -> Cls.While (sink_prims f1, sink_prims f2)
+  | Cls.Match (x, ms) -> Cls.Match (x, List.map (fun (mf, f) -> (mf, sink_prims f)) ms)
+  | Cls.MakeCls (x, c, f) -> Cls.MakeCls (x, c, sink_prims f)
+  | Cls.MakeTyCls (x, c, f) -> Cls.MakeTyCls (x, c, sink_prims f)
+  | Cls.SetTy (tv, f) -> Cls.SetTy (tv, sink_prims f)
+  | e -> e
+and sink_into t p e = match e with
+  | Cls.Let (x, f1, f2) when not (V.mem t (Fv.Cls.fv_exp f1)) -> Cls.Let (x, f1, sink_into t p f2)
+  | _ -> Cls.Let (t, p, e)
+
 (* I4: globals (see Closure.globals) are declared at file scope *)
 let is_global x = V.mem x !Closure.globals
 let decl_value x = if is_global x then [] else [SDecl (VALUE, x, None)]
@@ -780,7 +798,7 @@ let toC_fundef ~config fundef =
   in
   let f_s = { ret_ty = VALUE; fname; params = List.map (fun x -> (VALUE, x)) params } in
   let fvs_ftvs = pick_env name vs tvs in
-  let body = toC_exp ~is_main:false ~config body in
+  let body = toC_exp ~is_main:false ~config (sink_prims body) in
   (* I6: in alt mode every FundefD has a FundefM twin (fun_alt_<name>); when the
      continuation coercion turns out to be the identity at run time, jump to it so
      that the identity is neither passed along nor applied on return. *)
@@ -851,7 +869,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
         @ (if config.hash then [SExp (App (Var "set_static_crcs", [Var "static_crcs_arr"; Int n_static_crc]))] else [])
         @ (if config.monotonic then [SExp (App (Var "sc_init", [Int 16]))] else [])
         @ (if List.length ranges <> 0 then [SAssign (Var "range_list", Var "local_range_list")] else [])
-        @ toC_exp ~is_main:true ~config f
+        @ toC_exp ~is_main:true ~config (sink_prims f)
     )
   ]
   in
