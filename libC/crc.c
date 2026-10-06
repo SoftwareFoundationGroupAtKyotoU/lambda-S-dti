@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <gc.h>
 
 #include "crc.h"
@@ -44,7 +45,6 @@ static inline crc* create_new_crc(crc* candidate) {
 }
 
 #ifdef HASH
-#include <string.h>
 
 static crc **static_crcs = NULL;
 static int static_crc_n = 0;
@@ -973,6 +973,15 @@ static void cannot_unify_crc(ty *u1, ty *u2) {
 	blame(0, 0);
 }
 
+// Element coercions of a tuple coercion are first built in a stack buffer; only
+// when some element is not the identity is the array copied to the GC heap
+// (new_tuple keeps the pointer). An all-identity tuple therefore allocates nothing.
+static crc **heap_crcs(crc **tmp, uint16_t size) {
+	crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+	memcpy(crcs, tmp, sizeof(crc*) * size);
+	return crcs;
+}
+
 crc *make_s_coercion(ty *u1, ty *u2) {
 	if (ty_equal(u1, u2)) return &crc_id;
 	crc temp = {};
@@ -1007,16 +1016,16 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 				}
 				case TYTUPLE: {
 					uint16_t size = u2->tydat.tytuple.size;
-					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+					crc *tmp[size];
 					int all_id = 1;
 					for (int i = 0; i < size; i++) {
-						crcs[i] = make_s_coercion_from_dyn(u2->tydat.tytuple.tys[i]);
-						if (crcs[i] != &crc_id) all_id = 0;
+						tmp[i] = make_s_coercion_from_dyn(u2->tydat.tytuple.tys[i]);
+						if (tmp[i] != &crc_id) all_id = 0;
 					}
 					if (all_id) {
 						return new_id(&temp_proj, G_TP, size, &temp);
 					} else {
-						return new_tuple(&temp_proj, size, crcs, &temp);
+						return new_tuple(&temp_proj, size, heap_crcs(tmp, size), &temp);
 					}
 				}
 				case TYREF: return new_mref(&temp_proj, u2->tydat.tyref, &temp);
@@ -1150,29 +1159,29 @@ crc *make_s_coercion(ty *u1, ty *u2) {
 			uint16_t size = u1->tydat.tytuple.size;
             switch (u2->tykind) {
                 case DYN: {
-					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+					crc *tmp[size];
 					int all_id = 1;
 					for (int i = 0; i < size; i++) {
-						crcs[i] = make_s_coercion_to_dyn(u1->tydat.tytuple.tys[i]);
-						if (crcs[i] != &crc_id) all_id = 0;
+						tmp[i] = make_s_coercion_to_dyn(u1->tydat.tytuple.tys[i]);
+						if (tmp[i] != &crc_id) all_id = 0;
 					}
                     if (all_id) {
                         return new_id(&temp, G_TP, size, &temp_inj);
                     } else {
-                        return new_tuple(&temp, size, crcs, &temp_inj);
+                        return new_tuple(&temp, size, heap_crcs(tmp, size), &temp_inj);
                     }
 				}
                 case TYTUPLE: {
-					crc **crcs = (crc**)GC_MALLOC(sizeof(crc*) * size);
+					crc *tmp[size];
 					int all_id = 1;
 					for (int i = 0; i < size; i++) {
-						crcs[i] = make_s_coercion(u1->tydat.tytuple.tys[i], u2->tydat.tytuple.tys[i]);
-						if (crcs[i] != &crc_id) all_id = 0;
+						tmp[i] = make_s_coercion(u1->tydat.tytuple.tys[i], u2->tydat.tytuple.tys[i]);
+						if (tmp[i] != &crc_id) all_id = 0;
 					}
                     if (all_id) {
                         return &crc_id;
                     } else {
-                        return new_tuple(&temp, size, crcs, &temp);
+                        return new_tuple(&temp, size, heap_crcs(tmp, size), &temp);
                     }
                 }
 				case SUBSTITUTED: {
@@ -1228,6 +1237,8 @@ crc *wrap_list(crc *inner) {
 	return new_list(&temp, inner, &temp);
 }
 
+// crcs may point to a temporary (stack) buffer: it is copied to the GC heap
+// only when a tuple coercion is actually built.
 crc *wrap_tuple(uint16_t size, crc **crcs) {
 	int all_id = 1;
 	for (int i = 0; i < size; i++) {
@@ -1235,7 +1246,7 @@ crc *wrap_tuple(uint16_t size, crc **crcs) {
 	}
 	if (all_id) return &crc_id;
 	crc temp = {};
-	return new_tuple(&temp, size, crcs, &temp);
+	return new_tuple(&temp, size, heap_crcs(crcs, size), &temp);
 }
 
 crc *wrap_fn(crc *c1, crc *c2) {

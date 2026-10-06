@@ -347,8 +347,10 @@ let rec make_s_coercion_call ~from u rtti : stm list * exp =
     let elem_stms = List.concat (List.map fst elems) in
     let elem_exps = List.map snd elems in
     let arr = KNormal.genvar "_crcs" in
+    (* a stack array: wrap_tuple copies it to the GC heap only when some element
+       is not the identity, so an all-identity tuple allocates nothing *)
     let arr_stms =
-      SDecl (PTR (PTR CRC), arr, Some (Malloc (PTR (PTR CRC), BinOp (Sizeof (PTR CRC), Mult, Int size))))
+      SDecl (PTR CRC, Printf.sprintf "%s[%d]" arr size, None)
       :: List.mapi (fun i e -> SAssign (Index (Var arr, Int i), e)) elem_exps
     in
     let result = KNormal.genvar "_crc" in
