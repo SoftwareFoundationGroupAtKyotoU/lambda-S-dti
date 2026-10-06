@@ -49,7 +49,7 @@ typedef arr_raw arr;
 typedef arr_header arr;
 #endif
 
-// I9: bounds check for direct (monotonic/static) array accesses, enabled with -D BOUNDS
+// I9: array bounds check (direct monotonic/static accesses in toC.ml and get/put in arr.c), enabled with -D BOUNDS
 #ifdef BOUNDS
 #include <stdio.h>
 #include <stdlib.h>

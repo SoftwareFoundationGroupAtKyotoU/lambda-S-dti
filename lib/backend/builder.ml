@@ -6,6 +6,9 @@ open Config
    measured times are dominated by Boehm's heap-growth heuristic (array, fft). *)
 let gc_initial_heap_bytes = 8 * 1024 * 1024
 let gc_ini_heap_var = Printf.sprintf "-D GC_INITIAL_HEAP_SIZE=%d " gc_initial_heap_bytes
+(* Array bounds checks (libC/arr.h BOUNDS_CHECK, libC/arr.c get/put) are on,
+   as in Grift, which checks vector indices by default. *)
+let bounds_var = "-D BOUNDS "
 
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
@@ -41,7 +44,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       file
       mode_str
       suffix
-      gc_ini_heap_var
+      (gc_ini_heap_var ^ bounds_var)
       mode_var
       eager_var
       monotonic_var
@@ -64,7 +67,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       asprintf "clang %s/%s_out.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -lm -g3 %s"
         result_c_dir
         base
-        gc_ini_heap_var
+        (gc_ini_heap_var ^ bounds_var)
         mode_var
         eager_var
         monotonic_var
@@ -79,7 +82,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -lm -g3 -std=c2x -pg -O3 *)
       asprintf "clang %s/stdin.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -lm -g3 -std=c2x -pg %s"
         result_c_dir
-        gc_ini_heap_var
+        (gc_ini_heap_var ^ bounds_var)
         mode_var
         eager_var
         monotonic_var
