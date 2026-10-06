@@ -631,7 +631,7 @@ and toC_assign ~config x f =
         SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "write_from_dyn", [Var z; Arrow (Cast (PTR REF, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR REF, Var y), "u")) in
-        crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+        crc_stms @ SAssign (Arrow (Cast (PTR REF, Var y), "v"), App (Var "coerce", [Var z; crc_exp; Int 1])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (PreOp (Deref, (Cast (REF, Var y))), Var z) :: assign_x (Int 0)
     else
@@ -644,7 +644,7 @@ and toC_assign ~config x f =
         SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "write_from_dyn", [Var v_x; Arrow (Cast (PTR ARR, Var y), "u")])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
       | Some u ->
         let crc_stms, crc_exp = make_s_coercion_call ~from:true u (Arrow (Cast (PTR ARR, Var y), "u")) in
-        crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume", [])) :: assign_x (Int 0)
+        crc_stms @ SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), App (Var "coerce", [Var v_x; crc_exp; Int 1])) :: SExp (App (Var "consume_pending", [])) :: assign_x (Int 0)
     else if config.static then
       SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
     else
