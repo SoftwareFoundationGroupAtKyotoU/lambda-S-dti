@@ -49,6 +49,18 @@ typedef arr_raw arr;
 typedef arr_header arr;
 #endif
 
+// I9: bounds check for direct (monotonic/static) array accesses, enabled with -D BOUNDS
+#ifdef BOUNDS
+#include <stdio.h>
+#include <stdlib.h>
+#define BOUNDS_CHECK(a, i) do { \
+    if ((uint64_t)(i) >= (uint64_t)((arr_raw*)(a))->length) { \
+        printf("index out of bound %ld\n", (long)(i)); exit(1); \
+    } } while (0)
+#else
+#define BOUNDS_CHECK(a, i) ((void)0)
+#endif
+
 #if !defined(MONOTONIC) && !defined(STATIC)
 value get(arr*, uint32_t);
 void put(arr*, uint32_t, value);

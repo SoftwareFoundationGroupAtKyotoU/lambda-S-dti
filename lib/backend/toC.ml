@@ -461,6 +461,8 @@ let prim2_stms x l a b =
   [SIf (BinOp (App (Var "to_double", [Var a]), List.assoc l prim2_cmp, App (Var "to_double", [Var b])),
         [SAssign (Var x, Var a)], [SAssign (Var x, Var b)])]
 let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
+(* I9: array bounds check; BOUNDS_CHECK is a no-op unless compiled with -D BOUNDS (libC/arr.h) *)
+let bounds_check y z = SExp (App (Var "BOUNDS_CHECK", [Var y; Var z]))
 
 (* I4: globals (see Closure.globals) are declared at file scope *)
 let is_global x = V.mem x !Closure.globals
@@ -578,6 +580,7 @@ and toC_assign ~config x f =
     else
       assign_x (App (Var "deref", [Cast (PTR REF, Var y)]))
   | Cls.Get (y, z, ou) ->
+    (if config.monotonic || config.static then [bounds_check y z] else []) @ (
     if config.monotonic then match ou with
       | None -> assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
       | Some TyDyn ->
@@ -588,7 +591,7 @@ and toC_assign ~config x f =
     else if config.static then
       assign_x (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z))
     else
-      assign_x (App (Var "get", [Cast (PTR ARR, Var y); Cast (INT, Var z)]))
+      assign_x (App (Var "get", [Cast (PTR ARR, Var y); Cast (INT, Var z)])))
   | Cls.Length y ->
     if config.monotonic || config.static then
       assign_x (Arrow (Cast (PTR ARR, Var y), "length"))
@@ -614,6 +617,7 @@ and toC_assign ~config x f =
     else
       SExp (App (Var "subst", [Cast (PTR REF, Var y); Var z])) :: assign_x (Int 0)
   | Cls.Put (y, z, v_x, ou) ->
+    (if config.monotonic || config.static then [bounds_check y z] else []) @ (
     if config.monotonic then match ou with
       | None -> SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
       | Some TyDyn ->
@@ -624,7 +628,7 @@ and toC_assign ~config x f =
     else if config.static then
       SAssign (Index (Arrow (Cast (PTR ARR, Var y), "vs"), Var z), Var v_x) :: assign_x (Int 0)
     else
-      SExp (App (Var "put", [Cast (PTR ARR, Var y); Cast (INT, Var z); Var v_x])) :: assign_x (Int 0)
+      SExp (App (Var "put", [Cast (PTR ARR, Var y); Cast (INT, Var z); Var v_x])) :: assign_x (Int 0))
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
   | Cls.AppDDir (l, (y, k)) when is_prim1 l -> assign_x (apply_k (prim1_exp l y) k)
   | Cls.AppDDir (l, (y1, y2)) ->
