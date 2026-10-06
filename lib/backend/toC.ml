@@ -116,7 +116,8 @@ let rec check_has_tv = function
   | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
   | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) | CArray (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
-  | CMRef (u1, u2) | CMArray (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
+  (* the run-time representation keeps only the target type u2 (toC_crc_gen) *)
+  | CMRef (_, u2) | CMArray (_, u2) -> has_tv_ty u2
 
 let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
   let stm_crc x c = match c with
@@ -770,9 +771,12 @@ let toC_crcdecls crcs = List.map (fun (_, name) -> Decl (Static, CRC, name, None
 let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, Some (snd @@ toC_crc ~heap_tuple_arr:false name c))) crcs
 
 let toC_crcs ~config crcs =
+  (* static_crcs_arr seeds the hash-consing table (set_static_crcs, crc.c), which
+     must only hold coercions without type variables: those are reset by set_tys
+     between runs and their has_tv is 1, so they must never be shared. *)
   let static_crc_names =
     ["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
-    @ (List.map snd crcs)
+    @ List.filter_map (fun (c, name) -> if check_has_tv c then None else Some name) crcs
   in
   let crcinit =
     if config.hash then
