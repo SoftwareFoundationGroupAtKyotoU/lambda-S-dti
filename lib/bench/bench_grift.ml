@@ -370,8 +370,8 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset :
        ターゲットほど発生しやすい)。TMPDIR をこの mutant 専用の cdir に向けて
        プロセス間で温度ディレクトリを共有させないことで衝突自体を無くす。 *)
     let cmd =
-      Printf.sprintf "TMPDIR=%s %s -O 3 %s %s -o %s %s > /dev/null 2>&1"
-        (Filename.quote cdir) g monotonic_flag extra
+      Printf.sprintf "TMPDIR=%s %s -O 3 -m %d %s %s -o %s %s > /dev/null 2>&1"
+        (Filename.quote cdir) g (Builder.gc_initial_heap_bytes / 1024) monotonic_flag extra
         (Filename.quote out) (Filename.quote src)
     in
     { Bench_builder.out_path = out; cmd }
@@ -578,8 +578,8 @@ let run_compiled (c : grift_compiled) : unit =
       let dest_c = Printf.sprintf "%s%d.c" c.file p.idx in
       ignore
         (Sys.command
-           (Printf.sprintf "cd %s && %s %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
-              (Filename.quote p.cdir) c.g c.monotonic_flag (Filename.quote dest_c)));
+           (Printf.sprintf "cd %s && %s -m %d %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
+              (Filename.quote p.cdir) c.g (Builder.gc_initial_heap_bytes / 1024) c.monotonic_flag (Filename.quote dest_c)));
       (try Sys.rename (Filename.concat p.cdir dest_c) (Filename.concat c.grift_dir dest_c)
        with _ -> ());
       Bench_json.to_channel_ln oc_g

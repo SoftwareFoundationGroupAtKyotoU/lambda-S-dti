@@ -1,7 +1,11 @@
 open Format
 open Config
 
-let gc_ini_heap_var = "-D GC_INITIAL_HEAP_SIZE=1048576 "
+(* Initial Boehm GC heap size, shared with the Grift side of the benchmark
+   (Bench_grift passes the same value to grift as -m <KiB>). With a 1MB heap the
+   measured times are dominated by Boehm's heap-growth heuristic (array, fft). *)
+let gc_initial_heap_bytes = 8 * 1024 * 1024
+let gc_ini_heap_var = Printf.sprintf "-D GC_INITIAL_HEAP_SIZE=%d " gc_initial_heap_bytes
 
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
