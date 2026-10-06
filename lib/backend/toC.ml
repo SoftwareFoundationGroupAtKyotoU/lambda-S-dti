@@ -447,7 +447,30 @@ let rec toC_mf ~config x_exp = function
     List.fold_left (fun e1 e2 -> BinOp (e1, And, e2)) (Int 1) (List.mapi (fun i mf -> toC_mfi mf i) mfs)
   (* | _ as mf -> ignore config; raise @@ ToC_bug (Format.asprintf "toC_mf yet: %a" Pp.pp_matchform mf) *)
 
+(* I1: inline fully-applied float builtins instead of calling the curried
+   closure-based library functions (fmin/fmax allocate a closure per call).
+   fmin/fmax are expanded with the same comparison as libC/stdlib_math.c so
+   that NaN behaviour is unchanged. *)
+let prim1_c = [("sqrt_ml", "sqrt"); ("sin_ml", "sin"); ("exp_ml", "exp"); ("log_ml", "log"); ("round_ml", "round")]
+let prim2_cmp = [("fmin_ml", FLt); ("fmax_ml", FGt)]
+let is_prim1 l = List.mem_assoc l prim1_c
+let is_prim2 l = List.mem_assoc l prim2_cmp
+let prim1_exp l y =
+  App (Var "of_double", [App (Var (List.assoc l prim1_c), [App (Var "to_double", [Var y])])])
+let prim2_stms x l a b =
+  [SIf (BinOp (App (Var "to_double", [Var a]), List.assoc l prim2_cmp, App (Var "to_double", [Var b])),
+        [SAssign (Var x, Var a)], [SAssign (Var x, Var b)])]
+let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
+
 let rec toC_exp ~is_main ~config = function
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.Let (r, Cls.AppMCls (t', b), rest))
+    when t = t' && is_prim2 l && not (V.mem t (Fv.Cls.fv_exp rest)) ->
+    SDecl (VALUE, r, None) :: prim2_stms r l a b @ toC_exp ~is_main ~config rest
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppMCls (t', b)) when t = t' && is_prim2 l ->
+    SDecl (VALUE, "retv", None) :: prim2_stms "retv" l a b @ [SReturn (if is_main then Int 0 else Var "retv")]
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppDCls (t', (b, k))) when t = t' && is_prim2 l ->
+    SDecl (VALUE, "retv", None) :: prim2_stms "retv" l a b
+    @ [SAssign (Var "retv", apply_k (Var "retv") k); SReturn (if is_main then Int 0 else Var "retv")]
   | Cls.Let (x, f1, f2) ->
     SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
   | Cls.If (x, f1, f2) ->
@@ -596,11 +619,13 @@ and toC_assign ~config x f =
     else
       SExp (App (Var "put", [Cast (PTR ARR, Var y); Cast (INT, Var z); Var v_x])) :: assign_x (Int 0)
   | Cls.CComp (y, z) -> assign_x (Cast (VALUE, App (Var "compose", [Cast (PTR CRC, Var y); Cast (PTR CRC, Var z)])))
+  | Cls.AppDDir (l, (y, k)) when is_prim1 l -> assign_x (apply_k (prim1_exp l y) k)
   | Cls.AppDDir (l, (y1, y2)) ->
     assign_x (App (Var ("fun_" ^ l), [dummy_value; Var y1; Var y2]))
   | Cls.AppDCls (y, (z1, z2)) ->
     let func = Arrow (Cast (PTR FUN, Var y), "funcD") in
     assign_x (App (func, [Var y; Var z1; Var z2]))
+  | Cls.AppMDir (l, y) when is_prim1 l -> assign_x (prim1_exp l y)
   | Cls.AppMDir (l, y) ->
     let alt_str = if config.alt then "alt_" else "" in
     assign_x (App (Var ("fun_" ^ alt_str ^ l), [dummy_value; Var y]))
@@ -635,6 +660,12 @@ and toC_assign ~config x f =
         | None -> assign_x (App (Var "apply_coerce", [Var y; Cast (PTR CRC, Var z)]))
     end
   | Cls.Cast (y, u1, u2, (r, p)) -> assign_x (App (Var "cast", [Var y; toC_ty u1; toC_ty u2; Int (rid r); Int (int_of_pos p)]))
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.Let (r, Cls.AppMCls (t', b), rest))
+    when t = t' && is_prim2 l && not (V.mem t (Fv.Cls.fv_exp rest)) ->
+    SDecl (VALUE, r, None) :: prim2_stms r l a b @ toC_assign ~config x rest
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppMCls (t', b)) when t = t' && is_prim2 l -> prim2_stms x l a b
+  | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppDCls (t', (b, k))) when t = t' && is_prim2 l ->
+    prim2_stms x l a b @ [SAssign (Var x, apply_k (Var x) k)]
   | Cls.Let (y, f1, f2) -> SDecl (VALUE, y, None) :: toC_assign ~config y f1 @ toC_assign ~config x f2
   | Cls.If (y, f1, f2) ->
     SIf (Var y, toC_assign ~config x f1, toC_assign ~config x f2) :: []
@@ -764,6 +795,7 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let strs = StrManager.get_definitions () in
   let inc = [
     Include "<gc.h>";
+    Include "<math.h>";
     Include (
       if bench = 0 then Format.asprintf "\"%s/runtime.h\"" (Resources.libc_dir ())
       else "\"../../../libC/runtime.h\""
