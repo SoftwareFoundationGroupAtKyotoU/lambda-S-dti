@@ -41,7 +41,16 @@ typedef tpl_header tpl;
 
 #if !defined(EAGER) && !defined(STATIC)
 
-value tget(tpl*, uint16_t i);
+// I2: the unwrapped case is a single load, so keep it inline at every
+// projection site; only wrapped (lazily coerced) tuples go out of line.
+value tget_wrapped(tpl*, uint16_t i);
+
+static inline value tget(tpl *t, uint16_t i) {
+    if (__builtin_expect(t->wrap, 0)) {
+        return tget_wrapped(t, i);
+    }
+    return ((tpl_raw*)t)->fields[i];
+}
 
 #endif
 
