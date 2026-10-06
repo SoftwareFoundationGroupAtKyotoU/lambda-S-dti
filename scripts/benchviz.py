@@ -70,10 +70,19 @@ STYLE_MAP = {
     #     metric/compare/stacked_time）で共通してこの色を使う ---
     "untypedALHMT":      {"color": "#d62728", "marker": "<"},  # 基準値（旧ALHM相当）
     "untypedSLHMT":      {"color": "#1f77b4", "marker": "o"},  # id_opt off（旧SLHM相当）
+    "untypedELHMT":      {"color": "#17becf", "marker": "^"},  # eager
     "untypedALhMT":      {"color": "#ff7f0e", "marker": "D"},  # hash off（旧ALNM相当）
+    "untypedALHGT":      {"color": "#8c564b", "marker": "v"},  # guarded
     "untypedALHMt":      {"color": "#2ca02c", "marker": "P"},  # tvs_opt off
     "typedALHMT":        {"color": "#9467bd", "marker": "X"},  # typed軸
     "untypedSTATICEhGT": {"color": "#7f7f7f", "marker": "h"},  # 完全静的
+    "GRIFTCM":           {"color": "#20b2aa", "marker": "8"},  # 八角形に変更
+    "GRIFTCMS":          {"color": "#bcbd22", "marker": "s"},  # GRIFT C backend --static
+    "GRIFTLLVMM":        {"color": "#e377c2", "marker": "*"},  # GRIFT LLVM backend
+    # ログに実際に出てくる名前（モード文字列は [S|A][L|E][H|h][M|G][T|t] の順で、
+    # eager は "AEHMT"。grift の LLVM バックエンドは bench_grift.ml で "GRIFT" ^ "M"）
+    "untypedAEHMT":      {"color": "#17becf", "marker": "^"},  # eager（= untypedELHMT）
+    "GRIFTM":            {"color": "#e377c2", "marker": "*"},  # GRIFT LLVM backend（= GRIFTLLVMM）
 }
 
 # =========================
