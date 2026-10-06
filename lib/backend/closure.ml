@@ -63,7 +63,7 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
     in
     let new_tvs = tvs' @ used_outer in
     let known', f1' = (* xはknownな関数かを調べる *)
-      if not (V.is_empty k_fv) || List.length new_tvs != 0 then
+      if not (V.is_empty (V.diff k_fv known)) || List.length new_tvs != 0 then
         (* f1の中に自由変数がある、もしくは型引数が空でなければ、xをknownに入れず、f1をknownでclosure変換する *)
         let f1' = toCls_exp ~tvs_opt known new_tvs args funty f1 in
         known, f1'
