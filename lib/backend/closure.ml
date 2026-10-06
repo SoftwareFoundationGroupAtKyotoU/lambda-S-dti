@@ -14,7 +14,10 @@ let globals = ref V.empty
 
 let rec spine_vars acc = function
   | LetExp (x, _, f2) -> spine_vars (V.add x acc) f2
-  | LetFunExp (x, _, _, f2) -> spine_vars (V.add x acc) f2
+  (* polymorphic functions are excluded: their bodies must see the closure
+     instantiated with type arguments, not the uninstantiated global one *)
+  | LetFunExp (x, [], _, f2) -> spine_vars (V.add x acc) f2
+  | LetFunExp (_, _, _, f2) -> spine_vars acc f2
   | _ -> acc
 
 let rec toCls_exp ~tvs_opt known tvs args funty = function
@@ -82,7 +85,9 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
         let toplevel_backup = !toplevel in
         let known' = V.add x known in (* xをknownに入れてclosure変換してみる *)
         let f1' = toCls_exp ~tvs_opt known' new_tvs args funty f1 in
-        let zs = V.diff (V.diff (Fv.Cls.fv_exp f1') v_arg) !globals in
+        (* x itself must stay visible: a body that uses x as a value needs the
+           real closure, which a known (directly called) function does not get *)
+        let zs = V.diff (V.diff (Fv.Cls.fv_exp f1') v_arg) (V.remove x !globals) in
         if V.is_empty zs (*&& List.length new_tvs = 0*) then 
           (* closure変換後のf1に自由変数がなければ、xをknownに入れて返す *)
           known', f1'
