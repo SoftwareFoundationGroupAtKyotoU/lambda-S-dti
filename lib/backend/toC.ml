@@ -314,9 +314,10 @@ let rec make_s_coercion_call ~from u rtti : stm list * exp =
   in
   match u with
   | TyDyn -> [], App (Var (if from then "make_s_coercion_from_dyn" else "make_s_coercion_to_dyn"), [rtti])
-  | TyInt | TyBool | TyUnit | TyFloat ->
+  | TyInt | TyBool | TyUnit | TyFloat | TyChar | TyString ->
     let g = match u with
       | TyInt -> "G_INT" | TyBool -> "G_BOOL" | TyUnit -> "G_UNIT" | TyFloat -> "G_FLOAT"
+      | TyChar -> "G_CHAR" | TyString -> "G_STRING"
       | _ -> raise @@ ToC_bug "make_s_coercion_call: unreachable ground type"
     in
     [], (if from then App (Var "make_s_coercion_from_ground", [Var g; rtti])
