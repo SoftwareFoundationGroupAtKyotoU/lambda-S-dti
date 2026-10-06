@@ -449,7 +449,7 @@ let rec toC_mf ~config x_exp = function
 
 (* I1: inline fully-applied float builtins instead of calling the curried
    closure-based library functions (fmin/fmax allocate a closure per call).
-   fmin/fmax are expanded with the same comparison as libC/stdlib_math.c so
+   fmin/fmax are expanded with the same condition as libC/stdlib_math.c so
    that NaN behaviour is unchanged. *)
 let prim1_c = [("sqrt_ml", "sqrt"); ("sin_ml", "sin"); ("exp_ml", "exp"); ("log_ml", "log"); ("round_ml", "round")]
 let prim2_cmp = [("fmin_ml", FLt); ("fmax_ml", FGt)]
@@ -458,8 +458,10 @@ let is_prim2 l = List.mem_assoc l prim2_cmp
 let prim1_exp l y =
   App (Var "of_double", [App (Var (List.assoc l prim1_c), [App (Var "to_double", [Var y])])])
 let prim2_stms x l a b =
-  [SIf (BinOp (App (Var "to_double", [Var a]), List.assoc l prim2_cmp, App (Var "to_double", [Var b])),
-        [SAssign (Var x, Var a)], [SAssign (Var x, Var b)])]
+  (* same as libC/stdlib_math.c (and C's fmin/fmax): if b is NaN, a is returned *)
+  let cmp = BinOp (App (Var "to_double", [Var a]), List.assoc l prim2_cmp, App (Var "to_double", [Var b])) in
+  let b_nan = App (Var "isnan", [App (Var "to_double", [Var b])]) in
+  [SIf (BinOp (cmp, Or, b_nan), [SAssign (Var x, Var a)], [SAssign (Var x, Var b)])]
 let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
 (* I9: array bounds check; BOUNDS_CHECK is a no-op unless compiled with -D BOUNDS (libC/arr.h) *)
 let bounds_check y z = SExp (App (Var "BOUNDS_CHECK", [Var y; Var z]))
