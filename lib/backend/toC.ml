@@ -462,17 +462,24 @@ let prim2_stms x l a b =
         [SAssign (Var x, Var a)], [SAssign (Var x, Var b)])]
 let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
 
+(* I4: globals (see Closure.globals) are declared at file scope *)
+let is_global x = V.mem x !Closure.globals
+let decl_value x = if is_global x then [] else [SDecl (VALUE, x, None)]
+let globalize_cls_stms x = function
+  | SDecl (VALUE, y, Some e) :: rest when y = x && is_global x -> SAssign (Var x, e) :: rest
+  | stms -> stms
+
 let rec toC_exp ~is_main ~config = function
   | Cls.Let (t, Cls.AppMDir (l, a), Cls.Let (r, Cls.AppMCls (t', b), rest))
     when t = t' && is_prim2 l && not (V.mem t (Fv.Cls.fv_exp rest)) ->
-    SDecl (VALUE, r, None) :: prim2_stms r l a b @ toC_exp ~is_main ~config rest
+    decl_value r @ prim2_stms r l a b @ toC_exp ~is_main ~config rest
   | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppMCls (t', b)) when t = t' && is_prim2 l ->
     SDecl (VALUE, "retv", None) :: prim2_stms "retv" l a b @ [SReturn (if is_main then Int 0 else Var "retv")]
   | Cls.Let (t, Cls.AppMDir (l, a), Cls.AppDCls (t', (b, k))) when t = t' && is_prim2 l ->
     SDecl (VALUE, "retv", None) :: prim2_stms "retv" l a b
     @ [SAssign (Var "retv", apply_k (Var "retv") k); SReturn (if is_main then Int 0 else Var "retv")]
   | Cls.Let (x, f1, f2) ->
-    SDecl (VALUE, x, None) :: toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
+    decl_value x @ toC_assign ~config x f1 @ toC_exp ~is_main ~config f2
   | Cls.If (x, f1, f2) ->
     SIf (Var x, toC_exp ~is_main ~config f1, toC_exp ~is_main ~config f2) :: []
   | Cls.MakeCls (x, cls, f) ->
@@ -482,10 +489,10 @@ let rec toC_exp ~is_main ~config = function
       let func_m = Var ("fun_" ^ alt_str ^ cls.entry) in
       set_func_stm ~config fun_x func_d func_m
     in
-    make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
+    globalize_cls_stms x (make_cls_stm ~set_func x cls) @ toC_exp ~is_main ~config f
   | Cls.MakeTyCls (x, cls, f) ->
     let set_func fun_x = [SAssign (Arrow (fun_x, "funcM"), Var ("tfun_" ^ cls.entry))] in
-    make_cls_stm ~set_func x cls @ toC_exp ~is_main ~config f
+    globalize_cls_stms x (make_cls_stm ~set_func x cls) @ toC_exp ~is_main ~config f
   | Cls.SetTy ((i, { contents = opu }), f) ->
     let name, stm = set_ty i opu in
     SDecl (PTR TY, name, Some (Malloc (PTR TY, Sizeof TY))) :: stm @ toC_exp ~is_main ~config f
@@ -844,4 +851,5 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
     )
   ]
   in
-  inc @ tydecl @ tydef @ rangedef @ strdef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ fundecl @ fundef @ settys @ decl @ main
+  let globaldecl = List.map (fun x -> Decl (Static, VALUE, x, None)) (V.elements !Closure.globals) in
+  inc @ tydecl @ tydef @ rangedef @ strdef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ globaldecl @ fundecl @ fundef @ settys @ decl @ main

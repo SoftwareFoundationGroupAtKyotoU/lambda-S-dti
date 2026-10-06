@@ -7,6 +7,16 @@ exception Closure_error of string
 
 let toplevel = ref []
 
+(* I4: variables bound on the spine of the main expression (the chain of
+   top-level lets) live for the whole run, so toC emits them as C globals and
+   they are never captured in closure environments. *)
+let globals = ref V.empty
+
+let rec spine_vars acc = function
+  | LetExp (x, _, f2) -> spine_vars (V.add x acc) f2
+  | LetFunExp (x, _, _, f2) -> spine_vars (V.add x acc) f2
+  | _ -> acc
+
 let rec toCls_exp ~tvs_opt known tvs args funty = function
   | Var x -> Cls.Var x
   | IConst i -> Cls.Int i
@@ -53,7 +63,7 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
       | FunDual _ -> raise @@ Closure_bug "shouldn't apper alt in closure"
       | FunTy f1 -> V.empty, f1
     in
-    let k_fv = V.remove x @@ V.diff (fv_exp f1) v_arg in
+    let k_fv = V.diff (V.remove x @@ V.diff (fv_exp f1) v_arg) !globals in
     let used_outer =
       if tvs_opt then
         let ftvs_body = Ftv.KNorm.ftv_exp f1 in
@@ -72,7 +82,7 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
         let toplevel_backup = !toplevel in
         let known' = V.add x known in (* xをknownに入れてclosure変換してみる *)
         let f1' = toCls_exp ~tvs_opt known' new_tvs args funty f1 in
-        let zs = V.diff (Fv.Cls.fv_exp f1') v_arg in
+        let zs = V.diff (V.diff (Fv.Cls.fv_exp f1') v_arg) !globals in
         if V.is_empty zs (*&& List.length new_tvs = 0*) then 
           (* closure変換後のf1に自由変数がなければ、xをknownに入れて返す *)
           known', f1'
@@ -84,7 +94,7 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
           known, f1'
         end
     in
-    let zs = V.elements (V.diff (Fv.Cls.fv_exp f1') (V.union (V.singleton x) v_arg)) in
+    let zs = V.elements (V.diff (V.diff (Fv.Cls.fv_exp f1') (V.union (V.singleton x) v_arg)) !globals) in
     (* let zts = List.map (fun z -> (z, Environment.find z tyenv')) zs in *)
     let fundef, funty = match fd with
       | FunB (y, _) -> Cls.FundefM { name = Cls.to_label x; arg = y; vs = zs; tvs = new_tvs; body = f1' }, funty
@@ -94,7 +104,9 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
     in
     if not @@ List.mem fundef !toplevel then toplevel := fundef :: !toplevel;
     let f2' = toCls_exp ~tvs_opt known' tvs (Environment.add x (zs, List.length used_outer) args) funty f2 in
-    if V.mem x (Fv.Cls.fv_exp f2') then match fd with
+    (* a global function may be referenced from other function bodies without
+       appearing free in f2', so always materialize its closure (I4) *)
+    if V.mem x (Fv.Cls.fv_exp f2') || V.mem x !globals then match fd with
       | FunTy _ -> Cls.MakeTyCls (x, { entry = Cls.to_label x; fvs = zs; offset = List.length tvs'; ftvs = used_outer }, f2')
       | _ -> Cls.MakeCls (x, { entry = Cls.to_label x; fvs = zs; offset = List.length tvs'; ftvs = used_outer }, f2')
     else f2'
@@ -102,5 +114,6 @@ let rec toCls_exp ~tvs_opt known tvs args funty = function
 let toCls ~tvs_opt known args kf = 
   let f = match kf with Exp f -> f | _ -> raise @@ Closure_bug "kf is not exp" in
   toplevel := [];
+  globals := spine_vars V.empty f;
   let p = toCls_exp ~tvs_opt known [] args V.empty f in
   Cls.Prog (List.rev !toplevel, p)
