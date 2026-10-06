@@ -1,7 +1,7 @@
 # report_ablation_summary.py
 #
 # A（id適用最適化）/H（hash-consing & compose memo化）の寄与度、および
-# GRIFT（GRIFTCM=Cバックエンド, GRIFTM=Racketバックエンド）との比較を、
+# GRIFT（GRIFTCM=Cバックエンド, GRIFTLLVMM=LLVMバックエンド）との比較を、
 # ratio（comp_mean_time / base_mean_time）の幾何平均としてまとめた
 # Markdownサマリーを出力する。
 #
@@ -99,10 +99,10 @@ def main() -> None:
         ("H effect, A on",   "ALNM", "ALHM", False, "Same H on/off contrast, but with A ON on both sides."),
         ("A+H combined",     "SLNM", "ALHM", False, "Fully-unoptimized baseline vs fully-optimized (A+H) config."),
         ("ALHM vs GRIFTCM (C backend)",  "GRIFTCM", "ALHM", False, "GRIFT compiled with its C backend, monotonic references. Only benchmarks present on both sides are shown (GRIFT run is missing church-65532/loop)."),
-        ("ALHM vs GRIFTM (Racket backend)", "GRIFTM", "ALHM", False, "GRIFT's own (Racket/perf) backend, monotonic references."),
+        ("ALHM vs GRIFTLLVMM (LLVM backend)", "GRIFTLLVMM", "ALHM", False, "GRIFT compiled with its LLVM backend, monotonic references."),
         ("Fully-static floor: ALHM",    "STATICENG", "ALHM", True, "Single fully-typed (no `?`) mutant per benchmark, compared against the fully-static reference build (no coercion machinery at all)."),
         ("Fully-static floor: GRIFTCM", "STATICENG", "GRIFTCM", True, "Same fully-typed comparison for GRIFT's C backend."),
-        ("Fully-static floor: GRIFTM",  "STATICENG", "GRIFTM", True, "Same fully-typed comparison for GRIFT's Racket backend."),
+        ("Fully-static floor: GRIFTLLVMM",  "STATICENG", "GRIFTLLVMM", True, "Same fully-typed comparison for GRIFT's LLVM backend."),
     ]
 
     results = []

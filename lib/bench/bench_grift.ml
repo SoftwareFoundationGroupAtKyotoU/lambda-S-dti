@@ -5,7 +5,7 @@
      Mutate（ML 側）と同じ「出現順」で列挙する。
    - Mutate.all_subsets_by_length で ML 側と同一順の variant を作り、
      各 variant を grift でコンパイル（perf / cast-profiler / C バックエンド）して実行し、
-     logs/<ts>/GRIFT_<name>.jsonl / GRIFTC_<name>.jsonl に書き出す。
+     logs/<ts>/GRIFTLLVM<M|G>_<name>.jsonl / GRIFTC<M|G>_<name>.jsonl に書き出す。
 
    grift 実行環境（racket + LLVM 対応の grift）が必要。壊れている / 無い場合は
    各 variant で "[grift compile failed]" を出して継続する。 *)
@@ -435,7 +435,8 @@ let prepare ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~monotonic
   let g = Bench_config.grift_cmd in
   let monotonic_flag = if monotonic then "--monotonic-references" else "" in
   let monotonic_tag = if monotonic then "M" else "G" in
-  let mode_g = "GRIFT" ^ monotonic_tag in
+  (* grift の既定（LLVM）バックエンド: GRIFTLLVMM / GRIFTLLVMG *)
+  let mode_g = "GRIFTLLVM" ^ monotonic_tag in
   let mode_gc = "GRIFTC" ^ monotonic_tag in
   let grift_dir = Filename.concat log_dir mode_g in
   if not (Sys.file_exists grift_dir) then Sys.mkdir grift_dir 0o755;
