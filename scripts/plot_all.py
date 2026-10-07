@@ -1,7 +1,7 @@
 # plot_all.py
 import os
 from benchviz import (
-    latest_date_dir, check_pair_exists, TARGET_PAIRS
+    latest_date_dir, check_pair_exists, TARGET_PAIRS, STATIC_SUMMARY_GROUPS
 )
 
 def prune_empty_dirs(root: str) -> None:
@@ -28,26 +28,25 @@ from plot_stacked_time import run as run_plot_stacked_time  # ★ 累積性能�
 
 EXTRA_METRICS = ["cast", "inference", "mem", "longest"]
 
+def run_static_summaries(base, comps, date_dir):
+    """static summary: comps 全体の図と、comp ごとの図を出す。
+    ログの無い comp は除いて描く（全体図は残った comp だけで描く）。"""
+    present = [c for c in comps if check_pair_exists(date_dir, base, c, True)]
+    for c in comps:
+        if c not in present:
+            print(f"[DEBUG] スキップ: {date_dir} に {base} または {c} の static ログがありません。")
+    if not present:
+        return
+    if len(present) > 1:
+        plot_static_summary(base, present)
+    for c in present:
+        plot_static_summary(base, c)
+
 def run_plots(base, comp, static, date_dir):
     print(f"\n[DEBUG] ---> run_plots 開始: base={base}, comp={comp}, static={static}")
     
     if not check_pair_exists(date_dir, base, comp, static):
         print(f"[DEBUG] スキップ: {date_dir} に {base} または {comp} のログがありません。")
-        return
-
-    # ==========================================
-    # ★ Static の場合は専用の統合プロットのみを実行する
-    # ==========================================
-    if static:
-        print(f"[DEBUG] Staticモード: 統合Relativeプロットのみ実行します")
-        if isinstance(comp, list):
-            plot_static_summary(base, comp)
-            # 個別も欲しい場合は以下を活かす（不要ならコメントアウトでOKです）
-            for c in comp:
-                plot_static_summary(base, c)
-        else:
-            plot_static_summary(base, comp)
-        print(f"[DEBUG] <--- run_plots 完了: base={base}, comp={comp} (Static)")
         return
 
     # ==========================================
@@ -94,8 +93,8 @@ def main():
         run_plots(base, comp, False, date_dir)
 
     print("\n=== Processing Static Logs ===")
-    for base, comp in TARGET_PAIRS:
-        run_plots(base, comp, True, date_dir)
+    for base, comps in STATIC_SUMMARY_GROUPS:
+        run_static_summaries(base, comps, date_dir)
         
     # ==========================================
     # ★ 追加: Mono vs Poly の Compare プロット処理

@@ -6,7 +6,7 @@ from typing import List, Union
 import matplotlib.ticker as ticker
 
 from benchviz import (
-    load_config, ingest_latest_as_map, ensure_dir,
+    BENCHMARK_ORDER, load_config, ingest_latest_as_map, ensure_dir,
     ratio_with_delta_ci, integer_xticks, save_fig, get_plot_style,
     parse_comp_args, draw_binomial_boundaries,
     setup_plot_style, format_comp_label, apply_decorations
@@ -110,10 +110,6 @@ def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
 
     print(f"Saved relative plots under: {out_dir}")
 
-STATIC_BENCHMARK_ORDER = [
-    "array", "evenodd", "fib", "incsum", "loop-mono", "map-mono",
-    "matmult", "quicksort", "tak", "loop", "map", "church-65532"
-]
 
 def plot_static_summary(base: str, comp: Union[str, List[str]]):
     """Fully-static プログラムのパフォーマンスを全ベンチマーク統合してプロットする"""
@@ -137,9 +133,12 @@ def plot_static_summary(base: str, comp: Union[str, List[str]]):
     valid_benches = []
     plot_data = {c: {'ratios': [], 'cis': []} for c in comps}
 
-    for bench in STATIC_BENCHMARK_ORDER:
-        if bench not in data:
-            continue
+    # 並び順は benchviz.BENCHMARK_ORDER に従い、そこに無いベンチは末尾に名前順で足す
+    # （ベンチの追加・改名で summary から黙って落ちないように）
+    bench_order = [b for b in BENCHMARK_ORDER if b in data]
+    bench_order += sorted(b for b in data if b not in BENCHMARK_ORDER)
+
+    for bench in bench_order:
             
         n_keys = list(data[bench].keys())
         if not n_keys: continue

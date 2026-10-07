@@ -50,6 +50,15 @@ TARGET_PAIRS = [ # (base, comp)
     ("untypedSTATICEhGT", ["untypedALHMT"]),  # static実行時のみ有効（完全静的 vs 完全動的基準値）
 ]
 
+# static summary（fully-static プログラムの全ベンチ統合図）専用のグループ。
+# 各 (base, comps) について、comps 全部をまとめた図と comp 1つずつの図を出す。
+STATIC_SUMMARY_GROUPS = [ # (base, comps)
+    # untyped 基準の optimization ablation（id_opt / hash-consing / tvs_opt）
+    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),
+    # typed 基準で Grift 各 backend と untyped Gradti を比較
+    ("typedALHMT", ["GRIFTCM", "GRIFTCMS", "GRIFTLLVMM", "untypedALHMT"]),
+]
+
 STYLE_MAP = {
     # --- 旧命名（参考として残す） ---
     "SLNM":      {"color": "#1f77b4", "marker": "o"},  # 丸
