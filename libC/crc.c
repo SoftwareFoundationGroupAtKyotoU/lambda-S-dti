@@ -215,17 +215,7 @@ static void ensure_intern_table(void) {
 }
 
 static crc* intern_crc(crc *candidate) {
-    if (!intern_table) {
-        for (int i = 0; i < static_crc_n; i++) {
-            if (eq_crc(static_crcs[i], candidate)) {
-                #ifdef PROFILE
-                alloc_hash++;
-                #endif
-                return static_crcs[i];
-            }
-        }
-        ensure_intern_table();
-    }
+    ensure_intern_table();
 
     uint32_t idx = mix32(hash_crc(candidate)) & (intern_size - 1);
     while (intern_table[idx] != NULL) {
