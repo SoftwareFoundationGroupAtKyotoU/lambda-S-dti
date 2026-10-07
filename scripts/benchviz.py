@@ -132,7 +132,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
             "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak",
-            "church-65536", "church-65536-mono",
+            "church-65536", "church-65536-mono", "church-1048576",
             "evenodd", "fib", "loop",
             "fold", "incsum", "map", "mklist", "zipwith", 
             "map-mono", "fold-mono", "zipwith-mono", "loop-mono",
@@ -284,7 +284,7 @@ LOG_EXTENSIONS = (".jsonl", ".json")
 BENCHMARK_ORDER = [
     "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "tak",
     "fsm",
-    "church-65536", "evenodd", "fib", "loop", "fold", "incsum", "map", "mklist", "zipwith",
+    "church-65536", "church-1048576", "evenodd", "fib", "loop", "fold", "incsum", "map", "mklist", "zipwith",
     "church-2", "church-4", "easy", "fsm_check",
 ]
 _BENCHMARKS_BY_LEN = sorted(BENCHMARK_ORDER, key=len, reverse=True)

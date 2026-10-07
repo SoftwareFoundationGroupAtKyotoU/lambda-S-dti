@@ -91,6 +91,11 @@ let targets : target_spec list = [
     ~mono_copies:[ "exp",  ["exp0"; "exp1"];
                    "two",  ["two0"; "two1"; "two2"];
                    "four", ["four0"; "four1"] ];
+  (* church-65536 に mult と sixteen を足して 65536 * 16 を計算する *)
+  target Original "church-1048576"     { no_restriction with grift = false }
+    ~mono_copies:[ "exp",  ["exp0"; "exp1"];
+                   "two",  ["two0"; "two1"; "two2"];
+                   "four", ["four0"; "four1"] ];
   target Original "evenodd"            no_restriction;
   target Original "fib"                no_restriction;
   target Original "loop"               no_restriction;  (* DIFFERS *)
