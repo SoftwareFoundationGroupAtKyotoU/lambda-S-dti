@@ -21,6 +21,11 @@ type bench_job = {
   profile_run_cmd : string;
 }
 
+(* toC が mutant ごとに出力する reset_globals<n>() の呼び出し。I4 で C グローバルになった
+   トップレベル変数が mutant<n>() の終了後もデータを掴み続け、同じプロセスで後に走る
+   run・mutant の GC を重くしないよう、各 run の直後（計測区間の外）で呼ぶ。 *)
+let reset_globals_call n = SExp (App (Var (Printf.sprintf "reset_globals%d" n), []))
+
 (* _mutants.h / timing用.c / profile用.c を生成し、それぞれをビルドする
    clangコマンドと、ビルド後に実行するコマンドを bench_job として返す。
    ファイル書き込みのみの副作用で、Sys.command は一切呼ばない。 *)
@@ -37,7 +42,8 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
   (* _mutants.h 生成 *)
   let mutants_h =
     List.concat_map (fun k ->
-      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] }) ] @
+      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] });
+        FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "reset_globals%d" k; params = [(VOID, "")] }) ] @
       (if config.static then []
        else [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ])
     ) mutant_num_list
@@ -77,7 +83,7 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
                  BinOp (Cast (DOUBLE, BinOp (Dot (Var "end_tv", "tv_usec"), Minus, Dot (Var "start_tv", "tv_usec"))),
                         Mult, Float 0.000001))) ]
      else []) @
-    [ SExp (App (Var "rewind", [Var "stdin"])) ]
+    [ reset_globals_call n; SExp (App (Var "rewind", [Var "stdin"])) ]
   in
   let mutant_time_block n =
     [ SFor ((SDecl (INT, "w", Some (Int 0)), BinOp (Var "w", Lt, Int warmup), PostOp (Var "w", Incr)),
@@ -185,7 +191,8 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
     [ SExp (App (Var ("mutant" ^ string_of_int n), [])) ] @
     List.mapi (fun j (_, src) ->
       SAssign (Index (Index (Var "metric_data", Int (n - 1)), Int j), read_metric src)) profile_metrics @
-    [ SExp (App (Var "rewind", [Var "stdin"]));
+    [ reset_globals_call n;
+      SExp (App (Var "rewind", [Var "stdin"]));
       SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
       SExp (App (Var "fflush", [Var "stdout"])) ]
   in
@@ -219,7 +226,8 @@ let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expe
   let mutant_num_list = List.init mutants_length (fun i -> i + 1) in
   let mutants_h =
     List.concat_map (fun k ->
-      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] }) ] @
+      [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "mutant%d" k; params = [(VOID, "")] });
+        FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "reset_globals%d" k; params = [(VOID, "")] }) ] @
       (if config.static then []
        else [ FunDecl (No, { ret_ty = INT; fname = Printf.sprintf "set_tys%d" k; params = [(VOID, "")] }) ])
     ) mutant_num_list
@@ -242,6 +250,7 @@ let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expe
   let mutant_check_block n =
     per_run_prelude n @
     [ SExp (App (Var ("mutant" ^ string_of_int n), []));
+      reset_globals_call n;
       SExp (App (Var "printf", [Str "\\n"]));
       SExp (App (Var "rewind", [Var "stdin"])) ]
   in
