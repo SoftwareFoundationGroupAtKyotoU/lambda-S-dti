@@ -469,6 +469,8 @@ let prim2_stms x l a b =
 let apply_k e k = App (Var "apply_coerce", [e; Cast (PTR CRC, Var k)])
 (* I9: array bounds check; BOUNDS_CHECK is a no-op unless compiled with -D BOUNDS (libC/arr.h) *)
 let bounds_check y z = SExp (App (Var "BOUNDS_CHECK", [Var y; Var z]))
+(* I9: Array.make's size check; also a no-op unless -D BOUNDS (libC/arr.h) *)
+let array_size_check y = SExp (App (Var "ARRAY_SIZE_CHECK", [Var y]))
 
 (* I1: k-normalization puts the computation of the second argument between
    the partial application "fmin a" and its use, so sink the (pure) partial
@@ -556,6 +558,7 @@ and toC_assign ~config x f =
     else
       [SAssign (Arrow (Cast (PTR REF, Var x), "v"), Var y)]
   | Cls.MakeArray (y, z, u) ->
+    array_size_check y ::
     assign_x (Malloc (VALUE, BinOp (Sizeof ARR_RAW, Plus, BinOp (Sizeof VALUE, Mult, Var y)))) @ [SAssign (Arrow (Cast (PTR ARR_RAW, Var x), "length"), Var y)] @
     [SFor ((SDecl (INT, "i", Some (Int 0)), BinOp (Var "i", Lt, Var y), PostOp (Var "i", Incr)),
       [SAssign (Index (Arrow (Cast (PTR ARR_RAW, Var x), "vs"), Var "i"), Var z)])]

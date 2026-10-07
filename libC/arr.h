@@ -57,8 +57,15 @@ typedef arr_header arr;
     if ((uint64_t)(i) >= (uint64_t)((arr_raw*)(a))->length) { \
         printf("index out of bound %ld\n", (long)(i)); exit(1); \
     } } while (0)
+// Array.make の長さは uint32_t の length に入る。ここで n を範囲内に限ると、clang が
+// length == n を知り、i < n で回るループの BOUNDS_CHECK を消して最適化（ベクトル化）できる
+#define ARRAY_SIZE_CHECK(n) do { \
+    if ((uint64_t)(n) > UINT32_MAX) { \
+        printf("invalid array size %ld\n", (long)(n)); exit(1); \
+    } } while (0)
 #else
 #define BOUNDS_CHECK(a, i) ((void)0)
+#define ARRAY_SIZE_CHECK(n) ((void)0)
 #endif
 
 #if !defined(MONOTONIC) && !defined(STATIC)
