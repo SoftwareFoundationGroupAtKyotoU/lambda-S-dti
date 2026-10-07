@@ -305,8 +305,8 @@ let run_bin (bin : string) (stdin_data : string) : string option =
         output_string oc stdin_data;
         close_out oc;
         let cmd =
-          Printf.sprintf "%s < %s 2>/dev/null"
-            (Filename.quote bin) (Filename.quote tmp)
+          Printf.sprintf "%s%s < %s 2>/dev/null"
+            (Bench_config.run_prefix ()) (Filename.quote bin) (Filename.quote tmp)
         in
         let ic = Unix.open_process_in cmd in
         let so = In_channel.input_all ic in

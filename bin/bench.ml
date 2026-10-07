@@ -12,6 +12,8 @@ let () =
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
      " Max parallel compile jobs for --dynamize/--static/--grift (default: nproc-1)");
+    ("--cpu", Arg.Int (fun n -> Bench_config.run_cpu := Some n),
+     " Pin the measured runs (phase 9) to this CPU with taskset; compilation stays parallel");
   ] @ axis_specs @ [
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
@@ -36,6 +38,13 @@ let () =
     prerr_endline "nothing to do: pass one of --dynamize / --static / --grift / --all";
     exit 2
   end;
+  (* --cpu の CPU 番号が taskset で使えるか（taskset が有る・番号が範囲内・
+     cpuset で許可されている）を、何時間もかかる前処理・コンパイルの前に確かめる *)
+  (match !Bench_config.run_cpu with
+   | Some n when Sys.command (Bench_config.run_prefix () ^ "true > /dev/null 2>&1") <> 0 ->
+     Printf.eprintf "--cpu %d: cannot pin to this CPU with taskset\n" n;
+     exit 2
+   | _ -> ());
 
   (* Phase 1〜6: restriction 解決 → ソース存在 → input 存在 → parse →
      スロット対応 → mutate。各フェーズは全対象分のエラーを集め、1件でも

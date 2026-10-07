@@ -199,6 +199,10 @@ make plot                                        # scripts/plot_all.py で可視
 
 - 長時間の計測は `tmux` / `nohup` 上で走らせ、同じマシンで他の重い処理を同時に走らせないこと
   （フェーズ 9 は直列計測なので、他のプロセスの負荷がそのまま計測値に乗る）。
+- 計測は `--cpu N` で1コアに固定すること。コアごとに動作周波数が異なり（同じマシンで
+  2.0GHz のコアと 3.9GHz のコアがある）、固定しないと同じバイナリでもプロセスごとに
+  実行時間が約 2 倍ばらつく。割り込みを受ける cpu0 は避け、`lscpu` で SMT の相方
+  （例: cpu72 と cpu200）にも他の負荷が無いコアを選ぶ。Docker では `--cpuset-cpus` の範囲内の番号のみ使える。
 - ホストで直接 `dune exec ./bin/bench.exe -- ...`（`make benchmark` も同じ）を実行してもよいが、
   `--grift` は使えない。フェーズ 1〜8 の確認（コード生成・コンパイルが通るか）など、
   計測値を使わない用途に限る。
@@ -222,6 +226,7 @@ make plot                                        # scripts/plot_all.py で可視
 | `--typed` | 軸: untyped/ ↔ typed/ ソース |
 | `-i N` | 反復回数（既定 `Bench_config.default_itr` = 500） |
 | `--jobs N` | 並列コンパイルの最大ジョブ数（既定 `nproc - 1`） |
+| `--cpu N` | フェーズ 9（計測）の実行を `taskset -c N` で CPU N に固定する（コンパイルは並列のまま）。既定は固定しない |
 | `--out json\|jsonl` | 出力形式（既定 `jsonl`） |
 | `--list` | ベンチ対象名を表示して終了 |
 | 位置引数 | ベンチ対象名（無指定で `Bench_config.all_targets`） |

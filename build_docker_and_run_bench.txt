@@ -13,4 +13,6 @@ make plot_cpompare
 make plot_caption
 make plot_caption_horiz
 
+docker run --rm -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) -v $(pwd)/logs:/app/logs env bench --all --id_opt --hash --tvs --typed -i 5 array blacksholes fft n_body quicksort ray tak
+
 

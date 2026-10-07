@@ -4,6 +4,18 @@ let default_itr = 500
 let warmup = 5
 let log_root = "logs"
 
+(* フェーズ 9（計測）で実行するバイナリを固定する CPU 番号（--cpu）。
+   コア毎に動作周波数が違う(例: 2.0GHz と 3.9GHz)ため、固定しないと同じ
+   バイナリでもプロセス毎に実行時間が 2 倍程度ばらつく。コンパイル
+   (フェーズ 8)には適用しないので、並列コンパイルは全コアを使える。 *)
+let run_cpu : int option ref = ref None
+
+(* 計測用の実行コマンドの先頭に付けるプレフィックス *)
+let run_prefix () =
+  match !run_cpu with
+  | None -> ""
+  | Some n -> Printf.sprintf "taskset -c %d " n
+
 (* スロット数 n が大きい対象（GTP_benchmark の fsm や、grift_benchmark の
    blacksholes/fft/n_body/ray 等）では、全部分集合 (2^n 通り) の列挙が
    非現実的になる。スイートに関係なく、スロット数が mutation_slot_threshold

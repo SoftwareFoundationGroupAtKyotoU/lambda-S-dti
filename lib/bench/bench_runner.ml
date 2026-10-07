@@ -6,11 +6,13 @@
    後にしか呼ばれないので、実行中に他 target のコンパイルが裏で走っている
    ことは無い。 *)
 let run_bench_binaries (j : Bench_compiler.bench_job) =
-  Format.fprintf Format.std_formatter "%s@." j.run_cmd;
-  let i = Sys.command j.run_cmd in
+  let run_cmd = Bench_config.run_prefix () ^ j.run_cmd in
+  let profile_run_cmd = Bench_config.run_prefix () ^ j.profile_run_cmd in
+  Format.fprintf Format.std_formatter "%s@." run_cmd;
+  let i = Sys.command run_cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for time) fail";
-  Format.fprintf Format.std_formatter "%s@." j.profile_run_cmd;
-  let i = Sys.command j.profile_run_cmd in
+  Format.fprintf Format.std_formatter "%s@." profile_run_cmd;
+  let i = Sys.command profile_run_cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for profile) fail"
 
 let run_measured (p : Bench_compiler.prepared_target) =
