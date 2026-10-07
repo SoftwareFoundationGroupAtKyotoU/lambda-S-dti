@@ -2,13 +2,26 @@
    playing the iterated prisoner's dilemma against each other.
    Translated from benchmarks/fsm/{typed,untyped}/{automata,population,utilities,main}.rkt
    via automata.ml/population.ml/utilities.ml/main.ml.
-   Typed version: every use of a polymorphic library function is ascribed
-   with its monomorphic type, and every destructured tuple is ascribed, so
+   Typed version: every polymorphic library function is bound once to a
+   monomorphic instance (see below), and every destructured tuple is ascribed, so
    that no type variable is left to be instantiated at run time (no DTI)
    even when parameters are dynamized. Ascriptions are not mutation slots.
    Parameters of lambdas and local functions are annotated as well. *)
 
 type automaton = { current : int; original : int; payoff : float; table : int array array };;
+
+(* Monomorphic instances of the polymorphic prelude functions. Each prelude
+   function is instantiated (type-applied) once here; the uses below refer to
+   these monomorphic bindings, so no type application happens inside the
+   simulation even when tvs_opt is off. A let without a lambda consumes no
+   mutation slot, so the slot correspondence with the untyped version is kept. *)
+let list_map_auto_float = (list_map : (automaton -> float) -> automaton list -> float list) in
+let array_to_list_auto = (array_to_list : automaton array -> automaton list) in
+let array_iteri_auto = (array_iteri : (int -> automaton -> unit) -> automaton array -> unit) in
+let list_fold_left_float = (list_fold_left : (float -> float -> float) -> float -> float list -> float) in
+let list_length_float = (list_length : float list -> int) in
+let list_init_int = (list_init : int -> (int -> int) -> int list) in
+let list_iteri_int = (list_iteri : (int -> int -> unit) -> int list -> unit) in
 
 (* array_init internally calls Array.make, so (like OCaml's ref value
    restriction, extended here to monotonic arrays) it cannot be reused
@@ -82,12 +95,12 @@ in
 
 let population_payoffs (population : automaton array * automaton array) : float list =
   let (pop, _) = (population : automaton array * automaton array) in
-  (list_map : (automaton -> float) -> automaton list -> float list)
-    (fun (a : automaton) -> a.payoff) ((array_to_list : automaton array -> automaton list) pop)
+  list_map_auto_float
+    (fun (a : automaton) -> a.payoff) (array_to_list_auto pop)
 in
 
 let population_reset (a_star : automaton array) : unit =
-  (array_iteri : (int -> automaton -> unit) -> automaton array -> unit)
+  array_iteri_auto
     (fun (i : int) (x : automaton) -> a_star.(i) <- automaton_reset x) a_star
 in
 
@@ -109,8 +122,8 @@ let match_up_star (population0 : automaton array * automaton array) (rounds_per_
 in
 
 let shuffle_vector (src : automaton array) (dst : automaton array) : automaton array * automaton array =
-  (array_iteri : (int -> automaton -> unit) -> automaton array -> unit) (fun (i : int) (x : automaton) -> dst.(i) <- x) src;
-  (array_iteri : (int -> automaton -> unit) -> automaton array -> unit)
+  array_iteri_auto (fun (i : int) (x : automaton) -> dst.(i) <- x) src;
+  array_iteri_auto
     (fun (i : int) (x : automaton) ->
       let j = random_int (i + 1) in
       (if j <> i then dst.(i) <- dst.(j) else ());
@@ -121,10 +134,10 @@ in
 
 (* ---- utilities.ml ---- *)
 
-let sum (l : float list) : float = (list_fold_left : (float -> float -> float) -> float -> float list -> float) (fun (acc : float) (x : float) -> acc +. x) 0.0 l in
+let sum (l : float list) : float = list_fold_left_float (fun (acc : float) (x : float) -> acc +. x) 0.0 l in
 
 let relative_average (l : float list) (w : float) : float =
-  sum l /. w /. float_of_int ((list_length : float list -> int) l)
+  sum l /. w /. float_of_int (list_length_float l)
 in
 
 let accumulated_percents (probabilities : float list) : float list =
@@ -149,16 +162,16 @@ let choose_randomly (probabilities : float list) (speed : int) : int list =
     in
     loop percents
   in
-  (list_init : int -> (int -> int) -> int list) speed (fun (idx : int) -> pick ())
+  list_init_int speed (fun (idx : int) -> pick ())
 in
 
 let death_birth (population : automaton array * automaton array) (rate : int)
     : automaton array * automaton array =
   let (a_star, b_star) = (population : automaton array * automaton array) in
-  let payoffs = (list_map : (automaton -> float) -> automaton list -> float list)
-      (fun (x : automaton) -> x.payoff) ((array_to_list : automaton array -> automaton list) a_star) in
+  let payoffs = list_map_auto_float
+      (fun (x : automaton) -> x.payoff) (array_to_list_auto a_star) in
   let substitutes = choose_randomly payoffs rate in
-  (list_iteri : (int -> int -> unit) -> int list -> unit) (fun (i : int) (p : int) -> a_star.(i) <- automaton_reset b_star.(p)) substitutes;
+  list_iteri_int (fun (i : int) (p : int) -> a_star.(i) <- automaton_reset b_star.(p)) substitutes;
   shuffle_vector a_star b_star
 in
 
