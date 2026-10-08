@@ -888,10 +888,14 @@ let toC_program ?(bench=0) ~config (Cls.Prog (toplevel, f)) =
   let globaldecl = List.map (fun x -> Decl (Static, VALUE, x, None)) (V.elements !Closure.globals) in
   (* I4 globals outlive mutant<n>() and would keep its data reachable for the rest of the
      bench process, slowing down the GC of every later run; the harness calls this after each run *)
+  (* crctmp<n> also outlive mutant<n>() and keep the data of that mutant reachable from the last
+     coercion built in them (slowing down the GC of every later run); clear them with the I4 globals *)
   let resetglobals =
     if bench = 0 then []
     else
       [ FunDef (No, { ret_ty = INT; fname = "reset_globals" ^ string_of_int bench; params = [(VOID, "")] },
-          List.map (fun x -> SAssign (Var x, Int 0)) (V.elements !Closure.globals) @ [SReturn (Int 0)]) ]
+          List.map (fun x -> SAssign (Var x, Int 0)) (V.elements !Closure.globals)
+          @ List.map (fun (_, name) -> SAssign (Var name, Cast (CRC, Struct ["crckind", Int 0]))) tmpcrcs
+          @ [SReturn (Int 0)]) ]
   in
   inc @ tydecl @ tydef @ rangedef @ strdef @ crcdecl @ crcdef @ crcinit @ crctmpdecl @ globaldecl @ fundecl @ fundef @ settys @ resetglobals @ decl @ main
