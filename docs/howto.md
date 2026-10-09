@@ -186,7 +186,7 @@ make plot                                        # scripts/plot_all.py で可視
     今は `untypedALHMT` 基準で `untypedSLHMT`/`untypedALhMT`/`untypedALHMt`、`typedALHMT` 基準で `untypedALHMT`/`GRIFTCM`。
     比較対象のどれにもログが無いベンチ（Grift の無い fsm・church など）は描かない
   - `STATIC_SUMMARY_GROUPS`（静的実行 `*_fs` のログ）: `static_summary/` に、同じくまとめた図と1つずつの図を出す。
-    今は `untypedSTATICEhGT` 基準で `untypedALHMT`/`typedALHMT`、同じ基準で `typedALHMT`/`GRIFTCM`/`GRIFTCMS`
+    `TARGET_PAIRS` と同じ組み合わせに加えて、`untypedSTATICEhGT` 基準で `untypedALHMT`/`typedALHMT`、同じ基準で `typedALHMT`/`GRIFTCM`/`GRIFTCMS`
 - 累積性能グラフの overhead は「その mutant の平均実行時間 ÷ 基準モードの最も静的な mutant（mutant 1）の平均実行時間」。
   `cumulative/summary.md` の表は、まとめた組み合わせごとに出す
 

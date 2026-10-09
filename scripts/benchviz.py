@@ -54,7 +54,7 @@ TARGET_PAIRS = [ # (base, comps)
 
 # static summary（fully-static プログラムの全ベンチ統合図）専用のグループ。
 # 各 (base, comps) について、comps 全部をまとめた図と comp 1つずつの図を出す。
-STATIC_SUMMARY_GROUPS = [ # (base, comps)
+STATIC_SUMMARY_GROUPS = TARGET_PAIRS + [ # (base, comps)。TARGET_PAIRS と同じ組み合わせも出す
     ("untypedSTATICEhGT", ["untypedALHMT", "typedALHMT"]),
     ("untypedSTATICEhGT", ["typedALHMT", "GRIFTCM", "GRIFTCMS"]),
 ]
