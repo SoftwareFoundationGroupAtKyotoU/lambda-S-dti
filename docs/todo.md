@@ -16,6 +16,17 @@
 - 当面の対策: 計測した mutant そのものを検査したいときは Docker の中で流す。ホストのログと Docker のログを `mutant_index` で突き合わせない。
 - 恒久対策の案: 自前の小さな PRNG（xorshift など）に置き換えて OCaml のバージョンに依存しないようにする。ただし抽出される mutant が変わり、`logs/final` と対応しなくなるので、論文用の計測が終わってから行う。
 
+## bench: 計測フェーズで最初に走る target だけが遅く出る
+
+2026-10-09 に調査した。計測フェーズ（`Bench_runner`）で最初に走るプロセスは、バイナリに関係なく 1 割ほど遅く出て、その状態が 1 時間ほど続く。今の target の順では、fsm の `untypedALHMT` が毎回これに当たる。
+
+- 証拠: `logs/20261008-20:15:54`（`--all … --cpu 72`）では、coercion の操作が一度も起きない fsm の 10 mutant（`alloc = 0` かつ `compose = 0`）で、どのモードも `untypedALHMT` に対して 0.87〜0.90 になった。ほかのベンチの同じ種類の mutant では、ALh も typed も 1.00 になる。`ALhMT / ALHMT` は最初の約 250 mutant（最初の 1 時間強）で 0.90〜0.95、その後は約 1.0 だった。修正前の 2 回の計測（`20261007-17:57:13`、`20261008-10:16:20`）も、同じく最初が fsm の `untypedALHMT` で、同じ傾向だった
+- 確認用ドライバ（`logs/20261008-19:55:54/bench/check_{H,h}.out` の mutant 1）で、H と h のどちらを先に起動しても、最初のプロセスは 0.27〜0.29 s、その後は 0.25〜0.26 s になった。遅さはバイナリではなく順番についてくる。原因（CPU の周波数や C-state、直前の並列コンパイルの後始末など）は特定していない
+- 当面の対処: 論文用の fsm `untypedALHMT` は、ダミーの実行（`check_h.out` で mutant 1 を 600 回、約 2.5 分）の後に単独で測り直し、`logs/20261008-20:15:54/untypedALHMT_fsm.jsonl` の `times_sec` を差し替えた（元のファイルは `untypedALHMT_fsm.jsonl.first_run_bak`）
+- 恒久対策の案: `Bench_runner.run_batch` の最初に、捨てる run を入れる（例: 最初の target のバイナリを一度空回しする、または数分のダミーの負荷をかける）。今後のどの計測でも最初の target が不利にならなくなる。ただし過去のログと比べる基準が変わるので、論文用の計測が終わってから入れる
+
+関連して、落ち着いた状態でも hash consing ありのバイナリは、GC が支配的な fsm で約 3% 遅い（mutant 1 で H 0.257 s、h 0.249 s）。hash モードでは `.data` が約 1.5 MB 大きく（static な crc が 0.77 → 1.55 MB、`static_crcs_arr` が 0.56 MB）、Boehm GC が GC のたびに root としてスキャンするため、と見ている（1 run で約 210 回 GC する。直接の因果は未確認）。static な crc を GC の root から外す（`GC_exclude_static_roots` など。static な crc はヒープを指さないことが前提）と消せる可能性がある。
+
 ## stdlib の CUnimplementedを消す
 
 ## 「Boxed」的な汎用タグの導入
