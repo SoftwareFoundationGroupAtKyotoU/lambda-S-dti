@@ -11,9 +11,9 @@
 # とし、x 軸に overhead、y 軸に「overhead が x 以下の configuration の割合」をとる
 # 階段関数をモードごとに1本ずつ描く。左上に急峻に立ち上がる線ほど良い。
 #
-# モードを2つのグループに分け、グループごとに図と表を作る（GROUPS）。
-#   - typed_vs_grift: typedALHMT を基準に、Grift（GRIFT*）と untypedALHMT を比べる
-#   - ablation      : untypedALHMT を基準に、軸を1つ反転した untyped* 構成を比べる
+# グループは benchviz.TARGET_PAIRS の (base, comps) から作る（groups_from_pairs）。
+# 各 (base, comps) について、comps 全部をまとめた図と comp 1つずつの図を出す
+# （relative / scattered / metrics と同じ組み合わせ・同じファイル名の規則）。
 # baseline は既定で「グループの基準モードの最も静的な mutant（mutant_index 1、Dyn 化
 # スロットなし）」の実行時間。グループ内の全モードで共通の baseline を使うので、線同士を
 # 直接比較できる。最大の mutant_index は最も動的な mutant（全スロット Dyn 化）である
@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator, NullLocator
 
 from benchviz import (
-    latest_date_dir, ensure_dir, save_fig, setup_plot_style, get_plot_style, format_comp_label,
+    TARGET_PAIRS, latest_date_dir, ensure_dir, save_fig, setup_plot_style, get_plot_style, format_comp_label,
     parse_log_filename, iter_log_records, mean_time,
 )
 
@@ -55,24 +55,32 @@ OUTDIR = "cumulative"
 
 @dataclass
 class Group:
-    name: str
-    title: str
     baseline_mode: str
+    comps: List[str]
 
-    def includes(self, mode: str) -> bool:
-        if self.name == "typed_vs_grift":
-            return mode in (self.baseline_mode, "untypedALHMT") or mode.startswith("GRIFT")
-        return mode.startswith("untyped") and "STATIC" not in mode
+    @property
+    def label(self) -> str:
+        """出力ファイル名の "<base>-<comp1>|<comp2>..."（plot_relative などと同じ規則）"""
+        return f"{self.baseline_mode}-{'|'.join(self.comps)}"
 
-    def order(self, mode: str) -> Tuple[int, str]:
-        """基準モードを先頭に、残りは名前順。"""
-        return (0 if mode == self.baseline_mode else 1, mode)
+    @property
+    def title(self) -> str:
+        return f"{format_comp_label(self.baseline_mode)} vs. " + ", ".join(map(format_comp_label, self.comps))
+
+    def modes(self) -> List[str]:
+        """基準モードを先頭に、残りは comps の順。"""
+        return [self.baseline_mode] + self.comps
 
 
-GROUPS = [
-    Group("typed_vs_grift", "typed vs. Grift / untyped", "typedALHMT"),
-    Group("ablation", "untyped vs. ablations", "untypedALHMT"),
-]
+def groups_from_pairs(pairs) -> List[Group]:
+    """(base, comps) ごとに、comps 全部をまとめたグループと comp 1つずつのグループを作る。"""
+    groups: List[Group] = []
+    for base, comps in pairs:
+        comps = [comps] if isinstance(comps, str) else list(dict.fromkeys(comps))
+        if len(comps) > 1:
+            groups.append(Group(base, comps))
+        groups.extend(Group(base, [c]) for c in comps)
+    return groups
 
 _OVERHEAD_TICKS = [0.1, 0.2, 0.25, 0.5, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000]
 
@@ -158,7 +166,7 @@ def summarize(series: ModeSeries, baseline: float, n: float, m: float) -> Dict[s
 # =========================
 
 def plot_benchmark(bench: str, title: str, curves: List[Tuple[str, np.ndarray, int]],
-                   baseline_label: str, n: float, m: float, out_dir: str) -> None:
+                   baseline_label: str, n: float, m: float, out_dir: str, fname: str) -> None:
     """curves: (mode, 昇順 overhead, その mode の総 mutant 数)"""
     all_ovh = np.concatenate([o for _, o, _ in curves])
     lower = min(float(all_ovh.min()), 1.0) / 1.15
@@ -197,7 +205,7 @@ def plot_benchmark(bench: str, title: str, curves: List[Tuple[str, np.ndarray, i
     ax.legend(loc="lower right", fontsize=8, frameon=True)
 
     ensure_dir(out_dir)
-    save_fig(fig, os.path.join(out_dir, f"{bench}_cumulative.png"))
+    save_fig(fig, os.path.join(out_dir, fname))
 
 
 def _fmt(value: Optional[float]) -> str:
@@ -233,16 +241,23 @@ def run_group(data: Dict[str, Dict[str, ModeSeries]], group: Group, point: str,
         base_series = series_by_mode.get(group.baseline_mode)
         base = base_series.endpoint(point) if base_series else None
         if base is None:
-            print(f"[plot_stacked_time] skip {group.name}/{bench}: baseline "
+            print(f"[plot_stacked_time] skip {group.label}/{bench}: baseline "
                   f"({group.baseline_mode}, most {point} mutant) not measured")
             continue
         curves = []
-        for mode in sorted((md for md in series_by_mode if group.includes(md)), key=group.order):
-            series = series_by_mode[mode]
+        for mode in group.modes():
+            series = series_by_mode.get(mode)
+            if series is None:
+                continue
             curves.append((mode, overheads(series, base), series.total))
             rows.append((bench, mode, summarize(series, base, n, m)))
+        if len(curves) < 2:
+            # 比較対象のどれも計測していないベンチ（例: Grift の無い fsm）は、基準だけの図になるので描かない
+            del rows[len(rows) - len(curves):]
+            print(f"[plot_stacked_time] skip {group.label}/{bench}: no compared mode measured")
+            continue
         plot_benchmark(bench, group.title, curves, baseline_label(group, point), n, m,
-                       os.path.join(out_dir, group.name))
+                       out_dir, f"plot_{bench}_{group.label}_cumulative.png")
         written += 1
     return rows, written
 
@@ -252,7 +267,7 @@ def baseline_label(group: Group, point: str) -> str:
 
 
 def run(date_dir: str, point: str = DEFAULT_BASELINE_POINT,
-        n: float = DEFAULT_N, m: float = DEFAULT_M) -> int:
+        n: float = DEFAULT_N, m: float = DEFAULT_M, pairs=TARGET_PAIRS) -> int:
     data = collect(date_dir)
     if not data:
         print(f"[plot_stacked_time] no timed (non-static) logs in {date_dir}")
@@ -267,10 +282,15 @@ def run(date_dir: str, point: str = DEFAULT_BASELINE_POINT,
         md.write("- overhead = mean(times_sec) of the mutant / baseline\n")
         md.write("- static/dynamic ratio: most static (mutant 1) / most dynamic mutant of the same mode\n")
         md.write("- mean overhead excludes the most static and most dynamic mutants\n\n")
-        for group in GROUPS:
+        for group in groups_from_pairs(pairs):
             rows, w = run_group(data, group, point, n, m, out_dir)
             written += w
-            if rows:
+            # 表は comps 全部をまとめたグループ（comp が1つのペアはそれ自体）だけに出す。
+            # comp 1つずつのグループの行は、まとめたグループの行の部分集合なので重複になる
+            is_combined = len(group.comps) > 1 or not any(
+                g.baseline_mode == group.baseline_mode and len(g.comps) > 1 and group.comps[0] in g.comps
+                for g in groups_from_pairs(pairs))
+            if rows and is_combined:
                 write_summary(md, group.title, rows, baseline_label(group, point), n, m)
     print(f"[plot_stacked_time] wrote {written} cumulative plots and summary.md to {out_dir}")
     return written

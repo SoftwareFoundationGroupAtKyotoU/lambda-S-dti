@@ -180,10 +180,15 @@ make plot                                        # scripts/plot_all.py で可視
 - `make plot` などのスクリプトは、`logs/` 以下のタイムスタンプ名のディレクトリのうち最新のものを使う。
   名前を付け直したディレクトリ（例: `logs/array-quicksort-tak-church-loop`）は
   `BENCH_LOG_DIR=<名前> make plot` のように指定する。
-- 累積性能グラフと `cumulative/summary.md`（`scripts/plot_stacked_time.py`）は2つのグループに分かれる。
-  各 mutant の overhead は「その mutant の平均実行時間 ÷ グループの基準モードの最も静的な mutant（mutant 1）の平均実行時間」。
-  - `typed_vs_grift`: 基準 typedALHMT。GRIFT*・untypedALHMT と比べる
-  - `ablation`: 基準 untypedALHMT。軸を1つ反転した untyped* 構成と比べる
+- 何を描くかは `scripts/benchviz.py` の2つの表で決まる。
+  - `TARGET_PAIRS`（mutant の計測ログ）: 各 `(base, comps)` について、comps 全部をまとめた図と comp 1つずつの図を、
+    relative・scattered・metrics（cast/inference/mem/longest）・cumulative の4種類すべてで出す。
+    今は `untypedALHMT` 基準で `untypedSLHMT`/`untypedALhMT`/`untypedALHMt`、`typedALHMT` 基準で `untypedALHMT`/`GRIFTCM`。
+    比較対象のどれにもログが無いベンチ（Grift の無い fsm・church など）は描かない
+  - `STATIC_SUMMARY_GROUPS`（静的実行 `*_fs` のログ）: `static_summary/` に、同じくまとめた図と1つずつの図を出す。
+    今は `untypedSTATICEhGT` 基準で `untypedALHMT`/`typedALHMT`、同じ基準で `typedALHMT`/`GRIFTCM`/`GRIFTCMS`
+- 累積性能グラフの overhead は「その mutant の平均実行時間 ÷ 基準モードの最も静的な mutant（mutant 1）の平均実行時間」。
+  `cumulative/summary.md` の表は、まとめた組み合わせごとに出す
 
 - `make docker-bench` は先に `make docker-build`（`docker build -t env .`）を実行する。
   イメージはビルド時点の作業ツリーを `COPY` して `dune build` するので、ソースを変えたら

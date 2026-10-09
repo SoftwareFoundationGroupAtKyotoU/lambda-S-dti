@@ -44,8 +44,8 @@ def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_nam
                     comp_data[c][n] = float(c_val)
                     all_ns.add(n)
 
-        if not base_data and all(not d for d in comp_data.values()):
-            continue
+        # 比較対象のどれにもデータが無いベンチ（例: Grift の無い fsm）は、基準だけの図になるので描かない
+        if all(not d for d in comp_data.values()): continue
 
         fig, ax = plt.subplots(figsize=(9, 4.8)) # ★ 横長サイズに変更
 

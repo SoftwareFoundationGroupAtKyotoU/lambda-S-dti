@@ -40,23 +40,23 @@ except Exception:
 #   untypedALhMT  = hash-consing off（H→h）
 #   untypedALHMt  = tvs_opt off（T→t）
 #   typedALHMT    = typed/untyped 軸（untyped→typed ソースに差し替え）
-#   untypedSTATICEhGT = 完全静的コンパイル（DTI/coercion機構なし）
-TARGET_PAIRS = [ # (base, comp)
-    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt", "typedALHMT"]),  # 4軸まとめて概観
-    ("untypedSLHMT", ["untypedALHMT"]),   # id_opt 効果
-    ("untypedALhMT", ["untypedALHMT"]),   # hash-consing 効果
-    ("untypedALHMt", ["untypedALHMT"]),   # tvs_opt 効果
-    ("typedALHMT", ["untypedALHMT"]),     # typed/untyped 効果
-    ("untypedSTATICEhGT", ["untypedALHMT"]),  # static実行時のみ有効（完全静的 vs 完全動的基準値）
+#   GRIFTCM / GRIFTCMS = Grift C backend（monotonic、mutant / --static）
+#   untypedSTATICEhGT = 完全静的コンパイル（DTI/coercion機構なし。静的実行 *_fs のみ）
+#
+# TARGET_PAIRS の各 (base, comps) について、plot_all.py は comps 全部をまとめた図と
+# comp 1つずつの図を出す（relative / scattered / metrics / cumulative）。
+TARGET_PAIRS = [ # (base, comps)
+    # untyped 基準の optimization ablation（id_opt / hash-consing / tvs_opt）
+    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),
+    # typed 基準で untyped Gradti と Grift（C backend）を比較
+    ("typedALHMT", ["untypedALHMT", "GRIFTCM"]),
 ]
 
 # static summary（fully-static プログラムの全ベンチ統合図）専用のグループ。
 # 各 (base, comps) について、comps 全部をまとめた図と comp 1つずつの図を出す。
 STATIC_SUMMARY_GROUPS = [ # (base, comps)
-    # untyped 基準の optimization ablation（id_opt / hash-consing / tvs_opt）
-    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),
-    # typed 基準で Grift 各 backend と untyped Gradti を比較
-    ("typedALHMT", ["GRIFTCM", "GRIFTCMS", "GRIFTLLVMM", "untypedALHMT"]),
+    ("untypedSTATICEhGT", ["untypedALHMT", "typedALHMT"]),
+    ("untypedSTATICEhGT", ["typedALHMT", "GRIFTCM", "GRIFTCMS"]),
 ]
 
 STYLE_MAP = {
@@ -132,6 +132,7 @@ def get_config(base: str, comp: List[str], static: bool) -> Dict[str, Any]:
         "json_pattern": fr"({base}|{comp_pattern})_(.*?){fs}\.(jsonl|json)$",
         "target_benchmarks": [
             "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "sieve", "tak",
+            "fsm",
             "church-65536", "church-65536-mono", "church-1048576",
             "evenodd", "fib", "loop",
             "fold", "incsum", "map", "mklist", "zipwith", 
