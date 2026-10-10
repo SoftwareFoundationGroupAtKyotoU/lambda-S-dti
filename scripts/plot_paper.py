@@ -64,14 +64,19 @@ RQ12_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "t
 RQ3_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "tak"]
 
 CUMULATIVE_SIZE = (2.6, 1.9)
-RELATIVE_SIZE = (2.2, 1.45)
+# 本文の相対グラフ（ray の下に church を縦に並べる）は、軸の箱の大きさと位置を inch で固定し、
+# 2 枚の左右の端を揃える。図の大きさは余白から決まる（bbox を tight にすると左右がずれるので使わない）
+REL_AXES_W = 1.75
+REL_AXES_H = {"ray": 1.0, "church": 0.85}
+REL_MARGIN = dict(left=0.5, right=0.1, bottom=0.4)    # left: "Slowdown" と最も幅の広い目盛り "1.8"、bottom: 目盛りと x ラベル
+REL_TOP = {True: 0.34, False: 0.06}                   # 凡例（2 行）あり / なし
 GUIDE = dict(color="0.6", lw=0.8, ls=":", zorder=1)
 
 plt.rcParams.update({"font.size": 8, "legend.fontsize": 7, "axes.labelsize": 8,
                      "xtick.labelsize": 7, "ytick.labelsize": 7})
 
 
-def save(fig, path: str, backup_root: str, paper_root: str) -> None:
+def save(fig, path: str, backup_root: str, paper_root: str, tight: bool = True) -> None:
     if os.path.exists(path):
         bak = os.path.join(backup_root, os.path.relpath(path, os.path.join(paper_root, "figures")))
         if not os.path.exists(bak):
@@ -79,7 +84,10 @@ def save(fig, path: str, backup_root: str, paper_root: str) -> None:
             shutil.copy2(path, bak)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     for p in (path, os.path.splitext(path)[0] + ".pdf"):
-        fig.savefig(p, dpi=300, bbox_inches="tight", pad_inches=0.02)
+        if tight:
+            fig.savefig(p, dpi=300, bbox_inches="tight", pad_inches=0.02)
+        else:
+            fig.savefig(p, dpi=300)
     plt.close(fig)
     print(f"[plot_paper] wrote {path}")
 
@@ -127,7 +135,12 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     ax.set_yticks([0, 20, 40, 60, 80, 100])
 
     # 1 行では 2.6 in に収まらないので 2 行に折る
-    ax.set_xlabel(f"Slowdown relative to the fully static\n{LABEL[base]}")
+    # 1 行の "Slowdown vs. fully static Gradti" は軸幅に収まるが、"... Gradti (typed)" は収まらない
+    # （8 pt で 2.22 in > 軸幅 1.99 in）ので、そちらは 2 行のまま
+    if base == "untypedALHMT":
+        ax.set_xlabel(f"Slowdown vs. fully static {LABEL[base]}")
+    else:
+        ax.set_xlabel(f"Slowdown relative to the fully static\n{LABEL[base]}")
     ax.set_ylabel("% of configurations")
     hits = 0
     if legend:
@@ -208,7 +221,12 @@ def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: 
     _, _, data = ingest_latest_as_map(base, comps, cfg)
     n_map = data[log_bench]
 
-    fig, ax = plt.subplots(figsize=RELATIVE_SIZE, layout="constrained")
+    m = REL_MARGIN
+    top = REL_TOP[legend]
+    width = m["left"] + REL_AXES_W + m["right"]
+    height = m["bottom"] + REL_AXES_H[bench] + top
+    fig = plt.figure(figsize=(width, height))
+    ax = fig.add_axes([m["left"] / width, m["bottom"] / height, REL_AXES_W / width, REL_AXES_H[bench] / height])
     for i, c in enumerate(comps):
         ns, ratios, cis = [], [], []
         for n in sorted(n_map.keys()):
@@ -251,7 +269,13 @@ def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: 
         ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False,
                   borderaxespad=0.2, handlelength=1.0, handletextpad=0.3, columnspacing=0.8,
                   labelspacing=0.2)
-    save(fig, path, **save_args)
+    fig.canvas.draw()
+    box = fig.get_tightbbox()
+    assert box.x0 >= 0 and box.y0 >= 0 and box.x1 <= width and box.y1 <= height, \
+        f"{bench}: decorations {box} stick out of the {width:.2f} x {height:.2f} in figure"
+    print(f"[plot_paper] {bench} relative: figure {width:.2f} x {height:.2f} in, "
+          f"axes {REL_AXES_W} x {REL_AXES_H[bench]} in at left {m['left']} in")
+    save(fig, path, tight=False, **save_args)
 
 
 def main() -> None:
