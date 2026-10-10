@@ -52,9 +52,9 @@ SHORT_LABEL = {
     "untypedALhMT": "w/o hash consing",
     "untypedALHMt": "w/o pruning",
 }
-# 論文の図だけで変える色（get_plot_style より優先）。Grift は Gradti (typed) の紫と
-# 見分けやすいよう暖色系の茶にする（STYLE_MAP の teal は紫と並ぶと区別しにくい）
-COLOR = {"GRIFTCM": "#8c564b"}
+# 論文の図だけで変える色（get_plot_style より優先）。Grift はほぼ黒の濃いグレーにする
+# （STYLE_MAP の teal は Gradti (typed) の紫と、茶は Gradti の赤と見分けにくい）
+COLOR = {"GRIFTCM": "#222222"}
 BENCH = {"church-1048576": "church"}   # それ以外のベンチは名前そのまま
 # 論文のファイル名 → ログのベンチ名（ログ側は歴史的に "blacksholes" と綴っている）
 LOG_BENCH = {"blackscholes": "blacksholes", "church": "church-1048576"}
