@@ -27,6 +27,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, NullFormatter, NullLocator
 
 from benchviz import (
@@ -34,7 +35,7 @@ from benchviz import (
 )
 from plot_relative import apply_smart_log2_scale
 from plot_stacked_time import (
-    ACCEPTABLE_FRACTION, DEFAULT_M, DEFAULT_N, _OVERHEAD_TICKS, collect, overheads,
+    DEFAULT_M, DEFAULT_N, _OVERHEAD_TICKS, collect, overheads,
 )
 
 LABEL = {
@@ -51,6 +52,9 @@ SHORT_LABEL = {
     "untypedALhMT": "w/o hash consing",
     "untypedALHMt": "w/o pruning",
 }
+# 論文の図だけで変える色（get_plot_style より優先）。Grift は Gradti (typed) の紫と
+# 見分けやすいよう暖色系の茶にする（STYLE_MAP の teal は紫と並ぶと区別しにくい）
+COLOR = {"GRIFTCM": "#8c564b"}
 BENCH = {"church-1048576": "church"}   # それ以外のベンチは名前そのまま
 # 論文のファイル名 → ログのベンチ名（ログ側は歴史的に "blacksholes" と綴っている）
 LOG_BENCH = {"blackscholes": "blacksholes", "church": "church-1048576"}
@@ -60,7 +64,7 @@ RQ12_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "t
 RQ3_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "tak"]
 
 CUMULATIVE_SIZE = (2.6, 1.9)
-RELATIVE_SIZE = (2.2, 1.7)
+RELATIVE_SIZE = (2.2, 1.45)
 GUIDE = dict(color="0.6", lw=0.8, ls=":", zorder=1)
 
 plt.rcParams.update({"font.size": 8, "legend.fontsize": 7, "axes.labelsize": 8,
@@ -84,7 +88,14 @@ def save(fig, path: str, backup_root: str, paper_root: str) -> None:
 # 累積グラフ（plot_stacked_time.plot_benchmark と同じ曲線）
 # =========================
 
-def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str, **save_args) -> None:
+def color(mode: str, i: int) -> str:
+    return COLOR.get(mode, get_plot_style(mode, i)["color"])
+
+
+def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
+                    legend: bool = True, top: str = None, dry: bool = False, **save_args) -> int:
+    """累積グラフを描いて保存する。legend=True なら凡例を置き、凡例が隠す曲線上の点の数を返す。
+    top に指定したモードの線は他の線より上に描く。dry=True なら保存しない（凡例の重なりを調べるだけ）。"""
     series_by_mode = data[LOG_BENCH.get(bench, bench)]
     baseline = series_by_mode[base].endpoint("static")   # 基準モードの最も静的な mutant
     curves = [(mode, overheads(series_by_mode[mode], baseline)) for mode in modes]
@@ -99,12 +110,12 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str, **
         xs = np.concatenate(([lower], ovh, [upper]))
         ys = np.concatenate(([0.0], np.arange(1, len(ovh) + 1) / len(ovh) * 100.0, [100.0]))
         ys[-1] = ys[-2]
-        ax.step(xs, ys, where="post", color=get_plot_style(mode, i)["color"], linewidth=1.2,
-                label=LABEL[mode], zorder=2)
+        ax.step(xs, ys, where="post", color=color(mode, i), linewidth=1.2,
+                label=LABEL[mode], zorder=3 if mode == top else 2)
 
+    # 1x と N=3x（deliverable）・M=10x（usable）の縦線。Takikawa の 60% 横線は根拠が無いので引かない
     for x in (1.0, n, m):
         ax.axvline(x, **GUIDE)
-    ax.axhline(ACCEPTABLE_FRACTION, **GUIDE)
 
     ax.set_xscale("log")
     ax.set_xlim(lower, upper)
@@ -116,16 +127,34 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str, **
     ax.set_yticks([0, 20, 40, 60, 80, 100])
 
     # 1 行では 2.6 in に収まらないので 2 行に折る
-    ax.set_xlabel(f"Slowdown relative to the fully static\n{LABEL[base]} (log scale)")
+    ax.set_xlabel(f"Slowdown relative to the fully static\n{LABEL[base]}")
     ax.set_ylabel("% of configurations")
-    place_legend(fig, ax, [(np.concatenate(([lower], o)), np.arange(len(o) + 1) / len(o) * 100.0)
-                           for _, o in curves])
+    hits = 0
+    if legend:
+        hits = place_legend(fig, ax, [(np.concatenate(([lower], o)), np.arange(len(o) + 1) / len(o) * 100.0)
+                                      for _, o in curves])
+    if dry:
+        plt.close(fig)
+    else:
+        save(fig, path, **save_args)
+    return hits
+
+
+def write_legend(modes: List[str], path: str, **save_args) -> None:
+    """凡例だけの図（複数の図で共有する凡例）。線の色・太さは累積グラフと同じ。1 行に並べる。"""
+    handles = [Line2D([], [], color=color(mode, i), linewidth=1.2) for i, mode in enumerate(modes)]
+    fig = plt.figure(figsize=(5.4, 0.3))
+    legend = fig.legend(handles, [LABEL[m] for m in modes], ncol=len(modes), frameon=False,
+                        loc="center", handlelength=1.5, columnspacing=1.2)
+    fig.canvas.draw()
+    width = legend.get_window_extent().width / fig.dpi
+    assert width <= 5.4, f"legend is {width:.2f} in wide"
     save(fig, path, **save_args)
 
 
-def place_legend(fig, ax, lines) -> None:
+def place_legend(fig, ax, lines) -> int:
     """凡例は右下に置くが、そこで曲線を隠してしまうときは左上と比べて、隠す点の少ない方に置く。
-    lines: 各曲線の階段の (xs, ys)。"""
+    lines: 各曲線の階段の (xs, ys)。凡例が隠す曲線上の点の数を返す。"""
     def covered(legend) -> int:
         fig.canvas.draw()
         box = legend.get_window_extent()
@@ -153,6 +182,7 @@ def place_legend(fig, ax, lines) -> None:
             break
     ax.legend(loc=best[0], ncol=1, frameon=True, fancybox=False, framealpha=0.85,
               edgecolor="0.85", borderpad=0.3, borderaxespad=0.3, handlelength=1.5, labelspacing=0.25)
+    return best[1]
 
 
 # =========================
@@ -172,7 +202,7 @@ def dynamized_counts(date_dir: str, mode: str, log_bench: str) -> Dict[int, int]
 
 
 def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: str,
-                  short_labels: bool, **save_args) -> None:
+                  short_labels: bool, legend: bool = True, **save_args) -> None:
     log_bench = LOG_BENCH.get(bench, bench)
     cfg = get_config(base, comps, False)
     _, _, data = ingest_latest_as_map(base, comps, cfg)
@@ -214,11 +244,13 @@ def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: 
     ax.yaxis.set_minor_formatter(NullFormatter())
 
     ax.set_xlabel("Degree of dynamization k/N")
-    ax.set_ylabel(f"Slowdown relative to {LABEL[base]}")
+    # 高さ 1.45 in では "Slowdown relative to Gradti" が縦に収まらないので短くする（1 = Gradti はキャプションに書く）
+    ax.set_ylabel("Slowdown")
     # 7 pt では短縮ラベルでも 3 列 1 行が 2.2 in に収まらない（約 2.4 in）ので 2 列にする
-    ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False,
-              borderaxespad=0.2, handlelength=1.0, handletextpad=0.3, columnspacing=0.8,
-              labelspacing=0.2)
+    if legend:
+        ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False,
+                  borderaxespad=0.2, handlelength=1.0, handletextpad=0.3, columnspacing=0.8,
+                  labelspacing=0.2)
     save(fig, path, **save_args)
 
 
@@ -240,21 +272,31 @@ def main() -> None:
                      backup_root=os.path.join(fig_dir, f"old-{datetime.date.today():%Y-%m-%d}"))
 
     data = collect(date_dir)
-    for bench in RQ12_BENCHES:
-        plot_cumulative(data, bench, "typedALHMT", ["typedALHMT", "untypedALHMT"],
-                        os.path.join(fig_dir, "supp", f"rq1_{bench}.png"), **save_args)
-        plot_cumulative(data, bench, "untypedALHMT", ["untypedALHMT"] + ABLATIONS,
-                        os.path.join(fig_dir, "supp", f"rq2_{bench}.png"), **save_args)
-    for bench in RQ3_BENCHES:
-        plot_cumulative(data, bench, "typedALHMT", ["typedALHMT", "GRIFTCM"],
-                        os.path.join(fig_dir, "supp", f"rq3_{bench}.png"), **save_args)
+    supp = os.path.join(fig_dir, "supp")
+    # 付録の累積グラフ。RQ2 は 4 本の線の凡例が曲線を隠すので、凡例は図から外して共有の凡例ファイルに出す。
+    # RQ1 / RQ3 も、どれか 1 枚でも凡例が曲線を隠すならグループごと同じ扱いにする（揃えるため）。
+    groups = [
+        ("rq1", RQ12_BENCHES, "typedALHMT", ["typedALHMT", "untypedALHMT"], None),
+        ("rq2", RQ12_BENCHES, "untypedALHMT", ["untypedALHMT"] + ABLATIONS, "untypedALHMT"),
+        ("rq3", RQ3_BENCHES, "typedALHMT", ["typedALHMT", "GRIFTCM"], None),
+    ]
+    for name, benches, base, modes, top in groups:
+        covering = [b for b in benches if plot_cumulative(data, b, base, modes, None, top=top, dry=True) > 0]
+        shared = name == "rq2" or bool(covering)
+        print(f"[plot_paper] {name}: legend covers a curve in {covering or 'none'}"
+              f" -> {'shared legend file' if shared else 'legend in each plot'}")
+        for b in benches:
+            plot_cumulative(data, b, base, modes, os.path.join(supp, f"{name}_{b}.png"),
+                            legend=not shared, top=top, **save_args)
+        if shared:
+            write_legend(modes, os.path.join(supp, f"{name}_legend.png"), **save_args)
     plot_cumulative(data, "church", "typedALHMT", ["typedALHMT", "untypedALHMT"],
                     os.path.join(fig_dir, "rq1_church_cumulative.png"), **save_args)
+    # 本文の相対グラフは縦に 2 枚並ぶので、凡例は上の ray だけに付ける
     for bench in ("ray", "church"):
         plot_relative(bench, "untypedALHMT", ABLATIONS, date_dir,
                       os.path.join(fig_dir, f"rq2_{bench}_relative.png"),
-                      short_labels=not args.long_relative_labels, **save_args)
-
+                      short_labels=not args.long_relative_labels, legend=bench == "ray", **save_args)
 
 if __name__ == "__main__":
     main()
