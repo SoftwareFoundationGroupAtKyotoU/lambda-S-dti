@@ -64,12 +64,22 @@ RQ12_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "t
 RQ3_BENCHES = ["array", "blackscholes", "fft", "n_body", "quicksort", "ray", "tak"]
 
 CUMULATIVE_SIZE = (2.6, 1.9)
+# 本文の図は 0.47\linewidth（2.57 in）の minipage に 100% で入れ、隣の表と下端を揃える。
+# 大きさを固定するので bbox を tight にしない（tight にすると最終的な大きさが変わる）
+PAPER_W = 2.57
+MAIN_CUMULATIVE_SIZE = (PAPER_W, 1.45)
 # 本文の相対グラフ（ray の下に church を縦に並べる）は、軸の箱の大きさと位置を inch で固定し、
-# 2 枚の左右の端を揃える。図の大きさは余白から決まる（bbox を tight にすると左右がずれるので使わない）
-REL_AXES_W = 1.75
-REL_AXES_H = {"ray": 1.0, "church": 0.85}
-REL_MARGIN = dict(left=0.5, right=0.1, bottom=0.4)    # left: "Slowdown" と最も幅の広い目盛り "1.8"、bottom: 目盛りと x ラベル
-REL_TOP = {True: 0.34, False: 0.06}                   # 凡例（2 行）あり / なし
+# 2 枚の左右の端を揃える。高さは余白から決まり、2 枚の合計を 2.15 in にする
+REL_MARGIN = dict(left=0.5, right=0.1)   # left: "Slowdown" と最も幅の広い目盛り "1.8"
+# bottom: 目盛りと x ラベル（0.37 in 必要）。上の ray は下の church と同じ k/N 軸なので x の文字を省き、
+# 目盛りの線だけの余白にする（両方に文字を付けると 2 枚の合計が 2.15 in に収まらない）
+REL_BOTTOM = {True: 0.38, False: 0.07}                # x の文字あり / なし
+REL_AXES_W = PAPER_W - REL_MARGIN["left"] - REL_MARGIN["right"]
+REL_AXES_H = {"ray": 0.8, "church": 0.65}
+REL_TOP = {True: 0.15, False: 0.05}                   # 凡例（1 行, 0.10 in）あり / なし（上端の目盛りの半分）
+# 相対グラフの点の重なり順: オレンジ（hash）を一番下、その上に緑（pruning）、一番上に青（dual entry）。
+# 青の点がほかの色に隠れて見えなくなるのを避ける。基準（Gradti）の破線 1 はさらに上
+REL_ZORDER = {"untypedALhMT": 2.0, "untypedALHMt": 2.1, "untypedSLHMT": 2.2}
 GUIDE = dict(color="0.6", lw=0.8, ls=":", zorder=1)
 
 plt.rcParams.update({"font.size": 8, "legend.fontsize": 7, "axes.labelsize": 8,
@@ -101,9 +111,11 @@ def color(mode: str, i: int) -> str:
 
 
 def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
-                    legend: bool = True, top: str = None, dry: bool = False, **save_args) -> int:
+                    legend: bool = True, top: str = None, dry: bool = False,
+                    size=None, **save_args) -> int:
     """累積グラフを描いて保存する。legend=True なら凡例を置き、凡例が隠す曲線上の点の数を返す。
-    top に指定したモードの線は他の線より上に描く。dry=True なら保存しない（凡例の重なりを調べるだけ）。"""
+    top に指定したモードの線は他の線より上に描く。dry=True なら保存しない（凡例の重なりを調べるだけ）。
+    size を指定すると本文用: 図の大きさをそれに固定し（tight にしない）、x ラベルを 1 行にする。"""
     series_by_mode = data[LOG_BENCH.get(bench, bench)]
     baseline = series_by_mode[base].endpoint("static")   # 基準モードの最も静的な mutant
     curves = [(mode, overheads(series_by_mode[mode], baseline)) for mode in modes]
@@ -113,7 +125,7 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     lower = min(float(all_ovh.min()), 1.0) / 1.15
     upper = max(float(all_ovh.max()), m) * 1.15
 
-    fig, ax = plt.subplots(figsize=CUMULATIVE_SIZE, layout="constrained")
+    fig, ax = plt.subplots(figsize=size or CUMULATIVE_SIZE, layout="constrained")
     for i, (mode, ovh) in enumerate(curves):
         xs = np.concatenate(([lower], ovh, [upper]))
         ys = np.concatenate(([0.0], np.arange(1, len(ovh) + 1) / len(ovh) * 100.0, [100.0]))
@@ -137,7 +149,15 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     # 1 行では 2.6 in に収まらないので 2 行に折る
     # 1 行の "Slowdown vs. fully static Gradti" は軸幅に収まるが、"... Gradti (typed)" は収まらない
     # （8 pt で 2.22 in > 軸幅 1.99 in）ので、そちらは 2 行のまま
-    if base == "untypedALHMT":
+    if size:
+        # 本文: 1 行。8 pt で軸幅に収まらなければ 7 pt にする
+        for fs in (8, 7):
+            xlabel = ax.set_xlabel(f"Slowdown vs. fully static {LABEL[base]}", fontsize=fs)
+            fig.canvas.draw()
+            if xlabel.get_window_extent().width <= ax.get_window_extent().width:
+                break
+        print(f"[plot_paper] {bench} cumulative: x label at {fs} pt")
+    elif base == "untypedALHMT":
         ax.set_xlabel(f"Slowdown vs. fully static {LABEL[base]}")
     else:
         ax.set_xlabel(f"Slowdown relative to the fully static\n{LABEL[base]}")
@@ -148,6 +168,13 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
                                       for _, o in curves])
     if dry:
         plt.close(fig)
+    elif size:
+        fig.canvas.draw()
+        box = fig.get_tightbbox()
+        assert box.x0 >= 0 and box.y0 >= 0 and box.x1 <= size[0] and box.y1 <= size[1], \
+            f"{bench}: decorations {box} stick out of the {size[0]} x {size[1]} in figure"
+        print(f"[plot_paper] {bench} cumulative: figure {size[0]} x {size[1]} in, legend {ax.get_legend()._loc}")
+        save(fig, path, tight=False, **save_args)
     else:
         save(fig, path, **save_args)
     return hits
@@ -215,13 +242,13 @@ def dynamized_counts(date_dir: str, mode: str, log_bench: str) -> Dict[int, int]
 
 
 def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: str,
-                  short_labels: bool, legend: bool = True, **save_args) -> None:
+                  short_labels: bool, legend: bool = True, xlabels: bool = True, **save_args) -> None:
     log_bench = LOG_BENCH.get(bench, bench)
     cfg = get_config(base, comps, False)
     _, _, data = ingest_latest_as_map(base, comps, cfg)
     n_map = data[log_bench]
 
-    m = REL_MARGIN
+    m = dict(REL_MARGIN, bottom=REL_BOTTOM[xlabels])
     top = REL_TOP[legend]
     width = m["left"] + REL_AXES_W + m["right"]
     height = m["bottom"] + REL_AXES_H[bench] + top
@@ -236,7 +263,8 @@ def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: 
         style = get_plot_style(c, i)
         label = (SHORT_LABEL if short_labels else LABEL)[c]
         ax.errorbar(ns, ratios, yerr=cis, fmt=style["marker"], color=style["color"],
-                    markersize=2.5, alpha=0.75, elinewidth=0.6, capsize=1, label=label, zorder=2)
+                    markersize=2.5, alpha=0.75, elinewidth=0.6, capsize=1, label=label,
+                    zorder=REL_ZORDER.get(c, 2))
 
     ax.axhline(1, color="0.3", ls="--", lw=0.8, zorder=3)
 
@@ -254,21 +282,30 @@ def plot_relative(bench: str, base: str, comps: List[str], date_dir: str, path: 
     ax.set_xlim(idx[0] - 0.5, idx[-1] + 0.5)
     ax.xaxis.set_major_locator(FixedLocator([idx[0], b1, b2, idx[-1]]))
     ax.xaxis.set_minor_locator(NullLocator())
-    ax.set_xticklabels(["0", "1/3", "2/3", "1"])
+    ax.set_xticklabels(["0", "1/3", "2/3", "1"] if xlabels else [])
     print(f"[plot_paper] {bench}: N={big_n}, bins k/N<1/3: {int(b1 - idx[0] + 0.5)}, "
           f"<2/3: {int(b2 - b1)}, >=2/3: {int(idx[-1] - b2 + 0.5)} configurations")
 
     apply_smart_log2_scale(ax)
     ax.yaxis.set_minor_formatter(NullFormatter())
 
-    ax.set_xlabel("Degree of dynamization k/N")
+    if xlabels:
+        ax.set_xlabel("Degree of dynamization k/N")
     # 高さ 1.45 in では "Slowdown relative to Gradti" が縦に収まらないので短くする（1 = Gradti はキャプションに書く）
     ax.set_ylabel("Slowdown")
-    # 7 pt では短縮ラベルでも 3 列 1 行が 2.2 in に収まらない（約 2.4 in）ので 2 列にする
+    # 凡例は軸の上に 1 行（3 列）で、図の幅の中央に置く（軸の中央だと左右の余白の差だけ狭くなる）。
+    # 8 pt で図の幅に収まらなければ 7 pt、それでも駄目なら 2 行
     if legend:
-        ax.legend(ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False,
-                  borderaxespad=0.2, handlelength=1.0, handletextpad=0.3, columnspacing=0.8,
-                  labelspacing=0.2)
+        for ncol, fs in ((3, 8), (3, 7), (2, 7)):
+            leg = ax.legend(ncol=ncol, loc="lower center", frameon=False, fontsize=fs,
+                            bbox_to_anchor=(0.5, (m["bottom"] + REL_AXES_H[bench]) / height),
+                            bbox_transform=fig.transFigure, borderpad=0, borderaxespad=0.2,
+                            handlelength=0.8, handletextpad=0.2, columnspacing=0.6, labelspacing=0.2)
+            fig.canvas.draw()
+            lb = leg.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+            if lb.x0 >= 0 and lb.x1 <= width:
+                break
+        print(f"[plot_paper] {bench}: legend {ncol} columns at {fs} pt, {lb.width:.2f} in wide")
     fig.canvas.draw()
     box = fig.get_tightbbox()
     assert box.x0 >= 0 and box.y0 >= 0 and box.x1 <= width and box.y1 <= height, \
@@ -315,12 +352,12 @@ def main() -> None:
         if shared:
             write_legend(modes, os.path.join(supp, f"{name}_legend.png"), **save_args)
     plot_cumulative(data, "church", "typedALHMT", ["typedALHMT", "untypedALHMT"],
-                    os.path.join(fig_dir, "rq1_church_cumulative.png"), **save_args)
-    # 本文の相対グラフは縦に 2 枚並ぶので、凡例は上の ray だけに付ける
+                    os.path.join(fig_dir, "rq1_church_cumulative.png"), size=MAIN_CUMULATIVE_SIZE, **save_args)
+    # 本文の相対グラフは縦に 2 枚並ぶので、凡例は上の ray だけに、x の文字は下の church だけに付ける
     for bench in ("ray", "church"):
         plot_relative(bench, "untypedALHMT", ABLATIONS, date_dir,
                       os.path.join(fig_dir, f"rq2_{bench}_relative.png"),
-                      short_labels=not args.long_relative_labels, legend=bench == "ray", **save_args)
+                      short_labels=not args.long_relative_labels, legend=bench == "ray", xlabels=bench == "church", **save_args)
 
 if __name__ == "__main__":
     main()
