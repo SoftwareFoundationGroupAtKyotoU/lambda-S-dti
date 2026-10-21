@@ -1,21 +1,21 @@
-let create_x (n : int) =
-  let result = Array.make n 0 in
+let create_x (n : int) : int array =
+  let result : int array = Array.make n 0 in
   (**)
   for i = 0 to n - 1 do
     result.(i) <- i
   done;
   result;;
 
-let create_y (x : int array) =
-  let n = Array.length x in
-  let result = Array.make n 0 in
+let create_y (x : int array) : int array =
+  let n : int = Array.length x in
+  let result : int array = Array.make n 0 in
   (**)
   for i = 0 to n - 1 do
     result.(n - i - 1) <- x.(n - i - 1)
   done;
   result;;
 
-let my_try (n : int) =
+let my_try (n : int) : int =
   Array.length (create_y (create_x n));;
 
 let rec go (m : int) (n : int) (r : int) : int =

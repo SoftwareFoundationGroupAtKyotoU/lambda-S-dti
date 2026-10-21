@@ -9,10 +9,10 @@ let rec loop (i : int) (j : int) : unit =
   in
   if i < n then
     ((if i < j then
-        (let tmp = data.(i) in
+        (let tmp : float = data.(i) in
          (data.(i) <- data.(j);
           data.(j) <- tmp);
-         let tmp = data.(i+1) in
+         let tmp : float = data.(i+1) in
          (data.(i+1) <- data.(j + 1);
           data.(j+1) <- tmp))
       else ());
@@ -23,9 +23,9 @@ let rec loop3 (mmax : int) : unit =
   let rec loop4 (wr : float) (wi : float) (m : int) (mmax : int) (wpr : float) (wpi : float) : unit =
     let rec loop5 (i : int) (mmax : int) (wr : float) (wi : float) (m : int) (wpr : float) (wpi : float) : unit =
       if i < n then
-        let j = i + mmax in
-        let tmpr = (wr *. data.(j)) -. (wi *. data.(j+1)) in
-        let tmpi = (wr *. data.(j+1)) +. (wi *. data.(j)) in
+        let j : int = i + mmax in
+        let tmpr : float = (wr *. data.(j)) -. (wi *. data.(j+1)) in
+        let tmpi : float = (wr *. data.(j+1)) +. (wi *. data.(j)) in
         (data.(j) <- data.(i) -. tmpr;
         data.(j+1) <- data.(i+1) -. tmpi;
         data.(i) <- data.(i) +. tmpr;
@@ -39,10 +39,10 @@ let rec loop3 (mmax : int) : unit =
     if m < mmax then loop5 m mmax wr wi m wpr wpi else ()
   in
   if mmax < n then
-    let theta = pi_2 /. (float_of_int mmax) in
-    let wpr = let x = sin (0.5 *. theta) in
+    let theta : float = pi_2 /. (float_of_int mmax) in
+    let wpr : float = let x : float = sin (0.5 *. theta) in
               -.2.0 *. (x *. x) in
-    let wpi = sin theta in
+    let wpi : float = sin theta in
     (loop4 1.0 0.0 0 mmax wpr wpi;
     loop3 (mmax * 2))
   else
