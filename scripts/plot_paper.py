@@ -39,13 +39,15 @@ from plot_stacked_time import (
 )
 
 LABEL = {
-    "typedALHMT":   "Gradti (typed)",
+    "typedALHMT":   "Gradti (ET)",
     "untypedALHMT": "Gradti",
     "untypedSLHMT": "w/o dual-entry closures",
     "untypedALhMT": "w/o hash consing",
     "untypedALHMt": "w/o type-parameter pruning",
     "GRIFTCM":      "Grift",
 }
+# RQ1 の図（typed と untyped の比較）の凡例だけ、untyped 側を "Gradti (IT)" と書く。RQ2 では "Gradti" のまま
+RQ1_LABEL = {**LABEL, "untypedALHMT": "Gradti (IT)"}
 # 相対グラフの凡例（1行3列）に長いラベルが収まらないときの短縮形
 SHORT_LABEL = {
     "untypedSLHMT": "w/o dual entry",
@@ -53,8 +55,11 @@ SHORT_LABEL = {
     "untypedALHMt": "w/o pruning",
 }
 # 論文の図だけで変える色（get_plot_style より優先）。Grift はほぼ黒の濃いグレーにする
-# （STYLE_MAP の teal は Gradti (typed) の紫と、茶は Gradti の赤と見分けにくい）
+# （STYLE_MAP の teal は Gradti (ET) の紫と、茶は Gradti の赤と見分けにくい）
 COLOR = {"GRIFTCM": "#222222"}
+# 凡例の位置を自動で決めず固定する図。rq3_ray はラベルが "Gradti (typed)" だったときに左上に決まったが、
+# "Gradti (ET)" に縮めると右下でも曲線を隠さなくなる。ラベルの変更で凡例を動かさないよう左上のままにする
+LEGEND_LOC = {("rq3", "ray"): "upper left"}
 BENCH = {"church-1048576": "church"}   # それ以外のベンチは名前そのまま
 # 論文のファイル名 → ログのベンチ名（ログ側は歴史的に "blacksholes" と綴っている）
 LOG_BENCH = {"blackscholes": "blacksholes", "church": "church-1048576"}
@@ -112,10 +117,11 @@ def color(mode: str, i: int) -> str:
 
 def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
                     legend: bool = True, top: str = None, dry: bool = False,
-                    size=None, **save_args) -> int:
+                    size=None, labels: Dict[str, str] = LABEL, legend_loc: str = None, **save_args) -> int:
     """累積グラフを描いて保存する。legend=True なら凡例を置き、凡例が隠す曲線上の点の数を返す。
     top に指定したモードの線は他の線より上に描く。dry=True なら保存しない（凡例の重なりを調べるだけ）。
-    size を指定すると本文用: 図の大きさをそれに固定し（tight にしない）、x ラベルを 1 行にする。"""
+    size を指定すると本文用: 図の大きさをそれに固定し（tight にしない）、x ラベルを 1 行にする。
+    labels は凡例の文字（x ラベルの基準モード名は常に LABEL）。legend_loc を指定すると凡例をそこに固定する。"""
     series_by_mode = data[LOG_BENCH.get(bench, bench)]
     baseline = series_by_mode[base].endpoint("static")   # 基準モードの最も静的な mutant
     curves = [(mode, overheads(series_by_mode[mode], baseline)) for mode in modes]
@@ -131,7 +137,7 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
         ys = np.concatenate(([0.0], np.arange(1, len(ovh) + 1) / len(ovh) * 100.0, [100.0]))
         ys[-1] = ys[-2]
         ax.step(xs, ys, where="post", color=color(mode, i), linewidth=1.2,
-                label=LABEL[mode], zorder=3 if mode == top else 2)
+                label=labels[mode], zorder=3 if mode == top else 2)
 
     # 1x と N=3x（deliverable）・M=10x（usable）の縦線。Takikawa の 60% 横線は根拠が無いので引かない
     for x in (1.0, n, m):
@@ -147,8 +153,8 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     ax.set_yticks([0, 20, 40, 60, 80, 100])
 
     # 1 行では 2.6 in に収まらないので 2 行に折る
-    # 1 行の "Slowdown vs. fully static Gradti" は軸幅に収まるが、"... Gradti (typed)" は収まらない
-    # （8 pt で 2.22 in > 軸幅 1.99 in）ので、そちらは 2 行のまま
+    # 1 行の "Slowdown vs. fully static Gradti" は軸幅に収まるが、"Slowdown relative to the fully static
+    # Gradti (ET)" は収まらないので、そちらは 2 行のまま
     if size:
         # 本文: 1 行。8 pt で軸幅に収まらなければ 7 pt にする
         for fs in (8, 7):
@@ -165,7 +171,7 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     hits = 0
     if legend:
         hits = place_legend(fig, ax, [(np.concatenate(([lower], o)), np.arange(len(o) + 1) / len(o) * 100.0)
-                                      for _, o in curves])
+                                      for _, o in curves], legend_loc)
     if dry:
         plt.close(fig)
     elif size:
@@ -180,11 +186,11 @@ def plot_cumulative(data, bench: str, base: str, modes: List[str], path: str,
     return hits
 
 
-def write_legend(modes: List[str], path: str, **save_args) -> None:
+def write_legend(modes: List[str], path: str, labels: Dict[str, str] = LABEL, **save_args) -> None:
     """凡例だけの図（複数の図で共有する凡例）。線の色・太さは累積グラフと同じ。1 行に並べる。"""
     handles = [Line2D([], [], color=color(mode, i), linewidth=1.2) for i, mode in enumerate(modes)]
     fig = plt.figure(figsize=(5.4, 0.3))
-    legend = fig.legend(handles, [LABEL[m] for m in modes], ncol=len(modes), frameon=False,
+    legend = fig.legend(handles, [labels[m] for m in modes], ncol=len(modes), frameon=False,
                         loc="center", handlelength=1.5, columnspacing=1.2)
     fig.canvas.draw()
     width = legend.get_window_extent().width / fig.dpi
@@ -192,9 +198,9 @@ def write_legend(modes: List[str], path: str, **save_args) -> None:
     save(fig, path, **save_args)
 
 
-def place_legend(fig, ax, lines) -> int:
+def place_legend(fig, ax, lines, loc: str = None) -> int:
     """凡例は右下に置くが、そこで曲線を隠してしまうときは左上と比べて、隠す点の少ない方に置く。
-    lines: 各曲線の階段の (xs, ys)。凡例が隠す曲線上の点の数を返す。"""
+    lines: 各曲線の階段の (xs, ys)。凡例が隠す曲線上の点の数を返す。loc を指定するとそこに固定する。"""
     def covered(legend) -> int:
         fig.canvas.draw()
         box = legend.get_window_extent()
@@ -211,7 +217,7 @@ def place_legend(fig, ax, lines) -> int:
                                & (disp[:, 1] >= box.y0) & (disp[:, 1] <= box.y1)))
         return hits
     best = None
-    for loc in ("lower right", "upper left"):
+    for loc in ([loc] if loc else ["lower right", "upper left"]):
         legend = ax.legend(loc=loc, ncol=1, frameon=True, fancybox=False, framealpha=0.85,
                            edgecolor="0.85", borderpad=0.3, borderaxespad=0.3,
                            handlelength=1.5, labelspacing=0.25)
@@ -337,22 +343,26 @@ def main() -> None:
     # 付録の累積グラフ。RQ2 は 4 本の線の凡例が曲線を隠すので、凡例は図から外して共有の凡例ファイルに出す。
     # RQ1 / RQ3 も、どれか 1 枚でも凡例が曲線を隠すならグループごと同じ扱いにする（揃えるため）。
     groups = [
-        ("rq1", RQ12_BENCHES, "typedALHMT", ["typedALHMT", "untypedALHMT"], None),
-        ("rq2", RQ12_BENCHES, "untypedALHMT", ["untypedALHMT"] + ABLATIONS, "untypedALHMT"),
-        ("rq3", RQ3_BENCHES, "typedALHMT", ["typedALHMT", "GRIFTCM"], None),
+        ("rq1", RQ12_BENCHES, "typedALHMT", ["typedALHMT", "untypedALHMT"], None, RQ1_LABEL),
+        ("rq2", RQ12_BENCHES, "untypedALHMT", ["untypedALHMT"] + ABLATIONS, "untypedALHMT", LABEL),
+        ("rq3", RQ3_BENCHES, "typedALHMT", ["typedALHMT", "GRIFTCM"], None, LABEL),
     ]
-    for name, benches, base, modes, top in groups:
-        covering = [b for b in benches if plot_cumulative(data, b, base, modes, None, top=top, dry=True) > 0]
+    for name, benches, base, modes, top, labels in groups:
+        covering = [b for b in benches
+                    if plot_cumulative(data, b, base, modes, None, top=top, dry=True, labels=labels,
+                                       legend_loc=LEGEND_LOC.get((name, b))) > 0]
         shared = name == "rq2" or bool(covering)
         print(f"[plot_paper] {name}: legend covers a curve in {covering or 'none'}"
               f" -> {'shared legend file' if shared else 'legend in each plot'}")
         for b in benches:
             plot_cumulative(data, b, base, modes, os.path.join(supp, f"{name}_{b}.png"),
-                            legend=not shared, top=top, **save_args)
+                            legend=not shared, top=top, labels=labels,
+                            legend_loc=LEGEND_LOC.get((name, b)), **save_args)
         if shared:
-            write_legend(modes, os.path.join(supp, f"{name}_legend.png"), **save_args)
+            write_legend(modes, os.path.join(supp, f"{name}_legend.png"), labels=labels, **save_args)
     plot_cumulative(data, "church", "typedALHMT", ["typedALHMT", "untypedALHMT"],
-                    os.path.join(fig_dir, "rq1_church_cumulative.png"), size=MAIN_CUMULATIVE_SIZE, **save_args)
+                    os.path.join(fig_dir, "rq1_church_cumulative.png"), size=MAIN_CUMULATIVE_SIZE,
+                    labels=RQ1_LABEL, **save_args)
     # 本文の相対グラフは縦に 2 枚並ぶので、凡例は上の ray だけに、x の文字は下の church だけに付ける
     for bench in ("ray", "church"):
         plot_relative(bench, "untypedALHMT", ABLATIONS, date_dir,
