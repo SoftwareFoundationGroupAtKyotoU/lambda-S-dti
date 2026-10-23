@@ -1,3 +1,4 @@
+(* Terminal progress bar for one target (counts mutants done, shows elapsed/ETA). *)
 type t = {
   label : string;
   total : int;
@@ -6,12 +7,14 @@ type t = {
   width : int;
 }
 
+(* Print a "==> [ordinal/total_targets] label" header and start a new bar. *)
 let create ~label ~total ~ordinal ~total_targets =
   (* 見出しを出してからバーを開始 *)
   Printf.printf "\n==> [%d/%d] %s (%d mutants)\n%!"
     ordinal total_targets label total;
   { label; total; done_ = 0; start_t = Unix.gettimeofday (); width = 28 }
 
+(* Redraw the bar in place (\r); ~final:true terminates the line. *)
 let print ?(final=false) (p:t) =
   let now     = Unix.gettimeofday () in
   let done_i  = p.done_ in
@@ -26,6 +29,7 @@ let print ?(final=false) (p:t) =
     (if Float.is_nan eta then " ?" else Printf.sprintf " %.1fs" eta);
   if final then Printf.printf "\n%!"
 
+(* Mark one more mutant as done and redraw. *)
 let tick (p:t) =
   p.done_ <- p.done_ + 1;
   print p

@@ -22,8 +22,6 @@ def plot_compare(mode: str, static: bool = False):
     
     # 対象となるファイルを church_mono_1..10, church_poly_1..10 に上書き
     cfg["target_benchmarks"] = [f"church_{t}_{i}" for t in ["mono", "poly"] for i in range(1, 11)]
-    # jsonファイルのパターンも単一モード用に修正
-    cfg["json_pattern"] = rf"({mode})_(.*?){fs}\.(jsonl|json)$"
     
     latest, date_dir, data = ingest_latest_as_map(mode, [mode], cfg)
     
@@ -100,5 +98,5 @@ def plot_compare(mode: str, static: bool = False):
 if __name__ == "__main__":
     # テスト実行用 (直接 python plot_compare.py と叩いた場合)
     import sys
-    mode_to_plot = sys.argv[1] if len(sys.argv) > 1 else "SLHC"
+    mode_to_plot = sys.argv[1] if len(sys.argv) > 1 else "untypedALHMT"
     plot_compare(mode_to_plot)

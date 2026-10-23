@@ -43,6 +43,6 @@ let builtins : builtin list = [
     { name = "exp";   impl = Native (lib_exp, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "exp_ml" };
     { name = "log";   impl = Native (lib_log, tysc_of_ty @@ TyFun (TyFloat, TyFloat));   c_backing = CImpl "log_ml" };
     { name = "round"; impl = Native (lib_round, tysc_of_ty @@ TyFun (TyFloat, TyFloat)); c_backing = CImpl "round_ml" };
-    { name = "fmin";  impl = ITGL "let fmin x y = if x <. y then x else y;;";            c_backing = CImpl "fmin_ml" };
-    { name = "fmax";  impl = ITGL "let fmax x y = if x >. y then x else y;;";            c_backing = CImpl "fmax_ml" };
+    { name = "fmin";  impl = ITGL "let fmin x y = if x <. y then x else if y =. y then y else x;;"; c_backing = CImpl "fmin_ml" };
+    { name = "fmax";  impl = ITGL "let fmax x y = if x >. y then x else if y =. y then y else x;;"; c_backing = CImpl "fmax_ml" };
   ]

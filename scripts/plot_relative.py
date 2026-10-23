@@ -9,7 +9,8 @@ from benchviz import (
     load_config, ingest_latest_as_map, ensure_dir,
     ratio_with_delta_ci, integer_xticks, save_fig, get_plot_style,
     parse_comp_args, draw_binomial_boundaries,
-    setup_plot_style, format_comp_label, apply_decorations
+    setup_plot_style, format_comp_label, apply_decorations,
+    BENCHMARK_ORDER
 )
 
 def apply_smart_log2_scale(ax):
@@ -103,17 +104,12 @@ def plot_relative(base: str, comp: Union[str, List[str]], static: bool):
             apply_smart_log2_scale(ax) # ★ ソート版にも適用
             # ★ ソート版には draw_binomial_boundaries を呼ばない
 
-            apply_decorations(ax, rcfg["xlabel"] + " (filtered & sorted)", rcfg["ylabel"], 
+            apply_decorations(ax, rcfg["xlabel_sorted"], rcfg["ylabel"], 
                           f'{rcfg["title_prefix"]} (filtered & sorted): {bench}')
             
             save_fig(fig, os.path.join(out_dir, f'plot_{bench}_{base}-{comp_label}_relative_sorted{fs}.png'))
 
     print(f"Saved relative plots under: {out_dir}")
-
-STATIC_BENCHMARK_ORDER = [
-    "array", "evenodd", "fib", "incsum", "loop-mono", "map-mono",
-    "matmult", "quicksort", "tak", "loop", "map", "church-65532"
-]
 
 def plot_static_summary(base: str, comp: Union[str, List[str]]):
     """Fully-static プログラムのパフォーマンスを全ベンチマーク統合してプロットする"""
@@ -137,7 +133,7 @@ def plot_static_summary(base: str, comp: Union[str, List[str]]):
     valid_benches = []
     plot_data = {c: {'ratios': [], 'cis': []} for c in comps}
 
-    for bench in STATIC_BENCHMARK_ORDER:
+    for bench in BENCHMARK_ORDER:
         if bench not in data:
             continue
             
@@ -211,7 +207,7 @@ def plot_static_summary(base: str, comp: Union[str, List[str]]):
 
     # 4. タイトル・軸・凡例のテーブル化、一括ON/OFF制御の適用
     # ※ HIDE_PLOT_TEXTS = True の時はテキスト類がスッキリ消えます
-    apply_decorations(ax, "Fully-Static Benchmarks", rcfg["ylabel"], 
+    apply_decorations(ax, "Benchmark (fully static program)", rcfg["ylabel"], 
                       f"Static Performance relative to {base}")
 
     save_fig(fig, os.path.join(out_dir, f'plot_static_summary_{base}-{comp_label}.png'))

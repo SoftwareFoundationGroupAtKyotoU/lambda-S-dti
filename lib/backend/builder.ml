@@ -1,7 +1,13 @@
 open Format
 open Config
 
-let gc_ini_heap_var = "-D GC_INITIAL_HEAP_SIZE=1048576 "
+(* Boehm GC の初期 heap サイズ (bytes)。gc.h の GC_INIT() がこのマクロを読んで
+   heap をこのサイズまで広げる。ベンチは --heap-size で上書きできる。 *)
+let default_heap_size = 1048576
+
+let gc_ini_heap_var_of heap_size = Printf.sprintf "-D GC_INITIAL_HEAP_SIZE=%d " heap_size
+
+let gc_ini_heap_var = gc_ini_heap_var_of default_heap_size
 
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
@@ -15,7 +21,7 @@ let unique_base (config : Config.t) filename =
   base ^ "_" ^ Digest.to_hex (Digest.string (abs_filename ^ mode_key))
 
 let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
-  ?(check=false) ~config ~bench ~profile () =
+  ?(check=false) ?(heap_size=default_heap_size) ~config ~bench ~profile () =
   let libc_dir = Resources.libc_dir () in
   let intoB = config.intoB in
   let static = config.static in
@@ -37,7 +43,7 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
       file
       mode_str
       suffix
-      gc_ini_heap_var
+      (gc_ini_heap_var_of heap_size)
       mode_var
       eager_var
       monotonic_var

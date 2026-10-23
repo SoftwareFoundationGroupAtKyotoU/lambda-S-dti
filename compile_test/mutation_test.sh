@@ -27,13 +27,13 @@ fi
 declare -A EXPECTED=(
   [tak]="9"
   [fib]="9227465"
-  [church-65532]="65536"
+  [church-65536]="65536"
   [evenodd]="true"
   [loop]="0"
   [incsum]="2003000"
-  [array]="50000"
+  [array]="100000"
   [matmult]="38852480"
-  [quicksort]="9999"
+  [quicksort]="999"
 )
 
 # --static は samples/input/<target>_fs.txt を使う。ほとんどのターゲットは
@@ -42,7 +42,6 @@ declare -A EXPECTED=(
 # ここに載っているターゲットだけ個別の値で上書きする。
 declare -A EXPECTED_STATIC=(
   [incsum]="50015000"
-  [array]="100000"
 )
 
 LOGDIR="$(mktemp -d)"

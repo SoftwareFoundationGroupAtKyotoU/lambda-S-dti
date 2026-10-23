@@ -49,7 +49,7 @@ define ENSURE_OPAM_PACKAGES
 endef
 
 # ----- Targets -------------------------------------------------------------
-.PHONY: setup build run test benchmark graph clean opam-update \
+.PHONY: setup build run test benchmark docker-build docker-bench graph clean opam-update \
         check-ocaml check-ocaml-pkgs check-python check-uv check-py-reqs
 
 # 初回セットアップ（OCamlパッケージ導入）
@@ -72,13 +72,27 @@ test: check-ocaml check-ocaml-pkgs
 benchmark: check-ocaml check-ocaml-pkgs
 	@$(call OPAM_RUN, dune exec ./bin/bench.exe)
 
+# Docker でのベンチ（grift はイメージ内にしか無いので、本番計測はこちらを使う）。
+# イメージはビルド時点のソースを COPY するので、毎回 docker-build を先に走らせて
+# 作業ツリーの変更を反映する（変更が無ければレイヤキャッシュで一瞬で終わる）。
+# 例: make docker-bench ARGS="--dynamize --static fib tak -i 100"
+DOCKER_IMAGE ?= env
+ARGS ?=
+
+docker-build:
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-bench: docker-build
+	docker run --rm -e HOST_UID=$$(id -u) -e HOST_GID=$$(id -g) \
+	  -v $(CURDIR)/logs:/app/logs $(DOCKER_IMAGE) bench $(ARGS)
+
 # グラフ生成（uv venv + 依存導入 + 実行）
 plot: check-python check-uv
 	@if [ ! -f scripts/requirements.txt ]; then \
 		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
 		echo "📝 Created default scripts/requirements.txt (numpy matplotlib scipy)"; \
 	fi
-	@uv venv
+	@uv venv --allow-existing
 	@uv pip install -q -r scripts/requirements.txt
 	@uv run python scripts/check_requirements.py
 	@uv run python scripts/plot_all.py
@@ -90,7 +104,7 @@ report: check-python check-uv
 		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
 		echo "📝 Created default scripts/requirements.txt (numpy matplotlib scipy)"; \
 	fi
-	@uv venv
+	@uv venv --allow-existing
 	@uv pip install -q -r scripts/requirements.txt
 	@uv run python scripts/check_requirements.py
 	@uv run python scripts/report_herman.py
@@ -106,7 +120,7 @@ report-longest: check-python check-uv
 	@if [ ! -f scripts/requirements.txt ]; then \
 		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
 	fi
-	@uv venv
+	@uv venv --allow-existing
 	@uv pip install -q -r scripts/requirements.txt
 	@uv run python scripts/report_ratio_extremes.py
 	@echo "✅ Longest execution time report generated."
@@ -121,7 +135,7 @@ report-absolute: check-python check-uv
 	@if [ ! -f scripts/requirements.txt ]; then \
 		printf "%s\n" numpy matplotlib scipy > scripts/requirements.txt; \
 	fi
-	@uv venv
+	@uv venv --allow-existing
 	@uv pip install -q -r scripts/requirements.txt
 	@uv run python scripts/report_absolute_times.py --target $(TARGET) --top $(TOP) --metrics $(METRICS)
 	@echo "✅ Absolute longest execution time report generated."

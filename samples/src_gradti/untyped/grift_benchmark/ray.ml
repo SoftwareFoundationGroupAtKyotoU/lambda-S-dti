@@ -99,7 +99,7 @@ let tracer res =
      （array/quicksort 等）より一桁以上遅くなってしまう。mutation ベンチマーク
      としての実行時間を揃えるため、ここだけ *10 に縮小してある
      （レンダリング結果の見た目の正しさはこの用途では問題にしない）。 *)
-  let extent = res * 10 in
+  let extent = res * 100 in
   (**)
   print_char 'P';
   print_int 2;

@@ -5,7 +5,8 @@ let check_target ~log_dir ~expected ~ordinal ~total_targets (t : target) : bool 
   let mode_str = ablation_mode_str t in
   try
     let config = Bench_compiler.config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
-    let prog = Bench_compiler.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
+    let prog, errors = Bench_compiler.compile_mutants ~record:false ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
+    if errors <> [] then failwith (String.concat "\n" errors);
     let mutants_length = List.length t.mutants in
     let failing = Bench_compiler.build_run_bench_check ~log_dir ~file:t.file ~mode_str ~mutants_length ~config ~expected in
     List.iter (fun (idx, actual) ->
@@ -56,8 +57,13 @@ let () =
   end;
   let axes = match requested_axes () with [] -> Bench_target.all_axes | axes -> axes in
 
-  let prepared = Bench_target.prepare ~axes files in
-  let targets = Bench_target.expand_ablation_targets ~axes prepared in
+  (* ベンチと同じ前処理フェーズ（restriction 解決〜mutate）。各フェーズで
+     エラーがあればその時点で終了する。 *)
+  let prepared =
+    Bench_phases.prepare_all ~axes ~dynamize:!dynamize ~static:!static ~grift:false files
+    |> Bench_phases.ml_prepared
+  in
+  let targets = Bench_target.expand_ablation_targets prepared in
 
   let check_tmp_root = ".check_tmp" in
   if not (Sys.file_exists check_tmp_root) then Core_unix.mkdir check_tmp_root;
