@@ -133,6 +133,14 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         SDecl (VALUE, x, None) :: stm @ [SAssign (Var tmp, Cast (CRC, exp)); SAssign (Var x, Cast (VALUE, App (Var "alloc_crc", [Addr tmp])))], Cast (PTR CRC, Var x)
   in
   let has_tv_val = if check_has_tv c then 1 else 0 in
+  let has_tv_of_children children =
+    let static_crc_tv = List.exists (fun (c, e) -> match e with Addr _ -> check_has_tv c | _ -> false) children in
+    let dynamic_crcs_tv = List.filter_map (fun (_, e) -> match e with Addr _ -> None | e -> Some (Arrow (e, "has_tv"))) children in
+    match static_crc_tv, dynamic_crcs_tv with
+    | true, _ -> Int 1
+    | false, [] -> Int 0
+    | false, e :: es -> List.fold_left (fun acc e -> BinOp (acc, Or, e)) e es
+  in
   let c, info_proj_inj = match c with
     | CSeq (CProj (_, (r, p)), (CSeq (c, CInj _))) -> c, ["has_proj", Int 1; "has_inj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
     | CSeq (CProj (_, (r, p)), c) -> c, ["has_proj", Int 1; "p_proj", Int (int_of_pos p); "rid_proj", Int (rid r)]
@@ -162,7 +170,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_FUN") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["fun_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -171,7 +179,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm,
       Struct (
         ("crckind", Var "C_LIST") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c, ptr_crc];
           "crcdat", Struct ["lst_crc", ptr_crc]
         ]
       )
@@ -195,7 +203,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms @ arr_stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Var arr]]
           ]
         )
@@ -203,7 +211,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
         List.flatten stms,
         Struct (
           ("crckind", Var "C_TUPLE") :: info_proj_inj @ [
-            "has_tv", Int has_tv_val;
+            "has_tv", has_tv_of_children (List.combine cs ptr_crcs);
             "crcdat", Struct ["tpl_crc", Struct ["size", Int size; "crcs", Cast (ARRAY (PTR CRC), Array ptr_crcs)]]
           ]
         )
@@ -213,7 +221,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_REF") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["ref_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -231,7 +239,7 @@ let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
       stm1 @ stm2,
       Struct (
         ("crckind", Var "C_ARRAY") :: info_proj_inj @ [
-          "has_tv", Int has_tv_val;
+          "has_tv", has_tv_of_children [c1, ptr_crc1; c2, ptr_crc2];
           "crcdat", Struct ["array_crc", Struct ["c1", ptr_crc1; "c2", ptr_crc2]]
         ]
       )
@@ -698,7 +706,8 @@ let toC_crccontents crcs = List.map (fun (c, name) -> Decl (Static, CRC, name, S
 let toC_crcs ~config crcs =
   let static_crc_names =
     ["crc_id"; "crc_inj_INT"; "crc_inj_BOOL"; "crc_inj_UNIT"; "crc_inj_FN"; "crc_inj_LI"; "crc_inj_RF"; "crc_inj_AR"]
-    @ (List.map snd crcs)
+    @ List.filter_map (fun (c, name) -> if check_has_tv c then None else Some name) crcs
+    (* drop crc that has tv because alloc_crc does not intern it *)
   in
   let crcinit =
     if config.hash then
