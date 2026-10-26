@@ -53,9 +53,13 @@ monotonic reference/array の deref・subst（`GetExp`/`PutExp`/`DerefExp`/`Subs
 
 対応する場合は `env_of_mf`/`MatchExp` の型付け側でブランチごとに generalize するよう変更する必要があり、`match` 全体の意味論に関わる別の大きな変更になる。現状は既知の制限として受容している（回帰テストは `test/test_typing.ml` を参照）。
 
-## monotonic ref/array coercion の `has_tv` が未設定
+## monotonic ref/array coercion の `has_tv` が応急処置のまま
 
-`libC/crc.c:325`（`new_mref`）・`crc.c:345`（`new_marray`）で `has_tv` フィールドがコメントアウトされたまま（`/*.has_tv = TODO yet, */`）になっており、実質 0 固定。`CMRef`/`CMArray` の runtime crc が型変数を含んでいても `has_tv` に反映されない。non-monotonic 版（`new_ref`/`new_array`）は `c1->has_tv | c2->has_tv` を正しく設定しているのと対称性が崩れている。影響範囲は未調査。
+`libC/crc.c` の `new_mref`/`new_marray` は、キーの型 `u` が型変数を含むかを見ずに、安全側に倒して常に `has_tv = 1` にしている（`new_mref_tv`/`new_marray_tv` に 1 を渡す）。has_tv = 0 になるのは、toC が出力した static crc（型変数を含まないもの）どうしを `compose` したときだけ。そのため実行時に作る mref/marray の crc は intern されず、compose cache にも載らない。
+
+`new_mref` の時点で `u` を `ty_find` しながら辿り、型変数が残っていなければ `has_tv = 0` にすれば、実行時の mref/marray crc も hash-consing の対象にできる。型を辿るコストとの兼ね合いなので、ベンチで効果を確かめてから入れる。
+
+その際、intern 表は mref/marray のキーを型のポインタで比較する（`hash_crc`/`eq_crc`）ので、構造が同じでもポインタが違う型は共有されない。`compose_mkey` と同じ発想で、has_tv = 0 のキーを代表のポインタに寄せる（Dyn・base 型なら `ty.c` の static な `tydyn`/`tyint` などを使う。複合型まで寄せるなら型の hash-consing が必要）と効果が上がる。
 
 ## bench のインタプリタ計測（廃止済み・復活は要検討）
 
@@ -76,6 +80,10 @@ mutation 後プログラムがインタプリタで評価まで通るかの回�
 - `lib/utils/utils.ml:56` — `Utils.Lexing` モジュールの存在意義が不明なコードに `(* TODO: why does it exist? *)` が付いたまま。
 - `lib/utils/pp.ml:85` — `gt_binop`（演算子の pretty-print 用の優先順位比較）に `(* TODO: replace to level *)`。優先順位を表す `level` のようなものに置き換えたいという意図と思われるが未着手。
 - `bin/main.ml:28` — ファイルモード実行時、プログラムが正しく書けていなくてもコンパイルが通ってしまうことがある（例: `bad.ml`）。原因未調査。
+- `lib/utils/resources.ml:19` — `LSDTI_ROOT_DIR` による project root の上書きがコメントアウトされているのに、root が見つからないときのエラーメッセージは「`LSDTI_ROOT_DIR` を設定せよ」と案内している。上書きを復活させるか、メッセージを `dune install` を促すものに直す。
+- `libC/capp.c` の `coerce` 内（monotonic ref/array を即時に変換した直後）の `consume()` 2 か所は、toC が出力する Subst/Put と違って `consume_pending()` になっていない。意味は同じなので、揃えるかどうかは任意。
+- `libC/crc.c` の compose cache は GC のスキャン対象外で、「has_tv == 0 の crc は intern 済みか static」という不変条件をコメントだけで守っている（`ensure_compose_cache`）。has_tv == 0 の crc を `alloc_crc` 以外の経路で作るコードを足すと黙って壊れるので、デバッグビルドで検査する仕組みを検討する。
+- `compile_test/dotests.sh` のオプション一覧に hash-consing（`-h`）を有効にした組み合わせがない。HASH モードは `compile_test/mutation_test.sh` の 9 プログラムでしか検証されていない。
 
 ## テストの TODO（コメントアウトされたまま復活していないケース）
 

@@ -1,9 +1,12 @@
 #if !defined(CAST) && !defined(STATIC)
 
 #ifdef HASH
-#define CRC_HASH_SIZE 131072
+#define CRC_HASH_INIT_SIZE 1024
 #define CACHE_SIZE 65536
-#endif //HASH
+#ifndef NO_COMPOSE_CACHE
+#define COMPOSE_CACHE
+#endif // COMPOSE_CACHE
+#endif // HASH
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +54,16 @@ void set_static_crcs(crc **arr, int n) {
 }
 
 static crc **intern_table = NULL;
+static uint32_t intern_size = 0;
+static uint32_t intern_count = 0;
+
+// hash_crc の値はポインタ由来でも下位ビットが偏るので、マスクで添字を取る前に混ぜる
+static inline uint32_t mix32(uint32_t h) {
+    h ^= h >> 16;
+    h *= 0x45d9f3bu;
+    h ^= h >> 16;
+    return h;
+}
 
 static uint32_t hash_crc(const crc *c) {
     uint32_t h = c->crckind;
@@ -161,39 +174,45 @@ static int eq_crc(const crc *a, const crc *b) {
     }
 }
 
+static void intern_table_alloc(uint32_t size) {
+    intern_table = (crc**)GC_MALLOC(sizeof(crc*) * size);
+    if (!intern_table) { printf("Fatal: intern_table allocation failed\n"); exit(1); }
+    intern_size = size;
+    intern_count = 0;
+}
+
+static void intern_table_put(crc *c) {
+    uint32_t idx = mix32(hash_crc(c)) & (intern_size - 1);
+    while (intern_table[idx] != NULL) {
+        if (intern_table[idx] == c) return;
+        idx = (idx + 1) & (intern_size - 1);
+    }
+    intern_table[idx] = c;
+    intern_count++;
+}
+
+static void intern_table_grow(void) {
+    crc **old = intern_table;
+    uint32_t old_size = intern_size;
+    intern_table_alloc(old_size * 2);
+    for (uint32_t i = 0; i < old_size; i++) {
+        if (old[i]) intern_table_put(old[i]);
+    }
+}
+
 static void ensure_intern_table(void) {
     if (intern_table) return;
-    intern_table = (crc**)calloc(CRC_HASH_SIZE, sizeof(crc*));
-    if (!intern_table) { printf("Fatal: intern_table allocation failed\n"); exit(1); }
-    GC_add_roots((char*)intern_table, (char*)(intern_table + CRC_HASH_SIZE));
+    intern_table_alloc(CRC_HASH_INIT_SIZE);
     for (int i = 0; i < static_crc_n; i++) {
-        crc *c = static_crcs[i];
-        uint32_t idx = hash_crc(c) % CRC_HASH_SIZE;
-        while (intern_table[idx] != NULL) {
-            if (intern_table[idx] == c) break;
-            idx = (idx + 1) % CRC_HASH_SIZE;
-        }
-        intern_table[idx] = c;
+        intern_table_put(static_crcs[i]);
+        if (intern_count * 2 > intern_size) intern_table_grow();
     }
 }
 
 static crc* intern_crc(crc *candidate) {
-    if (!intern_table) {
-        for (int i = 0; i < static_crc_n; i++) {
-            if (eq_crc(static_crcs[i], candidate)) {
-                #ifdef PROFILE
-                alloc_hash++;
-                #endif
-                return static_crcs[i];
-            }
-        }
-        ensure_intern_table();
-    }
+    ensure_intern_table();
 
-    uint32_t hash = hash_crc(candidate);
-    uint32_t idx = hash % CRC_HASH_SIZE;
-    uint32_t start_idx = idx;
-
+    uint32_t idx = mix32(hash_crc(candidate)) & (intern_size - 1);
     while (intern_table[idx] != NULL) {
         if (eq_crc(intern_table[idx], candidate)) {
 			#ifdef PROFILE
@@ -201,19 +220,16 @@ static crc* intern_crc(crc *candidate) {
 			#endif
             return intern_table[idx];
         }
-        idx = (idx + 1) % CRC_HASH_SIZE;
-        
-        if (idx == start_idx) {
-            break;
-        }
+        idx = (idx + 1) & (intern_size - 1);
     }
-    
+
     crc *new_c = create_new_crc(candidate);
     intern_table[idx] = new_c;
-    
+    if (++intern_count * 2 > intern_size) intern_table_grow();
     return new_c;
 }
 
+#ifdef COMPOSE_CACHE
 typedef struct {
     crc *c1;
     crc *c2;
@@ -224,13 +240,28 @@ static compose_cache_entry *compose_cache = NULL;
 
 static inline void ensure_compose_cache(void) {
     if (compose_cache) return;
+    // calloc した領域は GC のスキャン対象外（GC_add_roots しない）。GC のたびに 1.5MB を
+    // スキャンするコストを避けるため、表の中のポインタは表以外からも必ず生かされていることを
+    // 不変条件とする:
+    //   - c1/c2 は has_tv == 0 のときだけ登録する（compose_body）。HASH モードで has_tv == 0 の crc は
+    //     必ず intern_crc を通る（crc を作るのは create_new_crc だけ）か static な crc。
+    //   - 結果も has_tv == 0 のときだけ登録するので、同じく intern 済みか static。
+    //   - intern_table は中身を clear_crc_caches まで強参照で持ち、clear_crc_caches は両表を同時に捨てる。
+    // 以前、結果が intern されていない crc（has_tv = 1 の mref）を root 登録せずに保持して、回収後の
+    // アドレス再利用でダングリングポインタになったことがある。has_tv == 0 の crc を create_new_crc 以外の
+    // 経路で作るコードを足すと、この不変条件が壊れるので注意。
     compose_cache = (compose_cache_entry*)calloc(CACHE_SIZE, sizeof(compose_cache_entry));
     if (!compose_cache) { printf("Fatal: compose_cache allocation failed\n"); exit(1); }
 }
+#endif //COMPOSE_CACHE
 
 void clear_crc_caches() {
-    if (intern_table) memset(intern_table, 0, CRC_HASH_SIZE * sizeof(crc*));
+    intern_table = NULL;
+    intern_size = 0;
+    intern_count = 0;
+	#ifdef COMPOSE_CACHE
     if (compose_cache) memset(compose_cache, 0, CACHE_SIZE * sizeof(compose_cache_entry));
+	#endif
 }
 #endif //HASH
 
@@ -243,11 +274,11 @@ crc* alloc_crc(crc *candidate) {
 	// fprintf(stderr, "\n");
 	if (candidate->crckind == C_TV) {
 		ty *tv = candidate->crcdat.tv.tv_ptr;
-		switch (tv->tykind) {
-			case TYVAR: break;
-			case SUBSTITUTED: candidate->crcdat.tv.tv_ptr = ty_find(tv); // fall-through
-			default: candidate = normalize_tv(candidate);
+		if (tv->tykind == SUBSTITUTED) {
+			tv = ty_find(tv);
+			candidate->crcdat.tv.tv_ptr = tv;
 		}
+		if (tv->tykind != TYVAR) return normalize_tv(candidate);
 	}
     #ifdef HASH
     if (candidate->has_tv) return create_new_crc(candidate);
@@ -323,15 +354,20 @@ static inline crc* new_tuple(const crc *proj, uint16_t size, crc **crcs, const c
 }
 
 #ifdef MONOTONIC
-static inline crc* new_mref(const crc *proj, ty *u, const crc *inj) {
+// has_tv is decided by caller
+static inline crc* new_mref_tv(const crc *proj, ty *u, const crc *inj, uint8_t has_tv) {
     crc temp = {
 		.crckind = C_REF, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
-		/*.has_tv = TODO yet, */ .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
+		.has_tv = has_tv, .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
 		.crcdat.mref_crc = u
 	};
     return alloc_crc(&temp);
 }
-#else
+static inline crc* new_mref(const crc *proj, ty *u, const crc *inj) {
+	// has_tv = 1 for first aid
+	return new_mref_tv(proj, u, inj, 1);
+}
+#else //MONOTONIC
 static inline crc* new_ref(const crc *proj, crc *c1, crc *c2, const crc *inj) {
     crc temp = {
 		.crckind = C_REF, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
@@ -340,18 +376,23 @@ static inline crc* new_ref(const crc *proj, crc *c1, crc *c2, const crc *inj) {
 	};
     return alloc_crc(&temp);
 }
-#endif
+#endif //MONOTONIC
 
 #ifdef MONOTONIC
-static inline crc* new_marray(const crc *proj, ty *u, const crc *inj) {
+// has_tv is decided by caller
+static inline crc* new_marray_tv(const crc *proj, ty *u, const crc *inj, uint8_t has_tv) {
     crc temp = {
 		.crckind = C_ARRAY, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
-		/*.has_tv = TODO yet, */ .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
+		.has_tv = has_tv, .p_proj = proj->p_proj, .rid_proj = proj->rid_proj,
 		.crcdat.marray_crc = u
 	};
     return alloc_crc(&temp);
 }
-#else
+static inline crc* new_marray(const crc *proj, ty *u, const crc *inj) {
+	// has_tv = 1 for first aid
+	return new_marray_tv(proj, u, inj, 1);
+}
+#else //MONOTONIC
 static inline crc* new_array(const crc *proj, crc *c1, crc *c2, const crc *inj) {
     crc temp = {
 		.crckind = C_ARRAY, .has_proj = proj->has_proj, .has_inj = inj->has_inj,
@@ -360,7 +401,7 @@ static inline crc* new_array(const crc *proj, crc *c1, crc *c2, const crc *inj) 
 	};
     return alloc_crc(&temp);
 }
-#endif
+#endif //MONOTONIC
 
 static inline crc *new_tv(const crc *proj, ty *tv, const crc *inj) {
 	crc temp = {
@@ -576,6 +617,18 @@ static inline crc *compose_tv_bot(crc *c1, ty *tv, crc *c2) { // X?p should not 
 	return rewrite_proj(c1, c2); // (G?p;)⊥r
 }
 
+#ifdef MONOTONIC
+// use the original pointer of type value if the meet U''
+// is structurally equals to either U or U'
+static inline ty *compose_mkey(ty *u1, ty *u2, uint8_t has_tv) {
+	ty *meet = unify_meet(u1, u2);
+	if (has_tv || meet == u1 || meet == u2) return meet;
+	if (ty_equal(meet, u1)) return u1;
+	if (ty_equal(meet, u2)) return u2;
+	return meet;
+}
+#endif // MONOTONIC
+
 // void trace_crc(const char *label, crc *c) {
 // 	if (c == &crc_id) { fprintf(stderr, "%s=crc_id ", label); return; }
 // 	fprintf(stderr, "%s{kind=%d p=%d i=%d tv=%d p=%d rid=%d", label, c->crckind, c->has_proj, c->has_inj, c->has_tv, c->p_proj, c->rid_proj);
@@ -727,8 +780,9 @@ static crc* internal_compose(crc *c1, crc *c2) {
 				}
 				case C_REF: {
 					#ifdef MONOTONIC // (G?p;)mref(U)(;G!) ;;; (H?q;)mref(U')(;H!)
-					ty *meet = unify_meet(c1->crcdat.mref_crc, c2->crcdat.mref_crc); // U'' = unify_meet(U, U')
-					return new_mref(c1, meet, c2); // (G?p;)mref(U'')(;H!)
+					uint8_t has_tv = c1->has_tv | c2->has_tv;
+					ty *meet = compose_mkey(c1->crcdat.mref_crc, c2->crcdat.mref_crc, has_tv); // U'' = unify_meet(U, U')
+					return new_mref_tv(c1, meet, c2, has_tv); // (G?p;)mref(U'')(;H!), has_tv is conservative
 					#else // (G?p;)ref(s1,s2)(;G!) ;;; (H?q;)ref(t1,t2)(;H!)
 					crc *cref1 = compose(c1->crcdat.ref_crc.c1, c2->crcdat.ref_crc.c1); // c1 = s1 ;;; t1
 					crc *cref2 = compose(c2->crcdat.ref_crc.c2, c1->crcdat.ref_crc.c2); // c2 = s2 ;;; t2
@@ -757,8 +811,9 @@ static crc* internal_compose(crc *c1, crc *c2) {
 				}
 				case C_ARRAY: {
 					#ifdef MONOTONIC // (G?p;)marray(U)(;G!) ;;; (H?q;)marray(U')(;H!)
-					ty *meet = unify_meet(c1->crcdat.marray_crc, c2->crcdat.marray_crc); // U'' = unify_meet(U, U')
-					return new_marray(c1, meet, c2); // (G?p;)marray(U'')(;H!)
+					uint8_t has_tv = c1->has_tv | c2->has_tv;
+					ty *meet = compose_mkey(c1->crcdat.marray_crc, c2->crcdat.marray_crc, has_tv); // U'' = unify_meet(U, U')
+					return new_marray_tv(c1, meet, c2, has_tv); // (G?p;)marray(U'')(;H!), has_tv is conservative
 					#else // (G?p;)array(s1,s2)(;G!) ;;; (H?q;)array(t1,t2)(;H!)
 					crc *carray1 = compose(c1->crcdat.array_crc.c1, c2->crcdat.array_crc.c1); // c1 = s1 ;;; t1
 					crc *carray2 = compose(c2->crcdat.array_crc.c2, c1->crcdat.array_crc.c2); // c2 = s2 ;;; t2
@@ -832,7 +887,7 @@ static crc* internal_compose(crc *c1, crc *c2) {
 
 
 static crc* compose_body(crc *c1, crc *c2) {
-	#ifdef HASH
+	#ifdef COMPOSE_CACHE
 	if (c1->has_tv || c2->has_tv) {
 		crc *_res = internal_compose(c1, c2);
 		return _res;
@@ -849,15 +904,17 @@ static crc* compose_body(crc *c1, crc *c2) {
         return compose_cache[hash].result;
     }
     crc *result = internal_compose(c1, c2);
-    compose_cache[hash].c1 = c1;
-    compose_cache[hash].c2 = c2;
-    compose_cache[hash].result = result;
+    if (!result->has_tv) { // ensure_compose_cache の不変条件（結果も intern 済みか static）
+        compose_cache[hash].c1 = c1;
+        compose_cache[hash].c2 = c2;
+        compose_cache[hash].result = result;
+    }
 	// fprintf(stderr, "TRACE   -> ");
 	// trace_crc("res", result);
 	// fprintf(stderr, "\n");
     return result;
 
-	#else //HASH
+	#else //COMPOSE_CACHE
 
 	crc *_res = internal_compose(c1, c2);
 	// fprintf(stderr, "TRACE   -> ");
@@ -865,7 +922,7 @@ static crc* compose_body(crc *c1, crc *c2) {
 	// fprintf(stderr, "\n");
 	return _res;
 
-	#endif //HASH
+	#endif //COMPOSE_CACHE
 }
 
 crc* compose(crc *c1, crc *c2) {
