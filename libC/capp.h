@@ -5,6 +5,8 @@
 #include "types.h"
 #include "blame.h"
 #include "tpl.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <gc.h>
 
 #ifdef CAST
@@ -48,16 +50,6 @@ static inline void update_longest(int new) {
 }
 #endif
 
-// Physical 3-bit tag embedded in the low bits of a `value` -- strictly the 8 patterns 000-111.
-// Kept as its own type, distinct from `ground_ty` (the logical dynamic type), because one
-// physical code -- PTAG_BOXED -- is shared by every ground type whose payload doesn't fit
-// inline (see `boxed` below), and PTAG_BOOL_UNIT_CHAR is likewise shared by G_BOOL, G_UNIT, and
-// G_CHAR: a plain bool is `v << 3 | tag` for v in {0,1}, so bit 4 is always clear for a real
-// bool; bit 4 set means "not a plain bool", and among those, bit 3 clear is G_UNIT (its only
-// value, `0b10000 | tag`, already has bit 3 clear) and bit 3 set is G_CHAR, whose byte payload
-// is then shifted up 5 bits (past the 3 tag bits + these 2 discriminant bits) -- see tag_of/
-// tag_value/untag_value below. Order must match `ground_ty` (types.h)'s first 8 members;
-// converted via ptag_of_ground_ty/ground_ty_of_tag below rather than relied on implicitly.
 typedef enum ptag : uint8_t {
 	PTAG_FN,
 	PTAG_LI,
@@ -66,7 +58,14 @@ typedef enum ptag : uint8_t {
 	PTAG_AR,
 	PTAG_INT,
 	PTAG_BOOL_UNIT_CHAR,
+	// PTAG_BOOL_UNIT_CHAR is shared by G_BOOL, G_UNIT, and G_CHAR:
+	// a plain bool is `v << 3 | tag` for v in {0,1};
+	// bit 4 set means "not a plain bool", and among those, 
+	// bit 3 clear is G_UNIT (`0b10000 | tag`), and
+	// bit 3 set is G_CHAR (`v << 5 | 0b11000 | tag`) --
+	// see tag_of/tag_value/untag_value below.
 	PTAG_BOXED,
+	// PTAG_BOXED is shared by float, string.
 } ptag;
 
 static inline ptag ptag_of_ground_ty(ground_ty g) {
@@ -93,17 +92,14 @@ static inline ground_ty ground_ty_of_tag(ptag tag) {
 		case PTAG_RF: return G_RF;
 		case PTAG_AR: return G_AR;
 		case PTAG_INT: return G_INT;
-		case PTAG_BOOL_UNIT_CHAR: return G_BOOL; // ambiguous with G_UNIT/G_CHAR; tag_of disambiguates before falling here
-		case PTAG_BOXED: return G_FLOAT;    // ambiguous with other boxed kinds; tag_of disambiguates before falling here
+		case PTAG_BOOL_UNIT_CHAR:
+		case PTAG_BOXED:
+			// omit ambiguous part
+			fprintf(stderr, "ground_ty_of_tag: ambiguous ptag %d\n", tag);
+			exit(1);
 	}
 }
 
-// Generic box for ground types whose payload doesn't fit inline in a tagged `value` (see
-// docs/todo.md "「Boxed」的な汎用タグの導入"). `kind` disambiguates which ground type a given
-// box actually holds. Only BOX_FLOAT exists today (this is a pure refactor of the existing
-// float-boxing code, kept behavior-identical) -- a future type (e.g. a string) would add its
-// own `boxed_kind` plus one `case` in each of tag_of/tag_value/untag_value below, spending no
-// new physical tag.
 typedef enum boxed_kind : uint8_t {
 	BOX_FLOAT,
 	BOX_STRING,
