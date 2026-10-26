@@ -116,7 +116,7 @@ let rec check_has_tv = function
   | CTvInj _ | CTvProj _ | CTvProjInj _ -> true
   | CSeq (c1, c2) | CFun (c1, c2) | CRef (c1, c2) | CArray (c1, c2) -> (check_has_tv c1) || (check_has_tv c2)
   | CTuple cs -> List.fold_left (fun b c -> b || check_has_tv c) false cs
-  | CMRef (u1, u2) | CMArray (u1, u2) -> has_tv_ty u1 || has_tv_ty u2
+  | CMRef (_, u2) | CMArray (_, u2) -> has_tv_ty u2
 
 let rec toC_crc_gen ~fresh_tmp ~heap_tuple_arr x c =
   let stm_crc x c = match c with

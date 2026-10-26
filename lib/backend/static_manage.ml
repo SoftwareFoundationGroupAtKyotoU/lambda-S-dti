@@ -246,15 +246,15 @@ let rec static_crc tvs c =
     if is_defined c1 && is_defined c2 then CrcManager.register c else CrcTmpManager.register c;
     c, fun x -> f1 (f2 x)
   | CMRef (u1, u2) ->
-    let u1, f1 = ty_tv tvs u1 in
+    (* do not construct u1 unused in runtime *)
     let u2, f2 = ty_tv tvs u2 in
     let c = CMRef (u1, u2) in
     let is_defined_ty = function
       | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn -> true
       | u -> TyManager.mem u
     in
-    if is_defined_ty u1 && is_defined_ty u2 then CrcManager.register c else CrcTmpManager.register c;
-    c, fun x -> f1 (f2 x)
+    if is_defined_ty u2 then CrcManager.register c else CrcTmpManager.register c;
+    c, f2
   | CArray (c1, c2) ->
     let c1, f1 = static_crc tvs c1 in
     let c2, f2 = static_crc tvs c2 in
@@ -262,15 +262,15 @@ let rec static_crc tvs c =
     if is_defined c1 && is_defined c2 then CrcManager.register c else CrcTmpManager.register c;
     c, fun x -> f1 (f2 x)
   | CMArray (u1, u2) ->
-    let u1, f1 = ty_tv tvs u1 in
+    (* do not construct u1 unused in runtime *)
     let u2, f2 = ty_tv tvs u2 in
     let c = CMArray (u1, u2) in
     let is_defined_ty = function
       | TyInt | TyBool | TyUnit | TyDyn | TyFun (TyDyn, TyDyn) | TyList TyDyn | TyRef TyDyn | TyArray TyDyn -> true
       | u -> TyManager.mem u
     in
-    if is_defined_ty u1 && is_defined_ty u2 then CrcManager.register c else CrcTmpManager.register c;
-    c, fun x -> f1 (f2 x)
+    if is_defined_ty u2 then CrcManager.register c else CrcTmpManager.register c;
+    c, f2
   | CFail _ -> raise @@ Static_manage_bug "yet"
 
 let rec static_exp tvs = function
