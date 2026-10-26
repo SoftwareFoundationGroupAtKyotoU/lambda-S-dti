@@ -144,7 +144,6 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
     "ty_find_max_chain", `Scalar "ty_find_max_chain";
     "normalize_tv",      `Scalar "normalize_tv_num";
     "compose_max_depth", `Scalar "compose_max_depth";
-    "blame_check",       `Scalar "blame_check_num";
     "blame_raised",      `Scalar "blame_raised_num";
   ] @
     (if crc_active config then coerce_kind_metrics else []) @
@@ -155,7 +154,7 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
   let counter_int  = ["current_inference"; "current_cast"; "current_longest"; "current_compose";
                       "compose_cached"; "current_alloc"; "new_crc_num"; "alloc_hash"; "find_ty_num";
                       "ty_find_calls"; "ty_find_max_chain"; "normalize_tv_num"; "compose_max_depth";
-                      "blame_check_num"; "blame_raised_num"] in
+                      "blame_raised_num"] in
   let counter_arr  =
     (if crc_active config then [("coerce_kind", "N_CRCKIND")] else []) @
     (if not config.static then [("dti_by_ground", "N_GROUND_TY")] else []) in

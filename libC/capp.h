@@ -205,6 +205,7 @@ static inline uint16_t size_of(value v) {
 }
 
 #ifndef CAST
+#include "crc.h"
 
 static inline value apply_coerce(value v, crc* s) {
 	return coerce(v, s, 0);
@@ -213,6 +214,7 @@ static inline value apply_coerce(value v, crc* s) {
 static inline value apply_coerce_inj(value v, ground_ty g) {
 	#ifdef PROFILE
 	current_cast++;
+	coerce_kind[C_ID]++;
 	#endif
 	return tag_value(v, g);
 }
@@ -220,7 +222,7 @@ static inline value apply_coerce_inj(value v, ground_ty g) {
 static inline value apply_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
-	blame_check_num++;
+	coerce_kind[C_ID]++;
 	#endif
 	if (tag_of(v) != g) { blame(rid, polarity); }
 	return untag_value(v, g);
@@ -229,7 +231,7 @@ static inline value apply_coerce_proj(value v, ground_ty g, uint32_t rid, uint8_
 static inline value apply_coerce_proj_tp(value v, uint16_t size, uint32_t rid, uint8_t polarity) {
 	#ifdef PROFILE
 	current_cast++;
-	blame_check_num++;
+	coerce_kind[C_ID]++;
 	#endif
 	if (tag_of(v) != G_TP || size_of(v) != size) { blame(rid, polarity); }
 	return untag_value(v, G_TP);
@@ -237,16 +239,15 @@ static inline value apply_coerce_proj_tp(value v, uint16_t size, uint32_t rid, u
 
 #ifdef MONOTONIC
 #include "ty.h"
-#include "crc.h"
 
-// monotonic ref/array の要素を静的型 Dyn として読み出す（Deref/Get）。
-// apply_coerce(v, make_s_coercion_to_dyn(u)) と同じ意味で、実行時型 u が Dyn/base なら
-// coercion を経由せず直接タグ付けする。それ以外（TYVAR/SUBSTITUTED/複合型）は従来経路。
+// Read the element of monotonic ref/array which RTTI is U as Dyn value.
+// Same as apply_coerce(v, make_s_coercion_to_dyn(u)), but short-circuit.
 static inline value read_to_dyn(value v, ty *u) {
 	switch (u->tykind) {
 		case DYN: {
 			#ifdef PROFILE
 			current_cast++;
+			coerce_kind[C_ID]++;
 			#endif
 			return v;
 		}
@@ -260,15 +261,14 @@ static inline value read_to_dyn(value v, ty *u) {
 	}
 }
 
-// 静的型 Dyn の値 v を monotonic ref/array（実行時型 u）へ書き込む値に変換する（Subst/Put）。
-// coerce(v, make_s_coercion_from_dyn(u), 1) と同じ意味で、u が Dyn/base なら crc を割り当てずに
-// 直接タグ検査する。blame ラベルは make_s_coercion_from_dyn と同じ (0, 0)。
-// 呼び出し側は従来どおり「書き込み → consume_pending()」の順にすること（consume は書き込み後）。
+// write the dyn value to monotonic ref/array which has u as RTTI
+// Same as coerce(v, make_s_coercion_from_dyn(u), 1), but short-circuit.
 static inline value write_from_dyn(value v, ty *u) {
 	switch (u->tykind) {
 		case DYN: {
 			#ifdef PROFILE
 			current_cast++;
+			coerce_kind[C_ID]++;
 			#endif
 			return v;
 		}
@@ -282,7 +282,7 @@ static inline value write_from_dyn(value v, ty *u) {
 	}
 }
 
-// psi が空なら consume() は何もしないので、関数呼び出しを省く
+// skip comsume if psi is empty
 static inline void consume_pending(void) {
 	if (psi.count) consume();
 }
