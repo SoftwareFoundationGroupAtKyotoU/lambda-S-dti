@@ -418,7 +418,7 @@ type grift_prepared = {
 (* Phase 1(直列, 準備)のみ行う。grift ソース生成・コンパイルジョブの組み立て・
    jsonl のプレースホルダー行書き込みまでで、Bench_builder.compile_all は
    呼ばない(呼び出し側が複数 target 分をまとめてから1回だけ呼ぶ)。 *)
-let prepare ~heap_size ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~monotonic
+let prepare ~heap_kb ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~monotonic
     ~(analysis : analysis) ~(subsets : int list list) : grift_prepared =
   let input_path = Bench_config.input_path ~static file in
   let { defs; groups } = analysis in
@@ -434,11 +434,9 @@ let prepare ~heap_size ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~mono
   let suffix = if static then "_fs" else "" in
   let g = Bench_config.grift_cmd in
   let monotonic_flag = if monotonic then "--monotonic-references" else "" in
-  (* grift の -m (--start-memory) は KB 単位で、生成 C の GC_INITIAL_HEAP_SIZE
-     (LLVM バックエンドでは clang の -D) になる。ML 側 (Builder の
-     -D GC_INITIAL_HEAP_SIZE) と同じ初期 heap にそろえる。1024 の倍数である
-     ことは bin/bench.ml の --heap-size 解析で保証している。 *)
-  let heap_kb = heap_size / 1024 in
+  (* heap_kb は grift の -m (--start-memory) にそのまま渡す（KB 単位）。生成 C の
+     GC_INITIAL_HEAP_SIZE（LLVM バックエンドでは clang の -D）になり、Gradti 側
+     （Builder の -D GC_INITIAL_HEAP_SIZE）と同じ初期 heap になる。 *)
   let monotonic_tag = if monotonic then "M" else "G" in
   let mode_gl = "GRIFTLLVM" ^ monotonic_tag in
   let mode_gc = "GRIFTC" ^ monotonic_tag in

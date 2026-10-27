@@ -5,7 +5,7 @@ open Lambda_S_dti
 let () =
   (* benchmark settings *)
   let files, itr, jobs = ref [], ref 0, ref 0 in
-  let heap_size = ref Bench_config.default_heap_size in
+  let heap_kb = ref Bench_config.default_heap_kb in
   (* 軸別アブレーションフラグ: 立てた軸だけ、fully-optimized 基準値(ALHMT)
      から1つ反転させた2点比較を行う。複数指定しても軸間の直積は取らない。 *)
   let axis_specs, requested_axes = Bench_target.axis_specs () in
@@ -15,9 +15,9 @@ let () =
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
      " Max parallel compile jobs for --dynamize/--static/--grift (default: nproc-1)");
-    ("--heap-size", Arg.Int (fun n -> heap_size := n),
-     Printf.sprintf " Initial GC heap size in bytes, for both our binaries and grift's (default: %d)"
-       Bench_config.default_heap_size);
+    ("--heap-size", Arg.Int (fun n -> heap_kb := n),
+     Printf.sprintf " Initial GC heap size in KB, for both our binaries and grift's (default: %d)"
+       Bench_config.default_heap_kb);
   ] @ axis_specs @ [
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
@@ -37,10 +37,9 @@ let () =
   let itr = if !itr = 0 then Bench_config.default_itr else !itr in
   let jobs = if !jobs > 0 then !jobs else Bench_builder.default_jobs () in
   let axes = requested_axes () in
-  let heap_size = !heap_size in
-  (* grift の -m は KB 単位なので、両者で同じ値にできるよう 1024 の倍数に限る *)
-  if heap_size <= 0 || heap_size mod 1024 <> 0 then begin
-    Printf.eprintf "--heap-size must be a positive multiple of 1024 (got %d)\n" heap_size;
+  let heap_kb = !heap_kb in
+  if heap_kb <= 0 then begin
+    Printf.eprintf "--heap-size must be positive (in KB; got %d)\n" heap_kb;
     exit 2
   end;
 
@@ -90,19 +89,19 @@ let () =
       (* Gradti は @ / :: の両辺を右から評価するので、let で順序を固定する *)
       let gradti_dyn =
         if !dynamize then
-          [ Bench_compiler.prepare_batch ~heap_size ~log_dir ~itr ~label:"dynamize"
+          [ Bench_compiler.prepare_batch ~heap_kb ~log_dir ~itr ~label:"dynamize"
               (Bench_compiler.dynamize_targets dynamize_targets) ] else [] in
       let gradti_sta =
         if !static then
-          [ Bench_compiler.prepare_batch ~heap_size ~log_dir ~itr ~label:"static"
+          [ Bench_compiler.prepare_batch ~heap_kb ~log_dir ~itr ~label:"static"
               (Bench_compiler.static_targets static_targets) ] else [] in
       let grift_dyn =
         if !grift then
-          [ Bench_compiler.prepare_grift_batch ~heap_size ~log_dir ~itr ~static:false ~label:"grift_dynamize" grift_targets ]
+          [ Bench_compiler.prepare_grift_batch ~heap_kb ~log_dir ~itr ~static:false ~label:"grift_dynamize" grift_targets ]
         else [] in
       let grift_sta =
         if !grift && !static then
-          [ Bench_compiler.prepare_grift_batch ~heap_size ~log_dir ~itr ~static:true ~label:"grift_static" grift_targets ]
+          [ Bench_compiler.prepare_grift_batch ~heap_kb ~log_dir ~itr ~static:true ~label:"grift_static" grift_targets ]
         else [] in
       let gradti = gradti_dyn @ gradti_sta and grift = grift_dyn @ grift_sta in
       ((List.map fst gradti, List.map fst grift), List.concat_map snd gradti @ List.concat_map snd grift))

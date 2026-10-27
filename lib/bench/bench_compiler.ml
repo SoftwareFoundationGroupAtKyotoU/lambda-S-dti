@@ -24,7 +24,7 @@ type bench_job = {
 }
 
 (* Write the timing and profiling drivers for one target; return their build/run commands. *)
-let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
+let generate_bench_sources ?(heap_kb=Bench_config.default_heap_kb)
     ~log_dir ~file ~mode_str ~itr ~mutants_length ~config () : bench_job =
   (* mutant ファイルは <file>_<idx>.c という形式でのみ書かれる (compile_mutants
      参照)。単純な "<file>*.c" だと、同じ mode_str ディレクトリを共有する
@@ -215,8 +215,8 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
   {
     out_path = asprintf "%s/bench/%s%s.out" log_dir file mode_str;
     profile_out_path = asprintf "%s/bench/%s%s_profile.out" log_dir file mode_str;
-    compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false ~heap_size ();
-    profile_compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true ~heap_size ();
+    compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false ~heap_kb ();
+    profile_compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true ~heap_kb ();
     run_cmd = asprintf "%s/bench/%s%s.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file;
     profile_run_cmd = asprintf "%s/bench/%s%s_profile.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file;
   }
@@ -355,7 +355,7 @@ type prepared_target = {
 
 (* mutant の C コード生成 + ベンチドライバ (.c) 生成のみを行う。
    clang は一切呼ばない（軽い純粋な OCaml 処理なので直列のままで十分）。 *)
-let prepare_target ?heap_size ~log_dir ~itr ~ordinal ~total_targets (t : target) : (prepared_target, string list) result =
+let prepare_target ?heap_kb ~log_dir ~itr ~ordinal ~total_targets (t : target) : (prepared_target, string list) result =
   let mode_str = Bench_target.ablation_mode_str t in
   try
     let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
@@ -363,7 +363,7 @@ let prepare_target ?heap_size ~log_dir ~itr ~ordinal ~total_targets (t : target)
     Bench_progress.print ~final:false prog;
     if errors <> [] then Error errors
     else
-      let b = generate_bench_sources ?heap_size ~log_dir ~file:t.file ~mode_str ~itr
+      let b = generate_bench_sources ?heap_kb ~log_dir ~file:t.file ~mode_str ~itr
                 ~mutants_length:(List.length t.mutants) ~config () in
       Ok { t; mode_str; b }
   with e -> Error [ Printf.sprintf "%s_%s: %s" mode_str t.file (Printexc.to_string e) ]
@@ -382,9 +382,9 @@ type batch = {
 }
 
 (* 1バッチ分の全 target をコード生成する。1つでも失敗があればエラー一覧を返す。 *)
-let prepare_batch ?heap_size ~log_dir ~itr ~label (targets : target list) : batch * string list =
+let prepare_batch ?heap_kb ~log_dir ~itr ~label (targets : target list) : batch * string list =
   let total_targets = List.length targets in
-  let results = List.mapi (fun i t -> prepare_target ?heap_size ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t) targets in
+  let results = List.mapi (fun i t -> prepare_target ?heap_kb ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t) targets in
   let prepared = List.filter_map (function Ok p -> Some p | Error _ -> None) results in
   let errors = List.concat_map (function Ok _ -> [] | Error es -> es) results in
   ({ label; targets = prepared }, errors)
@@ -446,12 +446,12 @@ type grift_compiled_batch = {
 
 (* コード生成フェーズ: 全 grift target 分の grift ソース生成・ジョブ組み立て
    (直列)。コンパイルはまだ行わない。 *)
-let prepare_grift_batch ~heap_size ~log_dir ~itr ~static ~label (targets : grift_target list) : grift_batch * string list =
+let prepare_grift_batch ~heap_kb ~log_dir ~itr ~static ~label (targets : grift_target list) : grift_batch * string list =
   let total_targets = List.length targets in
   let results =
     List.mapi (fun i (g : grift_target) ->
       try
-        Ok (Bench_grift.prepare ~heap_size ~log_dir ~itr ~static ~file:g.file ~monotonic:g.monotonic
+        Ok (Bench_grift.prepare ~heap_kb ~log_dir ~itr ~static ~file:g.file ~monotonic:g.monotonic
               ~analysis:g.analysis ~subsets:g.subsets ~ordinal:(i + 1) ~total_targets)
       with e -> Error (Printf.sprintf "%s %s: %s" label g.file (Printexc.to_string e))
     ) targets
