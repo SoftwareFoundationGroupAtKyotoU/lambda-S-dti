@@ -49,6 +49,22 @@ typedef arr_raw arr;
 typedef arr_header arr;
 #endif
 
+#ifdef BOUNDS
+#include <stdio.h>
+#include <stdlib.h>
+#define BOUNDS_CHECK(a, i) do { \
+    if ((uint64_t)(i) >= (uint64_t)((arr_raw*)(a))->length) { \
+        printf("index out of bound %ld\n", (long)(i)); exit(1); \
+    } } while (0)
+#define ARRAY_SIZE_CHECK(n) do { \
+    if ((uint64_t)(n) > UINT32_MAX) { \
+        printf("invalid array size %ld\n", (long)(n)); exit(1); \
+    } } while (0)
+#else
+#define BOUNDS_CHECK(a, i) ((void)0)
+#define ARRAY_SIZE_CHECK(n) ((void)0)
+#endif
+
 #if !defined(MONOTONIC) && !defined(STATIC)
 value get(arr*, uint32_t);
 void put(arr*, uint32_t, value);

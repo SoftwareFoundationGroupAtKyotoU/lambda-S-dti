@@ -9,6 +9,8 @@ let gc_ini_heap_var_of heap_kb = Printf.sprintf "-D GC_INITIAL_HEAP_SIZE=%d " (h
 
 let gc_ini_heap_var = gc_ini_heap_var_of default_heap_kb
 
+let bounds_var = "-D BOUNDS "
+
 let unique_base (config : Config.t) filename =
   let base = Filename.basename filename in
   let abs_filename =
@@ -38,12 +40,13 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
   if bench then
     let bench_opt_level = "-O3" in
     let suffix = if profile then "_profile" else if check then "_check" else "" in
-    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%slibC/*.c benchC/*.c %s -o %s/bench/%s%s%s.out -lgc -lm -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
+    asprintf "clang %s/bench/%s%s%s.c %s%s%s%s%s%s%s%slibC/*.c benchC/*.c %s -o %s/bench/%s%s%s.out -lgc -lm -lcjson %s" (* -flto *) (* -falign-functions=32 -falign-loops=32 -falign-jumps=32 *)
       log_dir
       file
       mode_str
       suffix
       (gc_ini_heap_var_of heap_kb)
+      bounds_var
       mode_var
       eager_var
       monotonic_var
@@ -63,10 +66,11 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
     match config.file with
     | Some filename ->
       let base = unique_base config filename in
-      asprintf "clang %s/%s_out.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -lm -g3 %s"
+      asprintf "clang %s/%s_out.c %s%s%s%s%s%s%s%s/*.c -iquote %s -o %s/%s.out -lgc -lm -g3 %s"
         result_c_dir
         base
         gc_ini_heap_var
+        bounds_var
         mode_var
         eager_var
         monotonic_var
@@ -79,9 +83,10 @@ let build_clang_cmd ?(log_dir="") ?(file="") ?(mode_str="") ?(src_files="")
         opt_level
     | None ->
       (* clang <result_c_dir>/stdin.c <libc_dir>/*.c -o <result_dir>/stdin.out -lgc -lm -g3 -std=c2x -pg -O3 *)
-      asprintf "clang %s/stdin.c %s%s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -lm -g3 -std=c2x -pg %s"
+      asprintf "clang %s/stdin.c %s%s%s%s%s%s%s%s/*.c -iquote %s -o %s/stdin.out -lgc -lm -g3 -std=c2x -pg %s"
         result_c_dir
         gc_ini_heap_var
+        bounds_var
         mode_var
         eager_var
         monotonic_var
