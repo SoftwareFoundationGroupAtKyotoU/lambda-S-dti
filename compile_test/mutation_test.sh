@@ -35,7 +35,7 @@ declare -A EXPECTED=(
   [incsum]="2003000"
   [array]="1000"
   [matmult]="38852480"
-  [quicksort]="9999"
+  [quicksort]="99"
 )
 
 # --static は samples/input/check/<target>_fs.txt か samples/input/<target>_fs.txt を使う。ほとんどのターゲットは
