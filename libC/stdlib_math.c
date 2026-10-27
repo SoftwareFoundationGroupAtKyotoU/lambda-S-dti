@@ -77,9 +77,10 @@ static value _core_max_x(value cls, value y) {
 DEF_UNARY(max_x, _core_max_x)
 DEF_BINARY(max)
 
+/* Same as C's fmin: when one argument is NaN, the other one is returned. */
 static inline value _core_fmin_ml_x(value cls, value y) {
 	value x = (value)((fun*)cls)->env[0];
-	if (to_double(x) < to_double(y)) {
+	if (to_double(x) < to_double(y) || isnan(to_double(y))) {
 		return x;
 	} else {
 		return y;
@@ -88,9 +89,10 @@ static inline value _core_fmin_ml_x(value cls, value y) {
 DEF_UNARY(fmin_ml_x, _core_fmin_ml_x)
 DEF_BINARY(fmin_ml)
 
+/* Same as C's fmax: when one argument is NaN, the other one is returned. */
 static inline value _core_fmax_ml_x(value cls, value y) {
 	value x = (value)((fun*)cls)->env[0];
-	if (to_double(x) > to_double(y)) {
+	if (to_double(x) > to_double(y) || isnan(to_double(y))) {
 		return x;
 	} else {
 		return y;
