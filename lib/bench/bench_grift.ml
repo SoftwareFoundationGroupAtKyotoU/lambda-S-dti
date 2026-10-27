@@ -1,28 +1,21 @@
-(* Bench_grift — grift(.grift) 側の lattice ベンチマーク実行。
-   旧 benchC/run_grift.py の OCaml 移植。
-
-   - grift ソースを S 式として読み、Dyn 化しうる型注釈スロットを
-     Mutate（ML 側）と同じ「出現順」で列挙する。
-   - Mutate.all_subsets_by_length で ML 側と同一順の variant を作り、
-     各 variant を grift でコンパイル（perf / cast-profiler / C バックエンド）して実行し、
-     logs/<ts>/GRIFT_<name>.jsonl / GRIFTC_<name>.jsonl に書き出す。
-
-   grift 実行環境（racket + LLVM 対応の grift）が必要。壊れている / 無い場合は
-   各 variant で "[grift compile failed]" を出して継続する。 *)
+(* grift side of the benchmark: parse .grift as S-expressions, number Dyn-able type
+   annotations in the same order as Mutate, then write, compile, run and record each variant.
+   Output: GRIFTLLVM<M|G>_<file>.jsonl, GRIFTC<M|G>_<file>.jsonl (+ GRIFTC<M|G>S_ for --static). *)
 
 module IntSet = Set.Make (Int)
 
 (* ===================== S 式 ===================== *)
 
+(* S-expression node with a unique id, so specific nodes can be marked for Dyn replacement. *)
 type sx = { id : int; k : node }
 and node = Atom of string | Lst of sx list
 
+(* Allocate a node with a fresh id. *)
 let fresh =
   let c = ref 0 in
   fun k -> incr c; { id = !c; k }
 
-(* `;` 以降を行末まで除去し、() [] を空白で区切ってトークン化。
-   [ ] は ( ) と等価に扱う（grift のリーダ準拠）。 *)
+(* Remove ;-comments and split into tokens ("(", ")" and atoms; [ ] are read as ( )). *)
 let tokenize (src : string) : string list =
   let no_comments =
     String.split_on_char '\n' src
@@ -44,6 +37,7 @@ let tokenize (src : string) : string list =
   |> String.split_on_char ' '
   |> List.filter (fun t -> t <> "")
 
+(* Parse tokens into a list of top-level S-expressions. *)
 let parse_forms (tokens : string list) : sx list =
   let toks = ref tokens in
   let peek () = match !toks with [] -> None | t :: _ -> Some t in
@@ -66,7 +60,7 @@ let parse_forms (tokens : string list) : sx list =
   let rec all acc = match peek () with None -> List.rev acc | Some _ -> all (one () :: acc) in
   all []
 
-(* dyn に含まれる id のノードは "Dyn" に。list は 2 番目の子が `:` なら [..] 記法。 *)
+(* Print back to grift source, writing "Dyn" for every node whose id is in dyn. *)
 let rec serialize (dyn : IntSet.t) (s : sx) : string =
   if IntSet.mem s.id dyn then "Dyn"
   else
@@ -83,9 +77,10 @@ let rec serialize (dyn : IntSet.t) (s : sx) : string =
 (* mutation 対象外の define 名（entry point） *)
 let fixed_names = [ "benchmark" ]
 
+(* Whether the node is the atom s. *)
 let atom_is s = function { k = Atom a; _ } -> a = s | _ -> false
 
-(* (A -> B) を [A] ++ slots(B) に分解。それ以外は [自身]。 *)
+(* Split a curried arrow type into [dom1; dom2; ...; final result]. *)
 let rec nested_type_slots (s : sx) : sx list =
   match s.k with
   | Lst (a :: op :: b :: _) when atom_is "->" op -> a :: nested_type_slots b
@@ -102,7 +97,7 @@ let typed_binding_ty (s : sx) : sx option =
   | Lst (_ :: colon :: ty :: _) when atom_is ":" colon -> Some ty
   | _ -> None
 
-(* body 内の lambda を pre-order で辿り、各 lambda の第1引数の型注釈を集める *)
+(* First-argument type of every lambda in the body, collected in pre-order (reversed; the caller re-reverses). *)
 let rec collect_lambda_arg_tys (acc : sx list) (s : sx) : sx list =
   let acc =
     match s.k with
@@ -114,10 +109,8 @@ let rec collect_lambda_arg_tys (acc : sx list) (s : sx) : sx list =
   in
   match s.k with Lst xs -> List.fold_left collect_lambda_arg_tys acc xs | Atom _ -> acc
 
-(* 1 つの define から、出現順のスロット群（各群 = 一緒に Dyn 化する sx ノード）を返す。
-   返り値型スロットは、ML 側で let rec 定義されている関数（fix_names に
-   含まれる名前）に対応する define にだけ割り当てる（ML 側 Mutate.walk では
-   FixExp だけが return スロットを持つため）。 *)
+(* Slot groups of one define, in order: argument types, body-lambda arguments,
+   then the return type (only when the ML side defines this name with let rec). *)
 let slots_of_define ~(fix_names : string list) (d : sx) : sx list list =
   match d.k with
   | Lst (hd :: header :: _rest) when atom_is "define" hd ->
@@ -143,6 +136,7 @@ let slots_of_define ~(fix_names : string list) (d : sx) : sx list list =
       let ret_slots = match ret_node with Some rt -> nested_type_slots rt | None -> [] in
       let lam_tys = List.rev (List.fold_left collect_lambda_arg_tys [] body_nodes) in
       let n_ret = List.length ret_slots in
+      (* The i-th body lambda's argument is grouped with the i-th domain of the curried return type. *)
       let lam_groups =
         List.mapi
           (fun i lt -> if i < n_ret - 1 then [ lt; List.nth ret_slots i ] else [ lt ])
@@ -157,6 +151,7 @@ let slots_of_define ~(fix_names : string list) (d : sx) : sx list list =
     end
   | _ -> []
 
+(* Keep the top-level define/module/imports forms (these make up the emitted program). *)
 let top_defines (forms : sx list) : sx list =
   List.filter
     (fun f -> match f.k with
@@ -165,15 +160,13 @@ let top_defines (forms : sx list) : sx list =
        | _ -> false)
     forms
 
+(* Name of a function define `(define (name args...) ...)`. *)
 let define_name (d : sx) : string option =
   match d.k with
   | Lst (hd :: { k = Lst ({ k = Atom n; _ } :: _); _ } :: _) when atom_is "define" hd -> Some n
   | _ -> None
 
-(* 公開: grift ソース文字列 → (top-level define 群, 出現順スロット群)
-   fix_names = ML 側で let rec 定義されている関数名（Bench_target.fix_names）。
-   その全てに対応する関数 define が grift 側に無ければ、ML 側とスロットが
-   対応しなくなるのでエラーにする。 *)
+(* Parse a grift source into (top-level forms, slot groups); fails if an ML let rec has no grift define. *)
 let analyze_src ~(fix_names : string list) (src : string) : sx list * sx list list =
   let forms = parse_forms (tokenize src) in
   let defs = top_defines forms in
@@ -185,10 +178,19 @@ let analyze_src ~(fix_names : string list) (src : string) : sx list * sx list li
                ^ String.concat ", " missing));
   (defs, List.concat_map (slots_of_define ~fix_names) defs)
 
-let n_slots ~fix_names (src : string) : int = List.length (snd (analyze_src ~fix_names src))
+(* ソース解析結果。parse は 1 回だけ行い、グルーピングと serialize で同じ
+   ノード（同じ id）を使う。 *)
+type analysis = { defs : sx list; groups : sx list list }
 
-(* subset = 1-based のスロット群インデックス列。該当群のノードを Dyn 化して module 文字列に。
-   parse は 1 回だけ行い、グルーピングと serialize で同じノード（同じ id）を使う。 *)
+(* Parse and number the slots of a grift source (called once per file in the parse phase). *)
+let analyze ~fix_names (src : string) : analysis =
+  let defs, groups = analyze_src ~fix_names src in
+  { defs; groups }
+
+(* Number of slots; must equal the untyped ML slot count. *)
+let n_slots (a : analysis) : int = List.length a.groups
+
+(* grift source of one variant: the slot groups in subset (1-based) become Dyn. *)
 let serialize_variant (defs : sx list) (groups : sx list list) (subset : int list) : string =
   let dyn =
     List.fold_left
@@ -200,13 +202,14 @@ let serialize_variant (defs : sx list) (groups : sx list list) (subset : int lis
   in
   String.concat "\n" (List.map (serialize dyn) defs)
 
-(* テスト・デバッグ用: src を parse し subset を Dyn 化した module 文字列を返す *)
+(* Debug helper: parse src and render one variant (currently not called anywhere). *)
 let render_variant ~fix_names (src : string) (subset : int list) : string =
   let defs, groups = analyze_src ~fix_names src in
   serialize_variant defs groups subset
 
 (* ===================== grift 実行 ===================== *)
 
+(* Whole-file read / write helpers. *)
 let read_file p =
   let ic = open_in_bin p in
   let n = in_channel_length ic in
@@ -216,19 +219,28 @@ let read_file p =
 let write_file p s =
   let oc = open_out p in output_string oc s; close_out oc
 
-let driver_code (loop_count : int) : string =
+(* grift code appended to each variant: run (benchmark) warmup times untimed, then
+   (time (benchmark)) loop_count times. Each run reads one copy of the input. *)
+let driver_code ~(warmup : int) (loop_count : int) : string =
   Printf.sprintf
     "\n;; --- Auto-generated Loop Driver ---\n\
+     (define (run-warmup-loop [k : Int]) : Unit\n\
+    \  (if (<= k 0)\n\
+    \      ()\n\
+    \      (begin\n\
+    \        (benchmark)\n\
+    \        (run-warmup-loop (- k 1)))))\n\
      (define (run-benchmark-loop [k : Int]) : Unit\n\
     \  (if (<= k 0)\n\
     \      ()\n\
     \      (begin\n\
     \        (time (benchmark))\n\
     \        (run-benchmark-loop (- k 1)))))\n\
+     (run-warmup-loop %d)\n\
      (run-benchmark-loop %d)\n"
-    loop_count
+    warmup loop_count
 
-(* "marker" の直後に現れる数値トークンを全部拾う *)
+(* The numeric token after each occurrence of marker. *)
 let numbers_after (marker : string) (s : string) : string list =
   let m = String.length marker and n = String.length s in
   let is_num c =
@@ -248,9 +260,11 @@ let numbers_after (marker : string) (s : string) : string list =
   in
   go 0 []
 
+(* Per-iteration times printed by grift's `time` ("time (sec): ..."). *)
 let parse_times (out : string) : float list =
   numbers_after "time (sec):" out |> List.filter_map float_of_string_opt
 
+(* Rest of the line after the first occurrence of sub. *)
 let substr_after (sub : string) (line : string) : string option =
   let m = String.length sub and n = String.length line in
   let rec find i =
@@ -260,12 +274,14 @@ let substr_after (sub : string) (line : string) : string option =
   in
   find 0
 
+(* All integer tokens in s (space- or tab-separated). *)
 let ints_of (s : string) : int list =
   s
   |> String.split_on_char ' '
   |> List.concat_map (String.split_on_char '\t')
   |> List.filter_map int_of_string_opt
 
+(* (total casts, longest proxy chain) from --cast-profiler output. *)
 let parse_prof (out : string) : int option * int option =
   List.fold_left
     (fun (cast, longest) line ->
@@ -279,6 +295,7 @@ let parse_prof (out : string) : int option * int option =
     (None, None)
     (String.split_on_char '\n' out)
 
+(* Run a binary with stdin_data (via a temp file) and return its stdout; None if the binary is missing. *)
 let run_bin (bin : string) (stdin_data : string) : string option =
   if not (Sys.file_exists bin) then None
   else begin
@@ -299,6 +316,7 @@ let run_bin (bin : string) (stdin_data : string) : string option =
         Some so)
   end
 
+(* One JSONL record in the same schema as the ML side (Bench_output.mutant_json). *)
 let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
   Bench_json.obj
     [ ("mode", Bench_json.str mode);
@@ -310,19 +328,13 @@ let jrow ~mode ~idx ~after_mutate ~times ~cast ~longest : Yojson.Safe.t =
       ("inference", `Null);
       ("longest", (match longest with Some l -> Bench_json.int l | None -> `Null)) ]
 
-(* ===================== 並列コンパイル =====================
-
-   grift/Racket コンパイラの起動コストを mutant 数 × 3 (perf / cast-profiler /
-   Cバックエンド) 回払っているのが最大のボトルネック。Bench_builder はもともと
-   clang専用ではなく「コマンド文字列のリストを1回の make -j で並列実行し、
-   out_path の存在で成否判定する」完全に汎用な機構なので、ここでも
-   そのまま再利用する。実行(計測)フェーズは今までどおり mutant ごとに
-   独立したプロセスで直列に行う — 識別子リネームや複数mutantの同一プロセス
-   同居は一切行わないため、GCやタイミング計測の共有状態汚染、障害分離の
-   後退、--cast-profiler の累積といったリスクは発生しない。 *)
-
+(* ---- Parallel compilation: every grift compile goes through Bench_builder's make -j;
+   the binaries are then run one at a time. ---- *)
+(* Binaries per variant: Perf = default (LLVM) backend timing, Prof = C backend + cast profiler,
+   Cbackend = C backend timing, CbackendStatic = C backend with --static (only for --static). *)
 type grift_job_kind = Perf | Prof | Cbackend | CbackendStatic
 
+(* One variant: its source (for after_mutate), its work directory, and its compile jobs. *)
 type grift_prepared_mutant = {
   idx : int;
   base_code : string;         (* jsonl の after_mutate に使う *)
@@ -335,15 +347,17 @@ type grift_prepared_mutant = {
    grift 自身のネイティブ --static (cast-representation=Static) を追加した
    Cバックエンドのジョブも作り、通常の(coercionベースの) Cバックエンドと
    両方計測できるようにする。 *)
-let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset : grift_prepared_mutant =
+let prepare_mutant ~work ~g ~monotonic_flag ~heap_kb ~itr ~static defs groups si subset : grift_prepared_mutant =
   let idx = si + 1 in
   let base_code = serialize_variant defs groups subset in
   let cdir = Printf.sprintf "%s/config_%d" work idx in
   if not (Sys.file_exists cdir) then Sys.mkdir cdir 0o755;
   let perf_f = Filename.concat cdir "perf.grift" in
   let prof_f = Filename.concat cdir "prof.grift" in
-  write_file perf_f (base_code ^ driver_code itr);
-  write_file prof_f (base_code ^ driver_code 1);
+  write_file perf_f (base_code ^ driver_code ~warmup:Bench_config.warmup itr);
+  (* The cast profiler counts over the whole process, so prof runs the benchmark once. *)
+  write_file prof_f (base_code ^ driver_code ~warmup:0 1);
+  (* Compile job: grift -O 3 -m <heap KB> [monotonic] <extra flags> -o out src, with TMPDIR=cdir. *)
   let job extra src out =
     (* grift --backend C は中間 .c ファイルを Racket の make-temporary-file で
        TMPDIR (既定 /var/tmp) 直下に作る。このリポジトリが対象とする Racket 7.2 の
@@ -354,8 +368,8 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset :
        ターゲットほど発生しやすい)。TMPDIR をこの mutant 専用の cdir に向けて
        プロセス間で温度ディレクトリを共有させないことで衝突自体を無くす。 *)
     let cmd =
-      Printf.sprintf "TMPDIR=%s %s -O 3 %s %s -o %s %s > /dev/null 2>&1"
-        (Filename.quote cdir) g monotonic_flag extra
+      Printf.sprintf "TMPDIR=%s %s -O 3 -m %d %s %s -o %s %s > /dev/null 2>&1"
+        (Filename.quote cdir) g heap_kb monotonic_flag extra
         (Filename.quote out) (Filename.quote src)
     in
     { Bench_builder.out_path = out; cmd }
@@ -365,7 +379,8 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset :
   let bench_c_perf = Filename.concat cdir "bench_c_perf" in
   let base_jobs = [
     Perf,     job ""                 perf_f bench_perf;
-    Prof,     job "--cast-profiler"  prof_f bench_prof;
+    (* cast 数・longest proxy chain は比較の主対象である C バックエンドで計測する *)
+    Prof,     job "--backend C --cast-profiler" prof_f bench_prof;
     Cbackend, job "--backend C"      perf_f bench_c_perf;
   ] in
   let jobs =
@@ -383,14 +398,15 @@ let prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset :
    1回だけ並列コンパイル」パターンを、target を跨ぐレベルで適用する)。 *)
 type grift_prepared = {
   file : string;
-  mode_g : string;
+  mode_gl : string;
   mode_gc : string;
   mode_gcs : string option;      (* grift ネイティブ --static 付きの C backend (static=true のときのみ) *)
   grift_dir : string;
   work : string;
   g : string;
   monotonic_flag : string;
-  jsonl_g_path : string;
+  heap_kb : int;
+  jsonl_gl_path : string;
   jsonl_gc_path : string;
   jsonl_gcs_path : string option;
   prog : Bench_progress.t;
@@ -402,34 +418,32 @@ type grift_prepared = {
 (* Phase 1(直列, 準備)のみ行う。grift ソース生成・コンパイルジョブの組み立て・
    jsonl のプレースホルダー行書き込みまでで、Bench_builder.compile_all は
    呼ばない(呼び出し側が複数 target 分をまとめてから1回だけ呼ぶ)。 *)
-let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~monotonic : grift_prepared =
+let prepare ~heap_size ~log_dir ~itr ~static ~file ~ordinal ~total_targets ~monotonic
+    ~(analysis : analysis) ~(subsets : int list list) : grift_prepared =
   let input_path = Bench_config.input_path ~static file in
-  let src = read_file grift_src in
-  let defs, groups = analyze_src ~fix_names:(Bench_target.fix_names file) src in
-  let n = List.length groups in
-  (* ML 側 (Pipeline.mutate_auto) と同じ閾値でスロット数が大きい場合は
-     全部分集合 (2^n 通り) の代わりにサンプリングする。閾値未満なら全列挙、
-     以上なら Mutate.sample_subsets_by_length に切り替える判断はここでも
-     揃える必要がある — さもないと blacksholes/fft/n_body/ray のような
-     スロット数の多い対象で 2^n が現実的でなくなり
-     (例: blacksholes は 2^17 = 131072 通り)、Mutate.all_subsets_by_length
-     内部の再帰が stack overflow を起こす。 *)
-  let subsets =
-    if static then [ [] ]
-    else if n < Bench_config.mutation_slot_threshold then Mutate.all_subsets_by_length n
-    else Mutate.sample_subsets_by_length ~samples_per_slot:Bench_config.samples_per_slot n
-  in
+  let { defs; groups } = analysis in
+  (* subsets は ML 側（untyped）と共有する部分集合列（Mutate.subsets_auto）。
+     スロット数が ML 側と一致することはスロット対応検査フェーズで確認済みなので、
+     同じ mutant_index が同じスロット選択を指す。 *)
+  let subsets = if static then [ [] ] else subsets in
+  (* grift binaries read input once per run (warm-up runs included), so repeat it (+10 spare copies). *)
   let base_input = String.trim (read_file input_path) in
   let repeat k = String.concat "" (List.init k (fun _ -> base_input ^ "\n")) in
-  let input_perf = repeat (itr + 10) in
+  let input_perf = repeat (Bench_config.warmup + itr + 10) in
   let input_prof = repeat (1 + 10) in
   let suffix = if static then "_fs" else "" in
   let g = Bench_config.grift_cmd in
   let monotonic_flag = if monotonic then "--monotonic-references" else "" in
+  (* grift の -m (--start-memory) は KB 単位で、生成 C の GC_INITIAL_HEAP_SIZE
+     (LLVM バックエンドでは clang の -D) になる。ML 側 (Builder の
+     -D GC_INITIAL_HEAP_SIZE) と同じ初期 heap にそろえる。1024 の倍数である
+     ことは bin/bench.ml の --heap-size 解析で保証している。 *)
+  let heap_kb = heap_size / 1024 in
   let monotonic_tag = if monotonic then "M" else "G" in
-  let mode_g = "GRIFT" ^ monotonic_tag in
+  let mode_gl = "GRIFTLLVM" ^ monotonic_tag in
   let mode_gc = "GRIFTC" ^ monotonic_tag in
-  let grift_dir = Filename.concat log_dir mode_g in
+  (* ログ用に取り出す .c は C バックエンドの出力なので GRIFTC<M|G>/ に置く *)
+  let grift_dir = Filename.concat log_dir mode_gc in
   if not (Sys.file_exists grift_dir) then Sys.mkdir grift_dir 0o755;
   (* Bench_builder.compile_all は <log_dir>/bench/ 配下に Makefile を書く。
      ML/C側(compile_mutants)がこのディレクトリを作っていない場合
@@ -439,14 +453,15 @@ let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~mono
   if not (Sys.file_exists bench_dir) then Sys.mkdir bench_dir 0o755;
   let work = Filename.concat log_dir (Printf.sprintf "grift_work_%s%s%s" file suffix monotonic_tag) in
   if not (Sys.file_exists work) then Sys.mkdir work 0o755;
+  (* 1本の進捗バーで C / LLVM 両バックエンドの実行を数えるので両方の名前を出す *)
   let prog =
     Bench_progress.create
-      ~label:(Printf.sprintf "%s_%s%s" mode_g file suffix)
+      ~label:(Printf.sprintf "%s+%s_%s%s" mode_gc mode_gl file suffix)
       ~total:(List.length subsets) ~ordinal ~total_targets
   in
   (* 全mutant分の grift ソース生成 + コンパイルジョブ組み立て。 *)
   let prepared =
-    List.mapi (fun si subset -> prepare_mutant ~work ~g ~monotonic_flag ~itr ~static defs groups si subset) subsets
+    List.mapi (fun si subset -> prepare_mutant ~work ~g ~monotonic_flag ~heap_kb ~itr ~static defs groups si subset) subsets
   in
   let mode_gcs = if static then Some (mode_gc ^ "S") else None in
   (* コンパイル前に、after_mutate 入りのプレースホルダー行(times_sec は空)を
@@ -462,16 +477,17 @@ let prepare ~log_dir ~grift_src ~itr ~static ~file ~ordinal ~total_targets ~mono
         (Bench_output.mutant_json ~mode_str ~idx:p.idx ~after_mutate:p.base_code ~times_sec:[])
     ) prepared;
     Bench_output.close_writer w
-  ) ([ mode_g; mode_gc ] @ (match mode_gcs with Some m -> [m] | None -> []));
+  ) ([ mode_gl; mode_gc ] @ (match mode_gcs with Some m -> [m] | None -> []));
   (* 実行結果を書く先のパスだけ覚えておく。実際に開く(常に新規truncateする
      open_out で、上のプレースホルダーを上書きする)のは run_compiled の
      冒頭 — Phase 3 が実際に走る場合にのみ、ここで初めて発生する。 *)
-  let jsonl_g_path = Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_g file suffix in
+  let jsonl_gl_path = Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_gl file suffix in
   let jsonl_gc_path = Printf.sprintf "%s/%s_%s%s.jsonl" log_dir mode_gc file suffix in
   let jsonl_gcs_path = Option.map (fun m -> Printf.sprintf "%s/%s_%s%s.jsonl" log_dir m file suffix) mode_gcs in
-  { file; mode_g; mode_gc; mode_gcs; grift_dir; work; g; monotonic_flag;
-    jsonl_g_path; jsonl_gc_path; jsonl_gcs_path; prog; prepared; input_perf; input_prof }
+  { file; mode_gl; mode_gc; mode_gcs; grift_dir; work; g; monotonic_flag; heap_kb;
+    jsonl_gl_path; jsonl_gc_path; jsonl_gcs_path; prog; prepared; input_perf; input_prof }
 
+(* Every compile job of every variant of a target. *)
 let jobs_of_prepared (p : grift_prepared) : Bench_builder.job list =
   List.concat_map (fun m -> List.map snd m.jobs) p.prepared
 
@@ -481,14 +497,15 @@ let jobs_of_prepared (p : grift_prepared) : Bench_builder.job list =
    コンパイル失敗が dynamize/static の実行を(逆方向も)妨げるようにする。 *)
 type grift_compiled = {
   file : string;
-  mode_g : string;
+  mode_gl : string;
   mode_gc : string;
   mode_gcs : string option;
   grift_dir : string;
   work : string;
   g : string;
   monotonic_flag : string;
-  jsonl_g_path : string;
+  heap_kb : int;
+  jsonl_gl_path : string;
   jsonl_gc_path : string;
   jsonl_gcs_path : string option;
   prog : Bench_progress.t;
@@ -508,10 +525,10 @@ let finalize (p : grift_prepared) : grift_compiled =
       (fun m -> List.exists (fun (_, j) -> not (Sys.file_exists j.Bench_builder.out_path)) m.jobs)
       p.prepared
   in
-  { file = p.file; mode_g = p.mode_g; mode_gc = p.mode_gc; mode_gcs = p.mode_gcs;
+  { file = p.file; mode_gl = p.mode_gl; mode_gc = p.mode_gc; mode_gcs = p.mode_gcs;
     grift_dir = p.grift_dir; work = p.work;
-    g = p.g; monotonic_flag = p.monotonic_flag;
-    jsonl_g_path = p.jsonl_g_path; jsonl_gc_path = p.jsonl_gc_path; jsonl_gcs_path = p.jsonl_gcs_path;
+    g = p.g; monotonic_flag = p.monotonic_flag; heap_kb = p.heap_kb;
+    jsonl_gl_path = p.jsonl_gl_path; jsonl_gc_path = p.jsonl_gc_path; jsonl_gcs_path = p.jsonl_gcs_path;
     prog = p.prog; prepared = p.prepared; input_perf = p.input_perf; input_prof = p.input_prof; failed }
 
 (* Phase 3 (直列): mutant ごとに実行・計測する。
@@ -520,14 +537,15 @@ let finalize (p : grift_prepared) : grift_compiled =
 let run_compiled (c : grift_compiled) : unit =
   (* open_out は常に新規truncateするので、prepare が書いたプレースホルダー
      行はここで上書きされる。 *)
-  let oc_g = open_out c.jsonl_g_path in
+  let oc_gl = open_out c.jsonl_gl_path in
   let oc_gc = open_out c.jsonl_gc_path in
   let oc_gcs = Option.map open_out c.jsonl_gcs_path in
   List.iter
     (fun p ->
+      (* Job of the given kind, and whether its binary was built. *)
       let find kind = List.assoc kind p.jobs in
       let ok kind = Sys.file_exists (find kind).Bench_builder.out_path in
-      if not (ok Perf) then Format.eprintf "[grift compile failed] %s#%d perf@." c.file p.idx;
+      if not (ok Perf) then Format.eprintf "[grift compile failed] %s#%d llvm@." c.file p.idx;
       if not (ok Prof) then Format.eprintf "[grift compile failed] %s#%d prof@." c.file p.idx;
       if not (ok Cbackend) then Format.eprintf "[grift compile failed] %s#%d c@." c.file p.idx;
       let times =
@@ -566,23 +584,23 @@ let run_compiled (c : grift_compiled) : unit =
            (jrow ~mode:mode_gcs ~idx:p.idx ~after_mutate:p.base_code ~times:times_cs ~cast:None
               ~longest:None)
        | _ -> ());
+      (* Recompile with --keep-ir to keep the generated .c, and move it to <log_dir>/GRIFTC<M|G>/. *)
       (* ログ用に .c を1つ取り出す *)
       let dest_c = Printf.sprintf "%s%d.c" c.file p.idx in
       ignore
         (Sys.command
-           (Printf.sprintf "cd %s && %s %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
-              (Filename.quote p.cdir) c.g c.monotonic_flag (Filename.quote dest_c)));
+           (Printf.sprintf "cd %s && %s -m %d %s --backend C --keep-ir %s perf.grift > /dev/null 2>&1"
+              (Filename.quote p.cdir) c.g c.heap_kb c.monotonic_flag (Filename.quote dest_c)));
       (try Sys.rename (Filename.concat p.cdir dest_c) (Filename.concat c.grift_dir dest_c)
        with _ -> ());
-      Bench_json.to_channel_ln oc_g
-        (jrow ~mode:c.mode_g ~idx:p.idx ~after_mutate:p.base_code ~times ~cast ~longest);
+      Bench_json.to_channel_ln oc_gl
+        (jrow ~mode:c.mode_gl ~idx:p.idx ~after_mutate:p.base_code ~times ~cast:None ~longest:None);
       Bench_json.to_channel_ln oc_gc
-        (jrow ~mode:c.mode_gc ~idx:p.idx ~after_mutate:p.base_code ~times:times_c ~cast:None
-           ~longest:None);
+        (jrow ~mode:c.mode_gc ~idx:p.idx ~after_mutate:p.base_code ~times:times_c ~cast ~longest);
       Bench_progress.tick c.prog)
     c.prepared;
   Bench_progress.print ~final:true c.prog;
-  close_out oc_g;
+  close_out oc_gl;
   close_out oc_gc;
   Option.iter close_out oc_gcs;
   ignore (Sys.command (Printf.sprintf "rm -rf %s" (Filename.quote c.work)))
