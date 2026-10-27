@@ -4,11 +4,13 @@
 (* Run the timing binary, then the profiling binary, of one compiled target.
    Each binary updates its target's JSONL file itself. Raises on non-zero exit. *)
 let run_bench_binaries (j : Bench_compiler.bench_job) =
-  Format.fprintf Format.std_formatter "%s@." j.run_cmd;
-  let i = Sys.command j.run_cmd in
+  let run_cmd = Bench_config.run_prefix () ^ j.run_cmd in
+  let profile_run_cmd = Bench_config.run_prefix () ^ j.profile_run_cmd in
+  Format.fprintf Format.std_formatter "%s@." run_cmd;
+  let i = Sys.command run_cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for time) fail";
-  Format.fprintf Format.std_formatter "%s@." j.profile_run_cmd;
-  let i = Sys.command j.profile_run_cmd in
+  Format.fprintf Format.std_formatter "%s@." profile_run_cmd;
+  let i = Sys.command profile_run_cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for profile) fail"
 
 (* Measure one target; a runtime failure is reported as [Skip] and does not stop the others. *)

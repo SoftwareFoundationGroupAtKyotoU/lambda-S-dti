@@ -11,6 +11,19 @@ let default_heap_kb = 8 * 1024
 (* Every run writes into logs/<timestamp>/. *)
 let log_root = "logs"
 
+(* フェーズ 9（計測）で実行するバイナリを固定する CPU 番号（--cpu）。
+   計測中のプロセスがコア間を移動しないようにする。どのコアも同じ性能で、
+   周波数は負荷に応じて動的に変わる（schedutil）ので、固定しても周波数は
+   揃わない（立ち上がりは warmup で吸収する）。コンパイル（フェーズ 8）には
+   適用しないので、並列コンパイルは全コアを使える。 *)
+let run_cpu : int option ref = ref None
+
+(* 計測用の実行コマンドの先頭に付けるプレフィックス *)
+let run_prefix () =
+  match !run_cpu with
+  | None -> ""
+  | Some n -> Printf.sprintf "taskset -c %d " n
+
 (* Targets with >= mutation_slot_threshold slots are sampled
    (samples_per_slot * n mutants) instead of enumerating all 2^n. *)
 let mutation_slot_threshold = 6

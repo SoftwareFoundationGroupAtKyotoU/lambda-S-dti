@@ -213,6 +213,12 @@ make plot                                        # scripts/plot_all.py で可視
 
 - 長時間の計測は `tmux` / `nohup` 上で走らせ、同じマシンで他の重い処理を同時に走らせないこと
   （フェーズ 9 は直列計測なので、他のプロセスの負荷がそのまま計測値に乗る）。
+- 計測は `--cpu N` で1コアに固定すると、計測中のプロセスがコア間を移動しない。
+  なお、どのコアも同じ性能（0.8〜3.9GHz）で、周波数は schedutil ガバナが負荷に応じて
+  コアごとに動的に上下させる。ある瞬間の `cpu MHz` がコアによって 2.0GHz や 3.9GHz に
+  見えるのはそのためで、コアの性能差ではない。固定しても周波数自体は揃わない
+  （揃えるには root で performance ガバナにする必要がある）。割り込みを受ける cpu0 は避け、`lscpu` で SMT の相方
+  （例: cpu72 と cpu200）にも他の負荷が無いコアを選ぶ。Docker では `--cpuset-cpus` の範囲内の番号のみ使える。
 - ホストで直接 `dune exec ./bin/bench.exe -- ...`（`make benchmark` も同じ）を実行してもよいが、
   `--grift` は使えない。フェーズ 1〜8 の確認（コード生成・コンパイルが通るか）など、
   計測値を使わない用途に限る。
@@ -236,7 +242,8 @@ make plot                                        # scripts/plot_all.py で可視
 | `--typed` | 軸: untyped/ ↔ typed/ ソース |
 | `-i N` | 反復回数（既定 `Bench_config.default_itr` = 500） |
 | `--jobs N` | 並列コンパイルの最大ジョブ数（既定 `nproc - 1`） |
-| `--heap-size B` | Boehm GC の初期 heap（bytes、1024 の倍数、既定 8388608 = 8MB）。ML 側・grift 側の両方に適用 |
+| `--heap-size KB` | Boehm GC の初期 heap（KB、既定 8192 = 8MB）。ML 側（`-D GC_INITIAL_HEAP_SIZE`）・grift 側（`-m`）の両方に適用 |
+| `--cpu N` | フェーズ 9（計測）の実行を `taskset -c N` で CPU N に固定する（コンパイルは並列のまま）。既定は固定しない |
 | `--out json\|jsonl` | 出力形式（既定 `jsonl`） |
 | `--list` | ベンチ対象名を表示して終了 |
 | 位置引数 | ベンチ対象名（無指定で `Bench_config.all_targets`） |
