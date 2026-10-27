@@ -23,7 +23,9 @@ if [ ! -x "$BIN" ]; then
   dune build test/check_mutants.exe || exit 1
 fi
 
-# target => samples/input/<target>.txt（dynamize が使う）での正解の標準出力。
+# target => dynamize の入力での正解の標準出力。入力は samples/input/check/<target>.txt が
+# あればそれ（計測用より小さい、正しさの確認だけのための入力）、なければ
+# samples/input/<target>.txt（Bench_config.check_input_path）。
 declare -A EXPECTED=(
   [tak]="9"
   [fib]="9227465"
@@ -31,12 +33,12 @@ declare -A EXPECTED=(
   [evenodd]="true"
   [loop]="0"
   [incsum]="2003000"
-  [array]="100000"
+  [array]="1000"
   [matmult]="38852480"
   [quicksort]="9999"
 )
 
-# --static は samples/input/<target>_fs.txt を使う。ほとんどのターゲットは
+# --static は samples/input/check/<target>_fs.txt か samples/input/<target>_fs.txt を使う。ほとんどのターゲットは
 # 通常入力と _fs 入力が同じ値なので EXPECTED をそのまま使ってよいが、
 # 一部（例: incsum）は _fs 入力のサイズが異なり正解も異なるため、
 # ここに載っているターゲットだけ個別の値で上書きする。

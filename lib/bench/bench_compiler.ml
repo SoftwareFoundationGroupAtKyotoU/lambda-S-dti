@@ -271,8 +271,8 @@ let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expe
   if i != 0 then raise @@ Runner.Build_bad "clang(for check) fail";
   (* run: 標準出力をファイルに落として読み戻す（/dev/null に捨てない） *)
   let stdout_path = asprintf "%s/bench/%s%s_check.stdout" log_dir file mode_str in
-  let cmd = asprintf "%s/bench/%s%s_check.out < samples/input/%s.txt > %s"
-    log_dir file mode_str file stdout_path in
+  let cmd = asprintf "%s/bench/%s%s_check.out < %s > %s"
+    log_dir file mode_str (Bench_config.check_input_path file) stdout_path in
   fprintf std_formatter "%s@." cmd;
   let i = Sys.command cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for check) fail";

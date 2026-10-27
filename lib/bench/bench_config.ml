@@ -124,5 +124,12 @@ let sample_path ~(lang:[`Gradti | `Grift]) ?(typed=false) (spec : target_spec) :
 let input_path ?(static=false) (target : string) : string =
   Printf.sprintf "samples/input/%s%s.txt" target (if static then "_fs" else "")
 
+(* stdin file for test/check_mutants.ml (file is <name> or <name>_fs): samples/input/check/<file>.txt
+   if it exists, else the benchmark input. The check only compares outputs, so heavy targets get a
+   small input there; compile_test/mutation_test.sh's expected values follow it. *)
+let check_input_path (file : string) : string =
+  let small = Printf.sprintf "samples/input/check/%s.txt" file in
+  if Sys.file_exists small then small else Printf.sprintf "samples/input/%s.txt" file
+
 (* grift executable; override with the GRIFT environment variable. *)
 let grift_cmd = try Sys.getenv "GRIFT" with Not_found -> "grift"
