@@ -9,13 +9,13 @@ let rec loop i j =
   in
   if i < n then
     ((if i < j then
-        let tmp = data.(i) in
-        (data.(i) <- data.(j);
-        data.(j) <- tmp)
-      else
-        let tmp = data.(i+1) in
-        (data.(i+1) <- data.(j + 1);
-        data.(j+1) <- tmp));
+        (let tmp = data.(i) in
+         (data.(i) <- data.(j);
+          data.(j) <- tmp);
+         let tmp = data.(i+1) in
+         (data.(i+1) <- data.(j + 1);
+          data.(j+1) <- tmp))
+      else ());
      loop2 (n/2) j i)
   else ()
 in
