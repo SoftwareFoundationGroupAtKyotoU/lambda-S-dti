@@ -66,7 +66,9 @@ let () =
   let targets = Bench_target.expand_ablation_targets prepared in
 
   let check_tmp_root = ".check_tmp" in
-  if not (Sys.file_exists check_tmp_root) then Core_unix.mkdir check_tmp_root;
+  (* mutation_test.sh は check_mutants を並列に起動するので、存在確認と mkdir の間に
+     他のプロセスが作っていることがある *)
+  (try Core_unix.mkdir check_tmp_root with Core_unix.Unix_error (EEXIST, _, _) -> ());
   let log_dir = Filename.concat check_tmp_root (Printf.sprintf "check_mutants-%d" (Unix.getpid ())) in
   Core_unix.mkdir log_dir;
   at_exit (fun () -> ignore (Sys.command (Printf.sprintf "rm -rf %s" (Filename.quote log_dir))));
