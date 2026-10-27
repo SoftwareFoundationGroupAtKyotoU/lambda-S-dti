@@ -3,6 +3,7 @@ open Lambda_S_dti
 let () =
   (* benchmark settings *)
   let files, itr, jobs = ref [], ref 0, ref 0 in
+  let heap_size = ref Bench_config.default_heap_size in
   (* 軸別アブレーションフラグ: 立てた軸だけ、fully-optimized 基準値(ALHMT)
      から1つ反転させた2点比較を行う。複数指定しても軸間の直積は取らない。 *)
   let axis_specs, requested_axes = Bench_target.axis_specs () in
@@ -12,6 +13,9 @@ let () =
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
      " Max parallel compile jobs for --dynamize/--static/--grift (default: nproc-1)");
+    ("--heap-size", Arg.Int (fun n -> heap_size := n),
+     Printf.sprintf " Initial GC heap size in bytes, for both our binaries and grift's (default: %d)"
+       Bench_config.default_heap_size);
   ] @ axis_specs @ [
     ("--static", Arg.Unit (fun () -> static := true), " Benchmarking fully-static programs");
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
@@ -31,6 +35,12 @@ let () =
   let itr = if !itr = 0 then Bench_config.default_itr else !itr in
   let jobs = if !jobs > 0 then !jobs else Bench_builder.default_jobs () in
   let axes = requested_axes () in
+  let heap_size = !heap_size in
+  (* grift の -m は KB 単位なので、両者で同じ値にできるよう 1024 の倍数に限る *)
+  if heap_size <= 0 || heap_size mod 1024 <> 0 then begin
+    Printf.eprintf "--heap-size must be a positive multiple of 1024 (got %d)\n" heap_size;
+    exit 2
+  end;
 
   (* 1. 前処理: 全ファイルを parse→mutate（Bench_target.prepare 参照） *)
   let prepared = Bench_target.prepare ~axes files in

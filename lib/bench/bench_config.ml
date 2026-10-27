@@ -1,4 +1,11 @@
 let default_itr = 500
+(* Untimed warm-up runs per mutant before the timed iterations, for our drivers and
+   grift's alike (without it, grift's first iterations run ~1.8x slower). *)
+let warmup = 5
+(* Initial Boehm GC heap (bytes) when --heap-size is not given; applied to our binaries
+   (-D GC_INITIAL_HEAP_SIZE) and to grift (-m <KB>) alike. *)
+let default_heap_size = 8 * 1024 * 1024
+(* Every run writes into logs/<timestamp>/. *)
 let log_root = "logs"
 
 let grift_benchmarks = [

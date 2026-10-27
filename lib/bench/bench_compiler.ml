@@ -7,7 +7,7 @@ open Bench_target
 
 let crc_active (config : Config.t) = not config.intoB && not config.static
 
-let warmup = 5
+let warmup = Bench_config.warmup
 
 (* 1 target 分のベンチドライバ (.c) 生成結果。clang 呼び出しはまだ行わない —
    コンパイルコマンド文字列を作るところまでで止め、実際の clang 起動は
@@ -24,7 +24,8 @@ type bench_job = {
 (* _mutants.h / timing用.c / profile用.c を生成し、それぞれをビルドする
    clangコマンドと、ビルド後に実行するコマンドを bench_job として返す。
    ファイル書き込みのみの副作用で、Sys.command は一切呼ばない。 *)
-let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config : bench_job =
+let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
+    ~log_dir ~file ~mode_str ~itr ~mutants_length ~config () : bench_job =
   (* mutant ファイルは <file>_<idx>.c という形式でのみ書かれる (compile_mutants
      参照)。単純な "<file>*.c" だと、同じ mode_str ディレクトリを共有する
      別 target のファイル名が <file> をプレフィックスとして含む場合
@@ -79,6 +80,7 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
      else []) @
     [ SExp (App (Var "rewind", [Var "stdin"])) ]
   in
+  (* `warmup` untimed runs followed by `itr` timed runs. *)
   let mutant_time_block n =
     [ SFor ((SDecl (INT, "w", Some (Int 0)), BinOp (Var "w", Lt, Int warmup), PostOp (Var "w", Incr)),
             per_iter n ~timed:false);
@@ -201,8 +203,8 @@ let generate_bench_sources ~log_dir ~file ~mode_str ~itr ~mutants_length ~config
   {
     out_path = asprintf "%s/bench/%s%s.out" log_dir file mode_str;
     profile_out_path = asprintf "%s/bench/%s%s_profile.out" log_dir file mode_str;
-    compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false ();
-    profile_compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true ();
+    compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:false ~heap_size ();
+    profile_compile_cmd = Builder.build_clang_cmd ~config ~bench:true ~log_dir ~file ~mode_str ~src_files ~profile:true ~heap_size ();
     run_cmd = asprintf "%s/bench/%s%s.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file;
     profile_run_cmd = asprintf "%s/bench/%s%s_profile.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file;
   }
