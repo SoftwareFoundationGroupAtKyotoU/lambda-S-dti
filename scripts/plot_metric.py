@@ -9,12 +9,21 @@ from benchviz import (
     setup_plot_style, format_comp_label, apply_decorations
 )
 
+# 縦軸のラベル（メトリクス名 → 何を数えた値か）
+METRIC_LABELS = {
+    "cast": "Casts per run",
+    "inference": "DTI (type-variable instantiations) per run",
+    "longest": "Longest proxy chain",
+    "mem": "Allocated bytes per run",
+}
+
+
 def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_name: str, metric_label: str = None):
     setup_plot_style() # ★ 論文用スタイルを適用
 
     comps, comp_label, fs, is_multi = parse_comp_args(comp, static)
     if not comps: return
-    if metric_label is None: metric_label = metric_name
+    if metric_label is None: metric_label = METRIC_LABELS.get(metric_name, metric_name)
 
     cfg = load_config(base, comps, static)
     latest, date_dir, data = ingest_latest_as_map(base, comps, cfg, extra_metrics=[metric_name])
@@ -64,7 +73,7 @@ def plot_metric(base: str, comp: Union[str, List[str]], static: bool, metric_nam
         integer_xticks(ax, list(all_ns))
         draw_binomial_boundaries(ax, len(n_map))
 
-        apply_decorations(ax, "Pattern for Replacing Type Variables with Dyn (n)", 
+        apply_decorations(ax, "Mutant index (ordered by number of dynamized slots)", 
                           metric_label, f'{metric_label}: {bench}')
         
         ax.grid(True, axis='y', linestyle='--', alpha=0.35)

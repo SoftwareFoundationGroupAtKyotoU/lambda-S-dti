@@ -1,20 +1,20 @@
 # report_ablation_summary.py
 #
-# A（id適用最適化）/H（hash-consing & compose memo化）の寄与度、および
-# GRIFT（GRIFTCM=Cバックエンド, GRIFTM=Racketバックエンド）との比較を、
-# ratio（comp_mean_time / base_mean_time）の幾何平均としてまとめた
-# Markdownサマリーを出力する。
+# bin/bench.ml の軸別アブレーション（基準値 untypedALHMT から1軸だけ反転）の各軸の
+# 寄与度、GRIFT（GRIFTCM = C backend, GRIFTLLVMM = LLVM backend）との比較、完全静的
+# ビルドとの比較を、ratio（comp_mean_time / base_mean_time）の幾何平均として
+# まとめた Markdown サマリーを出力する。モード名は benchviz.TARGET_PAIRS と同じ。
 #
-# mutant数がベンチマーク間で大きく偏る（4〜2048）ため、
+# mutant数がベンチマーク間で大きく偏る（4〜数百）ため、
 #   1. ベンチマークごとに全mutantのratioの幾何平均を取り、
 #   2. さらにベンチマーク間で（mutant数によらず）等重みで幾何平均する
-# という2段集計にする。これにより church-65532/quicksort のような
-# mutant数が極端に多いベンチマークが pooled 値を支配しない。
+# という2段集計にする。これにより mutant数が極端に多いベンチマークが
+# pooled 値を支配しない。
 import os
 import math
 from typing import Dict, List, Optional, Tuple
 
-from benchviz import load_config, ingest_latest_as_map, latest_date_dir, ensure_dir
+from benchviz import load_config, ingest_latest_as_map, latest_date_dir, ensure_dir, mean_time
 
 
 def geomean(xs: List[float]) -> Optional[float]:
@@ -37,9 +37,8 @@ def bench_mutant_ratios(base: str, comp: str, static: bool = False) -> Dict[str,
             c_times = slot.get(f"{comp}_times", [])
             if not b_times or not c_times:
                 continue
-            b_mean = sum(b_times) / len(b_times)
-            c_mean = sum(c_times) / len(c_times)
-            if b_mean > 0 and c_mean > 0:
+            b_mean, c_mean = mean_time(b_times), mean_time(c_times)
+            if b_mean is not None and c_mean is not None:
                 ratios.append(c_mean / b_mean)
         if ratios:
             out[bench] = ratios
@@ -91,18 +90,25 @@ def main() -> None:
     ensure_dir(date_dir)
     out_path = os.path.join(date_dir, "report_ablation_summary.md")
 
+    base_mode = "untypedALHMT"
     pairs = [
-        # (section, base, comp, static, note)
-        ("A effect, H off",  "SLNM", "ALNM", False, "A = id-application optimization (`alt` translation) ON vs OFF, with H (hash-consing) OFF on both sides."),
-        ("A effect, H on",   "SLHM", "ALHM", False, "Same A on/off contrast, but with H ON on both sides."),
-        ("H effect, A off",  "SLNM", "SLHM", False, "H = coercion hash-consing + compose memoization ON vs OFF, with A OFF on both sides."),
-        ("H effect, A on",   "ALNM", "ALHM", False, "Same H on/off contrast, but with A ON on both sides."),
-        ("A+H combined",     "SLNM", "ALHM", False, "Fully-unoptimized baseline vs fully-optimized (A+H) config."),
-        ("ALHM vs GRIFTCM (C backend)",  "GRIFTCM", "ALHM", False, "GRIFT compiled with its C backend, monotonic references. Only benchmarks present on both sides are shown (GRIFT run is missing church-65532/loop)."),
-        ("ALHM vs GRIFTM (Racket backend)", "GRIFTM", "ALHM", False, "GRIFT's own (Racket/perf) backend, monotonic references."),
-        ("Fully-static floor: ALHM",    "STATICENG", "ALHM", True, "Single fully-typed (no `?`) mutant per benchmark, compared against the fully-static reference build (no coercion machinery at all)."),
-        ("Fully-static floor: GRIFTCM", "STATICENG", "GRIFTCM", True, "Same fully-typed comparison for GRIFT's C backend."),
-        ("Fully-static floor: GRIFTM",  "STATICENG", "GRIFTM", True, "Same fully-typed comparison for GRIFT's Racket backend."),
+        # (section, base, comp, static, note)。ratio = comp / base なので、
+        # base に「その最適化を切った側」を置くと ratio < 1 = 最適化が効いている。
+        ("id_opt (A vs S)",       "untypedSLHMT", base_mode, False, "id-application optimization (`alt` translation) ON (`A`) vs OFF (`S`)."),
+        ("lazy vs eager (L vs E)", "untypedELHMT", base_mode, False, "Lazy (`L`) vs eager (`E`) list coercions."),
+        ("hash-consing (H vs h)", "untypedALhMT", base_mode, False, "Coercion hash-consing + compose memoization ON (`H`) vs OFF (`h`)."),
+        ("monotonic vs guarded (M vs G)", "untypedALHGT", base_mode, False, "Monotonic (`M`) vs guarded (`G`) references/arrays."),
+        ("tvs_opt (T vs t)",      "untypedALHMt", base_mode, False, "Type-variable optimization ON (`T`) vs OFF (`t`)."),
+        ("untyped vs typed source", "typedALHMT", base_mode, False, "Same configuration on the untyped vs the typed source. Benchmarks whose two sources have different mutant counts are excluded (mutant_index would not align)."),
+        ("untypedALHMT vs GRIFTCM (C backend)", "GRIFTCM", base_mode, False, "GRIFT compiled with its C backend, monotonic references. Only benchmarks present on both sides are shown."),
+        ("untypedALHMT vs GRIFTLLVMM (LLVM backend)", "GRIFTLLVMM", base_mode, False, "GRIFT compiled with its LLVM backend (grift's default), monotonic references."),
+        ("Fully-static floor: untypedALHMT", "untypedSTATICEhGT", base_mode, True, "Single fully-typed (no `?`) mutant per benchmark, compared against the fully-static reference build (no coercion machinery at all)."),
+        ("Fully-static floor: GRIFTCMS", "untypedSTATICEhGT", "GRIFTCMS", True, "Same fully-typed comparison for GRIFT's C backend with `--static`."),
+    ]
+    sections = [
+        ("1. Single-axis ablation from untypedALHMT", 0, 6),
+        ("2. untypedALHMT vs GRIFT", 6, 8),
+        ("3. Fully-static floor (no `?`/Dyn at all, single mutant per benchmark)", 8, 10),
     ]
 
     results = []
@@ -116,10 +122,8 @@ def main() -> None:
         md.write(f"- Log dir: `{latest}`\n")
         md.write("- All ratios are `comp_mean_time / base_mean_time`, computed per mutant, "
                   "then geomean within a benchmark, then geomean across benchmarks "
-                  "(equal weight per benchmark, regardless of how many mutants that "
-                  "benchmark has — mutant counts range from 4 to 2048 across benchmarks "
-                  "in this run, so a flat pooled geomean would be dominated by "
-                  "`church-65532`/`quicksort`).\n")
+                  "(equal weight per benchmark, regardless of how many mutants it has, so "
+                  "benchmarks with many mutants do not dominate the pooled value).\n")
         md.write("- No formal CI is computed here (that would need a bootstrap over "
                   "benchmarks/mutants); the per-benchmark `min`/`max` columns are a crude "
                   "robustness indicator instead. For per-mutant CIs see `relative/` plots "
@@ -132,34 +136,11 @@ def main() -> None:
             headline_row(md, label, pooled)
         md.write("\n")
 
-        md.write("## 1. Optimization ablation (A, H)\n\n")
-        for label, base, comp, static, note, ratios_by_bench, per_bench, pooled in results[:5]:
-            md.write(f"#### {label}\n\n")
-            write_table(md, base, comp, ratios_by_bench, per_bench, pooled, note)
-
-        md.write("## 2. ALHM vs GRIFT\n\n")
-        for label, base, comp, static, note, ratios_by_bench, per_bench, pooled in results[5:7]:
-            md.write(f"#### {label}\n\n")
-            write_table(md, base, comp, ratios_by_bench, per_bench, pooled, note)
-
-        md.write("## 3. Fully-static floor (no `?`/Dyn at all, single mutant per benchmark)\n\n")
-        for label, base, comp, static, note, ratios_by_bench, per_bench, pooled in results[7:]:
-            md.write(f"#### {label}\n\n")
-            write_table(md, base, comp, ratios_by_bench, per_bench, pooled, note)
-
-        md.write("## 4. L (eager/lazy) and M (monotonic/guarded) — not varied in this run\n\n")
-        md.write(
-            "Every OCaml-side log file in this run has mode char 2 fixed to `L` (lazy) "
-            "and mode char 4 fixed to `M` (monotonic) — no `E`/`G` counterpart exists in "
-            "`" + latest + "`, so their contribution cannot be quantified from this dataset. "
-            "`memo.md` has the author's own qualitative notes on the eager/lazy tradeoff: "
-            "for a list of length n, attaching a coercion costs `n` compose calls eagerly vs "
-            "`1` lazily, but decomposing it via a head/tail match costs `0` eagerly vs `2` "
-            "lazily — i.e. lazy defers/batches composition that eager pays incrementally, "
-            "which is a plausible explanation for cases where eager loses on list-heavy "
-            "benchmarks, but this is a hypothesis from the notes, not a measurement in "
-            "this run.\n\n"
-        )
+        for title, lo, hi in sections:
+            md.write(f"## {title}\n\n")
+            for label, base, comp, static, note, ratios_by_bench, per_bench, pooled in results[lo:hi]:
+                md.write(f"#### {label}\n\n")
+                write_table(md, base, comp, ratios_by_bench, per_bench, pooled, note)
 
     print(f"Saved ablation summary report to: {out_path}")
 

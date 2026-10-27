@@ -1,6 +1,5 @@
 # report_absolute_times.py
 import os
-import json
 import argparse
 import numpy as np
 from typing import List
@@ -10,7 +9,7 @@ try:
 except ImportError:
     stats = None
 
-from benchviz import latest_date_dir, ensure_dir
+from benchviz import latest_date_dir, ensure_dir, parse_log_filename, iter_log_records, mean_time
 
 def report_absolute_longest(target: str, static: bool, top_k: int = 30, extra_metrics: List[str] = None):
     """
@@ -34,64 +33,48 @@ def report_absolute_longest(target: str, static: bool, top_k: int = 30, extra_me
     out_dir = os.path.join(date_dir, f"report_{target}_absolute_top{top_k}")
     ensure_dir(out_dir)
 
-    # ターゲットに一致するファイル名を探す
+    # ターゲットに一致するファイル名を探す（ファイル名の分解は他スクリプトと共通）
     target_files = []
-    for f in os.listdir(date_dir):
-        if f.startswith(f"{target}_") and f.endswith(f"{fs_suffix}.jsonl"):
-            target_files.append(f)
+    for f in sorted(os.listdir(date_dir)):
+        parsed = parse_log_filename(f)
+        if parsed is not None and parsed[0] == target and parsed[2] == static:
+            target_files.append((f, parsed[1]))
 
     if not target_files:
         print(f"No jsonl files found for target '{target}' (static={static}) in {date_dir}")
         return
 
-    for filename in target_files:
-        bench_name = filename[len(f"{target}_"):-len(f"{fs_suffix}.jsonl")]
+    for filename, bench_name in target_files:
         filepath = os.path.join(date_dir, filename)
         computed = []
-        
-        # JSONLをパースしてデータを収集
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+
+        for obj in iter_log_records(filepath):
+            n = int(obj.get("mutant_index", -1))
+            times = obj.get("times_sec", [])
+            mean_val = mean_time(times)
+            if mean_val is None:
+                continue
+            arr = np.asarray(times, dtype=float)
+
+            if stats is not None and len(arr) > 1:
+                ci = float(stats.sem(arr) * stats.t.ppf(0.975, len(arr)-1))
+            else:
+                ci = 0.0
+            
+            # 追加メトリクスの抽出
+            extracted_extras = {}
+            for m in extra_metrics:
+                # jsonl 内にキーが存在しない場合は "N/A" とする
+                extracted_extras[m] = obj.get(m, "N/A")
                 
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                    
-                n = int(obj.get("mutant_index", -1))
-                times = obj.get("times_sec", [])
-                
-                if not times:
-                    continue
-                    
-                arr = np.asarray(times, dtype=float)
-                mean_val = float(np.mean(arr))
-                
-                if not np.isfinite(mean_val):
-                    continue
-                    
-                if stats is not None and len(arr) > 1:
-                    ci = float(stats.sem(arr) * stats.t.ppf(0.975, len(arr)-1))
-                else:
-                    ci = 0.0
-                
-                # 追加メトリクスの抽出
-                extracted_extras = {}
-                for m in extra_metrics:
-                    # jsonl 内にキーが存在しない場合は "N/A" とする
-                    extracted_extras[m] = obj.get(m, "N/A")
-                    
-                computed.append({
-                    "n": n,
-                    "mean": mean_val,
-                    "ci": ci,
-                    "runs": len(arr),
-                    "extra_metrics": extracted_extras,
-                    "after_mutate": obj.get("after_mutate"),
-                })
+            computed.append({
+                "n": n,
+                "mean": mean_val,
+                "ci": ci,
+                "runs": len(arr),
+                "extra_metrics": extracted_extras,
+                "after_mutate": obj.get("after_mutate"),
+            })
         
         # 平均実行時間の降順でソート
         longest_cases = sorted(computed, key=lambda x: x["mean"], reverse=True)[:top_k]

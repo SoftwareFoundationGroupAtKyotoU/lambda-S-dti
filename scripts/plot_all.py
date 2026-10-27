@@ -23,7 +23,9 @@ from plot_herman import plot_herman
 from plot_relative import plot_relative, plot_static_summary
 from plot_scattered import plot_scattered
 from plot_metric import plot_metric
-from plot_compare import plot_compare  # ★ plot_compare をインポート追加
+from plot_compare import plot_compare
+from plot_stacked_time import run as run_plot_stacked_time  # 累積性能グラフ
+from plot_derived_metrics import run as run_plot_derived_metrics  # 派生指標（hit率・深さ・弾力性など）
 
 EXTRA_METRICS = ["cast", "inference", "mem", "longest"]
 
@@ -38,7 +40,7 @@ def run_plots(base, comp, static, date_dir):
     # ★ Static の場合は専用の統合プロットのみを実行する
     # ==========================================
     if static:
-        print(f"[DEBUG] Staticモード: 統合Relativeプロットのみ実行します")
+        print("[DEBUG] Staticモード: 統合Relativeプロットのみ実行します")
         if isinstance(comp, list):
             plot_static_summary(base, comp)
             # 個別も欲しい場合は以下を活かす（不要ならコメントアウトでOKです）
@@ -52,7 +54,7 @@ def run_plots(base, comp, static, date_dir):
     # ==========================================
     # 以下は通常（Dynamic/Mutant）の処理
     # ==========================================
-    print(f"[DEBUG] ログを確認しました。プロット処理に入ります...")
+    print("[DEBUG] ログを確認しました。プロット処理に入ります...")
 
     if isinstance(comp, list):
         print(f"[DEBUG] 複数比較 (リスト) モード: {comp}")
@@ -81,7 +83,6 @@ def run_plots(base, comp, static, date_dir):
     print(f"[DEBUG] <--- run_plots 完了: base={base}, comp={comp}")
 
 def main():
-    cwd = os.getcwd()
     try:
         latest_ts, date_dir = latest_date_dir("logs")
     except Exception as e:
@@ -115,6 +116,23 @@ def main():
         # plot_compare 側で該当ログがなければ自動でスキップされるので安全です
         plot_compare(mode, static=False)
         plot_compare(mode, static=True)
+
+    # ==========================================
+    # 累積性能グラフ（Takikawa POPL'16 / Grift PLDI'19 方式）
+    # TARGET_PAIRS に依存せず、ログにある全モードを描く。
+    # 静的実行ログは 1 mutant しかないので対象外。
+    # ==========================================
+    print("\n=== Processing Cumulative Performance Plots ===")
+    run_plot_stacked_time(date_dir)
+
+    # ==========================================
+    # 派生指標（cache hit 率 / compose_max_depth / cast あたり時間 /
+    # coerce_* 構成比 / DTI 率 / 動的度に対する弾力性 / mem-cast 相関）。
+    # ログの読み方は他と同じ benchviz の共通関数（parse_log_filename 等）。
+    # ==========================================
+    print("\n=== Processing Derived Metrics ===")
+    run_plot_derived_metrics(date_dir, static=False)
+    run_plot_derived_metrics(date_dir, static=True)
 
     # 生成物ゼロで作られてしまった空フォルダを掃除
     prune_empty_dirs(date_dir)
