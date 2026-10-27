@@ -1,19 +1,7 @@
-(*
-  Mutate.ml — 型注釈を TyDyn に置き換えるユーティリティ
-
-  スロット（= Dyn 化しうるユーザー型注釈）を **ソース出現順（pre-order DFS,
-  left-to-right）で 1..N に番号付け**し、選択された番号の注釈を `?` (TyDyn) に置換する。
-
-  1 スロットの内訳:
-    - 非合成 FunExp の仮引数注釈                     … 1 スロット
-    - 非合成 FixExp（`fix f (y:u1) h1 h2 … : R = body`）
-        * param スロット群: y ＋ head Fun 鎖 h1..hk を外→内で (1+k) 個
-          （y ↔ u1、hi ↔ u2 の第 i ドメイン ＝ FunExp 注釈、を同期して Dyn 化）
-        * return スロット: R（u2 の末尾。body 適用後の先頭が AscExp なら注釈も同期）
-        以上 (1+k)+1 スロットを param → return の順で消費し、その後 body(head 鎖を除く)へ再帰
-    - 合成名（`_for_loop` 等）の Fun/Fix はスロットを消費しない
-
-  1 回の pre-order 走査 `walk` が「数える(analyze)」と「適用(mutate)」の両方を担う。
+(* 
+   Mutation of ML sources: 
+   number the Dyn-able type annotations ("slots") in source order,
+   replace a chosen subset with `?`, match untyped/typed slots, and choose which subsets to run.
 *)
 
 open Utils.Error
@@ -24,16 +12,11 @@ module IntSet = Set.Make (Int)
 
 (* ---------- ユーティリティ ---------- *)
 
-(* "_" で始まる id はパーサが糖衣構文展開時に合成した名前（_match_arg, _for_loop,
- * _while_loop 等）。レキサの ID 規則は小文字始まりのみを許すため、ユーザーが
- * 書いたコードにはこの形の名前は絶対に現れない。これらは変異の対象から除外する。 *)
+(* True for parser-generated names (leading '_'); these never get slots. *)
 let is_synthetic (x : id) : bool =
   String.length x > 0 && x.[0] = '_'
 
-(* 非合成 FixExp（= ユーザーが書いた let rec）の名前を出現順に集める。
-   return スロットを持つのはこれらの関数だけなので、grift 側
-   （bench_grift.ml）はこの名前集合を受け取り、対応する define にだけ
-   返り値型スロットを割り当てる。 *)
+(* Names of user-written `let rec`s in source order (used to align grift return-type slots). *)
 let fix_names (t : exp) : id list =
   let rec go acc = function
     | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ -> acc
@@ -72,11 +55,11 @@ let collect_head_funs (e : exp) : (range * id * anotated * ty) list * exp =
 
 (* ---------- 出現順の 1 パス走査 ---------- *)
 
-(* sel = None      : スロットを数えるだけ（変換しない）
-   sel = Some s    : s に含まれるスロット番号の注釈を TyDyn 化
-   戻り値 = (消費したスロット数, 変換後の式) *)
-let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
-  let recur k e = walk sel k e in
+(* Single pre-order walk that both counts slots and Dyn-ifies the selected ones.
+   k = slots consumed so far; returns the new count and the rewritten expression. *)
+let rec walk ?(on_slot = fun _ _ -> ()) (sel : IntSet.t option) (path : id list) (k : int) (t : exp) : int * exp =
+  let recur k e = walk ~on_slot sel path k e in
+  (* u, or TyDyn if this slot is selected. *)
   let dyn_if slot u = match sel with
     | Some s when IntSet.mem slot s -> TyDyn
     | _ -> u
@@ -85,11 +68,14 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   match t with
   | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ -> (k, t)
 
+  (* Parser-generated fun: no slot, just recurse. *)
   | FunExp (r, (x, annot, u), e) when is_synthetic x ->
     let k1, e' = recur k e in
     (k1, FunExp (r, (x, annot, u), e'))
+  (* User fun: its parameter annotation is one slot. *)
   | FunExp (r, (x, annot, u), e) ->
     let slot = k + 1 in
+    on_slot slot path;
     let u' = dyn_if slot u in
     let annot = if u' = TyDyn then Expl else annot in
     let k1, e' = recur slot e in
@@ -98,6 +84,8 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
   | FixExp (r, x, (y, annot, u1), u2, e) when is_synthetic x ->
     let k1, e' = recur k e in
     (k1, FixExp (r, x, (y, annot, u1), u2, e'))
+  (* User let rec: one slot per parameter (the first plus the leading funs of the body), then one
+     for the return type. Each parameter slot updates both the fun annotation and u2's domain. *)
   | FixExp (r, x, (y, annot, u1), (annot2, u2), e) ->
     let heads, rest = collect_head_funs e in
     let doms, ret = split_arrows u2 in
@@ -105,6 +93,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     (* param スロット: k+1 = y/u1, k+1+i = heads[i-1]/doms[i-1] (i=1..n_heads)
        return スロット: k+1+n_heads+1 *)
     let ret_slot = k + n_heads + 2 in
+    for slot = k + 1 to ret_slot do on_slot slot path done;
     let u1' = dyn_if (k + 1) u1 in
     let annot = if u1' = TyDyn then Expl else annot in
     let doms' = List.mapi (fun j d -> dyn_if (k + 2 + j) d) doms in
@@ -122,6 +111,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     let annot2 = if ret_selected then Expl else annot2 in
     let u2' = (annot2, build_arrows doms' ret') in
     let k1, rest' = recur ret_slot rest in
+    (* Keep a body-level return ascription in sync with the return slot. *)
     let rest'' = match rest' with
       | AscExp (rA, eInner, uA) ->
         AscExp (rA, eInner, (if ret_selected then TyDyn else uA))
@@ -133,6 +123,7 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     in
     (k1, FixExp (r, x, (y, annot, u1'), u2', e'))
 
+  (* Other nodes: no slot; thread k through the children left to right. *)
   | AscExp (r, e, ty)   -> let k1, e' = recur k e in (k1, AscExp (r, e', ty))
   | RefExp (r, e)       -> let k1, e' = recur k e in (k1, RefExp (r, e'))
   | DerefExp (r, e)     -> let k1, e' = recur k e in (k1, DerefExp (r, e'))
@@ -144,8 +135,10 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, AppExp (r, e1', e2'))
   | ConsExp (r, e1, e2) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, ConsExp (r, e1', e2'))
+  (* Slots inside e1 get id appended to their let-path (used by slot_keys). *)
   | LetExp (r, id, e1, e2) ->
-    let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, LetExp (r, id, e1', e2'))
+    let k1, e1' = walk ~on_slot sel (path @ [id]) k e1 in
+    let k2, e2' = recur k1 e2 in (k2, LetExp (r, id, e1', e2'))
   | SubstExp (r, e1, e2) ->
     let k1, e1' = recur k e1 in let k2, e2' = recur k1 e2 in (k2, SubstExp (r, e1', e2'))
   | MakeArrayExp (r, e1, e2) ->
@@ -181,16 +174,83 @@ let rec walk (sel : IntSet.t option) (k : int) (t : exp) : int * exp =
     in
     (k1, TupleExp (r, List.rev es_rev))
 
+(* Total number of slots in a term. *)
 (* スロット総数 *)
-let analyze (t : exp) : int = fst (walk None 0 t)
+let analyze (t : exp) : int = fst (walk None [] 0 t)
 
 (* ---------- 公開 API ---------- *)
 
+(* Replace the annotations of the given slot numbers (1-based) with `?`. *)
 let mutate_term_with_indices (idxs : int list) (t : exp) : exp =
   let sel = List.fold_left (fun s i -> IntSet.add i s) IntSet.empty idxs in
-  snd (walk (Some sel) 0 t)
+  snd (walk (Some sel) [] 0 t)
 
-(* 0..n のすべての部分集合を要素数順に全列挙（昇順）。ML 側と grift 側で共有する列挙順。 *)
+(* ---------- untyped <-> typed slot matching ---------- *)
+(* typed sources may split a polymorphic function into monomorphic copies, so slot numbers need not line up *)
+
+(* canonical let-path, ordinal within that path *)
+type slot_key = id list * int
+
+(* e.g. "two/f#1", or "<top>#0" for a slot outside any let. For error messages. *)
+let string_of_slot_key ((path, ord) : slot_key) : string =
+  Printf.sprintf "%s#%d" (if path = [] then "<top>" else String.concat "/" path) ord
+
+(* slot_key of every slot, in slot-number order. *)
+let slot_keys ~(canon : id -> id) (t : exp) : slot_key list =
+  let paths = ref [] in
+  ignore (walk ~on_slot:(fun _ path -> paths := path :: !paths) None [] 0 t);
+  let seen = Hashtbl.create 16 in
+  List.map (fun path ->
+    let ord = Option.value (Hashtbl.find_opt seen path) ~default:0 in
+    Hashtbl.replace seen path (ord + 1);
+    (List.map canon path, ord)
+  ) (List.rev !paths)
+
+(* All let-bound names (to check that the mono_copies table names exist). *)
+let let_names (t : exp) : id list =
+  let names = ref [] in
+  let rec go = function
+    | Var _ | IConst _ | BConst _ | UConst _ | FConst _ | CConst _ | SConst _ | NilExp _ -> ()
+    | LetExp (_, x, e1, e2) -> names := x :: !names; go e1; go e2
+    | FixExp (_, _, _, _, e) | FunExp (_, _, e) | AscExp (_, e, _) | RefExp (_, e)
+    | DerefExp (_, e) | LengthExp (_, e) -> go e
+    | BinOp (_, _, e1, e2) | AppExp (_, e1, e2) | ConsExp (_, e1, e2)
+    | SubstExp (_, e1, e2) | MakeArrayExp (_, e1, e2) | GetExp (_, e1, e2) | WhileExp (_, e1, e2) ->
+      go e1; go e2
+    | IfExp (_, e1, e2, e3) | ForExp (_, _, e1, e2, _, e3) | PutExp (_, e1, e2, e3) ->
+      go e1; go e2; go e3
+    | MatchExp (_, e, ms) -> go e; List.iter (fun (_, me) -> go me) ms
+    | TupleExp (_, es) -> List.iter go es
+  in
+  go t;
+  List.rev !names
+
+(* Match untyped slots to typed slots by equal slot_key; error if either side has an unmatched slot. *)
+let correspond ~(untyped : exp) ~(typed : exp) ~(canon : id -> id) : (int list array, string list) result =
+  let ku = Array.of_list (slot_keys ~canon:Fun.id untyped) in
+  let kt = slot_keys ~canon typed in
+  let map = Array.make (Array.length ku) [] in
+  let index = Hashtbl.create 16 in
+  Array.iteri (fun i k -> Hashtbl.replace index k i) ku;
+  let orphans_t =
+    List.concat (List.mapi (fun j k ->
+      match Hashtbl.find_opt index k with
+      | Some i -> map.(i) <- map.(i) @ [j + 1]; []
+      | None -> [Printf.sprintf "typed slot %d (%s) has no untyped counterpart" (j + 1) (string_of_slot_key k)]
+    ) kt)
+  in
+  let orphans_u =
+    List.concat (List.mapi (fun i k ->
+      if map.(i) = [] then
+        [Printf.sprintf "untyped slot %d (%s) has no typed counterpart" (i + 1) (string_of_slot_key k)]
+      else []
+    ) (Array.to_list ku))
+  in
+  match orphans_u @ orphans_t with
+  | [] -> Ok map
+  | errs -> Error errs
+
+(* All 2^n subsets of {1..n}, ordered by size, then lexicographically. *)
 let all_subsets_by_length (n : int) : int list list =
   let rec range a b = if a > b then [] else a :: range (a + 1) b in
   let xs = range 1 n in (* [1; 2; ...; n] *)
@@ -208,21 +268,8 @@ let all_subsets_by_length (n : int) : int list list =
   in
   loop 0 [] |> List.concat
 
-(* all_subsets_by_length の全列挙 (2^n 通り) が現実的でないほどスロット数 n が大きい
-   対象（GTP_benchmark 等）向けのランダムサンプリング版。
-   fully-typed（空集合）と fully-dynamic（全要素）の2点は必ず両端として残し、
-   残り (samples_per_slot * n - 2) 個を要素数 1..n-1 の部分集合から重複なく
-   ランダムに抽出する。合計はちょうど samples_per_slot * n 件
-   （候補が尽きた場合はその時点までに見つかった分だけ）。
-
-   乱数は OCaml の大域 Random ではなく、(n, samples_per_slot) から決定的に
-   種付けしたローカルな Random.State を使う。ALHMT（基準点）と
-   --eager/--hash/--monotonic 等のアブレーション軸、さらに ML 側と
-   grift 側（bench_grift.ml も同じ関数を同じ引数で呼ぶ）とで、同じ
-   mutant_index が実際に同じスロット選択を指すという保証がこれで初めて成り立つ。
-   大域 Random だと、それまでに何個の対象を処理したか（＝何回 Random.int を
-   消費したか）で結果が変わってしまい、対象の指定順序や本数を変えるだけで
-   同じベンチマークの mutant 集合ごと変わってしまう。 *)
+(* Deterministic sample: {} and {1..n} plus random distinct middle subsets,
+   samples_per_slot * n in total, sorted by size. *)
 module IntListSet = Set.Make (struct
   type t = int list
   let compare = compare
@@ -234,6 +281,7 @@ let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list
     let rng = Random.State.make [| n; samples_per_slot |] in
     let xs = Array.init n (fun i -> i + 1) in
     let full = Array.to_list xs in
+    (* Random subset of size 1..n-1 (partial Fisher-Yates shuffle), sorted. *)
     let random_subset () =
       let k = 1 + Random.State.int rng (n - 1) in (* k in [1, n-1] *)
       let a = Array.copy xs in
@@ -246,6 +294,7 @@ let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list
       done;
       Array.to_list (Array.sub a 0 k) |> List.sort compare
     in
+    (* Draw until enough distinct subsets are found or the attempt budget runs out. *)
     let target_middle = max 0 ((samples_per_slot * n) - 2) in
     let max_attempts = (target_middle * 30) + 100 in
     let rec go attempts_left seen =
@@ -259,3 +308,8 @@ let sample_subsets_by_length ~(samples_per_slot : int) (n : int) : int list list
     in
     [] :: middle @ [ full ]
   end
+
+(* Full enumeration below the threshold, sampling at or above it. *)
+let subsets_auto ~(threshold : int) ~(samples_per_slot : int) (n : int) : int list list =
+  if n < threshold then all_subsets_by_length n
+  else sample_subsets_by_length ~samples_per_slot n
