@@ -97,7 +97,7 @@ let color_at (x : float) (y : float) =
   int_of_float (round ((sendray eye ray) *. 255.0));;
 
 let tracer (res : int) =
-  let extent = res * 10 in
+  let extent = res * 100 in
   (**)
   print_char 'P';
   print_int 2;
