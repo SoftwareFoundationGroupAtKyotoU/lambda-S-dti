@@ -126,6 +126,13 @@ I6（`lib/backend/toC.ml` の `toC_fundef`）は、alt モードのすべての 
 
 I1（`lib/backend/toC.ml` の `prim1_*`/`prim2_*`）のうち、fmin/fmax の展開は「部分適用 `AppMDir (fmin_ml, a)` の直後に本適用 `AppMCls (t, b)`/`AppDCls (t, (b, k))`」という形にだけ当たる。`AppM*` は alt 変換（`Translate.Cls.altCls`）でしか生まれないので、alt なし（`-c`、モード S）では fmin/fmax は一度も展開されず、毎回部分適用のクロージャを確保する。alt なしでの形（`AppDDir (fmin_ml, (a, k1))` の結果に `AppDCls (t, (b, k2))`。k1 は部分適用の結果に対する恒等など）にもパターンを足す。sqrt 等の 1 引数版は `AppDDir` でも展開されるが、`k` が静的に恒等と分かる場合に `apply_coerce` を省けるかも確認する。あわせて、`toC_exp`（末尾）と `toC_assign`（代入）に同じパターンが 3 つずつ重複しているのを1か所にまとめる。
 
+## トップレベル変数のグローバル化（I4）を必要なものに絞る
+
+I4（`lib/backend/closure.ml` の `spine_vars`/`globals`、`toC.ml` の `decl_value`/`globalize_cls_stms`）は、メインの式の背骨（`let ... in` の本体側の連なり）で束縛される変数をすべて C の `static value` にする。生成コードを見ると、次の2点が過剰になっている。
+
+- 背骨の k-正規化の一時変数（配列の長さ、`f 1; f 2` の結果など）まですべて static になる。main の中の一時変数がレジスタに載らず、main で回るループがあると毎回メモリを読み書きする。グローバルにする必要があるのは、関数の本体（`toplevel` の fundef）から参照される背骨の変数だけ。
+- 背骨の関数は、値として一度も使われず直接呼ばれるだけでも、必ずクロージャを `GC_MALLOC` する（`closure.ml` の `|| V.mem x !globals`）。1 回の実行につき関数1つあたり1回だけ（背骨はループの中に入らない）だが、ベンチの `mem` には上乗せされる。I4 の前は、値として使われない関数のクロージャは作っていなかった。全 fundef の本体とメインの式で「値として」参照されるものだけ作る。
+
 ## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
 
 `samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
