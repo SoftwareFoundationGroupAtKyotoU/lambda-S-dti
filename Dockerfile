@@ -73,48 +73,8 @@ ENV CXX=clang++-18
 # -----------------------------------------------------------------------------
 # 5. ENTRYPOINT スクリプトの作成と設定
 # -----------------------------------------------------------------------------
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-COMMAND=$1\n\
-# 引数が何も指定されなかった場合は bash を起動する\n\
-if [ -z "$COMMAND" ]; then\n\
-  exec /bin/bash\n\
-fi\n\
-shift\n\
-\n\
-case "$COMMAND" in\n\
-  bench)\n\
-    # bind mount した logs/ が root 所有になって、毎回 sudo chown する羽目にならないよう、\n\
-    # docker run 側で -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) を渡しておけば\n\
-    # 実行後に自動で呼び出し元ユーザーの所有に戻す。exec だと後続処理が走らないので\n\
-    # ここだけ通常実行にして、終了コードを保ったまま exit する。\n\
-    # 過去の logs/ 全体を毎回 chown -R すると遅いので、実行前に logs/ 直下の一覧を\n\
-    # 控えておき、今回の実行で新しく増えたエントリ（logs/<timestamp>/）だけを対象にする。\n\
-    before=$(ls -A /app/logs 2>/dev/null || true)\n\
-    set +e\n\
-    dune exec ./_build/default/bin/bench.exe -- "$@"\n\
-    status=$?\n\
-    set -e\n\
-    if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then\n\
-      chown "${HOST_UID}:${HOST_GID}" /app/logs 2>/dev/null || true\n\
-      for entry in $(ls -A /app/logs 2>/dev/null); do\n\
-        if ! grep -qxF -- "$entry" <<< "$before"; then\n\
-          chown -R "${HOST_UID}:${HOST_GID}" "/app/logs/$entry" 2>/dev/null || true\n\
-        fi\n\
-      done\n\
-    fi\n\
-    exit "$status"\n\
-    ;; \n\
-  main)\n\
-    exec dune exec ./_build/default/bin/main.exe -- "$@"\n\
-    ;;\n\
-  *)\n\
-    # 上記以外（bashなど）が指定された場合はそのまま実行\n\
-    exec "$COMMAND" "$@"\n\
-    ;;\n\
-esac\n\
-' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # コンテナの入り口をスクリプトに固定
 # (/app の外に置くことで、`-v $(pwd):/app` で host のリポジトリを
