@@ -133,6 +133,14 @@ I4（`lib/backend/closure.ml` の `spine_vars`/`globals`、`toC.ml` の `decl_va
 - 背骨の k-正規化の一時変数（配列の長さ、`f 1; f 2` の結果など）まですべて static になる。main の中の一時変数がレジスタに載らず、main で回るループがあると毎回メモリを読み書きする。グローバルにする必要があるのは、関数の本体（`toplevel` の fundef）から参照される背骨の変数だけ。
 - 背骨の関数は、値として一度も使われず直接呼ばれるだけでも、必ずクロージャを `GC_MALLOC` する（`closure.ml` の `|| V.mem x !globals`）。1 回の実行につき関数1つあたり1回だけ（背骨はループの中に入らない）だが、ベンチの `mem` には上乗せされる。I4 の前は、値として使われない関数のクロージャは作っていなかった。全 fundef の本体とメインの式で「値として」参照されるものだけ作る。
 
+## 計測中の CPU 周波数を固定する
+
+計測マシンのコアはどれも同じ性能（0.8〜3.9GHz）で、周波数は schedutil ガバナが負荷に応じてコアごとに動的に上下させる。`--cpu N`（taskset）はコア間の移動を防ぐだけで、周波数は揃わない。立ち上がりは warmup（5 回）で吸収しているが、計測値のばらつきの原因として残りうる。
+
+- root が使える計測環境なら、計測中だけ固定したコアを performance ガバナにする（`cpupower frequency-set -g performance -c N`、または `scaling_governor` に書く）か、`scaling_min_freq` を最大に上げる。ターボの有無もそろえる
+- root が使えないなら、各計測の前後で `/sys/devices/system/cpu/cpuN/cpufreq/scaling_cur_freq` を記録し、低い周波数で走った run を見分けられるようにする
+- `94a4749` の元のコミットメッセージにあった「2.0GHz のコアと 3.9GHz のコアがある」は、ある瞬間の `cpu MHz` を見た誤解（コアの性能差ではない）
+
 ## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
 
 `samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
