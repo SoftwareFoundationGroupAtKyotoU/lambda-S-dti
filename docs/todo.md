@@ -122,6 +122,10 @@ I6（`lib/backend/toC.ml` の `toC_fundef`）は、alt モードのすべての 
 
 どちらも、現状との差は判定 1 回分なので、ベンチ（特に関数呼び出しの多い tak/fib/church）で効果を測ってから決める。
 
+## float 組み込み関数のインライン展開（I1）を alt なし（`-c`）でも効かせる
+
+I1（`lib/backend/toC.ml` の `prim1_*`/`prim2_*`）のうち、fmin/fmax の展開は「部分適用 `AppMDir (fmin_ml, a)` の直後に本適用 `AppMCls (t, b)`/`AppDCls (t, (b, k))`」という形にだけ当たる。`AppM*` は alt 変換（`Translate.Cls.altCls`）でしか生まれないので、alt なし（`-c`、モード S）では fmin/fmax は一度も展開されず、毎回部分適用のクロージャを確保する。alt なしでの形（`AppDDir (fmin_ml, (a, k1))` の結果に `AppDCls (t, (b, k2))`。k1 は部分適用の結果に対する恒等など）にもパターンを足す。sqrt 等の 1 引数版は `AppDDir` でも展開されるが、`k` が静的に恒等と分かる場合に `apply_coerce` を省けるかも確認する。あわせて、`toC_exp`（末尾）と `toC_assign`（代入）に同じパターンが 3 つずつ重複しているのを1か所にまとめる。
+
 ## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
 
 `samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
