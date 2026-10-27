@@ -61,6 +61,14 @@ monotonic reference/array の deref・subst（`GetExp`/`PutExp`/`DerefExp`/`Subs
 
 その際、intern 表は mref/marray のキーを型のポインタで比較する（`hash_crc`/`eq_crc`）ので、構造が同じでもポインタが違う型は共有されない。`compose_mkey` と同じ発想で、has_tv = 0 のキーを代表のポインタに寄せる（Dyn・base 型なら `ty.c` の static な `tydyn`/`tyint` などを使う。複合型まで寄せるなら型の hash-consing が必要）と効果が上がる。
 
+## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
+
+`samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
+
+## testC（C ランタイムの単体テスト）が手薄
+
+`testC/` は Unity で `compose`（libC/crc.c）の結果を手書きのケースと突き合わせるだけで、`coerce`/`apply_coerce` 系（capp.c/capp.h）、`make_s_coercion*`、hash-consing（intern 表・compose cache）、monotonic ref/array（`read_to_dyn`/`write_from_dyn`/`consume`）、型変数の具体化（DTI）などは単体では検査していない。また `testC/dotests.sh` はどこからも呼ばれておらず（CI・`dune runtest`・`compile_test/` のいずれにも入っていない）、ビルド時のフラグも付けないので MONOTONIC/HASH/EAGER 等の構成ではテストしていない。ケースを増やし、構成ごとに回し、`dune runtest` か CI から呼ぶようにする。
+
 ## bench のインタプリタ計測（廃止済み・復活は要検討）
 
 `f2a9c0a`「refactor bench」で bench はコンパイル専用になり、インタプリタの時間/メモリ
