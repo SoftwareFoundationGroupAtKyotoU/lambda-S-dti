@@ -8,6 +8,58 @@
 
 ---
 
+## 型のhash consing
+mref, marrayのcoercionのhash consing導入に必須
+単純に実装しようとすると、DTIの実装の変更が必須
+
+- 背景: monotonic の `C_REF`/`C_ARRAY` の crc は `ty*` をキーに持ち、`intern_table` はポインタで比較する。`unify_meet` は複合型を毎回新しく確保し、DTI で解決された型も型変数ごとに別ノードになるため、型を正規化しないとキーが一致せず intern が効かない。現状は `new_mref`/`new_marray` で `has_tv = 1` に固定しており（安全側）、mref/marray の crc は intern も compose cache も使われない
+- 一度試した実装（取り消し済み）: `ty` に `has_tv` を持たせ、`has_tv == 0` の型を crc と同じ方式の表で intern する（`alloc_ty`、static な型は `set_static_tys` で登録）
+- 問題点: `dti` は複合型の子を `newty()` で作って後から上書きし、基本型にも `*tv = tyint` のコピーで解決する。そのため親の `has_tv` が DTI 後も 1 のまま残り、子も正規ノードにならない。crc の `recompute_has_tv` のように1段見るだけでは足りず（`X := [Y]`, `Y := Y1 -> Y2` など2段以上ネストすると 0 に落ちない）、毎回部分木を再帰的に辿る必要がある
+- toC 側も揃っていない: crc は局所的なもの（crctmp）も `alloc_crc` を通すが、ty の `SetTy` は `GC_MALLOC` して直接代入するだけで生成の入口がない。型を hash cons するなら crc と同じ「テンプレート + `alloc_ty`」に揃えるのがよい（`create_new_ty` がタプル配列をコピーすれば `heap_tuple_arr` も不要）
+- DTI 側の案: 型変数を解決するときに中身を上書きせず `SUBSTITUTED` にして正規ノードを指させれば、子が常に正規ノードになり、再帰的な辿り直しが要らなくなる。ただし `ty_find` の回数が増えるので、その性能とのトレードオフになる
+
+## 小さい heap での計測アーティファクト（仕組みは判明、既定 8MB で回避）
+
+ML 側のベンチ driver は 1 プロセスで全 mutant を順に計測する（`Bench_compiler.generate_bench_sources`）。初期 heap が小さいと、GC の回数が型や cast と無関係な理由で変わり、計測値が大きく動く。ベンチの既定 heap は 8MB（`Bench_config.default_heap_size`、`--heap-size` で変更可、grift 側にも `-m` で同じ値）。
+
+**2026-09-28 に分かったこと**（診断 driver で mutant を単独実行し、GC 回数・GC 後の生存量・ページフォルトを計測）:
+- Boehm は heap が小さいうちは「生存データ量 ÷ free_space_divisor」を確保するごとに GC する。そのため、保守的 GC が古い配列を偽参照で残す（生存量が増える）と、GC の間隔が広がり回数が減って**速くなる**。以前ここに書いた「残ったデータが原因とも言い切れない」はこれで説明がつく（残る方が GC が少ない）。
+- 4MB・array（入力を 500 100000 に増やし配列 1 本 800KB）: 最も静的な mutant などは GC 250 回/実行（約 80ms）、`create_x (n: ?)` を含む mutant などは 200 回以下（約 47ms）に分かれ、cast 数と無関係に時間が 2 値になった。GC 後の生存量は、遅い側が約 10KB、速い側が約 800KB（配列 1 本）。typed/untyped で cast 数が同じ mutant でも側が入れ替わる。8MB では全 mutant が GC 100 回にそろい解消（16MB でも 50 回にそろう）。以前 4MB で再現しなかったのは、配列が 400KB（heap の 1/10）だったため。
+- fsm の tvs_opt on/off の逆転（off が約 6% 速い）も同じ仕組みで、4MB では off の生存量がわずかに多く GC が 6% 少なかった。8MB では GC 回数がそろい（322 対 326）、off が 3% 遅いという仕事量どおりの結果になる。
+- 1MB は GC がさらに多く、同じバイナリでも別プロセスで GC 回数が変わる（fft で最大 118 回、時間で最大 28% の差）。
+- 逆に 16MB 以上では、1 回の確保が少ない church（約 2.3MB/回）が warmup 5 回で heap を一周しきれず、計測中にもページフォルト（約 600 回/実行）が入り、最も静的な mutant が 1.5〜2 倍遅く測られる。8MB なら warmup 中に一周し終わる。
+- 以上から既定を 8MB にした。array 以外のベンチ（loop/tak/blacksholes/n_body/fft/quicksort/fsm）は 1〜64MB の範囲で、「最も静的な mutant に対する比」の変化が別プロセス間のばらつき（5〜12%、短い church/quicksort は 20〜50%）の範囲に収まった。
+
+以下は 1MB 時代の記録。
+
+- 症状: `logs/20260926-19:17:54` の array で、hash あり/なしの幾何平均比が 1.7 倍。heap は 2.7MB で頭打ちのまま、hash ありだけ GC 回数が mutant あたり約 335 回から 657〜1000 回に増え、プロセスの最後までその状態が続く。
+- 再現性: clang 18.1.8 + libgc 7.6.4 はホストも Docker も同じ。それでも同じバイナリを繰り返し実行すると、比が 1.7 になる回と 1.0 付近の回がある（2026-09-27、Docker で 1MB を 6 回実行して 2 回再現。ホストでは 1 回試して再現せず）。アドレス配置（ASLR）への依存が疑われる。mutant 11 と 13 だけをリンクした最小構成では再現しなかった。
+- 分かっていること（診断用 driver: `logs/20260927-11:57:52/bench/*_diag*.c`）:
+  - 各 mutant の後に `GC_gcollect()` を呼んでも、hash あり/なしの両方で 400KB 単位（array の配列 1 本 = 5 万要素 × 8B）、最大 1.2MB のデータが回収されずに残る。残っているのは intern 表ではなく、以前の実行の配列と思われる。
+  - その前に 128KB 分のスタックをゼロクリアしても、残る量は変わらない。つまりスタック上の古い値が原因ではない。静的領域・レジスタ・heap 内の別オブジェクトのどれから参照されているかは未調査。
+  - hash なしでも同程度に残るのに、GC 回数は増えない。そのため「残ったデータが原因」とも言い切れていない。
+  - mutant 間に `GC_gcollect()` を挟むと 8 回とも比は 0.94〜1.10 に収まった。ただし hash ありの GC 回数が 3 割ほど増える mutant は 70 個中 5〜9 個残った。挟まない版も多くの回で 1 付近なので、効果は判断できない。
+- heap サイズを変えた比較（Docker、array、各 6 回）:
+
+  | 初期 heap | H/h（6 回分） | hash ありの GC 回数 最大/中央値 |
+  |---|---|---|
+  | 1MB | 1.02 1.05 1.71 1.06 1.73 1.02 | 1.50〜2.99 |
+  | 4MB | 1.01〜1.02 | 1.00 |
+  | 8MB | 1.00〜1.01 | 1.01 |
+  | 16MB | 0.99〜1.02 | 1.00 |
+
+- 残作業:
+  - 何が配列を参照し続けているのかを特定する（Boehm の `GC_DEBUG` + `GC_generate_random_backtrace` などを使う）。
+  - 大きな配列を `GC_MALLOC_IGNORE_OFF_PAGE` で確保すると、内部ポインタによる偽参照が減るかどうかも試す価値がある。
+
+## mutant のサンプリングがホスト（OCaml 4.14）と Docker（OCaml 5.2）で異なる
+
+スロット数が `mutation_slot_threshold`（6）以上の対象は `Mutate.sample_subsets_by_length` で部分集合を抽出する。種は `(n, samples_per_slot)` から作る `Random.State` なので同じ環境なら毎回同じだが、OCaml 5.0 で乱数生成器のアルゴリズムが変わったため、ホスト（4.14.1）と Docker（5.2.0）では同じ `mutant_index` が別のスロット選択を指す（2026-09-29 確認: `logs/fsm`（09-27）と `logs/final` の fsm（09-29）はどちらも Docker で 650 件すべて一致。ホストで生成したものとは 1 番と最後の番号以外が違う）。
+
+- 影響: ホストで流す `compile_test/mutation_test.sh` / `test/check_mutants.exe` / ホストでの `bench.exe` は、Docker で計測した mutant とは別の mutant を検査している。loop（5 スロット）と tak（4 スロット）は全列挙なので影響しない。
+- 当面の対策: 計測した mutant そのものを検査したいときは Docker の中で流す。ホストのログと Docker のログを `mutant_index` で突き合わせない。
+- 恒久対策の案: 自前の小さな PRNG（xorshift など）に置き換えて OCaml のバージョンに依存しないようにする。ただし抽出される mutant が変わり、`logs/final` と対応しなくなるので、論文用の計測が終わってから行う。
+
 ## stdlib の CUnimplementedを消す
 
 ## 「Boxed」的な汎用タグの導入
@@ -59,7 +111,7 @@ monotonic reference/array の deref・subst（`GetExp`/`PutExp`/`DerefExp`/`Subs
 
 `new_mref` の時点で `u` を `ty_find` しながら辿り、型変数が残っていなければ `has_tv = 0` にすれば、実行時の mref/marray crc も hash-consing の対象にできる。型を辿るコストとの兼ね合いなので、ベンチで効果を確かめてから入れる。
 
-その際、intern 表は mref/marray のキーを型のポインタで比較する（`hash_crc`/`eq_crc`）ので、構造が同じでもポインタが違う型は共有されない。`compose_mkey` と同じ発想で、has_tv = 0 のキーを代表のポインタに寄せる（Dyn・base 型なら `ty.c` の static な `tydyn`/`tyint` などを使う。複合型まで寄せるなら型の hash-consing が必要）と効果が上がる。
+その際、intern 表は mref/marray のキーを型のポインタで比較する（`hash_crc`/`eq_crc`）ので、構造が同じでもポインタが違う型は共有されない。`compose_mkey` と同じ発想で、has_tv = 0 のキーを代表のポインタに寄せる（Dyn・base 型なら `ty.c` の static な `tydyn`/`tyint` などを使う。複合型まで寄せるなら型の hash-consing が必要）と効果が上がる。複合型まで寄せる方法は、上の「型のhash consing」の節を参照。
 
 ## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
 
@@ -92,6 +144,114 @@ mutation 後プログラムがインタプリタで評価まで通るかの回�
 - `libC/capp.c` の `coerce` 内（monotonic ref/array を即時に変換した直後）の `consume()` 2 か所は、toC が出力する Subst/Put と違って `consume_pending()` になっていない。意味は同じなので、揃えるかどうかは任意。
 - `libC/crc.c` の compose cache は GC のスキャン対象外で、「has_tv == 0 の crc は intern 済みか static」という不変条件をコメントだけで守っている（`ensure_compose_cache`）。has_tv == 0 の crc を `alloc_crc` 以外の経路で作るコードを足すと黙って壊れるので、デバッグビルドで検査する仕組みを検討する。
 - `compile_test/dotests.sh` のオプション一覧に hash-consing（`-h`）を有効にした組み合わせがない。HASH モードは `compile_test/mutation_test.sh` の 9 プログラムでしか検証されていない。
+
+## monotonic ref/array の deref/subst/get/put（`Some u` 経路）の追加最適化
+
+`lib/backend/toC.ml` の `make_s_coercion_call`（静的型 u に合わせて、実行時型 rtti を辿る crc 生成コードをコンパイル時に展開する）に残っている改善候補（2026-09-27 に検討）。
+
+- **ref/array 要素の読み出しは実質恒等かもしれない**: `TyRef`/`TyArray` の `to_mref`/`to_marray` は、格納されている ref の実行時型と静的型 T の `meet` を取る。monotonic の不変条件（外側の実行時型は、どのビューの静的型と比べても同じかより精密で、格納値自身の実行時型はさらにそれと同じかより精密）が成り立つなら、この meet は何も変えないので、`coerce` を呼ばずに値をそのまま返せる。ただし、型変数（`TYVAR`/`SUBSTITUTED`）が絡む場合（DTI で後から解決される型を含むとき）にも成り立つかは未確認。確認できれば、読み出し側の `TyRef`/`TyArray` 分岐を削れる
+- **複合型分岐の `rtti == DYN` の枝がデッドかどうか**: `Some u` になるのは u が Dyn を含む非静的型のとき（`translate.ml` の `is_static_type`）で、上の不変条件なら rtti の最外は u と同じ型構成子になるはず。`TyList`/`TyTuple`/`TyFun` の `DYN` 分岐（`dyn_branch`）が実際に通るかは、上と同じく型変数絡みを含めた確認が要る
+- **「u 専用の読み書き関数」を生成する案は効果が小さい見込み**: `read_to_dyn`/`write_from_dyn`（`libC/capp.h`）を一般の u に広げる案を検討した。crc を割り当てずに済むのは、値がその場で決まる即値（Dyn・基底型）の位置だけで、そこは既存の関数ですでにカバーされている。関数や lazy なリスト・タプルは遅延ラッパーが必要なので、crc（相当）の割り当ては避けられない。静的型が基底型の場合は `None` 経路（直接アクセス）になるので、トップレベルで基底型専用の関数が呼ばれることもない。やるなら、ベンチで `make_s_coercion_call` 経路の割合を見てから判断する
+
+## `?` 型の配列・ref を読んだ直後の射影（array/quicksort で cast 数が Grift の 1.5〜1.7 倍）
+
+2026-09-27 に調査・試作した。効果は確認できたが、論文で説明しにくいので一旦差し戻した。後で「さらなる最適化」として実装する。
+
+**現象**（logs/20260926-19:17:54、untypedALHMT と GRIFTCM の比較）: array の mutant（#26/#36/#52/#70）は当方 15.0M に対して Grift 10.0M。quicksort の mutant（#4 は 709,105 に対して 406,705、#15/#37/#100 も同様）。
+
+**原因**: array #26 の `create_y (x: ?)` のループでは、`result.(k) <- x.(k)` 1 回ごとに次の 3 つの cast を実行している。
+1. `apply_coerce_proj(x, G_AR)`：`x : ?` を配列へ射影する
+2. `read_to_dyn`：静的な要素型 `?` で読むため、実行時型 int の要素を inject する
+3. `apply_coerce_proj(_, G_INT)`：`? ⇒ int`
+
+Grift（`rt_dyn_mvec_ref`）は 2 と 3 だけを数える。Grift の cast-profiler はコンパイル時に挿入した inject/project の箇所だけを数え、動的な vector-ref の中で行う配列のタグ検査は数えない。したがって、差の 5M は表面上は計数の定義の違いである。ただし当方には、次の 2 つの実際の無駄がある。
+- **inject → project の往復**: 実行時型が int なら `int ⇒ ? ⇒ int` は合成すると恒等だが、毎回タグを付けて外している（Grift も同じ往復をしている）
+- **支配された同じ射影の再実行**: 関数冒頭の `Array.length x` で `x` の `?⇒Array` 射影はすでに成功しているのに、ループ内の `x.(i)` のたびに同じ射影をやり直している
+
+**試作した実装**（いずれも `lib/backend/toC.ml` と `libC/capp.h` のみで完結する）:
+- **読み出しと射影の融合**: Cls 上で `let t = y.(z)@? in (let c = <coercion> in)* let w = t<c> in rest` の形を探す。条件は、c が `fast_proj` に登録された基底型の射影であり、t が rest で使われていないこと。見つかったら `w = read_to_ground(elem, u, G, rid, pol)` の 1 回に置き換える（`Deref (_, Some TyDyn)` も同様）。`read_to_ground` は次のように振る舞う。
+  - 実行時型 u が G なら値をそのまま返す（PROFILE では cast 1 回として数える）
+  - u が Dyn なら `apply_coerce_proj` だけを行う
+  - それ以外（別の基底型・TYVAR 等）は `apply_coerce_proj(read_to_dyn(v, u), ...)` に戻すので、blame ラベルも含めて意味は変わらない
+- **支配された射影の除去**（`elim_redundant_proj`）: toC の前に Cls → Cls の変換を 1 回かける。純粋なタグ検査だけの射影（`fast_proj`/`fast_proj_tp`）について、同じ変数への同じ種類の射影が支配位置の let ですでに束縛されていれば、`Let (w, Var 既存の結果)` に置き換える。Cls の変数は単一代入なので、avail を let 連鎖に沿って下へ流すだけでよい。If/Match/For/While の内側で束縛したものは外へ持ち出さない
+
+**試作での効果**（PROFILE の cast 数。時間は修正前後のバイナリを交互に 40 回ずつ走らせた最小値で、プロセス起動を含む）:
+
+| mutant | 修正前 | 試作 | Grift |
+|---|---|---|---|
+| array #26 | 15,000,602 | 5,000,502 | 10,000,702 |
+| array #36/#52/#70 | 15.0M | 5.0M | 10.0M |
+| quicksort #4 | 709,105 | 406,705 | 406,705 |
+| quicksort #15 | 735,671 | 426,630 | 433,271 |
+| quicksort #37 | 788,801 | 473,119 | 466,477 |
+| quicksort #100 | 1,932,468 | 1,112,814 | 1,322,160 |
+
+- 時間は array #26 が 15.6 → 12.1ms、#70 が 16.1 → 12.7ms。quicksort は誤差の範囲で、cast 以外が支配的だった
+- `blame_check` は array #26 で 10,000,300 → 200 になった
+- `dune runtest`、`compile_test/dotests.sh`、`compile_test/mutation_test.sh` はすべて通った。回帰テストとして `compile_test/original/array/` に `dyn_read.ml` と `dyn_read_blame.ml` を置いた（試作と一緒に削除済み）。前者の期待値は `68456`、後者は `a.(0) + 1` の射影位置（line 1, character 25–30）で blame する。どちらも `skip_static` を付ける
+
+**残る論点**:
+- 書き込み側の対称な融合（`Put (_, _, v, Some TyDyn)` の v が直前の基底型 inject だけでできている場合の `write_from_ground`）は未試作。今回のベンチでは効かなかった
+- quicksort の partition の `x = a.(r)`（`?`）をループ内で毎回 `? ⇒ int` 射影している。最初の射影がループ内にあって支配関係がないので、上の除去では拾えず、ループ不変式の巻き上げ（LICM）が必要になる。Grift も同じく毎回射影しているので、cast 数は一致している
+- quicksort で時間が縮まらない主因は、`swap a` を呼ぶたびに `? ⇒ int array` の coercion を新しく割り当てていること（new_crc 91,023）と思われる。これは normalize_tv/alloc_crc 側の課題
+- 論文での位置づけ: 融合は「静的に隣接した coercion の合成を、実行時型が分かる読み出しの時点で行う」ものと説明できる。除去は一般的な CSE なので、DTI/space-efficiency の本筋とは分けて書く必要がある
+
+## 多相関数の coercion テンプレートのキャッシュと、型変数が解決された後に残るコスト（loop で Grift に負ける）
+
+2026-09-27 に調査・試作した。効果は確認できたが、込み入っていて論文で説明しにくいので一旦差し戻した。後で「さらなる最適化」として実装する。
+
+**現象**（logs/20260926-19:17:54、untypedALHMT）: loop #19（`let rec loop (n: ?) (acc: ?) f = ... in let id = fun (x: ?) -> x in ...`）は当方 90ms、Grift 47ms。cast 数はほぼ同じで、1 回あたりのコストが約 2 倍。当方が Grift に負けている loop の mutant は、ほぼ「`acc: ?`、`id` が `? -> ?`、f は注釈なし（推論）」の形（#13/#19/#25/#29）に限られる。f に `?` を付けるだけの mutant（#24/#28/#31/#32）は 24〜32ms で、Grift（62〜65ms）より速い。
+
+**原因**: f の型が型変数 `X1 -> X0` と推論され、`let rec` で一般化されることで、次のコストがかかる。
+- toC は、実行時の型変数（クロージャ環境から読む `_tyN`）を含む coercion を「テンプレート」として出力し、実行のたびに `crctmpN = (crc){...}; alloc_crc(&crctmpN)` で組み立てる。型変数が最初の 2 回の DTI で解決済みでも、毎回 `alloc_crc` → `normalize_tv` → intern 検索をやり直す
+- main で `id : ? -> ?` を `X1 -> X0` へ coerce するので、id は関数プロキシ（`fun_wrapped_call_funcD`）になる。プロキシが持つ `crc2 = C_FUN(ty1!, ty0?)` は、`ty0`/`ty1` が未解決の時点で作られた static な C_TV の coercion で、解決後も C_TV のまま残る。そのため f を呼ぶたびに、引数への `ty1!` の適用（`capp.c` の C_TV 適用）と、継続への `ty0?` の合成（`crc.c` の左 C_TV の合成）で `normalize_tv` が呼ばれ、`new_id` → `alloc_crc` → intern 検索が走る（各 100 万回。型変数は全部解決済み）。`crc2` は `has_tv = 1` のままなので、compose のメモ化にも載らない
+
+**試作した実装 1: テンプレートの出力箇所ごとのキャッシュ**（`lib/backend/toC.ml` のみ）:
+- `Cls.Coercion` でテンプレートを `alloc_crc` している箇所に、ファイルスコープの static なキャッシュ（`crccacheN_e`、`crckeyN_e_i`）を出力する。キーはテンプレート全体（入れ子を含む）に現れる実行時の型変数のポインタの組。キーが一致すれば、子の `alloc_crc` も含めてまとめて飛ばす。入れ子は一番外側だけキャッシュする
+- `alloc_crc` の結果が `has_tv == 0` のときだけ登録する。型変数を含まない crc は後から変わらない（DTI が書き換えるのは TYVAR ノードだけ）ので、キーが一致すれば同じ結果になる。未解決の間は毎回 `alloc_crc` するので、DTI の挙動は変わらない
+- static な型（`&tyint` や `&tyN`）はキーに入れない。解決は一方向で、bench の `set_tysN()` で static な型変数を戻すときにキャッシュも NULL に戻す。bench の driver は `set_tysN()` と `clear_crc_caches()` を必ず対にして呼ぶので、intern 表を捨てたあとに古いポインタが残ることもない
+- キャッシュを出さない条件は次のとおり
+  - 関数本体の `SetTy` が `GC_MALLOC` する型変数をキーに含むもの。呼ぶたびにポインタが変わるので必ず外れる。ただし `For`/`While` の本体では、ループの外で束縛されたものは反復の間変わらないので除外しない
+  - キーが空のもの
+  - 静的に `has_tv = 1` で、かつ C_TV でないもの（キーが実行時の型変数の mref/marray。結果も必ず `has_tv = 1`）
+- エントリ数は 2 にした（FIFO）。church は同じ箇所に 2 つの型が交互に来るので、1 エントリでは取りこぼす
+- ALT で同じテンプレートが `fun_X` と `fun_alt_X` の両方に出力されても、`crctmpN` と同じ単位でキャッシュを共有する（結果はテンプレートとキーだけで決まるので正しい）
+- `toC_crc_dyn`（monotonic の dyn 分岐）は対象外にした。下の 5 ベンチでは出力箇所が 0 だった
+
+**試作 1 の効果**（全 mutant の PROFILE の合計。時間は `GC_INITIAL_HEAP_SIZE=64MB` で K0/K1/K2 を交互に 5 回ずつ計測した中央値。データは `logs/20260927-13:25:18`（キャッシュなし）、`13:27:33`（1 エントリ）、`13:29:25`（2 エントリ））:
+
+| ベンチ | alloc_crc 削減（1 エントリ） | 同（2 エントリ） | 時間比（2 エントリ/なし） |
+|---|---|---|---|
+| loop | 88.0% | 88.0% | 0.78 |
+| church-65536 | 53.5% | 86.4% | 0.74 |
+| tak | 94.6% | 94.6% | 0.98 |
+| array | 97.8% | 97.8% | 0.99 |
+| quicksort | 0% | 0% | 1.00 |
+
+- loop #19 は 87.3 → 73.3ms。テンプレートは 1 回の実行で合計 5 回しか外れない（最初の未解決の 1 回と、解決後の登録の 1 回）。残りの `alloc` 100 万回と `normalize_tv` 200 万回は、上のプロキシによるもので、テンプレートではない
+- quicksort のテンプレートは全部キーが実行時の型変数の `marray_crc`（`has_tv = 1`）で、キャッシュに載らない
+- `dune runtest`、`compile_test/mutation_test.sh`、`compile_test/dotests.sh` はすべて通った
+- array #51 だけ 9.0 → 10.5ms と毎回遅くなった。差分は 1 回の実行で約 100 回しか通らない `create_x` のキャッシュのコードだけなので、コード配置の影響と思われる（未確認）
+
+**残りの差の内訳**（loop #19 の生成 C を手で書き換え、単独ビルド・5 回の最良値で積み重ねて計測。v1 以降は型が解決済みだと分かっている前提の書き換えなので、実装するなら解決済みかどうかの実行時の分岐が要る）:
+
+| 版 | 外したもの | 時間 |
+|---|---|---|
+| 試作 1 のコード | — | 71.4ms |
+| d | プロキシの C_TV の coercion を最初から正規化済みにする | 55.8 |
+| v1 | + 解決済みのテンプレートを静的な高速経路にする（`apply_coerce_proj`、`&crc_inj_INT`） | 50.2 |
+| v2 | + クロージャの環境から型引数 3 つを外す | 41.7 |
+| v3 | + プロキシを経由せず、呼ぶたびの `compose(int?, k)` もやめる | 33.0 |
+| v4 | + id の中の `int?;int!` を汎用の `apply_coerce` から高速経路にする | 28.2 |
+| 参考: #28（f が `?`） | | 30.4 |
+
+**今後の候補**:
+- （libC）C_TV の crc に、`normalize_tv` の結果を覚えさせる。解決済みなら crc 自身に書き戻すか `norm` ポインタとして持たせる。あるいは、プロキシを適用するときに中の coercion を正規化したものへ差し替える。上の d に当たり、効果が最も大きい（約 15ms）
+- （toC）形が決まっているテンプレート（`X?p`、`X!`）は、キャッシュを引く代わりに「`tv` が `BASE_INT` なら `apply_coerce_proj(v, G_INT, …)`」のように、型変数の中身で分岐する高速経路を出力する。試作 1 より安く済む可能性がある（v1）
+- （libC）プロキシに「前回の継続 k とその合成結果」を 1 エントリ覚えさせ、呼ぶたびの compose をなくす（v3 の一部）
+- （libC）汎用の `apply_coerce` に、基底型の射影と注入（`int?;int!` など）の高速経路を足す（v4）
+- 型引数の受け渡し（v2、約 8.5ms）が、この実装で多相に固有なコスト。型変数は DTI とキャッシュのキーに必要なので単純には外せない。カリー化した部分適用のたびにクロージャを割り当てること自体を減らす（uncurry する）ほうが効きそう。時間の大半がコピーではなく割り当て量（GC）だというのは未確認
+- 型の hash consing（上の「型のhash consing」の節）との関係: キーを生のポインタではなく解決後の型の正規ノードにすれば、「呼ぶたびに新しい型変数が、毎回同じ型に解決される」場合もヒットするようになる。ただし、そのテンプレートの `alloc_crc` より前に解決されている必要があり、今のベンチでは伸びしろは小さい見込み
 
 ## テストの TODO（コメントアウトされたまま復活していないケース）
 
