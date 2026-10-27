@@ -41,7 +41,12 @@ typedef tpl_header tpl;
 
 #if !defined(EAGER) && !defined(STATIC)
 
-value tget(tpl*, uint16_t i);
+value tget_wrapped(tpl*, uint16_t i);
+
+static inline value tget(tpl *t, uint16_t i) {
+    if (t->wrap) return tget_wrapped(t, i);
+    return ((tpl_raw*)t)->fields[i];
+}
 
 #endif
 

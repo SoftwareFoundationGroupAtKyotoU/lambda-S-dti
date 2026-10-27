@@ -5,7 +5,7 @@
 #include "ty.h"
 #include "crc.h"
 
-value tget(tpl *t, uint16_t i) {
+value tget_wrapped(tpl *t, uint16_t i) {
     if (t->wrap) {
         tpl_wrap *tw = (tpl_wrap*)t;
         
