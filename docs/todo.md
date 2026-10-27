@@ -113,6 +113,15 @@ monotonic reference/array の deref・subst（`GetExp`/`PutExp`/`DerefExp`/`Subs
 
 その際、intern 表は mref/marray のキーを型のポインタで比較する（`hash_crc`/`eq_crc`）ので、構造が同じでもポインタが違う型は共有されない。`compose_mkey` と同じ発想で、has_tv = 0 のキーを代表のポインタに寄せる（Dyn・base 型なら `ty.c` の static な `tydyn`/`tyint` などを使う。複合型まで寄せるなら型の hash-consing が必要）と効果が上がる。複合型まで寄せる方法は、上の「型のhash consing」の節を参照。
 
+## alt モードの funcD 入口の恒等判定（I6）を呼び出し側の情報で省く
+
+I6（`lib/backend/toC.ml` の `toC_fundef`）は、alt モードのすべての `fun_<name>`（FundefD）の先頭で `k == &crc_id` を判定し、恒等なら双子の `fun_alt_<name>`（FundefM）に乗り換える。呼び出し側で `k` が恒等でないと静的に分かっている場合（`k` が static な非恒等 crc、`CComp` の結果が非恒等と分かる場合など）でも、毎回この判定を通る（-O3 では cmp+分岐 1 回で、乗り換え先はインライン展開か末尾呼び出しの jmp になる）。
+
+- 判定なしの入口（例: `fun_<name>_k`）を別に出力し、`k` が非恒等と静的に分かる AppDDir/AppDCls ではそちらを呼ぶ。クロージャ経由の呼び出しでは `fun` 構造体に入口を1つ足す必要がある
+- 逆に、恒等かどうかを呼び出し側で判定して `funcM`/`funcD` を呼び分ける形（`libC/app.c` の `fun_wrapped_call_funcD` がランタイムでやっているのと同じ）も比較対象。こちらは呼び出し箇所ごとにコードが増え、C ランタイム（app.c・stdlib）からの `funcD` 呼び出しには効かない
+
+どちらも、現状との差は判定 1 回分なので、ベンチ（特に関数呼び出しの多い tak/fib/church）で効果を測ってから決める。
+
 ## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
 
 `samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
