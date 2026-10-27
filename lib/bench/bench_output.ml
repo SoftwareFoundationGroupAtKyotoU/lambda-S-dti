@@ -1,9 +1,15 @@
+(* Per-(mode, file) result file writer. Writes one placeholder record per mutant
+   (after_mutate + empty times); the C driver later fills in times_sec/metrics. *)
+
 (* 出力フォーマット：Json（1ファイルに配列）, JsonLines（NDJSON） *)
 type out_mode = Json | JsonLines
+(* Selected by bin/bench.ml --out. *)
 let out_mode = ref JsonLines  (* 推奨: NDJSON。1行=1ミュータント *)
 
+(* Open channel + "no record written yet" flag (for comma placement in Json mode). *)
 type writer = { oc : out_channel; mutable first : bool }
 
+(* Create <log_dir>/<mode_str>_<file>.jsonl (or .json with an array header). *)
 let open_writer ~log_dir ~mode_str ~file : writer =
   match !out_mode with
   | JsonLines ->
@@ -13,6 +19,7 @@ let open_writer ~log_dir ~mode_str ~file : writer =
     Printf.fprintf oc "{ \"file\": \"%s\", \"mode\": \"%s\", \"mutants\": [\n" file mode_str;
     { oc; first = true }
 
+(* Build one mutant record; metric fields start as null. *)
 let mutant_json ~mode_str ~idx ~after_mutate ~times_sec : Yojson.Safe.t =
   Bench_json.obj [
     ("mode", Bench_json.str mode_str);
@@ -22,6 +29,7 @@ let mutant_json ~mode_str ~idx ~after_mutate ~times_sec : Yojson.Safe.t =
     ("mem", `Null); ("cast", `Null); ("inference", `Null); ("longest", `Null);
   ]
 
+(* Append one record (a line in JSONL, a comma-separated array element in Json). *)
 let write_mutant (w:writer) (j:Yojson.Safe.t) =
   match !out_mode with
   | JsonLines -> Bench_json.to_channel_ln w.oc j
@@ -29,6 +37,7 @@ let write_mutant (w:writer) (j:Yojson.Safe.t) =
     if not w.first then output_string w.oc ",\n";
     Yojson.Safe.to_channel w.oc j; w.first <- false
 
+(* Close the array (Json mode) and the channel. *)
 let close_writer (w:writer) =
   (match !out_mode with Json -> output_string w.oc "\n]}\n" | JsonLines -> ());
   close_out w.oc
