@@ -452,7 +452,7 @@ type grift_compiled_batch = {
 let compile_grift ~log_dir ~itr ~jobs ~static ~files ~monotonicities ~label : grift_compiled_batch =
   let targets = Bench_target.restrict_grift_targets ~monotonicities files in
   let total_targets = List.length targets in
-  (* grift版のソースが存在しないベンチマーク(church-65532 やリストを用いる fold/incsum/map 等、grift と
+  (* grift版のソースが存在しないベンチマーク(church-65536 やリストを用いる fold/incsum/map 等、grift と
      比較不能な言語機能を使うため意図的に .grift を持たない)は、軸制限で
      対象外になったケース(restrict_grift_targets)と同様に「このターゲットを
      grift 比較から外すだけ」の skip として扱い、prepare_failed には

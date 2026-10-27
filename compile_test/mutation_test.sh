@@ -27,7 +27,7 @@ fi
 declare -A EXPECTED=(
   [tak]="9"
   [fib]="9227465"
-  [church-65532]="65536"
+  [church-65536]="65536"
   [evenodd]="true"
   [loop]="0"
   [incsum]="2003000"

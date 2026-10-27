@@ -15,7 +15,7 @@ let grift_benchmarks = [
 let originals = [
   (* "church-2"; *)
   (* "church-4"; *)
-  "church-65532";
+  "church-65536";
   (* "easy"; *)
   "evenodd";
   "fib";
@@ -93,7 +93,7 @@ let inpure_bench_without_eagerness = { eager_only = Some false; monotonic_only =
    あるため、ソースを読むだけでは判定を誤りうる — 例: quicksort は
    swap が単相なのに全体としては DIFFERS になる)。 *)
 let restrictions : (string * axis_restriction) list = [
-  "church-65532", no_restriction;                                    (* DIFFERS *)
+  "church-65536", no_restriction;                                    (* DIFFERS *)
   "evenodd",      no_restriction;
   "fib",          no_restriction;
   "loop",         no_restriction;                                    (* DIFFERS *)
