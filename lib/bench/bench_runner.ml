@@ -1,10 +1,8 @@
 (* コンパイル済みの target を実行・計測するモジュール。コード生成・
    並列コンパイルは Bench_compiler の役目。 *)
 
-(* Pass 3: コンパイルが成功した target のみ、1 つずつ直列に実行・計測する。
-   Pass 2（並列コンパイル、Bench_compiler.compile_targets）が完全に終わった
-   後にしか呼ばれないので、実行中に他 target のコンパイルが裏で走っている
-   ことは無い。 *)
+(* Run the timing binary, then the profiling binary, of one compiled target.
+   Each binary updates its target's JSONL file itself. Raises on non-zero exit. *)
 let run_bench_binaries (j : Bench_compiler.bench_job) =
   Format.fprintf Format.std_formatter "%s@." j.run_cmd;
   let i = Sys.command j.run_cmd in
@@ -13,12 +11,14 @@ let run_bench_binaries (j : Bench_compiler.bench_job) =
   let i = Sys.command j.profile_run_cmd in
   if i != 0 then raise @@ Runner.Build_bad ".out(for profile) fail"
 
+(* Measure one target; a runtime failure is reported as [Skip] and does not stop the others. *)
 let run_measured (p : Bench_compiler.prepared_target) =
   try run_bench_binaries p.b
   with e -> Format.eprintf "[Skip] %s: %s@." p.mode_str (Printexc.to_string e)
 
-let run_batch (b : Bench_compiler.compiled_batch) =
-  List.iter run_measured b.succeeded
+(* Measure every target of an ML-side batch (dynamize or static), one after another. *)
+let run_batch (b : Bench_compiler.batch) =
+  List.iter run_measured b.targets
 
 (* GRIFT側: コンパイル済みの grift target を1つずつ直列に実行・計測する。
    コンパイル(Bench_compiler.compile_grift 等)は Bench_compiler の役目。 *)

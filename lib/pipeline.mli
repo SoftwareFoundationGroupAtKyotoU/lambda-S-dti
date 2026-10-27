@@ -19,7 +19,6 @@ val kNorm_funs : formatter -> CC.program state -> config:Config.t -> KNorm.progr
 val closure : formatter -> KNorm.program state -> config:Config.t -> Cls.program state
 val toC : formatter -> Cls.program state -> config:Config.t -> bench:int -> string
 
-val mutate_all : formatter -> ITGL.program state -> ITGL.program list
-val mutate_sampled : samples_per_slot:int -> formatter -> ITGL.program state -> ITGL.program list
-val mutate_auto : threshold:int -> samples_per_slot:int -> formatter -> ITGL.program state -> ITGL.program list
+val mutation_term : ITGL.program state -> ITGL.exp
+val mutate_with_indices : formatter -> ITGL.program state -> int list list -> ITGL.program list
 val fix_names : ITGL.program state -> id list

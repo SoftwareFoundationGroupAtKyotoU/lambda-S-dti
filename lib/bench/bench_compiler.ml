@@ -1,10 +1,12 @@
-(* ベンチマーク用の C ドライバ生成・並列コンパイルを担当するモジュール。
-   実行(タイミング計測・GRIFT実行)は Bench_runner の役目。 *)
+(* Code generation (phase 7) and parallel compilation (phase 8) for Gradti-side and grift targets.
+   Per Gradti target: mutants -> <log_dir>/<mode_str>/<file>_<idx>.c, plus a timing driver and a
+   profiling driver under <log_dir>/bench/ that call mutant1..mutantN. *)
 open Format
 open Config
 open Syntax.C
 open Bench_target
 
+(* Whether the generated code uses the coercion runtime (crc.h); false for B and STATIC. *)
 let crc_active (config : Config.t) = not config.intoB && not config.static
 
 let warmup = Bench_config.warmup
@@ -21,9 +23,7 @@ type bench_job = {
   profile_run_cmd : string;
 }
 
-(* _mutants.h / timing用.c / profile用.c を生成し、それぞれをビルドする
-   clangコマンドと、ビルド後に実行するコマンドを bench_job として返す。
-   ファイル書き込みのみの副作用で、Sys.command は一切呼ばない。 *)
+(* Write the timing and profiling drivers for one target; return their build/run commands. *)
 let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
     ~log_dir ~file ~mode_str ~itr ~mutants_length ~config () : bench_job =
   (* mutant ファイルは <file>_<idx>.c という形式でのみ書かれる (compile_mutants
@@ -35,6 +35,7 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
      "_" + 数字で始まるものだけに絞ることでこれを避ける。 *)
   let src_files = asprintf "%s/%s/%s_[0-9]*.c" log_dir mode_str file in
   let mutant_num_list = List.init mutants_length (fun i -> i + 1) in
+  (* Header declaring mutantK() and, unless static, set_tysK() for every mutant. *)
   (* _mutants.h 生成 *)
   let mutants_h =
     List.concat_map (fun k ->
@@ -46,7 +47,9 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
   let oc = open_out (asprintf "%s/bench/%s%s_mutants.h" log_dir file mode_str) in
   output_string oc (Format.asprintf "%a" Pp.C.pp_program mutants_h);
   close_out oc;
+  (* The drivers fill times/metrics into the placeholder JSONL written by compile_mutants. *)
   let jsonl_path = Format.asprintf "%s/%s_%s.jsonl" log_dir mode_str file in
+  (* Before each run of mutant n: set its static types and clear the hash-consing caches. *)
   let per_run_prelude n =
     (if config.static then [] else [SExp (App (Var (Printf.sprintf "set_tys%d" n), []))]) @
     (if config.hash then [SExp (App (Var "clear_crc_caches", []))] else [])
@@ -66,6 +69,7 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
       Decl (No, STRUCT "timeval", "start_tv", None);
       Decl (No, STRUCT "timeval", "end_tv", None) ]
   in
+  (* One run of mutant n; when timed, record the wall time in times[n-1][i]. Rewinds stdin afterwards. *)
   let per_iter n ~timed =
     per_run_prelude n @
     (if timed then [SExp (App (Var "gettimeofday", [Addr "start_tv"; Null]))] else []) @
@@ -89,6 +93,7 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
       SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
       SExp (App (Var "fflush", [Var "stdout"])) ]
   in
+  (* main: time every mutant, then write times_sec into the JSONL. *)
   let main =
     FunDef (No, { ret_ty = INT; fname = "main"; params = [] },
       [ SExp (App (Var "GC_INIT", [])) ] @
@@ -107,6 +112,8 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
   ] @
     if crc_active config then [Include "\"../../../libC/crc.h\""] else []
   in
+  (* Metrics: (JSON key, source). `Mem = GC bytes allocated during the run,
+     `Scalar g = global counter g, `Arr (g, idx) = element g[idx]. *)
   (* --- メトリクス表 --- *)
   let coerce_kind_metrics : (string * [ `Mem | `Scalar of string | `Arr of string * string ]) list = [
     "coerce_id",         `Arr ("coerce_kind", "C_ID");
@@ -168,17 +175,20 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
     List.map (fun c -> Decl (No, INT, c, None)) counter_int @
     List.map (fun (c, size_const) -> Decl (No, INT, Format.asprintf "%s[%s]" c size_const, None)) counter_arr
   in
+  (* C expression that reads one metric after a run. *)
   let read_metric = function
     | `Mem -> BinOp (App (Var "GC_get_total_bytes", []), Minus, Var "mem_before")
     | `Scalar g -> Var g
     | `Arr (g, member) -> Index (Var g, Var member)
   in
+  (* Zero every counter before each mutant. *)
   let reset_counters =
     List.map (fun c -> SAssign (Var c, Int 0)) counter_int @
     List.map (fun (c, size_const) ->
       SFor ((SDecl (INT, "_rk", Some (Int 0)), BinOp (Var "_rk", Lt, Var size_const), PostOp (Var "_rk", Incr)),
             [ SAssign (Index (Var c, Var "_rk"), Int 0) ])) counter_arr
   in
+  (* Run mutant n once and store every metric in metric_data[n-1][*]. *)
   let mutant_profile_block n =
     reset_counters @
     [ SAssign (Var "mem_before", App (Var "GC_get_total_bytes", [])) ] @
@@ -190,6 +200,7 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
       SExp (App (Var "fprintf", [Var "stderr"; Str (Format.asprintf "mutant%d done. " n)]));
       SExp (App (Var "fflush", [Var "stdout"])) ]
   in
+  (* main: profile every mutant, then write the metrics into the JSONL. *)
   let pmain =
     FunDef (No, { ret_ty = INT; fname = "main"; params = [] },
       [ SExp (App (Var "GC_INIT", [])) ] @
@@ -200,6 +211,7 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
   let oc = open_out (asprintf "%s/bench/%s%s_profile.c" log_dir file mode_str) in
   output_string oc (Format.asprintf "%a" Pp.C.pp_program (includes @ decls @ [pmain]));
   close_out oc;
+  (* Binary paths plus clang build commands and run commands (stdout discarded). *)
   {
     out_path = asprintf "%s/bench/%s%s.out" log_dir file mode_str;
     profile_out_path = asprintf "%s/bench/%s%s_profile.out" log_dir file mode_str;
@@ -209,11 +221,8 @@ let generate_bench_sources ?(heap_size=Bench_config.default_heap_size)
     profile_run_cmd = asprintf "%s/bench/%s%s_profile.out < samples/input/%s.txt > /dev/null" log_dir file mode_str file;
   }
 
-(* 正当性チェック用の軽量ハーネス: タイミング計測・メトリクス収集を一切せず、
-   各 mutant を 1 回だけ実行して標準出力に区切りの改行を挟みながら答えを出す。
-   実際の標準出力を mutant 数だけの行に分割し、期待値（ユーザー指定の1文字列、
-   全 mutant で共通）と厳密比較する。不一致だった mutant index と実際の出力の
-   一覧を返す（空リスト = 全 mutant 一致）。 *)
+(* test/check_mutants.ml only: build a driver that runs each mutant once (a newline after
+   each), run it, and return the (idx, actual output) pairs that differ from `expected`. *)
 let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expected =
   (* generate_bench_sources と同じ理由で "_" + 数字で始まるものだけに絞る。 *)
   let src_files = asprintf "%s/%s/%s_[0-9]*.c" log_dir mode_str file in
@@ -279,20 +288,17 @@ let build_run_bench_check ~log_dir ~file ~mode_str ~mutants_length ~config ~expe
   List.mapi (fun i line -> (i + 1, line)) lines
   |> List.filter (fun (_, line) -> line <> expected)
 
+(* Compiler Config.t for a target's mode and flags (B ignores monotonic). *)
 let config_of_target ~file ~eager ~hash ~monotonic ~tvs_opt = function
   | S      -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~compile:true ()
   | A      -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~alt:true ~compile:true ()
   | B      -> Config.create ~eager ~hash ~tvs_opt ~file:(Some file) ~intoB:true ~compile:true ()
   | STATIC -> Config.create ~eager ~hash ~monotonic ~tvs_opt ~file:(Some file) ~static:true ~compile:true ()
 
-(* -------- 1ファイル×1モード分の mutant を全て C にコンパイルし、
-   log_dir/mode_str/ 以下に .c ファイルとして書き出す。ベンチ実行（try_prepare_target）と
-   正当性チェック（test/check_mutants.ml）の両方から共有される前処理。
-   ?record（デフォルト true）: mutant ごとの after_mutate 等を記録した .jsonl を
-   書くかどうか。この記録はベンチ結果の一部であって、正当性チェックには不要な
-   ので、test/check_mutants.ml からは false を渡して余分なファイル書き込みを
-   避ける。 *)
-let compile_mutants ?(record=true) ~log_dir ~mode_str ~config ~ordinal ~total_targets (t : target) : Bench_progress.t =
+(* Compile every mutant of one target through the pipeline (typing -> CC -> KNorm -> closure -> C)
+   into <log_dir>/<mode_str>/<file>_<idx>.c. With record=true, also writes the placeholder JSONL. *)
+let compile_mutants ?(record=true) ~log_dir ~mode_str ~config ~ordinal ~total_targets (t : target)
+  : Bench_progress.t * string list =
   let writer = if record then Some (Bench_output.open_writer ~log_dir ~mode_str ~file:t.file) else None in
   let ppf = Utils.Format.empty_formatter in
   let null_fmt = Format.make_formatter (fun _ _ _ -> ()) (fun () -> ()) in
@@ -302,116 +308,102 @@ let compile_mutants ?(record=true) ~log_dir ~mode_str ~config ~ordinal ~total_ta
   if not (Sys.file_exists c_dir) then Core_unix.mkdir c_dir;
   let bench_dir = Printf.sprintf "%s/bench" log_dir in
   if not (Sys.file_exists bench_dir) then Core_unix.mkdir bench_dir;
-  List.iteri (fun i p ->
-    try
+  let errors =
+    List.concat (List.mapi (fun i p ->
       let idx = i + 1 in
-      let after_mutate_str = Format.asprintf "%a" Pp.ITGL.pp_program p in
-      let initial_state = Pipeline.init_state p ~config in
-      (* --- Compilation --- *)
-      let c_code =
-        initial_state
-        |> Pipeline.typing_ITGL ppf (* save ty in state *)
-        |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:null_fmt ~bench:idx |> fst
-        |> Pipeline.kNorm_funs ppf ~config
-        |> Pipeline.closure ppf ~config
-        |> Pipeline.toC ppf ~config ~bench:idx
-      in
-      (* write c_code in c file *)
-      let filename = Format.asprintf "%s/%s/%s_%d.c" log_dir mode_str t.file idx in
-      let oc = open_out filename in
-      Printf.fprintf oc "%s" c_code;
-      close_out oc;
-      (* write mutant information in json file (record=true のときのみ) *)
-      (match writer with
-       | Some w ->
-         Bench_output.write_mutant w
-           (Bench_output.mutant_json ~mode_str ~idx
-              ~after_mutate:after_mutate_str ~times_sec:[])
-       | None -> ());
-      Bench_progress.tick prog (* ← 変異1件完了ごとに更新 *)
-    with e ->
-      Format.fprintf Format.std_formatter "\n[Error] %s some error raised in compilation: %s@." t.file (Printexc.to_string e);
-      Format.fprintf Format.std_formatter "DEBUG mutant %d:\n%a@." i Pp.ITGL.pp_program p
-  ) t.mutants;
+      try
+        let after_mutate_str = Format.asprintf "%a" Pp.ITGL.pp_program p in
+        let initial_state = Pipeline.init_state p ~config in
+        (* --- Compilation --- *)
+        let c_code =
+          initial_state
+          |> Pipeline.typing_ITGL ppf (* save ty in state *)
+          |> Pipeline.translate_to_CC ppf ~config ~bench_ppf:null_fmt ~bench:idx |> fst
+          |> Pipeline.kNorm_funs ppf ~config
+          |> Pipeline.closure ppf ~config
+          |> Pipeline.toC ppf ~config ~bench:idx
+        in
+        (* write c_code in c file *)
+        let filename = Format.asprintf "%s/%s/%s_%d.c" log_dir mode_str t.file idx in
+        let oc = open_out filename in
+        Printf.fprintf oc "%s" c_code;
+        close_out oc;
+        (* write mutant information in json file (record=true のときのみ) *)
+        (match writer with
+         | Some w ->
+           Bench_output.write_mutant w
+             (Bench_output.mutant_json ~mode_str ~idx
+                ~after_mutate:after_mutate_str ~times_sec:[])
+         | None -> ());
+        Bench_progress.tick prog; (* ← 変異1件完了ごとに更新 *)
+        []
+      with e ->
+        [ Format.asprintf "%s mutant%d: %s@\n%a" label idx (Printexc.to_string e) Pp.ITGL.pp_program p ]
+    ) t.mutants)
+  in
   (match writer with Some w -> Bench_output.close_writer w | None -> ());
-  prog
+  (prog, errors)
 
 (* -------- 1ファイル × 1モード（ターゲット）を、並列コンパイルできる
    段階まで準備する ------------------------------------------------- *)
+(* A target whose C sources and drivers are written but not compiled yet. *)
 type prepared_target = {
   t : target;
   mode_str : string;
   b : bench_job;
 }
 
-(* Pass 1: mutant の C コード生成 + ベンチドライバ (.c) 生成のみを行う。
-   clang は一切呼ばない（軽い純粋な OCaml 処理なので直列のままで十分）。
-   失敗した target は今までどおり [Skip] で握りつぶし、後続のコンパイル
-   対象にも含めない。 *)
-let try_prepare_target ~log_dir ~itr ~ordinal ~total_targets (t : target) : prepared_target option =
+(* mutant の C コード生成 + ベンチドライバ (.c) 生成のみを行う。
+   clang は一切呼ばない（軽い純粋な OCaml 処理なので直列のままで十分）。 *)
+let prepare_target ?heap_size ~log_dir ~itr ~ordinal ~total_targets (t : target) : (prepared_target, string list) result =
   let mode_str = Bench_target.ablation_mode_str t in
   try
     let config = config_of_target ~file:t.file ~eager:t.eager ~hash:t.hash ~monotonic:t.monotonic ~tvs_opt:t.tvs_opt t.mode in
-    let prog = compile_mutants ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
-    let b = generate_bench_sources ~log_dir ~file:t.file ~mode_str ~itr
-              ~mutants_length:(List.length t.mutants) ~config in
+    let prog, errors = compile_mutants ~log_dir ~mode_str ~config ~ordinal ~total_targets t in
     Bench_progress.print ~final:false prog;
-    Some { t; mode_str; b }
-  with e ->
-    Format.eprintf "[Skip] %s: %s@." mode_str (Printexc.to_string e);
-    None
+    if errors <> [] then Error errors
+    else
+      let b = generate_bench_sources ?heap_size ~log_dir ~file:t.file ~mode_str ~itr
+                ~mutants_length:(List.length t.mutants) ~config () in
+      Ok { t; mode_str; b }
+  with e -> Error [ Printf.sprintf "%s_%s: %s" mode_str t.file (Printexc.to_string e) ]
 
+(* The two clang jobs (timing and profile binaries) of a prepared target. *)
 let jobs_of_prepared (p : prepared_target) : Bench_builder.job list =
   [ { Bench_builder.out_path = p.b.out_path; cmd = p.b.compile_cmd };
     { Bench_builder.out_path = p.b.profile_out_path; cmd = p.b.profile_compile_cmd } ]
 
-let report_compile_failures (failed : prepared_target list) =
-  List.iter (fun (p : prepared_target) ->
-    Format.eprintf "[Skip] %s: parallel compile failed (see %s.log / %s.log)@."
-      p.mode_str p.b.out_path p.b.profile_out_path
-  ) failed
-
-(* 1バッチ(dynamize または static)のコンパイル結果。実行はまだ行っていない —
-   呼び出し側(bin/bench.ml)が dynamize/static 両方の結果を見て、両方
-   成功している場合にのみ Bench_runner.run_batch を呼ぶことで、一方の
-   コンパイル失敗がもう一方の実行を妨げるようにする。 *)
-type compiled_batch = {
+(* 1バッチ(dynamize または static)分の準備済み target。コード生成フェーズで
+   作り、コンパイルフェーズ（compile_batch）で clang にかけ、全バッチの
+   コンパイルが成功した場合にのみ Bench_runner.run_batch で実行する。 *)
+type batch = {
   label : string;
-  succeeded : prepared_target list;
-  failed : bool;  (* Pass 1 の準備失敗、または Pass 2 のコンパイル失敗が
-                      1件でもあれば true *)
+  targets : prepared_target list;
 }
 
-(* Pass 1(直列, 準備)+ Pass 2(全target一括, 並列コンパイル)のみ行う。
-   Pass 2（並列コンパイル、Bench_builder.compile_all）は make プロセス
-   自体の終了を待つので、ここが完全に終わるまでは呼び出し元へ戻らない。 *)
-let compile_targets ~log_dir ~itr ~label ~jobs (targets : target list) : compiled_batch =
+(* 1バッチ分の全 target をコード生成する。1つでも失敗があればエラー一覧を返す。 *)
+let prepare_batch ?heap_size ~log_dir ~itr ~label (targets : target list) : batch * string list =
   let total_targets = List.length targets in
-  let prepared =
-    List.mapi (fun i t -> try_prepare_target ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t) targets
-    |> List.filter_map (fun x -> x)
-  in
-  let prepare_failed = List.length prepared < total_targets in
-  Bench_builder.compile_all ~log_dir ~label ~jobs (List.concat_map jobs_of_prepared prepared);
-  let succeeded, failed =
-    List.partition (fun p -> Sys.file_exists p.b.out_path && Sys.file_exists p.b.profile_out_path)
-      prepared
-  in
-  report_compile_failures failed;
-  { label; succeeded; failed = prepare_failed || failed <> [] }
+  let results = List.mapi (fun i t -> prepare_target ?heap_size ~log_dir ~itr ~ordinal:(i + 1) ~total_targets t) targets in
+  let prepared = List.filter_map (function Ok p -> Some p | Error _ -> None) results in
+  let errors = List.concat_map (function Ok _ -> [] | Error es -> es) results in
+  ({ label; targets = prepared }, errors)
 
-(* STATIC は dynamize では走らせない。分母にも含めない *)
+(* 全target一括の並列コンパイル。Bench_builder.compile_all は make プロセス
+   自体の終了を待つので、ここが完全に終わるまでは呼び出し元へ戻らない。
+   失敗した target ごとのエラー（ログの場所つき）を返す。 *)
+let compile_batch ~log_dir ~jobs (b : batch) : string list =
+  Bench_builder.compile_all ~log_dir ~label:b.label ~jobs (List.concat_map jobs_of_prepared b.targets);
+  List.filter_map (fun p ->
+    if Sys.file_exists p.b.out_path && Sys.file_exists p.b.profile_out_path then None
+    else Some (Printf.sprintf "%s_%s: clang failed (see %s.log / %s.log)"
+                 p.mode_str p.t.file p.b.out_path p.b.profile_out_path)
+  ) b.targets
+
+(* --dynamize targets: drop STATIC-mode targets. *)
 let dynamize_targets targets = List.filter (fun t -> t.mode <> STATIC) targets
 
-let compile_dynamize ~log_dir ~itr ~jobs targets =
-  compile_targets ~log_dir ~itr ~label:"dynamize" ~jobs (dynamize_targets targets)
-
-(* STATIC モードは config が eager=true / hash=false に固定されるため、
-   eager×hash の 4 通りは同一の実行になる。ファイルごとに 1 つへ畳む。
-   STATIC 以外(S/A モード)の target はそのまま通す — file を "_fs" 付きに
-   リネームした上で、各 (mode, eager, hash, monotonic) 組み合わせごとに
-   「mutant を1つも適用していない(＝完全に静的な)ソース」をコンパイル・
-   実行し、dynamize 側の同条件と比較するためのベースラインを作る。 *)
+(* Keep at most one STATIC target per file; non-STATIC targets pass through unchanged. *)
 let dedup_static (targets : target list) : target list =
   let seen = Hashtbl.create 16 in
   List.filter (fun t ->
@@ -422,69 +414,64 @@ let dedup_static (targets : target list) : target list =
     | _ -> true
   ) targets
 
+(* --static targets: rename file to <file>_fs, keep only mutant 1 (the empty subset =
+   fully typed), and pin STATIC to eager / no hash / guarded. *)
 let static_targets targets =
   dedup_static targets
   |> List.map (fun t -> { t with file = t.file ^ "_fs"; mutants = [List.hd t.mutants] })
   |> List.map (fun t -> if t.mode = STATIC then { t with eager = true; hash = false; monotonic = false } else t)
 
-let compile_static ~log_dir ~itr ~jobs targets =
-  compile_targets ~log_dir ~itr ~label:"static" ~jobs (static_targets targets)
-
 (* ==================== GRIFT側 ==================== *)
 
-(* dynamize/static (ML/C側) の compiled_batch に対応する、GRIFT側のバッチ
-   コンパイル結果。実行(Bench_grift.run_compiled、Bench_runner.run_grift_batch)
-   はまだ行っていない — bin/bench.ml が dynamize/static/grift すべての
-   コンパイル結果を見て、全て成功している場合にのみ実行する。 *)
+(* 1 grift target 分の入力。analysis / subsets は parse・mutate フェーズで
+   Gradti 側と突き合わせ済みのもの。 *)
+type grift_target = {
+  file : string;
+  monotonic : bool;
+  analysis : Bench_grift.analysis;
+  subsets : int list list;
+}
+
+(* Gradti 側の batch に対応する GRIFT 側のバッチ。 *)
+type grift_batch = {
+  label : string;
+  prepared : Bench_grift.grift_prepared list;
+}
+
+(* A grift batch after compilation, ready to be run. *)
 type grift_compiled_batch = {
   label : string;
   compiled : Bench_grift.grift_compiled list;
-  failed : bool;  (* 対象ファイルが見つからない・例外・grift側のコンパイル
-                      失敗のいずれかが1件でもあれば true *)
 }
 
-(* Phase 1(全target分, 直列で準備)+ Phase 2(全target・全mutant分の
-   ジョブをまとめて1回だけ並列コンパイル)。Phase 3(実行)は
-   Bench_runner.run_grift_batch まで行わない。
-   ML/C側の compile_targets(try_prepare_target で全target準備 →
-   Builder.build_all を1回だけ呼ぶ)と同じパターンを、grift target を
-   跨ぐレベルで適用している — target ごとに別々の Makefile/make -j を
-   呼んでいた以前の実装と異なり、全grift targetの全ジョブが1回の
-   make -j にまとまる。 *)
-let compile_grift ~log_dir ~itr ~jobs ~static ~files ~monotonicities ~label : grift_compiled_batch =
-  let targets = Bench_target.restrict_grift_targets ~monotonicities files in
+(* コード生成フェーズ: 全 grift target 分の grift ソース生成・ジョブ組み立て
+   (直列)。コンパイルはまだ行わない。 *)
+let prepare_grift_batch ~heap_size ~log_dir ~itr ~static ~label (targets : grift_target list) : grift_batch * string list =
   let total_targets = List.length targets in
-  (* grift版のソースが存在しないベンチマーク(church-65536 やリストを用いる fold/incsum/map 等、grift と
-     比較不能な言語機能を使うため意図的に .grift を持たない)は、軸制限で
-     対象外になったケース(restrict_grift_targets)と同様に「このターゲットを
-     grift 比較から外すだけ」の skip として扱い、prepare_failed には
-     カウントしない。実際の prepare 中の例外(壊れた .grift ファイル等)は
-     引き続き全体を失敗させる。 *)
   let results =
-    List.mapi (fun i (file, monotonic) ->
-      let grift_src = Bench_config.sample_path ~lang:`Grift file in
-      if not (Sys.file_exists grift_src) then begin
-        Format.eprintf "[Skip grift] %s: %s not found@." file grift_src;
-        `Skipped
-      end else
-        try
-          `Prepared (Bench_grift.prepare ~log_dir ~grift_src ~itr ~static ~file ~monotonic
-                       ~ordinal:(i + 1) ~total_targets)
-        with e -> Format.eprintf "[Skip grift] %s: %s@." file (Printexc.to_string e); `Failed
+    List.mapi (fun i (g : grift_target) ->
+      try
+        Ok (Bench_grift.prepare ~heap_size ~log_dir ~itr ~static ~file:g.file ~monotonic:g.monotonic
+              ~analysis:g.analysis ~subsets:g.subsets ~ordinal:(i + 1) ~total_targets)
+      with e -> Error (Printf.sprintf "%s %s: %s" label g.file (Printexc.to_string e))
     ) targets
   in
-  let prepared = List.filter_map (function `Prepared p -> Some p | `Skipped | `Failed -> None) results in
-  let prepare_failed = List.exists (function `Failed -> true | `Prepared _ | `Skipped -> false) results in
-  let all_jobs = List.concat_map Bench_grift.jobs_of_prepared prepared in
-  Bench_builder.compile_all ~log_dir ~label ~jobs all_jobs;
-  let compiled = List.map Bench_grift.finalize prepared in
-  let failed =
-    prepare_failed || List.exists (fun (c : Bench_grift.grift_compiled) -> c.failed) compiled
+  ({ label; prepared = List.filter_map Result.to_option results },
+   List.filter_map (function Ok _ -> None | Error e -> Some e) results)
+
+(* コンパイルフェーズ: 全grift target・全mutant分のジョブをまとめて1回だけ
+   並列コンパイルする。 *)
+let compile_grift_batch ~log_dir ~jobs (b : grift_batch) : grift_compiled_batch * string list =
+  Bench_builder.compile_all ~log_dir ~label:b.label ~jobs (List.concat_map Bench_grift.jobs_of_prepared b.prepared);
+  let compiled = List.map Bench_grift.finalize b.prepared in
+  let errors =
+    List.concat_map (fun (c : Bench_grift.grift_compiled) ->
+      List.concat_map (fun (m : Bench_grift.grift_prepared_mutant) ->
+        List.filter_map (fun (_, (j : Bench_builder.job)) ->
+          if Sys.file_exists j.out_path then None
+          else Some (Printf.sprintf "%s %s#%d: grift compile failed (see %s.log)" b.label c.file m.idx j.out_path)
+        ) m.jobs
+      ) c.prepared
+    ) compiled
   in
-  { label; compiled; failed }
-
-let compile_dynamize_grift ~log_dir ~itr ~jobs ~files ~monotonicities =
-  compile_grift ~log_dir ~itr ~jobs ~static:false ~files ~monotonicities ~label:"grift_dynamize"
-
-let compile_static_grift ~log_dir ~itr ~jobs ~files ~monotonicities =
-  compile_grift ~log_dir ~itr ~jobs ~static:true ~files ~monotonicities ~label:"grift_static"
+  ({ label = b.label; compiled }, errors)
