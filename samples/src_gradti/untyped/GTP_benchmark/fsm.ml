@@ -1,7 +1,7 @@
 (* An N-states, N-inputs Automaton: simulate a population of automata
    playing the iterated prisoner's dilemma against each other.
    Translated from benchmarks/fsm/{typed,untyped}/{automata,population,utilities,main}.rkt
-   via automata.ml/population.ml/utilities.ml/main.ml. *)
+   of GTP benchmark.*)
 
 type automaton = { current : int; original : int; payoff : float; table : int array array };;
 
