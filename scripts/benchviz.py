@@ -90,7 +90,7 @@ def format_comp_label(name: str) -> str:
 BENCHMARK_ORDER = [
     "array", "blacksholes", "fft", "matmult", "n_body", "quicksort", "ray", "tak",
     "fsm",
-    "church-65536", "evenodd", "fib", "loop",
+    "church-65536", "church-1048576", "evenodd", "fib", "loop",
     "fold", "incsum", "map", "mklist", "zipwith",
 ]
 
