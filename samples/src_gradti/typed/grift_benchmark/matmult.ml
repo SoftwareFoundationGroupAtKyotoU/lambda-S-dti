@@ -1,5 +1,5 @@
-let create_square (size : int) =
-  let x = Array.make (size * size) 0 in
+let create_square (size : int) : int array =
+  let x : int array = Array.make (size * size) 0 in
   (**)
   for i = 0 to size - 1 do
     for j = 0 to size - 1 do
@@ -8,10 +8,10 @@ let create_square (size : int) =
   done;
   x;;
 
-let mult_square (size : int) =
-  let x = create_square size in
-  let y = create_square size in
-  let r = Array.make (size * size) 0 in
+let mult_square (size : int) : int array =
+  let x : int array = create_square size in
+  let y : int array = create_square size in
+  let r : int array = Array.make (size * size) 0 in
   (**)
   for i = 0 to size - 1 do
     for j = 0 to size - 1 do

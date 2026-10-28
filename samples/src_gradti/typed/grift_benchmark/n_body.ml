@@ -1,10 +1,10 @@
-let pi = 3.141592653589793;;
-let days_per_year = 365.24;;
-let solar_mass = (4.0 *. pi) *. pi;;
-let dt = 0.01;;
+let pi : float = 3.141592653589793;;
+let days_per_year : float = 365.24;;
+let solar_mass : float = (4.0 *. pi) *. pi;;
+let dt : float = 0.01;;
 
-let make_body (x : float) (y : float) (z : float) (vx : float) (vy : float) (vz : float) (mass : float) =
-  let v = Array.make 7 0.0 in
+let make_body (x : float) (y : float) (z : float) (vx : float) (vy : float) (vz : float) (mass : float) : float array =
+  let v : float array = Array.make 7 0.0 in
   (**)
   v.(0) <- x;
   v.(1) <- y;
@@ -15,30 +15,30 @@ let make_body (x : float) (y : float) (z : float) (vx : float) (vy : float) (vz 
   v.(6) <- mass;
   v;;
 
-let set_body_x (b : float array) (v : float) = b.(0) <- v;;
-let body_x (b : float array) = b.(0);;
+let set_body_x (b : float array) (v : float) : unit = b.(0) <- v;;
+let body_x (b : float array) : float = b.(0);;
 
-let set_body_y (b : float array) (v : float) = b.(1) <- v;;
-let body_y (b : float array) = b.(1);;
+let set_body_y (b : float array) (v : float) : unit = b.(1) <- v;;
+let body_y (b : float array) : float = b.(1);;
 
-let set_body_z (b : float array) (v : float) = b.(2) <- v;;
-let body_z (b : float array) = b.(2);;
+let set_body_z (b : float array) (v : float) : unit = b.(2) <- v;;
+let body_z (b : float array) : float = b.(2);;
 
-let set_body_vx (b : float array) (v : float) = b.(3) <- v;;
-let body_vx (b : float array) = b.(3);;
+let set_body_vx (b : float array) (v : float) : unit = b.(3) <- v;;
+let body_vx (b : float array) : float = b.(3);;
 
-let set_body_vy (b : float array) (v : float) = b.(4) <- v;;
-let body_vy (b : float array) = b.(4);;
+let set_body_vy (b : float array) (v : float) : unit = b.(4) <- v;;
+let body_vy (b : float array) : float = b.(4);;
 
-let set_body_vz (b : float array) (v : float) = b.(5) <- v;;
-let body_vz (b : float array) = b.(5);;
+let set_body_vz (b : float array) (v : float) : unit = b.(5) <- v;;
+let body_vz (b : float array) : float = b.(5);;
 
-let set_body_mass (b : float array) (v : float) = b.(6) <- v;;
-let body_mass (b : float array) = b.(6);;
+let set_body_mass (b : float array) (v : float) : unit = b.(6) <- v;;
+let body_mass (b : float array) : float = b.(6);;
 
-let sun = make_body 0.0 0.0 0.0 0.0 0.0 0.0 solar_mass;;
+let sun : float array = make_body 0.0 0.0 0.0 0.0 0.0 0.0 solar_mass;;
 
-let jupiter =
+let jupiter : float array =
   make_body
     4.84143144246472090
     (-.1.16032004402742839)
@@ -48,7 +48,7 @@ let jupiter =
     (-.6.90460016972063023e-5 *. days_per_year)
     (9.54791938424326609e-4 *. solar_mass);;
 
-let saturn =
+let saturn : float array =
   make_body
     8.34336671824457987
     4.12479856412430479
@@ -58,7 +58,7 @@ let saturn =
     (2.30417297573763929e-5 *. days_per_year)
     (2.85885980666130812e-4 *. solar_mass);;
 
-let uranus =
+let uranus : float array =
   make_body
     1.28943695621391310e1
     (-.1.51111514016986312e1)
@@ -68,7 +68,7 @@ let uranus =
     (-.2.96589568540237556e-05 *. days_per_year)
     (4.36624404335156298e-05 *. solar_mass);;
 
-let neptune =
+let neptune : float array =
   make_body
     1.53796971148509165e+01
     (-.2.59193146099879641e+01)
@@ -78,12 +78,12 @@ let neptune =
     (-.9.51592254519715870e-05 *. days_per_year)
     (5.15138902046611451e-05 *. solar_mass);;
 
-let system = [| sun; jupiter; saturn; uranus; neptune |];;
+let system : float array array = [| sun; jupiter; saturn; uranus; neptune |];;
 
-let system_size = 5;;
+let system_size : int = 5;;
 
 (* ------------------------------- *)
-let offset_momentum () =
+let offset_momentum () : unit =
   let rec offset_momentum_loop (i1 : int) (px : float) (py : float) (pz : float) : unit =
     if i1 = system_size then
       begin
@@ -92,7 +92,7 @@ let offset_momentum () =
         system.(0).(5) <- (0.0 -. pz) /. solar_mass
       end
     else
-      let j = system.(i1) in
+      let j : float array = system.(i1) in
       offset_momentum_loop (i1 + 1)
         (px +. (j.(3) *. j.(6)))
         (py +. (j.(4) *. j.(6)))
@@ -101,24 +101,24 @@ let offset_momentum () =
   offset_momentum_loop 0 0.0 0.0 0.0;;
 
 (* ------------------------------- *)
-let energy () =
+let energy () : float =
   let rec energy_loop_o (o : int) (e : float) : float =
     if o = system_size then
       e
     else
-      let o1 = system.(o) in
-      let sqs = (o1.(3) *. o1.(3)) +. (o1.(4) *. o1.(4)) +. (o1.(5) *. o1.(5)) in
-      let e = e +. ((0.5 *. o1.(6)) *. sqs) in
+      let o1 : float array = system.(o) in
+      let sqs : float = (o1.(3) *. o1.(3)) +. (o1.(4) *. o1.(4)) +. (o1.(5) *. o1.(5)) in
+      let e : float = e +. ((0.5 *. o1.(6)) *. sqs) in
       let rec energy_loop_i (o : int) (o1 : float array) (i : int) (e : float) : float =
         if i = system_size then
           energy_loop_o (o + 1) e
         else
-          let i1 = system.(i) in
-          let dx = o1.(0) -. i1.(0) in
-          let dy = o1.(1) -. i1.(1) in
-          let dz = o1.(2) -. i1.(2) in
-          let dist = sqrt ((dx *. dx) +. (dy *. dy) +. (dz *. dz)) in
-          let e = e -. ((o1.(6) *. i1.(6)) /. dist) in
+          let i1 : float array = system.(i) in
+          let dx : float = o1.(0) -. i1.(0) in
+          let dy : float = o1.(1) -. i1.(1) in
+          let dz : float = o1.(2) -. i1.(2) in
+          let dist : float = sqrt ((dx *. dx) +. (dy *. dy) +. (dz *. dz)) in
+          let e : float = e -. ((o1.(6) *. i1.(6)) /. dist) in
           energy_loop_i o o1 (i + 1) e
       in
       energy_loop_i o o1 (o + 1) e
@@ -126,25 +126,25 @@ let energy () =
   energy_loop_o 0 0.0;;
 
 (* ------------------------------- *)
-let advance () =
+let advance () : unit =
   let rec advance_loop_o (o : int) : unit =
     if o = system_size then
       ()
     else
-      let o1 = system.(o) in
+      let o1 : float array = system.(o) in
       let rec advance_loop_i (i3 : int) (vx : float) (vy : float) (vz : float) (o1 : float array) : unit =
         if i3 < system_size then
-          let i1 = system.(i3) in
-          let dx = o1.(0) -. i1.(0) in
-          let dy = o1.(1) -. i1.(1) in
-          let dz = o1.(2) -. i1.(2) in
-          let dist2 = (dx *. dx) +. (dy *. dy) +. (dz *. dz) in
-          let mag = dt /. (dist2 *. (sqrt dist2)) in
-          let dxmag = dx *. mag in
-          let dymag = dy *. mag in
-          let dzmag = dz *. mag in
-          let om = o1.(6) in
-          let im = i1.(6) in
+          let i1 : float array = system.(i3) in
+          let dx : float = o1.(0) -. i1.(0) in
+          let dy : float = o1.(1) -. i1.(1) in
+          let dz : float = o1.(2) -. i1.(2) in
+          let dist2 : float = (dx *. dx) +. (dy *. dy) +. (dz *. dz) in
+          let mag : float = dt /. (dist2 *. (sqrt dist2)) in
+          let dxmag : float = dx *. mag in
+          let dymag : float = dy *. mag in
+          let dzmag : float = dz *. mag in
+          let om : float = o1.(6) in
+          let im : float = i1.(6) in
           (**)
           i1.(3) <- i1.(3) +. (dxmag *. om);
           i1.(4) <- i1.(4) +. (dymag *. om);

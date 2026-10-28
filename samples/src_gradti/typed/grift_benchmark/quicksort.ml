@@ -1,14 +1,14 @@
-let swap (a : int array) (i : int) (j : int) =
+let swap (a : int array) (i : int) (j : int) : unit =
   if i = j then
     ()
-  else let t = a.(i) in
+  else let t : int = a.(i) in
     (**)
     a.(i) <- a.(j);
     a.(j) <- t;;
 
-let partition (a : int array) (p : int) (r : int) =
-  let i = ref (p - 1) in
-  let x = a.(r) in
+let partition (a : int array) (p : int) (r : int) : int =
+  let i : int ref = ref (p - 1) in
+  let x : int = a.(r) in
   (**)
   for j = p to r - 1 do
     if a.(j) <= x then
@@ -22,7 +22,7 @@ let partition (a : int array) (p : int) (r : int) =
 
 let rec sort (a : int array) (p : int) (r : int) : unit =
   if p < r then
-    let q = partition a p r in
+    let q : int = partition a p r in
     (**)
     sort a p (q - 1);
     sort a (q + 1) r

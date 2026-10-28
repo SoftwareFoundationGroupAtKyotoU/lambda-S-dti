@@ -7,39 +7,39 @@
    instead; block contents otherwise follow the original as closely as
    possible. *)
 
-let make_point (x : float) (y : float) (z : float) = (x, y, z);;
+let make_point (x : float) (y : float) (z : float) : float * float * float = (x, y, z);;
 
-let point_x (p : float * float * float) = let (x, _, _) = p in x;;
-let point_y (p : float * float * float) = let (_, y, _) = p in y;;
-let point_z (p : float * float * float) = let (_, _, z) = p in z;;
+let point_x (p : float * float * float) : float = let (x, _, _) = p in x;;
+let point_y (p : float * float * float) : float = let (_, y, _) = p in y;;
+let point_z (p : float * float * float) : float = let (_, _, z) = p in z;;
 
-let sq (x : float) = x *. x;;
+let sq (x : float) : float = x *. x;;
 
-let mag (x : float) (y : float) (z : float) = sqrt ((sq x) +. (sq y) +. (sq z));;
+let mag (x : float) (y : float) (z : float) : float = sqrt ((sq x) +. (sq y) +. (sq z));;
 
-let unit_vector (x : float) (y : float) (z : float) =
-  let d = mag x y z in
+let unit_vector (x : float) (y : float) (z : float) : float * float * float =
+  let d : float = mag x y z in
   make_point (x /. d) (y /. d) (z /. d);;
 
-let distance (p1 : float * float * float) (p2 : float * float * float) =
+let distance (p1 : float * float * float) (p2 : float * float * float) : float =
   mag (point_x p1 -. point_x p2) (point_y p1 -. point_y p2) (point_z p1 -. point_z p2);;
 
-let world = Array.make 33 (0.0, 0.0, (0.0, 0.0, 0.0));;
+let world : (float * float * (float * float * float)) array = Array.make 33 (0.0, 0.0, (0.0, 0.0, 0.0));;
 
-let eye = make_point 0.0 0.0 200.0;;
+let eye : float * float * float = make_point 0.0 0.0 200.0;;
 
-let make_sphere (color : float) (radius : float) (center : float * float * float) = (color, radius, center);;
+let make_sphere (color : float) (radius : float) (center : float * float * float) : float * float * (float * float * float) = (color, radius, center);;
 
-let sphere_color (s : float * float * (float * float * float)) = let (c, _, _) = s in c;;
-let sphere_radius (s : float * float * (float * float * float)) = let (_, r, _) = s in r;;
-let sphere_center (s : float * float * (float * float * float)) = let (_, _, c) = s in c;;
+let sphere_color (s : float * float * (float * float * float)) : float = let (c, _, _) = s in c;;
+let sphere_radius (s : float * float * (float * float * float)) : float = let (_, r, _) = s in r;;
+let sphere_center (s : float * float * (float * float * float)) : float * float * float = let (_, _, c) = s in c;;
 
-let sphere_normal (s : float * float * (float * float * float)) (pt : float * float * float) =
-  let c = sphere_center s in
+let sphere_normal (s : float * float * (float * float * float)) (pt : float * float * float) : float * float * float =
+  let c : float * float * float = sphere_center s in
   unit_vector (point_x c -. point_x pt) (point_y c -. point_y pt) (point_z c -. point_z pt);;
 
-let lambert (s : float * float * (float * float * float)) (ipoint : float * float * float) (ray : float * float * float) =
-  let n = sphere_normal s ipoint in
+let lambert (s : float * float * (float * float * float)) (ipoint : float * float * float) (ray : float * float * float) : float =
+  let n : float * float * float = sphere_normal s ipoint in
   fmax 0.0
     ((point_x ray *. point_x n) +. (point_y ray *. point_y n) +. (point_z ray *. point_z n));;
 
@@ -50,54 +50,55 @@ let rec loop (pt : float * float * float) (ray : float * float * float) (index :
   if index = lst_len then
     (surface, hit)
   else
-    let s = lst.(index) in
-    let xr = point_x ray in
-    let yr = point_y ray in
-    let zr = point_z ray in
-    let sc = sphere_center s in
-    let a = (sq xr) +. (sq yr) +. (sq zr) in
-    let b = 2.0 *. (((point_x pt -. point_x sc) *. xr)
+    let s : float * float * (float * float * float) = lst.(index) in
+    let xr : float = point_x ray in
+    let yr : float = point_y ray in
+    let zr : float = point_z ray in
+    let sc : float * float * float = sphere_center s in
+    let a : float = (sq xr) +. (sq yr) +. (sq zr) in
+    let b : float = 2.0 *. (((point_x pt -. point_x sc) *. xr)
                     +. ((point_y pt -. point_y sc) *. yr)
                     +. ((point_z pt -. point_z sc) *. zr)) in
-    let c = ((sq (point_x pt -. point_x sc)) +. (sq (point_y pt -. point_y sc)))
+    let c : float = ((sq (point_x pt -. point_x sc)) +. (sq (point_y pt -. point_y sc)))
             +. ((sq (point_z pt -. point_z sc)) +. (-. (sq (sphere_radius s)))) in
     if a =. 0.0 then
-      let n = (-. c) /. b in
-      let h = make_point (point_x pt +. (n *. xr)) (point_y pt +. (n *. yr)) (point_z pt +. (n *. zr)) in
-      let d = distance h pt in
+      let n : float = (-. c) /. b in
+      let h : float * float * float = make_point (point_x pt +. (n *. xr)) (point_y pt +. (n *. yr)) (point_z pt +. (n *. zr)) in
+      let d : float = distance h pt in
       if d <. dist then
         loop pt ray (index + 1) lst_len lst s h d
       else
         loop pt ray (index + 1) lst_len lst surface hit dist
     else
-      let disc = (sq b) -. (4.0 *. (a *. c)) in
+      let disc : float = (sq b) -. (4.0 *. (a *. c)) in
       if disc <. 0.0 then
         loop pt ray (index + 1) lst_len lst surface hit dist
       else
-        let discrt = sqrt disc in
-        let minus_b = -. b in
-        let two_a = 2.0 *. a in
-        let n = fmin ((minus_b +. discrt) /. two_a) ((minus_b -. discrt) /. two_a) in
-        let h = make_point (point_x pt +. (n *. xr)) (point_y pt +. (n *. yr)) (point_z pt +. (n *. zr)) in
-        let d = distance h pt in
+        let discrt : float = sqrt disc in
+        let minus_b : float = -. b in
+        let two_a : float = 2.0 *. a in
+        let n : float = fmin ((minus_b +. discrt) /. two_a) ((minus_b -. discrt) /. two_a) in
+        let h : float * float * float = make_point (point_x pt +. (n *. xr)) (point_y pt +. (n *. yr)) (point_z pt +. (n *. zr)) in
+        let d : float = distance h pt in
         if d <. dist then
           loop pt ray (index + 1) lst_len lst s h d
         else
           loop pt ray (index + 1) lst_len lst surface hit dist;;
 
-let sendray (pt : float * float * float) (ray : float * float * float) =
+let sendray (pt : float * float * float) (ray : float * float * float) : float =
   let (s, ipoint) =
-    loop pt ray 0 (Array.length world) world
+    (loop pt ray 0 (Array.length world) world
       (0.0, 0.0, (0.0, 0.0, 0.0)) (0.0, 0.0, 0.0) 1e308
+     : (float * float * (float * float * float)) * (float * float * float))
   in
   (lambert s ipoint ray) *. (sphere_color s);;
 
-let color_at (x : float) (y : float) =
-  let ray = unit_vector (x -. point_x eye) (y -. point_y eye) (-. (point_z eye)) in
+let color_at (x : float) (y : float) : int =
+  let ray : float * float * float = unit_vector (x -. point_x eye) (y -. point_y eye) (-. (point_z eye)) in
   int_of_float (round ((sendray eye ray) *. 255.0));;
 
-let tracer (res : int) =
-  let extent = res * 100 in
+let tracer (res : int) : unit =
+  let extent : int = res * 100 in
   (**)
   print_char 'P';
   print_int 2;
@@ -116,8 +117,8 @@ let tracer (res : int) =
     done
   done;;
 
-let defsphere (i : int) (x : float) (y : float) (z : float) (r : float) (c : float) =
-  let s = make_sphere c r (make_point x y z) in
+let defsphere (i : int) (x : float) (y : float) (z : float) (r : float) (c : float) : float * float * (float * float * float) =
+  let s : float * float * (float * float * float) = make_sphere c r (make_point x y z) in
   (**)
   world.(i) <- s;
   s;;
