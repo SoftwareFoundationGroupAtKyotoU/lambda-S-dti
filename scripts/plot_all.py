@@ -1,7 +1,7 @@
 # plot_all.py
 import os
 from benchviz import (
-    latest_date_dir, check_pair_exists, TARGET_PAIRS
+    latest_date_dir, check_pair_exists, TARGET_PAIRS, STATIC_SUMMARY_GROUPS
 )
 
 def prune_empty_dirs(root: str) -> None:
@@ -19,7 +19,6 @@ def prune_empty_dirs(root: str) -> None:
             except OSError:
                 pass
 
-from plot_herman import plot_herman
 from plot_relative import plot_relative, plot_static_summary
 from plot_scattered import plot_scattered
 from plot_metric import plot_metric
@@ -29,58 +28,40 @@ from plot_derived_metrics import run as run_plot_derived_metrics  # 派生指標
 
 EXTRA_METRICS = ["cast", "inference", "mem", "longest"]
 
-def run_plots(base, comp, static, date_dir):
-    print(f"\n[DEBUG] ---> run_plots 開始: base={base}, comp={comp}, static={static}")
-    
-    if not check_pair_exists(date_dir, base, comp, static):
-        print(f"[DEBUG] スキップ: {date_dir} に {base} または {comp} のログがありません。")
+def run_static_summaries(base, comps, date_dir):
+    """static summary: comps 全体の図と、comp ごとの図を出す。
+    ログの無い comp は除いて描く（全体図は残った comp だけで描く）。"""
+    present = [c for c in comps if check_pair_exists(date_dir, base, c, True)]
+    for c in comps:
+        if c not in present:
+            print(f"[DEBUG] スキップ: {date_dir} に {base} または {c} の static ログがありません。")
+    if not present:
         return
+    if len(present) > 1:
+        plot_static_summary(base, present)
+    for c in present:
+        plot_static_summary(base, c)
 
-    # ==========================================
-    # ★ Static の場合は専用の統合プロットのみを実行する
-    # ==========================================
-    if static:
-        print("[DEBUG] Staticモード: 統合Relativeプロットのみ実行します")
-        if isinstance(comp, list):
-            plot_static_summary(base, comp)
-            # 個別も欲しい場合は以下を活かす（不要ならコメントアウトでOKです）
-            for c in comp:
-                plot_static_summary(base, c)
-        else:
-            plot_static_summary(base, comp)
-        print(f"[DEBUG] <--- run_plots 完了: base={base}, comp={comp} (Static)")
-        return
+def plot_one(base, comp):
+    """1 つの (base, comp) について relative / scattered / metrics を描く（comp はリストでもよい）"""
+    plot_relative(base, comp, False)
+    plot_scattered(base, comp, False)
+    for m in EXTRA_METRICS:
+        plot_metric(base, comp, False, m)
 
-    # ==========================================
-    # 以下は通常（Dynamic/Mutant）の処理
-    # ==========================================
-    print("[DEBUG] ログを確認しました。プロット処理に入ります...")
-
-    if isinstance(comp, list):
-        print(f"[DEBUG] 複数比較 (リスト) モード: {comp}")
-        plot_herman(base, comp, static)
-        plot_relative(base, comp, static)
-        plot_scattered(base, comp, static)
-        for m in EXTRA_METRICS:
-            plot_metric(base, comp, static, m)
-
-        for c in comp:
-            print(f"[DEBUG] 個別プロット実行中: {c}")
-            plot_herman(base, c, static)
-            plot_relative(base, c, static)
-            plot_scattered(base, c, static)
-            for m in EXTRA_METRICS:
-                plot_metric(base, c, static, m)
-
-    else:
-        print(f"[DEBUG] 単体比較モード: {comp}")
-        plot_herman(base, comp, static)
-        plot_relative(base, comp, static)
-        plot_scattered(base, comp, static)
-        for m in EXTRA_METRICS:
-            plot_metric(base, comp, static, m)
-
-    print(f"[DEBUG] <--- run_plots 完了: base={base}, comp={comp}")
+def run_plots(base, comps, date_dir):
+    """comps 全部をまとめた図と、comp 1つずつの図を出す（mutant の計測ログ）。
+    累積性能グラフ（cumulative）は plot_stacked_time が同じ組み合わせで別に描く。"""
+    print(f"\n[DEBUG] ---> run_plots 開始: base={base}, comps={comps}")
+    present = [c for c in comps if check_pair_exists(date_dir, base, c, False)]
+    for c in comps:
+        if c not in present:
+            print(f"[DEBUG] スキップ: {date_dir} に {base} または {c} のログがありません。")
+    if len(present) > 1:
+        plot_one(base, present)
+    for c in present:
+        plot_one(base, c)
+    print(f"[DEBUG] <--- run_plots 完了: base={base}, comps={comps}")
 
 def main():
     try:
@@ -90,40 +71,15 @@ def main():
         return
 
     print("\n=== Processing Non-Static Logs ===")
-    for base, comp in TARGET_PAIRS:
-        run_plots(base, comp, False, date_dir)
+    for base, comps in TARGET_PAIRS:
+        run_plots(base, comps, date_dir)
+
+    print("\n=== Processing Cumulative Plots ===")
+    run_plot_stacked_time(date_dir, pairs=TARGET_PAIRS)
 
     print("\n=== Processing Static Logs ===")
-    for base, comp in TARGET_PAIRS:
-        run_plots(base, comp, True, date_dir)
-        
-    # ==========================================
-    # ★ 追加: Mono vs Poly の Compare プロット処理
-    # ==========================================
-    print("\n=== Processing Compare Logs (Mono vs Poly) ===")
-    # TARGET_PAIRS から使用されているすべてのモードを抽出 (重複排除)
-    all_modes = set()
-    for base, comp in TARGET_PAIRS:
-        all_modes.add(base)
-        if isinstance(comp, list):
-            all_modes.update(comp)
-        else:
-            all_modes.add(comp)
-            
-    # 各モードに対して compare プロットを実行
-    for mode in all_modes:
-        print(f"\n[DEBUG] Compareプロット実行中: mode={mode}")
-        # plot_compare 側で該当ログがなければ自動でスキップされるので安全です
-        plot_compare(mode, static=False)
-        plot_compare(mode, static=True)
-
-    # ==========================================
-    # 累積性能グラフ（Takikawa POPL'16 / Grift PLDI'19 方式）
-    # TARGET_PAIRS に依存せず、ログにある全モードを描く。
-    # 静的実行ログは 1 mutant しかないので対象外。
-    # ==========================================
-    print("\n=== Processing Cumulative Performance Plots ===")
-    run_plot_stacked_time(date_dir)
+    for base, comps in STATIC_SUMMARY_GROUPS:
+        run_static_summaries(base, comps, date_dir)
 
     # ==========================================
     # 派生指標（cache hit 率 / compose_max_depth / cast あたり時間 /

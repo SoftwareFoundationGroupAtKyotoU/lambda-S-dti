@@ -31,17 +31,21 @@ except Exception:
 #   untypedSTATICEhGT = 完全静的コンパイル（DTI/coercion機構なし）
 # GRIFT 側（lib/bench/bench_grift.ml）: GRIFTLLVMM（LLVM backend）/ GRIFTCM（C backend）/ GRIFTCMS（C backend, --static）。
 # mutant_index は ML 側と grift 側で同じスロット選択を指す。
-TARGET_PAIRS = [ # (base, comp)。comp が全部揃っていないペアは plot_all 側でスキップされる
-    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),  # 4軸まとめて概観
-    # ("untypedSLHMT", ["untypedALHMT"]),   # id_opt 効果
-    # ("untypedAEHMT", ["untypedALHMT"]),   # eager/lazy 効果
-    # ("untypedALhMT", ["untypedALHMT"]),   # hash-consing 効果
-    # ("untypedALHGT", ["untypedALHMT"]),   # guarded/monotonic 効果
-    # ("untypedALHMt", ["untypedALHMT"]),   # tvs_opt 効果
-    # ("typedALHMT", ["untypedALHMT"]),     # typed/untyped 効果
-    ("typedALHMT", ["GRIFTCM", "untypedALHMT"]),        # GRIFT C backend との比較
-    # ("GRIFTLLVMM", ["untypedALHMT"]),     # GRIFT LLVM backend（grift 既定）との比較
-    ("untypedSTATICEhGT", ["untypedALHMT", "typedALHMT", "GRIFTCMS", "GRIFTCM"]),  # static実行時のみ有効（完全静的 vs 完全動的基準値）
+#
+# TARGET_PAIRS の各 (base, comps) について、plot_all.py は comps 全部をまとめた図と
+# comp 1つずつの図を出す（relative / scattered / metrics / cumulative）。
+TARGET_PAIRS = [ # (base, comps)
+    # untyped 基準の optimization ablation（id_opt / hash-consing / tvs_opt）
+    ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),
+    # typed 基準で untyped Gradti と Grift（C backend）を比較
+    ("typedALHMT", ["untypedALHMT", "GRIFTCM"]),
+]
+
+# static summary（fully-static プログラムの全ベンチ統合図）専用のグループ。
+# 各 (base, comps) について、comps 全部をまとめた図と comp 1つずつの図を出す。
+STATIC_SUMMARY_GROUPS = TARGET_PAIRS + [ # (base, comps)。TARGET_PAIRS と同じ組み合わせも出す
+    ("untypedSTATICEhGT", ["untypedALHMT", "typedALHMT"]),
+    ("untypedSTATICEhGT", ["typedALHMT", "GRIFTCM", "GRIFTCMS"]),
 ]
 
 STYLE_MAP = {
