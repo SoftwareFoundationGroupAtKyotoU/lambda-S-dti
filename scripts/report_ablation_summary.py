@@ -95,7 +95,7 @@ def main() -> None:
         # (section, base, comp, static, note)。ratio = comp / base なので、
         # base に「その最適化を切った側」を置くと ratio < 1 = 最適化が効いている。
         ("id_opt (A vs S)",       "untypedSLHMT", base_mode, False, "id-application optimization (`alt` translation) ON (`A`) vs OFF (`S`)."),
-        ("lazy vs eager (L vs E)", "untypedELHMT", base_mode, False, "Lazy (`L`) vs eager (`E`) list coercions."),
+        ("lazy vs eager (L vs E)", "untypedAEHMT", base_mode, False, "Lazy (`L`) vs eager (`E`) list coercions."),
         ("hash-consing (H vs h)", "untypedALhMT", base_mode, False, "Coercion hash-consing + compose memoization ON (`H`) vs OFF (`h`)."),
         ("monotonic vs guarded (M vs G)", "untypedALHGT", base_mode, False, "Monotonic (`M`) vs guarded (`G`) references/arrays."),
         ("tvs_opt (T vs t)",      "untypedALHMt", base_mode, False, "Type-variable optimization ON (`T`) vs OFF (`t`)."),

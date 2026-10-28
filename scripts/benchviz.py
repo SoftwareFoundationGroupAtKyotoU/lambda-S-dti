@@ -23,7 +23,7 @@ except Exception:
 # 基準値は untypedALHMT（Alt, Lazy, Hash-consing on, Monotonic, tvs_opt on）。
 # 各 comp は基準値から1軸だけ反転させたもの:
 #   untypedSLHMT  = id_opt off（A→S,       --id_opt）
-#   untypedELHMT  = eager（L→E,             --eager）
+#   untypedAEHMT  = eager（L→E,             --eagerness）
 #   untypedALhMT  = hash-consing off（H→h,  --hash）
 #   untypedALHGT  = guarded（M→G,           --monotonic）
 #   untypedALHMt  = tvs_opt off（T→t,       --tvs_opt）
@@ -34,7 +34,7 @@ except Exception:
 TARGET_PAIRS = [ # (base, comp)。comp が全部揃っていないペアは plot_all 側でスキップされる
     ("untypedALHMT", ["untypedSLHMT", "untypedALhMT", "untypedALHMt"]),  # 4軸まとめて概観
     # ("untypedSLHMT", ["untypedALHMT"]),   # id_opt 効果
-    # ("untypedELHMT", ["untypedALHMT"]),   # eager/lazy 効果
+    # ("untypedAEHMT", ["untypedALHMT"]),   # eager/lazy 効果
     # ("untypedALhMT", ["untypedALHMT"]),   # hash-consing 効果
     # ("untypedALHGT", ["untypedALHMT"]),   # guarded/monotonic 効果
     # ("untypedALHMt", ["untypedALHMT"]),   # tvs_opt 効果
@@ -47,7 +47,7 @@ TARGET_PAIRS = [ # (base, comp)。comp が全部揃っていないペアは plot
 STYLE_MAP = {
     "untypedALHMT":      {"color": "#d62728", "marker": "<"},  # 基準値
     "untypedSLHMT":      {"color": "#1f77b4", "marker": "o"},  # id_opt off
-    "untypedELHMT":      {"color": "#17becf", "marker": "^"},  # eager
+    "untypedAEHMT":      {"color": "#17becf", "marker": "^"},  # eager
     "untypedALhMT":      {"color": "#ff7f0e", "marker": "D"},  # hash off
     "untypedALHGT":      {"color": "#8c564b", "marker": "v"},  # guarded
     "untypedALHMt":      {"color": "#2ca02c", "marker": "P"},  # tvs_opt off
