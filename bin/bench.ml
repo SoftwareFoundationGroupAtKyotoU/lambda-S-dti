@@ -11,6 +11,7 @@ let () =
   let axis_specs, requested_axes = Bench_target.axis_specs () in
   (* benchmark modes *)
   let static, dynamize, grift = ref false, ref false, ref false in
+  let only_flips = ref false in
   let specs = [
     ("-i", Arg.Int (fun i -> itr := i), " Specify iteration count");
     ("--jobs", Arg.Int (fun n -> jobs := n),
@@ -25,6 +26,8 @@ let () =
     ("--dynamize", Arg.Unit (fun () -> dynamize := true), " Benchmarking mutated programs");
     ("--grift", Arg.Unit (fun () -> grift := true),
      " Benchmarking against GRIFT's C backend (GRIFTCM vs our own fully-optimized ALHMT config)");
+    ("--only_flips", Arg.Set only_flips,
+     " Skip the untypedALHMT baseline; measure only the flipped-axis targets (STATIC baselines are kept)");
     ("--all", Arg.Unit (fun () -> dynamize := true; static := true; grift := true), " Benchmarking all (--static --dynamize --grift)");
     ("--out", Arg.String (fun s -> Bench_output.out_mode := (match s with
         | "json" -> Bench_output.Json | "jsonl" -> Bench_output.JsonLines
@@ -66,6 +69,11 @@ let () =
   (* ターゲット配列を作る。基準点(ALHMT)はファイルごとに1つしか生成されない
      (=1回しかコンパイル・実行されない)。 *)
   let dynamize_targets = Bench_target.expand_ablation_targets gradti_prepared in
+  let dynamize_targets =
+    if not !only_flips then dynamize_targets
+    else List.filter (fun (t : Bench_target.target) ->
+      Bench_target.ablation_mode_str t <> "untypedALHMT") dynamize_targets
+  in
   (* --static 用: dynamize_targets に STATIC 基準をファイルごとに1つ足す
      （Bench_target.with_static_baselines 参照） *)
   let static_targets = Bench_target.with_static_baselines gradti_prepared dynamize_targets in
