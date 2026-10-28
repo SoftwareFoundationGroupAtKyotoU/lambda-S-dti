@@ -153,9 +153,24 @@ I4（`lib/backend/closure.ml` の `spine_vars`/`globals`、`toC.ml` の `decl_va
 - 「計測フェーズで最初に走る target だけが遅く出る」の節の現象も、原因の候補の1つは周波数
 - `94a4749` の元のコミットメッセージにあった「2.0GHz のコアと 3.9GHz のコアがある」は、ある瞬間の `cpu MHz` を見た誤解（コアの性能差ではない）
 
-## typed ベンチの original / GTP_benchmark に返り値と let の型注釈がない
+## typed ベンチに返り値と let の型注釈が足りない
 
-`samples/src_gradti/typed/grift_benchmark/` は、Grift 版が型注釈を書いている箇所（関数の返り値・`let` 束縛）すべてに同じ注釈を付けてある（v2.0 の `4ad7bba`）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
+### grift_benchmark のローカルな let
+
+`samples/src_gradti/typed/grift_benchmark/` は、関数の返り値とトップレベルの値の `let` には、Grift 版と同じ注釈を付けてある（`4ad7bba` とその追加分）。引数を Dyn 化した mutant で、推論される結果の型に `?` が漏れ出さないようにするため。ただし、関数の中のローカルな `let` には、Grift 版が注釈を付けているのに ML 版には付いていないものが残っている（v2.0 も同じ）。
+
+- array: `input1`, `input2`
+- blacksholes: `number_of_options`, `fake_data`, `data`, `spots`, `strikes`, `rates`, `volatilities`, `otypes`, `otimes`, `prices`。名前が違う対応 6 個（Grift の `x-k2^2`〜`x-k2^5`, `DerivGem-value`、タプルを受ける `od`）
+- fft: 名前が違う対応 4 個（Grift の `temp` ×2, `tempr`, `tempi`）
+- matmult: `size`
+- quicksort: `size`, `a`
+- ray: `res`, `counter`。名前が違う対応 2 個（`sendray` の中の Grift の `x`, `int`）
+
+ローカルな `let` の初期値は引数（スロット）から計算されることがあるので、注釈を足すと、その `let` で型が確定してキャストが入り、Dyn 化した mutant での `?` の広がりが変わる。つまり typed の計測値が v2.0（論文の計測）から変わる。足したらベンチを回し直し、v2.0 との差を確認する。洗い出しには `name : T` 付きの Grift の `let` を全部拾って ML 側と突き合わせるスクリプト（レビュー時に作った let_cmp.py 相当）が使える。
+
+### original と GTP_benchmark
+
+`typed/original/` では `loop.ml` だけが同じ形になっていて、残りの church-2/church-4/church-65536/easy/evenodd/explosion-DTI/fib/fold/incsum/map/mklist/zipwith と `typed/GTP_benchmark/fsm.ml` は、関数の引数にしか注釈がない箇所が残っている。Grift 版が無いので「Grift と同じ箇所」という基準は使えず、`loop.ml` と同様に、返り値の型と `let` 束縛すべてに明示的な注釈を付ける。スロット数は変わらない（注釈を足しても slot は増えない）ことを、typed 軸の前処理（スロット対応）と `test/check_mutants.ml --typed` で確かめる。
 
 ## testC（C ランタイムの単体テスト）が手薄
 
